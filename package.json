@@ -1,6 +1,6 @@
 {
   "name": "pdf-copilot",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "private": true,
   "type": "module",
   "description": "A lightweight Edge/Chrome PDF reading companion with an optional Windows Codex bridge",

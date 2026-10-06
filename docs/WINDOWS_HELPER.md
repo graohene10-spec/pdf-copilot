@@ -2,11 +2,11 @@
 
 本包只包含连接本机 Codex 的可选助手。使用 DeepSeek / OpenAI API Key 时不需要安装它。
 
-本版为 v0.3.2，包含当前 PDF 的只读工具桥接，用于增强阅读器的“自动上下文”。从上一公开发行版 v0.2.3 更新时，Codex 用户需要同时重新安装此助手。目录、搜索、文字和页图由当前浏览器阅读页提供；没有常驻服务、任意文件读取或命令执行接口。
+本版为 v0.3.3，支持增强阅读器的只读 PDF 工具及可调资源预算，默认每题最多提供 5 次页图。从上一公开发行版 v0.3.2 更新时，Codex 用户需要同时重新安装此助手，以支持新扩展传递的资源限制。目录、搜索、文字和页图由当前浏览器阅读页提供；没有常驻服务、任意文件读取或命令执行接口。
 
 ## 按顺序安装
 
-1. 下载完整安装包 `pdf-copilot-0.3.2.zip` 并全部解压，按[安装与使用教程](https://github.com/graohene10-spec/pdf-copilot/blob/v0.3.2/docs/USER_GUIDE.md)在 Edge / Chrome 加载 `extension`。如果只下载助手 ZIP，它本身不含浏览器扩展，需要另装扩展。
+1. 下载完整安装包 `pdf-copilot-0.3.3.zip` 并全部解压，按[安装与使用教程](https://github.com/graohene10-spec/pdf-copilot/blob/v0.3.3/docs/USER_GUIDE.md)在 Edge / Chrome 加载 `extension`。如果只下载助手 ZIP，它本身不含浏览器扩展，需要另装扩展。
 2. 按同一教程安装或更新 Windows 原生 Codex CLI，打开新的 PowerShell，运行 `codex --version` 和 `codex login`。已有登录也要检查实际 CLI。不要复制登录令牌。
 3. 打开完整包的 `windows-helper`，双击 `install.cmd`；助手独立 ZIP 解压后，直接双击解压目录中的 `install.cmd`。默认登记随包固定扩展 ID，只为当前 Windows 用户安装，无需管理员。等待安装窗口显示结果后再关闭。
 4. 点击浏览器工具栏的 PDF Copilot 图标，在侧栏顶部点 **⋯ → 模型与密钥设置**。
@@ -44,4 +44,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-host.ps1 -
 
 双击 `uninstall.cmd` 可卸载助手及其浏览器注册；不会卸载 Codex，不删除 Codex 登录或聊天数据。安装只保存程序路径和允许的扩展 ID，不保存 PDF、图片、密钥或会话。没有常驻服务和本地网络端口。
 
-助手目前未签名，插件尚未上架浏览器商店。程序源码随 PDF Copilot 源码包提供，发布包附带 SHA-256 校验。Codex CLI 0.160.0 的真实连接、合成文字/图片问答与 PDF 工具引用往返已验证；其他测试范围见[测试记录](https://github.com/graohene10-spec/pdf-copilot/blob/v0.3.2/docs/QA_REPORT.md)。
+助手目前未签名，插件尚未上架浏览器商店。程序源码随 PDF Copilot 源码包提供，发布包附带 SHA-256 校验。Codex CLI 0.160.0 的真实连接、合成文字/图片问答与 PDF 工具引用往返已验证；其他测试范围见[测试记录](https://github.com/graohene10-spec/pdf-copilot/blob/v0.3.3/docs/QA_REPORT.md)。

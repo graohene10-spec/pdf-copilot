@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { TextIndex, textBlocks } from '../extension/reader/text-index.mjs';
 import { DocumentService } from '../extension/reader/document-service.mjs';
 import { validateToolCall, toolsForVision } from '../extension/common/document-tools.mjs';
+import { DOCUMENT_LIMITS, normalizeDocumentLimits } from '../extension/common/document-limits.mjs';
 import { boundedHistory, streamDocumentChat } from '../extension/providers/document-chat.mjs';
 import { streamNativeDocument } from '../extension/providers/native.js';
 
@@ -26,7 +27,7 @@ test('text reconstruction separates columns and preserves equation numbers and g
 test('document service finds earlier definitions, tracks physical pages and limits image reads', async () => {
   const images = [];
   const service = new DocumentService(fixture(), { name: 'Synthetic' }, () => 8, async page => { images.push(page); return 'data:image/jpeg;base64,YQ=='; });
-  const seed = await service.begin('session-123', 8, true);
+  const seed = await service.begin('session-123', 8, true, undefined, { images: 2 });
   assert.equal(seed.seed.evidence[0].page, 8); assert.equal(seed.seed.evidence[0].pageLabel, '7');
   const search = await service.tool('session-123', 'pdf_search', { query: '(6.23)', start_page: null, end_page: null, next_page: null });
   assert.equal(search.evidence[0].page, 2); assert.equal(search.complete, true);
@@ -115,7 +116,7 @@ test('an API without tools falls back to a bounded plan, expands search hits and
   };
   await streamDocumentChat({ ...options, onDelta: text => { answer += text; } }, { tool: async (name, args) => {
     calls.push({ name, args }); return { evidence: [{ sourceId: 'Splan-1', page: 2, blockId: 'p2-b0', text: 'Definition and assumptions' }], ...(name === 'pdf_view' ? { dataUrl: 'data:image/jpeg;base64,YQ==' } : {}) };
-  } }, { info: { pages: 4 }, seed: {} });
+  } }, { info: { pages: 4 }, seed: {}, limits: { images: 2 } });
   assert.equal(requests.length, 3); assert.equal(calls.filter(call => call.name === 'pdf_view').length, 2);
   assert(calls.some(call => call.name === 'pdf_read' && call.args.block_id === 'p2-b0'));
   assert(!calls.some(call => call.args.start_page === 9999)); assert(!answer.includes('queries')); assert(answer.includes('Splan-1'));
@@ -137,7 +138,15 @@ test('Codex browser adapter returns tool evidence on the active port before comp
   await streamNativeDocument({ model: 'fixture', effort: 'low', messages: [{ role: 'user', content: 'Question' }], tools: toolsForVision(false), onTool: async () => ({ evidence: [{ sourceId: 'Snative-1', page: 2, text: 'Evidence' }] }), onDelta: text => { answer += text; } });
   assert.equal(reply.targetId, chatId); assert.equal(reply.callId, 'opaque-call'); assert.equal(JSON.parse(reply.text).evidence[0].page, 2); assert(answer.includes('Snative-1'));
 });
-test('an older native helper falls back without sending unknown fields to the plan and answer', async t => {
+
+test('native tool-result rejection is surfaced immediately instead of waiting for a timeout', async t => {
+  fakeNative(t, (message, emit) => {
+    if (message.type === 'chat') emit({ id: message.id, event: 'tool', callId: 'bound-token', tool: 'pdf_read', arguments: { start_page: 1 } });
+    if (message.type === 'tool-result') emit({ id: message.id, ok: false, error: 'PDF tool output exceeds the conversation limit.' });
+  });
+  await assert.rejects(streamNativeDocument({ model: 'fixture', messages: [{ role: 'user', content: 'Explain' }], tools: toolsForVision(false), onTool: async () => ({ evidence: [] }) }), /conversation limit/);
+});
+test('an older native helper requests an upgrade instead of ignoring resource settings', async t => {
   const messages = [], calls = []; let answer = '';
   fakeNative(t, (message, emit, connection) => {
     if (message.type !== 'chat') return; messages.push(message);
@@ -146,6 +155,100 @@ test('an older native helper falls back without sending unknown fields to the pl
     emit({ id: message.id, event: 'delta', text: connection === 2 ? '{"queries":["definition"],"pages":[],"views":[]}' : 'Compatible answer [Sold-1]' });
     emit({ id: message.id, event: 'done' });
   });
-  await streamDocumentChat({ ...options, provider: 'codex', model: 'fixture', onDelta: text => { answer += text; } }, { tool: async (name, args) => { calls.push({ name, args }); return { evidence: [{ sourceId: 'Sold-1', page: 2, blockId: 'p2-b0', text: 'Earlier definition' }] }; } }, { info: { pages: 10 }, seed: {} });
-  assert.equal(messages.length, 3); assert.equal(calls[0].name, 'pdf_search'); assert.equal(calls[1].name, 'pdf_read'); assert(messages[2].text.includes('Earlier definition')); assert.equal(answer, 'Compatible answer [Sold-1]');
+  await assert.rejects(streamDocumentChat({ ...options, provider: 'codex', model: 'fixture', onDelta: text => { answer += text; } }, { tool: async (name, args) => { calls.push({ name, args }); return { evidence: [] }; } }, { info: { pages: 10 }, seed: {} }), /更新助手/);
+  assert.equal(messages.length, 1); assert.equal(calls.length, 0); assert.equal(answer, '');
+});
+
+test('resource defaults migrate to five images and invalid stored values cannot bypass hard ceilings', () => {
+  assert.equal(DOCUMENT_LIMITS.images, 5); assert.equal(normalizeDocumentLimits().images, 5);
+  const limits = normalizeDocumentLimits({ images: 10000, pages: -5, characters: Infinity, calls: '999', rounds: NaN, searchPages: 501, searchMilliseconds: 900000, seedCharacters: 999999, path: 'secret' });
+  assert.equal(limits.images, 10); assert.equal(limits.pages, 1); assert.equal(limits.characters, 24000); assert.equal(limits.calls, 12);
+  assert.equal(limits.rounds, 3); assert.equal(limits.searchPages, 500); assert.equal(limits.searchMilliseconds, 30000); assert.equal(limits.seedCharacters, 4000); assert.equal(limits.path, undefined);
+});
+
+test('five default page images succeed; the sixth is rejected without rendering', async () => {
+  const rendered = [], service = new DocumentService(fixture(), {}, () => 1, async page => { rendered.push(page); return 'data:image/jpeg;base64,YQ=='; });
+  const seed = await service.begin('five-pages-test', 1, true);
+  assert.equal(seed.limits.images, 5);
+  for (let page = 1; page <= 5; page++) { const result = await service.tool('five-pages-test', 'pdf_view', { page }); assert.equal(result.remaining.images, 5 - page); }
+  await assert.rejects(service.tool('five-pages-test', 'pdf_view', { page: 6 }), /上限/);
+  assert.deepEqual(rendered, [1, 2, 3, 4, 5]); service.close();
+});
+
+test('per-question resource snapshots isolate custom limits, page caps and call caps', async () => {
+  const config = { images: 1, calls: 2, pages: 1 }, service = new DocumentService(fixture(), {}, () => 1, async () => 'data:image/jpeg;base64,YQ==');
+  const seed = await service.begin('limited-session', 1, true, undefined, config); config.images = 10; config.pages = 40;
+  assert.equal(seed.limits.images, 1); assert.equal(seed.limits.pages, 1);
+  await assert.rejects(service.tool('limited-session', 'pdf_view', { page: 2 }), /上限/);
+  const image = await service.tool('limited-session', 'pdf_view', { page: 1 }); assert.equal(image.remaining.images, 0);
+  await assert.rejects(service.tool('limited-session', 'pdf_info', {}), /次数上限/);
+  const other = await service.begin('another-session', 1, true); assert.equal(other.limits.images, 5);
+  service.close();
+});
+
+test('custom text and search limits bound seeds and nearby scanning', async () => {
+  const pdf = fixture(50), scanned = [];
+  pdf.getPage = async page => { scanned.push(page); return { getViewport: () => ({ width: 500 }), getTextContent: async () => ({ items: [item('definition '.repeat(800), 40, 600)] }) }; };
+  const service = new DocumentService(pdf, {}, () => 25, async () => '');
+  const seed = await service.begin('bounded-scan', 25, false, undefined, { characters: 1000, searchPages: 10 });
+  assert.equal(seed.seed.evidence.reduce((sum, item) => sum + item.text.length, 0), 1000); assert.equal(seed.remaining.characters, 0);
+  scanned.length = 0;
+  const result = await service.tool('bounded-scan', 'pdf_search', { query: 'definition' });
+  assert(scanned.length <= 10); assert(result.indexedPages <= 11); assert.deepEqual(result.evidence, []); service.close();
+});
+
+test('expanded searches retain early hits even after the fixed text cache evicts their pages', async () => {
+  const service = new DocumentService(fixture(300), {}, () => 300, async () => '');
+  await service.begin('expanded-search', 300, false, undefined, { searchPages: 300, searchMilliseconds: 30000 });
+  const result = await service.tool('expanded-search', 'pdf_search', { query: '(6.23)', start_page: 1, end_page: 300 });
+  assert.equal(result.complete, true); assert.equal(result.searchedPages, 300); assert.equal(result.next_page, null);
+  assert(result.evidence.some(item => item.page === 2)); assert(service.index.pages.size <= 256); assert.equal(service.index.get(2), undefined);
+  service.close();
+});
+
+test('five large tool images fit the API state and configured rounds still produce a final answer', async t => {
+  const original = globalThis.fetch; t.after(() => { globalThis.fetch = original; }); const requests = [], rendered = [];
+  const service = new DocumentService(fixture(), {}, () => 1, async page => { rendered.push(page); return 'data:image/jpeg;base64,' + 'A'.repeat(600000); });
+  t.after(() => service.close());
+  const seed = await service.begin('large-five-images', 1, true, undefined, { rounds: 1 });
+  globalThis.fetch = async (_, request) => {
+    requests.push(JSON.parse(request.body));
+    if (requests.length === 1) return sse([{ type: 'response.completed', response: { status: 'completed', output: Array.from({ length: 5 }, (_, i) => ({ type: 'function_call', call_id: 'view' + i, name: 'pdf_view', arguments: JSON.stringify({ page: i + 1 }) })) } }]);
+    return sse([{ type: 'response.completed', response: { status: 'completed', output: [] } }]);
+  };
+  const document = { get remaining() { return service.remaining(service.sessions.get('large-five-images')); }, tool: (name, args) => service.tool('large-five-images', name, args) };
+  await streamDocumentChat(options, document, seed);
+  assert.deepEqual(rendered, [1, 2, 3, 4, 5]); assert.equal(requests.length, 2); assert(JSON.stringify(requests[1]).length > 2500000); assert.equal(requests[1].tools, undefined);
+});
+
+test('a spent automatic-page call does not trigger more tools or a compatibility plan', async t => {
+  const original = globalThis.fetch; t.after(() => { globalThis.fetch = original; }); let payload;
+  globalThis.fetch = async (_, request) => { payload = JSON.parse(request.body); return sse([{ type: 'response.completed', response: { status: 'completed', output: [] } }]); };
+  await streamDocumentChat(options, { remaining: { calls: 0, images: 0 }, tool: () => { throw new Error('must not read'); } }, { info: { pages: 10 }, seed: {}, limits: { calls: 1, images: 1 } });
+  assert.equal(payload.tools, undefined);
+});
+
+test('compatible Codex retrieval supplies five images and stops at custom call budgets', async t => {
+  const requests = [], calls = []; let answer = '';
+  fakeNative(t, (message, emit, connection) => {
+    if (message.type !== 'chat') return; requests.push(message);
+    if (connection === 1) { assert.equal(message.pdfLimits.images, 5); emit({ id: message.id, event: 'error', error: 'PDF_TOOLS_UNAVAILABLE: protocol requires a plan' }); return; }
+    emit({ id: message.id, event: 'delta', text: connection === 2 ? '{"queries":[],"pages":[],"views":[1,2,3,4,5,6]}' : 'Answer' });
+    emit({ id: message.id, event: 'done' });
+  });
+  await streamDocumentChat({ ...options, provider: 'codex', model: 'fixture', onDelta: text => { answer += text; } }, { tool: async (name, args) => { calls.push(args.page); return { dataUrl: 'data:image/jpeg;base64,YQ==', evidence: [] }; } }, { info: { pages: 10 }, seed: {}, limits: { calls: 5 } });
+  assert.deepEqual(calls, [1, 2, 3, 4, 5]); assert.equal(requests.at(-1).images.length, 5); assert.equal(requests.at(-1).pdfLimits, undefined); assert.equal(answer, 'Answer');
+});
+
+test('a page budget exhausted in compatibility mode still answers from existing evidence', async t => {
+  const original = globalThis.fetch; t.after(() => { globalThis.fetch = original; }); let count = 0, answer = '';
+  const service = new DocumentService(fixture(), {}, () => 1, async () => ''); t.after(() => service.close());
+  const seed = await service.begin('planned-budget', 1, true, undefined, { pages: 1 });
+  globalThis.fetch = async () => {
+    count++;
+    if (count === 1) return new Response(JSON.stringify({ error: { message: 'tools not supported' } }), { status: 400 });
+    return sse([{ type: 'response.output_text.delta', delta: count === 2 ? '{"queries":[],"pages":[],"views":[2,3]}' : 'Existing evidence answer' }, { type: 'response.completed', response: { status: 'completed', output: [] } }]);
+  };
+  await streamDocumentChat({ ...options, onDelta: text => { answer += text; } }, { get remaining() { return service.remaining(service.sessions.get('planned-budget')); }, tool: (name, args) => service.tool('planned-budget', name, args) }, seed);
+  assert.equal(count, 3); assert.equal(answer, 'Existing evidence answer');
 });

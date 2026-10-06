@@ -12,6 +12,8 @@ namespace PdfCopilot {
         internal bool Cancelled;
         internal bool PdfTools, PdfVision;
         internal int ToolCalls, ToolCharacters, ToolImages;
+        internal int ToolImageCharacters;
+        internal DocumentBudget Limits = new DocumentBudget();
         internal readonly Dictionary<string, PendingDocumentCall> DocumentCalls = new Dictionary<string, PendingDocumentCall>();
         internal readonly ManualResetEvent Finished = new ManualResetEvent(false);
         internal readonly object Gate = new object();
@@ -223,8 +225,8 @@ namespace PdfCopilot {
             try { DocumentTools.CheckArguments(name, args); } catch { return false; }
             lock (chat.Gate) {
                 if (chat.Cancelled || chat.Finished.WaitOne(0)) return false;
-                if (++chat.ToolCalls > 12) {
-                    if (chat.ToolCalls > 16) return false;
+                if (++chat.ToolCalls > chat.Limits.Calls) {
+                    if (chat.ToolCalls > chat.Limits.Calls + 4) return false;
                     Send(Json.Obj("id", rpcId, "result", Json.Obj("success", false, "contentItems", new[] { Json.Obj("type", "inputText", "text", "PDF reading budget exhausted; answer using existing evidence.") }))); return true;
                 }
                 var call = new PendingDocumentCall { RpcId = rpcId, Token = Guid.NewGuid().ToString("N"), Tool = name };
@@ -248,9 +250,11 @@ namespace PdfCopilot {
             lock (chat.Gate) {
                 PendingDocumentCall call;
                 if (chat.Cancelled || chat.Finished.WaitOne(0) || !chat.DocumentCalls.TryGetValue(request.CallId, out call)) throw new InvalidOperationException("This PDF reading request has expired.");
-                if (chat.ToolCharacters + request.Text.Length > 150000 || chat.ToolImages + request.Images.Count > 2 || (request.Images.Count > 0 && (call.Tool != "pdf_view" || !chat.PdfVision)))
+                int imageCharacters = 0; foreach (string image in request.Images) imageCharacters += image.Length;
+                if (chat.ToolCharacters + request.Text.Length > chat.Limits.EncodedCharacters || chat.ToolImages + request.Images.Count > chat.Limits.Images || chat.ToolImageCharacters + imageCharacters > chat.Limits.Images * 768000 || (request.Images.Count > 0 && (call.Tool != "pdf_view" || !chat.PdfVision)))
                     throw new InvalidOperationException("PDF tool output exceeds the conversation limit.");
                 chat.ToolCharacters += request.Text.Length; chat.ToolImages += request.Images.Count;
+                chat.ToolImageCharacters += imageCharacters;
                 var items = new List<object> { Json.Obj("type", "inputText", "text", request.Text) };
                 foreach (string image in request.Images) items.Add(Json.Obj("type", "inputImage", "imageUrl", image));
                 Send(Json.Obj("id", call.RpcId, "result", Json.Obj("success", true, "contentItems", items)));
@@ -345,7 +349,7 @@ namespace PdfCopilot {
                 if (chat.Cancelled) { chat.Finished.Set(); return; }
                 EnsureStarted();
                 if (chat.Cancelled) { chat.Finished.Set(); return; }
-                chat.PdfTools = request.PdfTools; chat.PdfVision = request.PdfVision;
+                chat.PdfTools = request.PdfTools; chat.PdfVision = request.PdfVision; chat.Limits = request.PdfLimits;
                 Dictionary<string, object> started;
                 try { started = Call("thread/start", StartParameters(request.Model, request.PdfTools, request.PdfVision), 30000); }
                 catch (InvalidOperationException e) {

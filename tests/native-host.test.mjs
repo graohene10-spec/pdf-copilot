@@ -177,6 +177,40 @@ test('unsupported Codex dynamic tools fail before inference with a compatibility
   try { client.send({ id: 'chat', type: 'chat', text: 'Explain', pdfTools: true }); const failure = await client.until(m => m.event === 'error'); assert(failure.error.startsWith('PDF_TOOLS_UNAVAILABLE:')); }
   finally { await client.close(); }
 });
+
+test('native helper delivers five default tool images and honors a smaller configured call budget', { skip: !supported }, async () => {
+  for (const calls of [undefined, 2]) {
+    const client = host('document-five-images');
+    try {
+      client.send({ id: 'chat', type: 'chat', text: 'Explain five pages', pdfTools: true, pdfVision: true, ...(calls ? { pdfLimits: { calls, images: 5, characters: 24000 } } : {}) });
+      for (let page = 1; page <= (calls || 5); page++) {
+        const request = await client.until(m => m.event === 'tool' && m.arguments.page === page);
+        client.send({ id: 'result-' + page, type: 'tool-result', targetId: 'chat', callId: request.callId, text: JSON.stringify({ page }), images: ['data:image/jpeg;base64,YQ=='] });
+      }
+      await client.until(m => m.event === 'done');
+      assert.equal(client.messages.filter(m => m.event === 'tool').length, calls || 5);
+      assert(!client.messages.some(m => m.event === 'error'));
+    } finally { await client.close(); }
+  }
+});
+
+test('native resource limits reject forged values and excess tool images', { skip: !supported }, async () => {
+  for (const pdfLimits of [{ images: 11 }, { calls: 61 }, { characters: 0 }, { images: '5' }, { arbitraryPath: 'secret' }]) {
+    const client = host();
+    try { client.send({ id: 'invalid', type: 'chat', text: 'Explain', pdfTools: true, pdfLimits }); const result = await client.until(m => m.id === 'invalid'); assert.equal(result.ok, false); assert(!client.messages.some(m => m.event === 'tool')); }
+    finally { await client.close(); }
+  }
+  const client = host('document-five-images');
+  try {
+    client.send({ id: 'chat', type: 'chat', text: 'Explain', pdfTools: true, pdfVision: true, pdfLimits: { images: 2 } });
+    for (let page = 1; page <= 3; page++) {
+      const request = await client.until(m => m.event === 'tool' && m.arguments.page === page);
+      client.send({ id: 'result-' + page, type: 'tool-result', targetId: 'chat', callId: request.callId, text: '{}', images: ['data:image/jpeg;base64,YQ=='] });
+    }
+    const failure = await client.until(m => m.id === 'result-3' && m.ok === false);
+    assert.match(failure.error, /limit/);
+  } finally { await client.close(); }
+});
 test('native host cancels while the browser is fulfilling a PDF tool call', { skip: !supported }, async () => {
   const client = host('document-tool');
   try {

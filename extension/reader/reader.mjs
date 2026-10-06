@@ -341,7 +341,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       const { operation, sessionId, args = {} } = message;
       if (operation === 'end') return service.end(sessionId);
       let result;
-      if (operation === 'begin') result = await service.begin(sessionId, args.anchor, args.vision, args.rect);
+      if (operation === 'begin') result = await service.begin(sessionId, args.anchor, args.vision, args.rect, args.limits);
       else if (operation === 'tool') result = await service.tool(sessionId, message.tool, args);
       else throw new Error('不支持的 PDF 操作。');
       if (service !== documentService) throw new Error('文档已切换。');

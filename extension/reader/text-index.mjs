@@ -75,14 +75,20 @@ export class TextIndex {
   }
   get(page) { return this.pages.get(page); }
   search(query, start = 1, end = Infinity, limit = 6) {
+    return this.rank(query, start, end, limit).map(hit => hit.block);
+  }
+  rank(query, start = 1, end = Infinity, limit = 6) {
     const docs = [...this.pages].filter(([page]) => page >= start && page <= end).flatMap(([page, blocks]) => blocks.map(block => ({ ...block, page })));
+    return rankBlocks(query, docs, limit);
+  }
+  clear() { this.pages.clear(); this.characters = 0; }
+}
+export function rankBlocks(query, docs, limit = 6) {
     const terms = [...new Set(tokens(query))].slice(0, 24), exact = normalizeText(query), average = docs.reduce((n, b) => n + b.length, 0) / (docs.length || 1);
     const idf = new Map(terms.map(term => [term, Math.log(1 + (docs.length - docs.filter(b => b.terms.has(term)).length + .5) / (docs.filter(b => b.terms.has(term)).length + .5))]));
     return docs.map(block => {
       let score = exact && block.normalized.includes(exact) ? 20 : 0;
       for (const term of terms) { const count = block.terms.get(term) || 0; score += (idf.get(term) || 0) * count * 2.2 / (count + 1.2 * (.25 + .75 * block.length / (average || 1))); }
       return { block, score };
-    }).filter(hit => hit.score > 0).sort((a, b) => b.score - a.score || a.block.page - b.block.page).slice(0, limit).map(hit => hit.block);
-  }
-  clear() { this.pages.clear(); this.characters = 0; }
+    }).filter(hit => hit.score > 0).sort((a, b) => b.score - a.score || a.block.page - b.block.page).slice(0, limit);
 }

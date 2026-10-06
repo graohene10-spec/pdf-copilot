@@ -1,5 +1,6 @@
 // Shared, read-only contract. Tools are always bound to one already-open PDF.
-export const DOCUMENT_LIMITS = Object.freeze({ rounds: 3, calls: 12, pages: 8, characters: 24000, images: 2, seedCharacters: 4000, pageBatch: 3, searchPages: 120, searchMilliseconds: 10000 });
+import { DOCUMENT_LIMITS } from './document-limits.mjs';
+export { DOCUMENT_LIMITS } from './document-limits.mjs';
 const nullableInteger = { type: ['integer', 'null'] };
 const nullableString = { type: ['string', 'null'] };
 const schema = properties => ({ type: 'object', properties, required: Object.keys(properties), additionalProperties: false });

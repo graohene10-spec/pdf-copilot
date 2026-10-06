@@ -28,11 +28,11 @@ chat/ui.mjs 封装字号偏好和更多菜单交互。字号使用独立的 chro
 
 ## 按需 PDF 上下文
 
-- `common/document-tools.mjs` 定义跨服务商复用的工具参数与预算；不接受路径、URL 或执行指令。
+- `common/document-tools.mjs` 定义跨服务商复用的只读工具参数；`common/document-limits.mjs` 统一资源默认值、设置字段与可调边界。`settings.js` 在加载/保存时归一化配置，读取会话锁定本题预算，不接受路径、URL 或执行指令。
 - `reader/text-index.mjs` 用 PDF.js 文字坐标还原有限段落和双栏顺序，建立有界内存 BM25 索引，保留原文、物理页码、页标签和 PDF 坐标。中文用字词片段匹配，公式编号保留；提取不等价于 OCR。
-- `reader/document-service.mjs` 管理当前 PDF 的元数据、惰性提取、搜索覆盖、文字/页图证据以及每题预算。索引缓存最多 256 页/200 万字符；每次搜索扫描不超过 120 页/10 秒。扫描覆盖与完整缓存覆盖分别报告。截图由独立临时 canvas 生成，压缩为有界 JPEG 后释放画布。
+- `reader/document-service.mjs` 管理当前 PDF 的元数据、惰性提取、搜索覆盖、文字/页图证据以及每题预算。索引缓存最多 256 页/200 万字符；每次搜索默认不超过 120 页/10 秒，扫描页数和时间可调。扫描覆盖与完整缓存覆盖分别报告。截图由独立临时 canvas 生成，压缩为有界 JPEG 后释放画布。
 - `chat/document-client.mjs` 通过 background → reader 的 runtime 消息访问已打开文档。后台检查自有聊天页、目标阅读页和请求编号；阅读器核对 PDF 指纹。模型看不到本地来源路径、标签页编号或任意文件读取接口。
-- `providers/document-chat.mjs` 负责有界工具循环与阅读计划降级。OpenAI Responses 重放 reasoning/function call 项和相应 call_id，DeepSeek 保留工具轮次的 reasoning_content；旧图片不重复发送。工具模式最多 3 轮，所有服务最多 12 次调用/8 页证据/24,000 正文字符/2 张自动获取的页图（含直接提问的当前页）。
+- `providers/document-chat.mjs` 负责有界工具循环与阅读计划降级。OpenAI Responses 重放 reasoning/function call 项和相应 call_id，DeepSeek 保留工具轮次的 reasoning_content；旧图片不重复发送。默认 3 轮 API 检索、12 次调用/8 页证据/24,000 正文字符/5 次自动页图（含当前页），这些预算可在设置中调整。工具循环与兼容计划都使用本题剩余预算，API 调用状态仍有固定 16 MiB 字符边界。
 - Codex 使用 `DocumentTools.cs` 与异步 `item/tool/call` 桥接：请求绑定 thread/turn/chat，随机 call token 只能消费一次，45 秒超时不会阻塞 stdout 接收。只读工具通信需要 `code_mode_host=true`，同时保持 `code_mode=false`、空执行环境、无 shell/MCP/插件；0.160.0 真实收发已验证。不支持动态工具字段时使用同一套浏览器检索的兼容阅读计划。
 - 回答的引用仅对实际返回的 sourceId 生成按钮，未知编号保留文字；原文面板使用 textContent，点击回跳再核对 PDF 指纹并高亮坐标。
 

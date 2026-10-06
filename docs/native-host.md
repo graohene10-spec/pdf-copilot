@@ -43,7 +43,8 @@ Host name: `com.pdfcopilot.codex`. Browser requests:
 { id, type: 'models' }
 { id, type: 'chat', model, effort, text,
   history: [{ role: 'user' | 'assistant', content: 'text' }],
-  images: ['data:image/png;base64,...'], pdfTools: true, pdfVision: true }
+  images: ['data:image/png;base64,...'], pdfTools: true, pdfVision: true,
+  pdfLimits: { calls: 12, images: 5, characters: 24000 } }
 { id, type: 'tool-result', targetId: 'running-chat-id', callId,
   text: 'JSON evidence', images: ['data:image/jpeg;base64,...'] }
 { id, type: 'cancel', targetId: 'running-chat-id' }
@@ -51,7 +52,7 @@ Host name: `com.pdfcopilot.codex`. Browser requests:
 
 Metadata/cancellation responses are `{ id, ok: true, result }` or `{ id, ok: false, error }`. A chat streams `{ id, event: 'delta', text }`, optional public reasoning summaries using `event: 'reasoning'`, then `event: 'done'`; failure uses `{ id, event: 'error', error }`. Cancellation ends the chat with `done`; its separate acknowledgement contains `result.cancelled`. There is one active chat per native connection. Use separate connections for simultaneous independent conversations.
 
-`pdfTools` / `pdfVision` are optional and omitted for normal chat. PDF mode registers only `pdf_info`, `pdf_search`, `pdf_read`, and, for vision models, `pdf_view`. A server request becomes `{ id: chatId, event: 'tool', callId: opaqueToken, tool, arguments }`. The browser checks the current document and returns in-memory evidence via `tool-result`; no path, URL, shell, or arbitrary tool is accepted. Tokens bind to one chat/thread/turn and are consumed once. Maximum 12 calls, 150,000 encoded result characters and 2 tool images per chat; each pending call times out after 45 seconds without blocking stdout. Browser retrieval independently enforces 8 evidence pages / 24,000 body characters. Cancel/disconnect releases pending calls.
+`pdfTools` / `pdfVision` are optional and omitted for normal chat. PDF mode registers only `pdf_info`, `pdf_search`, `pdf_read`, and, for vision models, `pdf_view`. A server request becomes `{ id: chatId, event: 'tool', callId: opaqueToken, tool, arguments }`. The browser checks the current document and returns in-memory evidence via `tool-result`; no path, URL, shell, or arbitrary tool is accepted. Tokens bind to one chat/thread/turn and are consumed once. `pdfLimits` contains the remaining call/image budget and the configured body-character budget: calls 0–60, images 0–10, characters 1,000–120,000. Unknown or invalid fields are rejected. Without that field the host defaults to 12 calls / 5 tool images / 24,000 body characters. The browser also enforces evidence pages, text and image limits, counting the automatically supplied current page before forwarding remaining budgets. Each pending call times out after 45 seconds without blocking stdout. Encoded tool output has a separate metadata allowance derived from the budget and capped at 3 MiB characters; tool-image strings are bounded to 768,000 characters per allowed image. Cancel/disconnect releases pending calls. The extension observes rejected `tool-result` replies using their own request IDs instead of waiting for timeout.
 
 An unsupported request field or rejected dynamic-tool registration triggers a compatibility marker before inference. The extension then asks for a bounded JSON reading plan, performs the same local retrieval and submits the evidence for the answer. Authentication, permission checks and network failures are not treated as tool incompatibility.
 
@@ -59,7 +60,7 @@ An unsupported request field or rejected dynamic-tool registration triggers a co
 
 `models.result` contains `{ id, name, efforts, defaultEffort, vision }`; IDs are actual callable model names, not catalog row IDs. No user email, account identifier, raw upstream error body, credential, or upstream log is forwarded. The local path in status is intended only for the extension's troubleshooting UI; it is not document context and should never be included in model requests.
 
-Requests are limited to 12 MiB before allocation; individual image data URLs to 4 MiB; total image strings to 8 MiB; 4 images; 40 history messages / 512,000 history characters. PNG/JPEG/WebP inline base64 is accepted. URLs and local image paths are rejected. Native output is always below Chromium's 1 MiB per-message limit. Invalid/truncated framing closes the connection, while invalid supported-size messages return an error.
+Requests are limited to 12 MiB before allocation; individual image data URLs to 4 MiB; total image strings to 8 MiB; 14 images per frame (allows compatible planned retrieval plus existing attachments); 512,000 current text characters and 40 history messages / 512,000 history characters. The chat UI still limits manual Codex attachments to four. PNG/JPEG/WebP inline base64 is accepted. URLs and local image paths are rejected. Native output is always below Chromium's 1 MiB per-message limit. Invalid/truncated framing closes the connection, while invalid supported-size messages return an error.
 
 ## Isolation and data lifetime
 

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readSSE } from '../extension/providers/sse.js';
 import { buildPayload, streamChat } from '../extension/providers/index.js';
-import { apiOrigin, saveSettings, loadKey } from '../extension/common/settings.js';
+import { apiOrigin, saveSettings, loadKey, loadSettings } from '../extension/common/settings.js';
 import { validateContext } from '../extension/common/context.js';
 
 function response(text, cuts = [1, 2, 5, 3, 7]) {
@@ -90,4 +90,17 @@ test('Attachment boundary rejects external image URLs and oversized text', () =>
   assert.throws(() => validateContext({ kind: 'text', text: 'a'.repeat(100001) }), /10 万/);
   const image = validateContext({ kind: 'image', dataUrl: 'data:image/png;base64,YQ==', source: { page: 3, tabId: 17 } });
   assert.equal(image.source.page, 3); assert.equal(image.source.tabId, 17);
+});
+
+test('resource preferences migrate, persist and are sanitized independently of API keys', async t => {
+  const prior = globalThis.chrome; t.after(() => { globalThis.chrome = prior; });
+  const stores = { local: { settings: { provider: 'codex' } }, session: {} };
+  const makeStore = name => ({ get: async key => ({ [key]: stores[name][key] }), set: async value => Object.assign(stores[name], value), remove: async key => { delete stores[name][key]; } });
+  globalThis.chrome = { storage: { local: makeStore('local'), session: makeStore('session') } };
+  assert.equal((await loadSettings()).documentLimits.images, 5);
+  await saveSettings({ provider: 'codex', documentLimits: { images: 7, calls: 20 } }, '');
+  assert.equal((await loadSettings()).documentLimits.images, 7); assert.equal((await loadSettings()).documentLimits.calls, 20);
+  stores.local.settings.documentLimits.images = 999;
+  assert.equal((await loadSettings()).documentLimits.images, 10);
+  assert.equal(stores.local['apiKey:codex'], undefined);
 });

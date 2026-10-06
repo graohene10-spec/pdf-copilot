@@ -387,7 +387,7 @@ $('composer').addEventListener('submit', async event => {
       }, options.onProgress);
       request.document = document;
       const anchor = attachments.findLast(item => item.source?.fingerprint === source.documentKey)?.source;
-      const seed = await document.begin(anchor?.page, vision, anchor?.rect);
+      const seed = await document.begin(anchor?.page, vision, anchor?.rect, settings.documentLimits);
       if (autoPage) {
         if (vision) {
           const snapshot = await document.tool('pdf_view', { page: seed.info.currentPage, block_id: null });

@@ -10,13 +10,16 @@ namespace PdfCopilot {
         private static void Emit(object value) { lock (Gate) { Console.WriteLine(Json.Encode(value)); Console.Out.Flush(); } }
         internal static int Run(string mode) {
             Console.InputEncoding = System.Text.Encoding.UTF8; Console.OutputEncoding = new System.Text.UTF8Encoding(false);
-            string line;
+            string line; int documentPage = 1;
             while ((line = Console.ReadLine()) != null) {
                 var message = Json.Parse(line); object id = Json.Get(message, "id"); string method = Json.Text(message, "method");
                 var parameters = Json.Map(Json.Get(message, "params")); object result = Json.Obj();
-                if (method == "" && Convert.ToString(id) == "fixture-pdf-call") {
+                if (method == "" && Convert.ToString(id).StartsWith("fixture-pdf-call", StringComparison.Ordinal)) {
                     var toolResult = Json.Map(Json.Get(message, "result"));
                     if (toolResult == null) return 8;
+                    if (mode == "document-five-images" && Json.Get(toolResult, "success") is bool && (bool)Json.Get(toolResult, "success") && documentPage < 5) {
+                        EmitDocumentImage(++documentPage); continue;
+                    }
                     Emit(Json.Obj("method", "item/agentMessage/delta", "params", Json.Obj("threadId", "fixture-thread", "delta", "已读取原文 [Sfixture-1]。")));
                     Emit(Json.Obj("method", "turn/completed", "params", Json.Obj("threadId", "fixture-thread", "turn", Json.Obj("id", "fixture-turn", "status", "completed")))); continue;
                 }
@@ -48,6 +51,7 @@ namespace PdfCopilot {
                     else if (mode == "tool-event") Emit(Json.Obj("method", "item/started", "params", Json.Obj("threadId", "fixture-thread", "item", Json.Obj("type", "fileChange"))));
                     else if (mode == "hanging") Emit(Json.Obj("method", "item/reasoning/summaryTextDelta", "params", Json.Obj("threadId", "fixture-thread", "delta", "Fixture waiting.")));
                     else if (mode.StartsWith("document-", StringComparison.Ordinal) && mode != "document-unsupported") {
+                        if (mode == "document-five-images") { EmitDocumentImage(documentPage); continue; }
                         string tool = mode == "document-unknown" ? "shell" : mode == "document-image" ? "pdf_view" : "pdf_search";
                         var args = tool == "pdf_view" ? Json.Obj("page", 2, "block_id", null) : Json.Obj("query", "definition", "start_page", null, "end_page", null, "next_page", null);
                         Emit(Json.Obj("method", "item/started", "params", Json.Obj("threadId", "fixture-thread", "item", Json.Obj("type", "dynamicToolCall", "tool", tool))));
@@ -68,6 +72,9 @@ namespace PdfCopilot {
                 Emit(Json.Obj("id", id, "result", result));
             }
             return cancelled ? 0 : 0;
+        }
+        private static void EmitDocumentImage(int page) {
+            Emit(Json.Obj("method", "item/tool/call", "id", "fixture-pdf-call-" + page, "params", Json.Obj("threadId", "fixture-thread", "turnId", "fixture-turn", "callId", "upstream-" + page, "tool", "pdf_view", "arguments", Json.Obj("page", page, "block_id", null))));
         }
     }
 }

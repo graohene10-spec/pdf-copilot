@@ -4,6 +4,26 @@ using System.IO;
 using System.Threading;
 
 namespace PdfCopilot {
+    internal sealed class DocumentBudget {
+        internal int Calls = 12, Images = 5, Characters = 24000;
+        internal int EncodedCharacters { get { return Math.Min(3 * 1024 * 1024, Characters * 4 + Calls * 50000); } }
+        internal static DocumentBudget Parse(object value) {
+            var result = new DocumentBudget();
+            var map = Json.Map(value);
+            if (map == null) throw new InvalidDataException("Invalid PDF resource limits.");
+            foreach (string key in map.Keys) if (key != "calls" && key != "images" && key != "characters") throw new InvalidDataException("Unknown PDF resource limit.");
+            result.Calls = Number(map, "calls", 0, 60, result.Calls);
+            result.Images = Number(map, "images", 0, 10, result.Images);
+            result.Characters = Number(map, "characters", 1000, 120000, result.Characters);
+            return result;
+        }
+        private static int Number(Dictionary<string, object> map, string key, int min, int max, int fallback) {
+            if (!map.ContainsKey(key)) return fallback;
+            object value = map[key];
+            if (!(value is int) || (int)value < min || (int)value > max) throw new InvalidDataException("Invalid PDF resource limit.");
+            return (int)value;
+        }
+    }
     internal sealed class PendingDocumentCall {
         internal object RpcId;
         internal string Token, Tool;

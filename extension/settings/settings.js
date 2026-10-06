@@ -1,5 +1,6 @@
 import { loadSettings, saveSettings, loadKey, applyTheme, apiOrigin } from '../common/settings.js';
 import { PROVIDERS, getProvider, getModel, getNativeModels, getNativeStatus, registerNativeModels } from '../providers/index.js';
+import { DOCUMENT_LIMIT_FIELDS, normalizeDocumentLimits } from '../common/document-limits.mjs';
 const $ = id => document.getElementById(id);
 $('extension-version').textContent = 'v' + chrome.runtime.getManifest().version;
 const shortcutLabels = [['open-sidebar', '打开 AI 侧栏'], ['quick-chat', '临时问答'], ['capture-region', '截图后框选'], ['open-reader', '增强阅读器']];
@@ -43,6 +44,27 @@ $('remember').checked = settings.rememberKey;
 $('key').value = await loadKey(settings.provider);
 $('theme').value = settings.theme;
 $('extension-id').textContent = chrome.runtime.id;
+for (const field of DOCUMENT_LIMIT_FIELDS) {
+  const scale = field.scale || 1, label = document.createElement('label'), input = document.createElement('input'), hint = document.createElement('small');
+  label.append(document.createTextNode(field.label)); input.id = 'limit-' + field.key; input.type = 'number'; input.required = true;
+  input.min = field.min / scale; input.max = field.max / scale; input.step = 1;
+  input.value = settings.documentLimits[field.key] / scale;
+  hint.id = input.id + '-hint'; hint.className = 'muted'; hint.textContent = `${field.min / scale}–${field.max / scale}，默认 ${field.default / scale}`;
+  input.setAttribute('aria-describedby', hint.id); label.append(input, hint); $('resource-fields').append(label);
+}
+$('reset-resource-limits').onclick = () => {
+  for (const field of DOCUMENT_LIMIT_FIELDS) $('limit-' + field.key).value = field.default / (field.scale || 1);
+  status('已填入默认资源限制，点击“保存设置”后生效。');
+};
+function resourceLimits() {
+  const values = {};
+  for (const field of DOCUMENT_LIMIT_FIELDS) {
+    const value = $('limit-' + field.key).valueAsNumber * (field.scale || 1);
+    if (!Number.isInteger(value) || value < field.min || value > field.max) throw new Error('请在提示范围内填写' + field.label + '。');
+    values[field.key] = value;
+  }
+  return normalizeDocumentLimits(values);
+}
 function status(text, error = false) { $('status').textContent = text; $('status').classList.toggle('error', error); }
 function updateModels(defaultModel = false) {
   const provider = getProvider($('provider').value);
@@ -149,6 +171,7 @@ $('form').onsubmit = async event => {
   event.preventDefault();
   try {
     const provider = $('provider').value;
+    const documentLimits = resourceLimits();
     // Request host permission directly inside the click/submit gesture.
     if (provider !== 'codex') {
       const origin = apiOrigin($('base-url').value.trim());
@@ -156,7 +179,7 @@ $('form').onsubmit = async event => {
     }
     settings = { provider, model: $('model').value.trim(), effort: $('effort').value,
       baseUrl: provider === 'codex' ? '' : $('base-url').value.trim().replace(/\/+$/, ''),
-      theme: $('theme').value, rememberKey: provider !== 'codex' && $('remember').checked };
+      theme: $('theme').value, rememberKey: provider !== 'codex' && $('remember').checked, documentLimits };
     await saveSettings(settings, provider === 'codex' ? '' : $('key').value.trim());
     status('已保存。可回到 PDF 打开侧栏。');
   } catch (error) { status(error.message, true); }

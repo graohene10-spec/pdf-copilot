@@ -31,6 +31,7 @@ $env:PDF_COPILOT_PLAYWRIGHT_PATH = Join-Path (Get-Location).Path 'node_modules/p
 node scripts/upgrade-smoke.mjs
 node scripts/acceptance-smoke.mjs
 node scripts/context-smoke.mjs
+node scripts/resource-limits-smoke.mjs
 node scripts/page-smoke.mjs
 node scripts/file-url-smoke.mjs
 ~~~
@@ -60,6 +61,7 @@ Remove-Item Env:\PDF_COPILOT_MATH_PROFILE
 - 直接问当前页、翻页后再问、手动附件优先、关闭自动上下文并重开；文字模型读取文字层，扫描页给出图片要求。
 - 两个 PDF 标签页和多个窗口之间切换，附件/会话不会串文档；侧栏与临时窗口独立。
 - 指定章节/公式/页码，让 AI 搜索、读页、查看页图；核对原文引用和物理页码/页标签；达到预算后正常收束。
+- 设置资源限制、恢复默认及范围校验；默认五次页图，修改设置后下一题生效，进行中问题保留原预算；API/Codex 与兼容阅读计划均不超过自定义上限。
 - DeepSeek / OpenAI 各一次真实文字/图片问答，检查所选模型、低/高思考强度及错误模型/权限/额度；Codex 验证真实文字、图片、工具和取消。
 - 回复字号、复制、公式、长回答、停止/清空、网络断开、睡眠唤醒和窗口关闭。
 - API Key 默认不跨浏览器重启；勾选记住才持久，忘记立即移除；附件消费后队列清空。
