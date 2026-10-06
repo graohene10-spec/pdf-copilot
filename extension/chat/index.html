@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PDF Copilot · 对话</title><link rel="stylesheet" href="../common/ui.css"><link rel="stylesheet" href="../vendor/katex/katex.min.css"><link rel="stylesheet" href="chat.css"></head>
+<body>
+  <header class="row"><strong id="heading">PDF Copilot</strong><span class="spacer"></span><button id="clear" title="清空当前文档的会话">清空</button><button id="settings" title="模型和密钥设置">设置</button></header>
+  <nav class="tools row"><button id="reader">增强阅读器</button><button id="capture">截图框选</button><button id="quick">临时问答</button></nav>
+  <div class="source"><span id="source-name">当前文档</span><small id="mode-note">会话和附件仅保留在内存中</small></div>
+  <div class="model-row"><select id="provider" aria-label="服务商"></select><input id="model" list="models" aria-label="模型" placeholder="模型名"><datalist id="models"></datalist><select id="effort" aria-label="思考强度"></select><button id="refresh" title="从本机 Codex 获取模型">↻</button></div>
+  <main id="messages" aria-live="polite"><div class="welcome"><div class="mark">P</div><h2>读到哪里，聊到哪里。</h2><p>选中文字后右键发送，或截图框选图表。增强阅读器支持直接在 PDF 上框选，并绑定页码。</p><p class="muted">PDF 内容不会自动上传。附件准备好后，由你点击发送。</p></div></main>
+  <div id="attachments" class="attachments"></div>
+  <form id="composer"><textarea id="prompt" rows="3" placeholder="解释这段内容，或直接提问…（Ctrl+Enter 发送）" aria-label="对话内容"></textarea><div class="row"><span id="status" class="status" role="status"></span><span class="spacer"></span><button id="stop" type="button" hidden>停止</button><button id="send" class="primary" type="submit">发送</button></div></form>
+  <script type="module" src="chat.js"></script>
+</body></html>

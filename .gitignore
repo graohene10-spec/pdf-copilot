@@ -1,0 +1,11 @@
+node_modules/
+dist/
+release/
+native-host/bin/
+native-host/.schema/
+.cache/
+artifacts/
+*.user
+.env
+.env.*
+!.env.example

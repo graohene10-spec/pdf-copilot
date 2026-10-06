@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "PDF Copilot · 阅读助手",
+  "version": "0.2.3",
+  "description": "保留浏览器 PDF 阅读习惯，提供 AI 侧栏、临时问答与精确框选。",
+  "minimum_chrome_version": "132",
+  "permissions": ["activeTab", "sidePanel", "storage", "contextMenus", "nativeMessaging"],
+  "optional_host_permissions": ["https://*/*", "http://*/*", "file:///*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": { "default_title": "打开 PDF Copilot 侧栏" },
+  "side_panel": { "default_path": "chat/index.html" },
+  "options_page": "settings/index.html",
+  "commands": {
+    "open-sidebar": { "suggested_key": { "default": "Ctrl+Shift+7" }, "description": "打开 AI 侧栏" },
+    "quick-chat": { "suggested_key": { "default": "Alt+Shift+Q" }, "description": "打开临时对话" },
+    "capture-region": { "suggested_key": { "default": "Alt+Shift+S" }, "description": "截取当前标签页并框选" },
+    "open-reader": { "suggested_key": { "default": "Ctrl+Shift+8" }, "description": "用增强阅读器打开 PDF" }
+  },
+  "icons": { "16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "128": "icons/128.png" },
+  "content_security_policy": { "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'none'" }
+}

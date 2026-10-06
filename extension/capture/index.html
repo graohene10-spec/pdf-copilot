@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>PDF Copilot · 裁剪截图</title>
+  <link rel="stylesheet" href="../reader/reader.css">
+  <link rel="stylesheet" href="capture.css">
+</head>
+<body>
+  <header class="toolbar">
+    <span class="document-title">框选要发送的区域</span>
+    <label>发送到 <select id="target"><option value="sidebar">侧栏</option><option value="quick">临时对话</option></select></label>
+    <button id="close">关闭</button>
+  </header>
+  <main class="capture-workspace">
+    <p class="muted">在截图上拖动鼠标。只会把你框选的区域加入对话；截图不写入本地文件。</p>
+    <div id="capture-surface" class="capture-surface" hidden>
+      <img id="snapshot" alt="当前标签页的可见区域截图" draggable="false">
+      <div id="selection-box" class="selection-box" hidden></div>
+    </div>
+  </main>
+  <footer class="selection-bar"><span id="status" role="status" aria-live="polite">正在读取截图…</span></footer>
+  <dialog id="preview-dialog" class="preview-dialog">
+    <h2>确认发送这张截图</h2>
+    <p class="muted">只发送下面的选区，整张截图不会发送给模型。</p>
+    <img id="preview-image" alt="框选后的截图区域">
+    <div class="dialog-actions"><button id="preview-cancel">重新框选</button><button id="preview-send" class="primary">发送到对话</button></div>
+  </dialog>
+  <script type="module" src="capture.mjs"></script>
+</body>
+</html>

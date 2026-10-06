@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PDF Copilot · 设置</title><link rel="stylesheet" href="../common/ui.css"><link rel="stylesheet" href="settings.css"></head>
+<body><main><header><div class="muted">PDF COPILOT · <span id="extension-version"></span></div><h1>阅读助手设置</h1><p class="muted">API Key 直接连接所选服务；Codex 使用本机已有登录。</p></header>
+<form id="form"><label>服务商<select id="provider"></select></label>
+<div id="api-fields"><label>API 地址<input id="base-url" type="url" required spellcheck="false"></label><label>API Key<input id="key" type="password" autocomplete="off" spellcheck="false"></label>
+<label class="check"><input id="remember" type="checkbox">记住密钥（保存到浏览器本地存储）</label><p class="muted small">默认仅保留到浏览器关闭。勾选后密钥会写入扩展本地存储，适合可信的个人电脑。</p></div>
+<div id="codex-fields" hidden><p>先安装 Windows 小助手，然后使用同一 Windows 用户下的 Codex CLI。版本和登录状态分别检查。</p><div class="row"><button id="test-codex" type="button">检查连接并读取模型</button></div><p id="codex-status" class="status" role="status" aria-live="polite"></p>
+<dl id="codex-diagnostics" class="codex-diagnostics" hidden><dt>CLI 版本</dt><dd id="codex-version"></dd><dt>实际程序</dt><dd><code id="codex-path"></code></dd><dt>版本兼容</dt><dd id="codex-compatible"></dd><dt>登录状态</dt><dd id="codex-login"></dd></dl>
+<p id="codex-guidance" class="small muted">小助手使用已登记的 CLI 路径；桌面应用开着，并不代表这一路径的 CLI 已经登录。检查不会读取或复制登录令牌。</p>
+<details id="codex-error-details" hidden><summary>查看诊断详情</summary><pre id="codex-error-raw"></pre></details>
+<p class="small muted">安装脚本使用的扩展 ID：<code id="extension-id"></code> <button id="copy-id" type="button">复制</button></p></div>
+<label>模型<input id="model" list="models" placeholder="输入模型 ID" required spellcheck="false"><datalist id="models"></datalist></label>
+<label>思考强度<select id="effort"></select></label><p id="model-note" class="muted small"></p>
+<label>界面主题<select id="theme"><option value="system">跟随系统</option><option value="light">日间</option><option value="dark">夜间</option></select></label>
+<div class="row actions"><button class="primary" type="submit">保存设置</button><button id="forget" type="button">忘记当前服务的密钥</button><span id="status" class="status" role="status"></span></div></form>
+<section><h2>阅读方式与快捷键</h2><p>日常保留浏览器自带 PDF 阅读器。需要直接框选、目录和页码引用时，切换到增强阅读器。</p><div id="shortcut-list" class="keys" aria-live="polite"></div><p id="shortcut-status" class="small" role="status"></p><div class="row"><button id="configure-shortcuts" type="button">设置浏览器快捷键</button><button id="refresh-shortcuts" type="button">重新检查</button></div><p class="muted small">在浏览器快捷键页找到“PDF Copilot · 阅读助手”下的“打开 AI 侧栏”，点击旁边的编辑按钮即可设置。默认侧栏键为 Ctrl + Shift + 7，增强阅读器键为 Ctrl + Shift + 8。这里显示浏览器实际启用的组合；“未设置”时需要手动分配。扩展无法强行覆盖浏览器或其他扩展占用的按键。本地 PDF 截图需在扩展详情启用“允许访问文件网址”。选中文本右键菜单的支持取决于浏览器 PDF 阅读器；可复制到侧栏兜底。</p></section>
+<section><h2>数据保存</h2><p>PDF 不会自动上传。选文和截图仅在点击发送时交给所选服务。聊天和截图默认仅在内存中，关闭会话后释放。个人书签仅保存文件指纹和页码。</p><p class="muted small">Codex 使用临时会话；服务商仍可能按其政策处理请求。应用不主动保存截图文件，操作系统的交换文件或崩溃转储不在此保证范围内。</p></section>
+</main><script type="module" src="settings.js"></script></body></html>

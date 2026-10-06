@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>PDF Copilot · 阅读器</title>
+  <link rel="stylesheet" href="../vendor/pdfjs/pdf_viewer.css">
+  <link rel="stylesheet" href="reader.css">
+</head>
+<body>
+  <header class="toolbar">
+    <button id="nav-toggle" title="展开或收起目录" aria-label="展开或收起目录">☰</button>
+    <button id="open-file">打开 PDF</button>
+    <input id="file-input" type="file" accept="application/pdf,.pdf" hidden>
+    <span id="document-title" class="document-title">PDF Copilot</span>
+    <div class="toolbar-group">
+      <button id="previous" disabled aria-label="上一页">‹</button>
+      <label class="page-label"><input id="page-number" type="number" min="1" value="1" disabled aria-label="页码"><span id="page-count">/ 0</span></label>
+      <button id="next" disabled aria-label="下一页">›</button>
+      <button id="zoom-out" disabled aria-label="缩小">−</button>
+      <button id="zoom-label" disabled title="适合宽度">100%</button>
+      <button id="zoom-in" disabled aria-label="放大">＋</button>
+      <button id="bookmark" disabled title="收藏当前页">☆</button>
+    </div>
+    <button id="night" aria-pressed="false">夜间</button>
+    <button id="sidebar" class="primary">AI 侧栏</button>
+    <button id="quick">临时对话</button>
+  </header>
+  <div class="workspace">
+    <aside id="navigation" class="navigation">
+      <div class="navigation-heading">文档目录</div>
+      <div id="outline" class="outline"><p class="muted">打开文档后显示目录</p></div>
+      <div class="navigation-heading">我的书签</div>
+      <div id="bookmarks"><p class="muted">只保存文档指纹和页码</p></div>
+      <p class="privacy-note">PDF 在浏览器本地渲染。只有你选择并发送的文字或截图会交给模型。</p>
+    </aside>
+    <main id="reading-area" class="reading-area">
+      <section id="welcome" class="welcome">
+        <span class="welcome-icon">PDF</span>
+        <h1>把问题留在阅读旁边</h1>
+        <p>拖入 PDF，或点击“打开 PDF”。向下滚动即可连续阅读；选中文字或框选图表，即可发送到 AI 对话。</p>
+        <div id="url-prompt" hidden>
+          <p id="url-label"></p>
+          <button id="open-url" class="primary">允许读取并打开 PDF</button>
+          <p class="muted">只申请该网站的读取权限；需要登录的网站请先在浏览器登录。失败时可下载后选择本地文件。</p>
+        </div>
+      </section>
+      <div id="page-surface" class="page" hidden>
+        <canvas id="pdf-canvas"></canvas>
+        <div id="text-layer" class="textLayer"></div>
+        <div id="link-layer" class="link-layer"></div>
+        <div id="selection-box" class="selection-box" hidden></div>
+      </div>
+    </main>
+  </div>
+  <footer class="selection-bar">
+    <span id="status" role="status" aria-live="polite">PDF 文件不会整体上传</span>
+    <span id="selection-count" class="muted"></span>
+    <button id="send-text" disabled>发送选中文字</button>
+    <button id="capture-region" disabled aria-pressed="false">框选截图</button>
+    <label>发送到 <select id="target"><option value="sidebar">侧栏</option><option value="quick">临时对话</option></select></label>
+  </footer>
+  <dialog id="preview-dialog" class="preview-dialog">
+    <h2>确认发送这张截图</h2>
+    <p class="muted">截图保持 PDF 原色，只存在内存中。</p>
+    <img id="preview-image" alt="所选 PDF 区域">
+    <div class="dialog-actions"><button id="preview-cancel">取消</button><button id="preview-send" class="primary">发送到对话</button></div>
+  </dialog>
+  <script type="module" src="reader.mjs"></script>
+</body>
+</html>
