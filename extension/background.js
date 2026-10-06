@@ -1,4 +1,5 @@
 import { validateContext, MAX_INBOX_LENGTH } from './common/context.js';
+import { captureVisiblePage } from './common/page-context.mjs';
 
 const captures = new Map();
 let inboxTask = Promise.resolve();
@@ -135,7 +136,16 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         if (tab?.url?.startsWith(page('reader/'))) {
           try { info = await chrome.runtime.sendMessage({ type: 'reader:info', tabId: tab.id }); } catch {}
         }
-        return { ok: true, tab: tab && { id: tab.id, windowId: tab.windowId, title: info?.source?.name || tab.title, url: tab.url, documentKey: info?.documentKey } };
+        return { ok: true, tab: tab && { id: tab.id, windowId: tab.windowId, title: info?.source?.name || tab.title, url: tab.url, documentKey: info?.documentKey, enhanced: !!info?.documentKey, currentPage: info?.currentPage } };
+      }
+      case 'document:request': {
+        if (!sender.url?.startsWith(page('chat/index.html')) || !tab?.url?.startsWith(page('reader/')) || typeof message.documentKey !== 'string') throw new Error('自动读取仅支持当前增强阅读器。');
+        if (typeof message.sessionId !== 'string' || !/^[a-zA-Z0-9-]{8,80}$/.test(message.sessionId)) throw new Error('PDF 会话编号无效。');
+        return await chrome.runtime.sendMessage({ type: 'reader:query', tabId: tab.id, documentKey: message.documentKey, operation: message.operation, sessionId: message.sessionId, tool: message.tool, args: message.args });
+      }
+      case 'page:capture': {
+        if (!sender.url?.startsWith(page('chat/index.html'))) throw new Error('仅对话窗口可读取当前页。');
+        return await captureVisiblePage(tab, message.expectedUrl);
       }
       case 'reader:document':
         chrome.runtime.sendMessage({ type: 'source:document', tabId: tab.id, windowId: tab.windowId }).catch(() => {});

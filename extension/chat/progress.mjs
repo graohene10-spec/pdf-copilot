@@ -17,9 +17,11 @@ export function appendReasoning(answer, text) {
 
 export function finishAnswer(answer) {
   answer.phase = 'finished';
+  answer.progress = '';
 }
 
 export function progressLabel(answer) {
+  if (answer.phase !== 'finished' && answer.progress) return answer.progress;
   if (answer.phase === 'thinking') return 'AI 思考中…';
   if (answer.phase === 'receiving') return '正在接收回答…';
   return '';

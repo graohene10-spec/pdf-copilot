@@ -16,6 +16,7 @@ export function validateContext(value) {
     title: String(value.title || (value.kind === 'text' ? '选中文字' : '区域截图')).slice(0, 200),
     source: { name: String(source.name || '').slice(0, 200), url: typeof source.url === 'string' ? source.url.slice(0, 8192) : undefined,
       page: Number.isInteger(source.page) && source.page > 0 ? source.page : undefined,
+      endPage: Number.isInteger(source.endPage) && source.endPage >= source.page ? source.endPage : undefined,
       tabId: Number.isInteger(source.tabId) ? source.tabId : undefined,
       windowId: Number.isInteger(source.windowId) ? source.windowId : undefined,
       fingerprint: typeof source.fingerprint === 'string' ? source.fingerprint.slice(0, 200) : undefined, rect: source.rect },
@@ -23,6 +24,6 @@ export function validateContext(value) {
 }
 
 export function contextText(context) {
-  const label = [context.source?.name || context.title, context.source?.page ? '第 ' + context.source.page + ' 页' : ''].filter(Boolean).join(' · ');
+  const label = [context.source?.name || context.title, context.source?.page ? '第 ' + context.source.page + (context.source.endPage > context.source.page ? '–' + context.source.endPage : '') + ' 页' : ''].filter(Boolean).join(' · ');
   return '[' + label + ']\n' + (context.kind === 'text' ? context.text : '附图：' + context.title);
 }

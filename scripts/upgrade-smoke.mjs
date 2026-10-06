@@ -40,6 +40,7 @@ const pause = (response, ms) => new Promise(resolve => {
   response.once('close', closed);
 });
 const formula = '行内 $E=mc^2$ 和 \\(x^2+1\\)。\n$$\\int_0^1 x\\,dx=\\frac{1}{2}$$\n\\[a^2+b^2=c^2\\]\n代码 `$not_math$`\n```text\n$code_math$\n```\n<img src="https://example.invalid/hidden.png" onerror="alert(1)">';
+const demo = '本机模拟回复：\n\n可以先把这段内容拆成几个概念，再逐步说明它们之间的关系。\n\n公式也会随字号一起缩放：\n$$E=mc^2$$\n\n选中文字或截图后，可以继续追问符号的含义和推导条件。';
 const server = createServer(async (request, response) => {
   if (request.url === '/native.pdf') {
     response.writeHead(200, { 'Content-Type': 'application/pdf' });
@@ -61,9 +62,10 @@ const server = createServer(async (request, response) => {
     if (prompt.includes('TEST_CANCEL_PARTIAL')) delta({ content: '部分公式 $x=2$。' });
     await pause(response, 15000); if (response.destroyed) return;
   } else { await pause(response, 1200); if (response.destroyed) return; }
-  delta({ content: formula.slice(0, 40) });
+  const answer = prompt.includes('TEST_DEMO') ? demo : formula;
+  delta({ content: answer.slice(0, 40) });
   await pause(response, 450); if (response.destroyed) return;
-  delta({ content: formula.slice(40) });
+  delta({ content: answer.slice(40) });
   response.end('data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n');
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -85,7 +87,7 @@ try {
   if (!worker) worker = await context.waitForEvent('serviceworker', { timeout: 15000 });
   const id = worker.url().split('/')[2];
   await worker.evaluate(async ({ baseUrl }) => {
-    await chrome.storage.local.set({ settings: { provider: 'deepseek', model: 'deepseek-flash', effort: 'low', baseUrl, theme: 'light', rememberKey: false } });
+    await chrome.storage.local.set({ pdfContextEnabled: false, settings: { provider: 'deepseek', model: 'deepseek-flash', effort: 'low', baseUrl, theme: 'light', rememberKey: false } });
     await chrome.storage.session.set({ 'apiKey:deepseek': 'synthetic-test-key' });
   }, { baseUrl });
   const commands = await worker.evaluate(() => chrome.commands.getAll());
@@ -168,6 +170,10 @@ try {
   const chat = await context.newPage();
   await chat.setViewportSize({ width: 420, height: 820 });
   await chat.goto(`chrome-extension://${id}/chat/index.html?mode=quick&tab=${tab.id}&window=${tab.windowId}`);
+  assert.equal(await chat.locator('#font-reset').textContent(), '17', 'larger default reply font');
+  assert.equal(await chat.locator('#model-options').getAttribute('open'), null, 'model controls start collapsed');
+  assert.equal(await chat.locator('#capture').isVisible(), true, 'capture stays visible');
+  assert.equal(await chat.locator('#capture').getAttribute('type'), 'button', 'capture cannot submit a prompt');
   const send = async prompt => { await chat.locator('#prompt').fill(prompt); await chat.locator('#send').click(); };
   await send('TEST_WAIT');
   await chat.locator('.answer-progress[data-state="thinking"]').waitFor();
@@ -184,7 +190,69 @@ try {
   if (!embeddedMath) assert.equal(mathRequests.length, 0, 'lite never requests missing formula resources');
   await chat.evaluate(() => document.fonts.ready);
   await chat.screenshot({ path: join(root, 'artifacts', artifactPrefix + 'formulas.png') });
-  await send('TEST_CANCEL'); await chat.locator('.answer-progress').waitFor(); await chat.locator('#stop').click();
+
+  // Exercise presentation in the same real browser as streaming and formulas.
+  // No paid request is sent, and font changes must leave answer DOM untouched.
+  await chat.evaluate(() => { window.fontMathNode = document.querySelector('.message.assistant .katex'); });
+  const bodyFont = () => chat.locator('.message.assistant .body').first().evaluate(node => parseFloat(getComputedStyle(node).fontSize));
+  assert.equal(await bodyFont(), 17);
+  await chat.locator('#font-larger').click(); await chat.locator('#font-larger').click(); await chat.locator('#font-larger').click();
+  assert.equal(await bodyFont(), 20);
+  assert.equal(await chat.evaluate(() => window.fontMathNode === document.querySelector('.message.assistant .katex')), true, 'font scaling preserves formula DOM');
+  if (embeddedMath) assert.equal(await chat.locator('.message.assistant .katex').first().evaluate(node => parseFloat(getComputedStyle(node).fontSize)), 24.2, 'formula scales with text');
+  await chat.evaluate(() => { for (let i = 0; i < 20; i++) document.querySelector('#font-larger').click(); });
+  await chat.waitForFunction(async () => (await chrome.storage.local.get('chatFontSize')).chatFontSize === 24);
+  assert.equal(await bodyFont(), 24); assert.equal(await chat.locator('#font-larger').isDisabled(), true);
+  const sidebar = await context.newPage(); await sidebar.setViewportSize({ width: 340, height: 720 });
+  await sidebar.goto(`chrome-extension://${id}/chat/index.html?window=${tab.windowId}`);
+  await sidebar.waitForFunction(() => document.querySelector('#font-reset').textContent === '24');
+  await sidebar.locator('#font-smaller').click();
+  await chat.waitForFunction(() => document.querySelector('#font-reset').textContent === '23');
+  await sidebar.reload(); await sidebar.waitForFunction(() => document.querySelector('#font-reset').textContent === '23');
+  await sidebar.locator('#font-reset').click(); await chat.waitForFunction(() => document.querySelector('#font-reset').textContent === '17');
+  await sidebar.close();
+  await chat.evaluate(() => { for (let i = 0; i < 20; i++) document.querySelector('#font-smaller').click(); });
+  await chat.waitForFunction(async () => (await chrome.storage.local.get('chatFontSize')).chatFontSize === 14);
+  assert.equal(await chat.locator('#font-smaller').isDisabled(), true); assert.equal(await bodyFont(), 14);
+  await worker.evaluate(() => chrome.storage.local.set({ chatFontSize: 'invalid' }));
+  await chat.waitForFunction(() => document.querySelector('#font-reset').textContent === '17');
+  await chat.locator('#model-options summary').click();
+  await chat.locator('#provider').selectOption('openai');
+  assert.match(await chat.locator('#model-summary').textContent(), /OpenAI API/);
+  await chat.locator('#provider').selectOption('deepseek'); await chat.locator('#effort').selectOption('low');
+  assert.match(await chat.locator('#model-summary').textContent(), /思考：低/);
+  await chat.locator('#model-options summary').click();
+  await chat.locator('#chat-menu summary').focus(); await chat.locator('#chat-menu summary').press('Enter');
+  await chat.locator('#chat-menu[open]').waitFor(); await chat.keyboard.press('Escape');
+  assert.equal(await chat.locator('#chat-menu').getAttribute('open'), null);
+  await chat.locator('#chat-menu summary').click(); await chat.locator('#prompt').click();
+  assert.equal(await chat.locator('#chat-menu').getAttribute('open'), null);
+  for (const theme of ['light', 'dark']) {
+    await worker.evaluate(async theme => {
+      const { settings } = await chrome.storage.local.get('settings');
+      await chrome.storage.local.set({ settings: { ...settings, theme } });
+    }, theme);
+    await chat.waitForFunction(theme => document.documentElement.dataset.theme === theme, theme);
+    for (const width of [280, 340, 510]) {
+      await chat.setViewportSize({ width, height: 720 });
+      assert.equal(await chat.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'no horizontal pane overflow at ' + width);
+      const layout = await chat.evaluate(() => ({ top: document.querySelector('#messages').getBoundingClientRect().top, height: document.querySelector('#messages').clientHeight }));
+      assert(layout.top <= 110 && layout.height >= 440, 'compact reading space at ' + width);
+    }
+    await chat.setViewportSize({ width: 340, height: 720 });
+    await chat.screenshot({ path: join(root, 'artifacts', artifactPrefix + 'chat-compact-' + theme + '.png') });
+  }
+  await worker.evaluate(async () => {
+    const { settings } = await chrome.storage.local.get('settings');
+    await chrome.storage.local.set({ settings: { ...settings, theme: 'light' } });
+  });
+  await chat.setViewportSize({ width: 420, height: 820 });
+  console.log('Chat UI passed: 14–24 font bounds, persistence/reload/window sync, formula scaling, collapsed models, menu keyboard/outside close, narrow light/dark layout.');
+  await send('TEST_CANCEL'); await chat.locator('.answer-progress').waitFor();
+  await chat.locator('#font-larger').click(); await chat.locator('#font-larger').click();
+  assert.equal(await chat.locator('.message.assistant .body').last().evaluate(node => getComputedStyle(node).fontSize), '19px');
+  assert.equal(await chat.locator('.answer-progress').count(), 1, 'font changes do not cancel a streaming answer');
+  await chat.locator('#font-reset').click(); await chat.locator('#stop').click();
   await chat.waitForFunction(() => document.querySelector('#stop').hidden);
   assert.equal(await chat.locator('.answer-progress').count(), 0);
   await send('TEST_CANCEL_PARTIAL'); await chat.locator('.answer-progress[data-state="receiving"]').waitFor(); await chat.locator('#stop').click();
@@ -193,7 +261,8 @@ try {
   await send('TEST_ERROR'); await chat.locator('.answer-progress').waitFor();
   await chat.waitForFunction(() => document.querySelector('#stop').hidden);
   assert.equal(await chat.locator('.answer-progress').count(), 0);
-  await send('TEST_CLEAR'); await chat.locator('.answer-progress').waitFor(); await chat.locator('#clear').click();
+  await send('TEST_CLEAR'); await chat.locator('.answer-progress').waitFor();
+  await chat.locator('#chat-menu summary').click(); await chat.locator('#clear').click();
   await chat.waitForFunction(() => document.querySelector('#stop').hidden);
   assert.equal(await chat.locator('.message').count(), 0); assert.equal(await chat.locator('.answer-progress').count(), 0);
   await send('TEST_SWITCH'); await chat.locator('.answer-progress').waitFor();
@@ -201,6 +270,10 @@ try {
   await chat.waitForFunction(() => document.querySelector('#source-name').textContent === 'replacement.pdf');
   await chat.waitForFunction(() => document.querySelector('#stop').hidden);
   assert.equal(await chat.locator('.message').count(), 0); assert.equal(await chat.locator('.answer-progress').count(), 0);
+  await send('TEST_DEMO：解释这段内容和公式。');
+  await chat.waitForFunction(() => document.querySelector('#status').textContent === '回答完成。');
+  await chat.setViewportSize({ width: 340, height: 720 });
+  await chat.screenshot({ path: join(root, 'artifacts', artifactPrefix + 'chat-font-preview.png') });
   assert.deepEqual(errors, []);
   console.log(`Edge upgrade smoke passed (${embeddedMath ? 'embedded math' : 'plain'}): named sidebar shortcut registered/visible in browser UI, shortcut settings link, sidebar command user gesture, native PDF command source, actual shortcut diagnostics/version, continuous wheel scrolling, mixed page sizes, bounded canvases, jump/zoom/bookmark, formulas/code/HTML, waiting/receiving, stop/error/clear/document switch. Real browser accelerator input still needs manual verification.`);
 } catch (error) {

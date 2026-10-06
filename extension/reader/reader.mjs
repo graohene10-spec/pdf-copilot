@@ -2,6 +2,8 @@ import * as pdfjs from '../vendor/pdfjs/pdf.mjs';
 import { clamp, destinationPage, safeDocumentUrl, documentName, pdfRectangle } from './geometry.mjs';
 import { cropImage } from './selection.mjs';
 import { ContinuousPdfViewer } from './continuous.mjs';
+import { DocumentService, renderDocumentImage } from './document-service.mjs';
+import { requestDocumentAccess, documentOpenError } from './document-access.mjs';
 
 pdfjs.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL('vendor/pdfjs/pdf.worker.mjs');
 const $ = id => document.getElementById(id);
@@ -23,6 +25,7 @@ let capturing = false;
 let pendingImage = null;
 let resizeTimer = null;
 let highlightTimer = null;
+let documentService = null;
 
 function status(message, error = false) {
   $('status').textContent = message;
@@ -185,6 +188,7 @@ async function saveBookmarks(pages) {
 
 async function openDocument(input, newSource) {
   const epoch = ++documentEpoch;
+  documentService?.close(); documentService = null;
   clearPreview();
   setCapture(false);
   viewer.reset();
@@ -222,6 +226,7 @@ async function openDocument(input, newSource) {
     if (epoch !== documentEpoch) { await loaded.destroy(); return; }
     pdf = loaded;
     source.fingerprint = loaded.fingerprints[0];
+    documentService = new DocumentService(loaded, source, () => pageNumber, (number, rect, signal) => renderDocumentImage(loaded, number, rect, signal), number => !viewer.views.has(number));
     chrome.runtime.sendMessage({ type: 'reader:document', tabId: readerTab?.id, windowId: readerWindow?.id }).catch(report);
     const key = `bookmarks:${loaded.fingerprints[0]}`;
     const [stored, outline] = await Promise.all([chrome.storage.local.get(key), loaded.getOutline()]);
@@ -237,12 +242,13 @@ async function openDocument(input, newSource) {
     await viewer.setDocument(loaded);
   } catch (error) {
     if (epoch !== documentEpoch) return;
+    documentService?.close(); documentService = null;
     pdf = null;
     updateControls();
     viewer.reset();
     $('welcome').hidden = false;
     if (passwordCancelled) status('已取消打开加密 PDF。');
-    else status(`无法打开 PDF：${error.message || '读取失败'}。远程链接可先下载，再选择本地文件。`, true);
+    else status(documentOpenError(error, source), true);
   }
 }
 
@@ -258,13 +264,11 @@ async function openFile(file) {
 
 async function openUrl(value) {
   const requestEpoch = ++openRequestEpoch;
-  const url = safeDocumentUrl(value);
-  if (url.protocol === 'file:') {
-    const allowed = await chrome.extension.isAllowedFileSchemeAccess();
-    if (!allowed) throw new Error('请在扩展详情中开启“允许访问文件网址”，或点击“打开 PDF”选择文件。');
-  } else {
-    const granted = await chrome.permissions.request({ origins: [`${url.protocol}//${url.hostname}/*`] });
-    if (!granted) throw new Error('没有取得该网站的读取权限。可以选择已下载的本地 PDF。');
+  let url;
+  try { url = await requestDocumentAccess(value); }
+  catch (error) {
+    if (requestEpoch !== openRequestEpoch) return;
+    throw error;
   }
   if (requestEpoch !== openRequestEpoch) return;
   await openDocument({ url: url.href }, { url: url.href, name: documentName(url.href) });
@@ -293,7 +297,7 @@ $('send-text').addEventListener('click', () => {
   if (!selectedText || !selectedPages) return;
   const pages = selectedPages.start === selectedPages.end ? selectedPages.start : `${selectedPages.start}–${selectedPages.end}`;
   const text = selectedPages.start === selectedPages.end ? selectedText : `[以下选文来自第 ${pages} 页]\n${selectedText}`;
-  sendContext({ kind: 'text', text, title: `${source.name} · 第 ${pages} 页选文`, source: { ...source, page: selectedPages.start } }).catch(report);
+  sendContext({ kind: 'text', text, title: `${source.name} · 第 ${pages} 页选文`, source: { ...source, page: selectedPages.start, endPage: selectedPages.end } }).catch(report);
 });
 $('preview-cancel').addEventListener('click', clearPreview);
 $('preview-dialog').addEventListener('cancel', clearPreview);
@@ -328,8 +332,24 @@ readingArea.addEventListener('drop', event => { event.preventDefault(); openFile
 window.addEventListener('resize', () => { clearTimeout(resizeTimer); if (pdf && scale === null) resizeTimer = setTimeout(() => { clearSelection(); viewer.zoom(null).catch(report); }, 150); });
 
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
-  if (sender.id !== chrome.runtime.id || message.tabId !== readerTab?.id) return;
-  if (message.type === 'reader:info') { respond({ ok: true, source, documentKey: pdf?.fingerprints[0] }); return; }
+  if (sender.id !== chrome.runtime.id || !sender.url?.startsWith(chrome.runtime.getURL('')) || message.tabId !== readerTab?.id) return;
+  if (message.type === 'reader:info') { respond({ ok: true, source, documentKey: pdf?.fingerprints[0], currentPage: pageNumber }); return; }
+  if (message.type === 'reader:query') {
+    const service = documentService;
+    const run = async () => {
+      if (!service || message.documentKey !== pdf?.fingerprints[0]) throw new Error('文档已切换，请在当前 PDF 重新提问。');
+      const { operation, sessionId, args = {} } = message;
+      if (operation === 'end') return service.end(sessionId);
+      let result;
+      if (operation === 'begin') result = await service.begin(sessionId, args.anchor, args.vision, args.rect);
+      else if (operation === 'tool') result = await service.tool(sessionId, message.tool, args);
+      else throw new Error('不支持的 PDF 操作。');
+      if (service !== documentService) throw new Error('文档已切换。');
+      return result;
+    };
+    run().then(result => respond({ ok: true, result })).catch(error => respond({ ok: false, error: error.name === 'AbortError' ? 'PDF 读取已停止。' : error.message }));
+    return true;
+  }
   if (message.type !== 'reader:goto') return;
   if (!pdf) { respond({ ok: false, error: '文档尚未打开' }); return; }
   if (message.documentKey && message.documentKey !== pdf.fingerprints[0]) { respond({ ok: false, error: '该引用属于另一份文档，请重新打开原 PDF。' }); return; }
@@ -352,6 +372,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
 });
 window.addEventListener('pagehide', () => {
   ++documentEpoch; ++openRequestEpoch;
+  documentService?.close(); documentService = null;
   viewer.reset(); loadingTask?.destroy().catch(() => {});
   clearPreview();
 });
@@ -366,6 +387,10 @@ if (requestedUrl) {
     const url = safeDocumentUrl(requestedUrl);
     $('url-prompt').hidden = false;
     $('url-label').textContent = `即将读取：${url.protocol === 'file:' ? documentName(url.href) : url.hostname + url.pathname}`;
+    if (url.protocol === 'file:') {
+      $('open-url').textContent = '授权本地文件读取并打开 PDF';
+      $('url-access-note').textContent = '需要开启“允许访问文件网址”并授权本地文件读取。也可点击顶部“打开 PDF”选择文件，无需这些权限。';
+    }
     $('open-url').addEventListener('click', () => openUrl(url.href).catch(report));
   } catch (error) { report(error); }
 }

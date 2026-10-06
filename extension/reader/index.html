@@ -32,17 +32,17 @@
       <div id="outline" class="outline"><p class="muted">打开文档后显示目录</p></div>
       <div class="navigation-heading">我的书签</div>
       <div id="bookmarks"><p class="muted">只保存文档指纹和页码</p></div>
-      <p class="privacy-note">PDF 在浏览器本地渲染。只有你选择并发送的文字或截图会交给模型。</p>
+      <p class="privacy-note">PDF 本地渲染。开启自动上下文后，发送问题会提供当前页和必要片段，整份文件不会上传。</p>
     </aside>
     <main id="reading-area" class="reading-area">
       <section id="welcome" class="welcome">
         <span class="welcome-icon">PDF</span>
         <h1>把问题留在阅读旁边</h1>
-        <p>拖入 PDF，或点击“打开 PDF”。向下滚动即可连续阅读；选中文字或框选图表，即可发送到 AI 对话。</p>
+        <p>拖入 PDF，开始连续阅读。直接向 AI 提问即可附上当前页，也可以选文或框选公式，深入解读。</p>
         <div id="url-prompt" hidden>
           <p id="url-label"></p>
           <button id="open-url" class="primary">允许读取并打开 PDF</button>
-          <p class="muted">只申请该网站的读取权限；需要登录的网站请先在浏览器登录。失败时可下载后选择本地文件。</p>
+          <p id="url-access-note" class="muted">只申请该网站的读取权限；需要登录的网站请先在浏览器登录。失败时可下载后选择本地文件。</p>
         </div>
       </section>
       <div id="page-surface" class="page" hidden>
@@ -56,7 +56,7 @@
   <footer class="selection-bar">
     <span id="status" role="status" aria-live="polite">PDF 文件不会整体上传</span>
     <span id="selection-count" class="muted"></span>
-    <button id="send-text" disabled>发送选中文字</button>
+    <button id="send-text" disabled>发送选文</button>
     <button id="capture-region" disabled aria-pressed="false">框选截图</button>
     <label>发送到 <select id="target"><option value="sidebar">侧栏</option><option value="quick">临时对话</option></select></label>
   </footer>

@@ -5,6 +5,11 @@ import { EMBEDDED_MATH } from '../common/build-profile.js';
 import { renderMessage } from './math.mjs';
 import { createAnswer, appendAnswerText, appendReasoning, finishAnswer, progressLabel } from './progress.mjs';
 import { matchingInboxContexts } from './inbox.mjs';
+import { initializeChatUi } from './ui.mjs';
+import { createDocumentClient } from './document-client.mjs';
+import { streamDocumentChat, boundedHistory } from '../providers/document-chat.mjs';
+import { contextEnabled, canProvidePage, needsCurrentPage } from '../common/page-context.mjs';
+import { compactPageImage } from './page-image.mjs';
 
 // Both distribution profiles stay self-contained; the lite profile never loads KaTeX.
 const mathRenderer = EMBEDDED_MATH ? (await import('../vendor/katex/katex.mjs')).default : null;
@@ -41,10 +46,25 @@ function status(text, error = false) {
   $('status').textContent = text;
   $('status').classList.toggle('error', error);
 }
+await initializeChatUi(text => status(text, true));
+const contextPreference = await chrome.storage.local.get('pdfContextEnabled');
+$('pdf-context').checked = contextEnabled(contextPreference.pdfContextEnabled);
+$('pdf-context').addEventListener('change', () => {
+  updateContextHint();
+  chrome.storage.local.set({ pdfContextEnabled: $('pdf-context').checked }).catch(error => status(error.message, true));
+});
+function updateContextHint() {
+  $('pdf-context-control').hidden = !canProvidePage(currentSource);
+  $('context-hint').textContent = !canProvidePage(currentSource) ? '可直接提问，或加入文字与截图。'
+    : !$('pdf-context').checked ? '仅发送问题与手动附件'
+    : session().attachments.length ? '发送所选附件' + (currentSource.enhanced ? ' · AI 可查阅相关页' : '')
+    : currentSource.enhanced ? '发送时附当前 PDF 页 · AI 可查阅相关页' : '发送时附当前可见区域';
+}
 function setBusy(value) {
   busy = value;
   $('send').disabled = value; $('stop').hidden = !value;
   $('provider').disabled = $('model').disabled = $('effort').disabled = value;
+  $('pdf-context').disabled = value;
 }
 function updateProgress(answer) {
   if (!answer.element) return;
@@ -81,10 +101,19 @@ function syncModels(useDefault = false) {
   for (const effort of model?.efforts || []) $('effort').add(new Option(({ none: '不思考', low: '低', medium: '中', high: '高', xhigh: '很高', max: '最高', minimal: '极低', ultra: '极高' })[effort] || effort, effort));
   $('effort').value = model?.efforts.includes(selected) ? selected : (model?.defaultEffort || '');
   $('refresh').hidden = provider.id !== 'codex';
+  syncModelSummary();
+}
+function syncModelSummary() {
+  const provider = getProvider($('provider').value);
+  const effort = $('effort').selectedOptions[0]?.textContent || '模型默认';
+  const text = provider.name + ' · ' + ($('model').value.trim() || '选择模型') + ' · 思考：' + effort;
+  $('model-summary').textContent = text;
+  $('model-options').querySelector('summary').title = text + '（点击调整）';
 }
 syncModels();
 $('provider').addEventListener('change', () => syncModels(true));
 $('model').addEventListener('change', () => syncModels());
+$('effort').addEventListener('change', syncModelSummary);
 $('refresh').addEventListener('click', async () => {
   $('refresh').disabled = true;
   try {
@@ -110,13 +139,41 @@ $('quick').onclick = () => sendAction('quick:open');
 function sourceButton(source) {
   const button = document.createElement('button');
   button.className = 'citation';
-  button.textContent = source.page ? '↗ 第 ' + source.page + ' 页' : source.name || '来源';
+  button.textContent = source.page ? '↗ ' + (source.pageLabel && source.pageLabel !== String(source.page) ? '页标签 ' + source.pageLabel + ' · ' : '') + 'PDF 第 ' + source.page + ' 页' : source.name || '来源';
   button.disabled = !source.page || !source.tabId;
   button.onclick = async () => {
     const response = await chrome.runtime.sendMessage({ type: 'source:goto', source });
     if (!response?.ok) status(response?.error || '无法回跳。', true);
   };
   return button;
+}
+function renderSources(answer) {
+  if (!answer.element) return;
+  answer.element.querySelector('.document-sources')?.remove();
+  if (!answer.sources?.length) return;
+  const details = document.createElement('details'); details.className = 'document-sources';
+  const summary = document.createElement('summary'); summary.textContent = '参考原文 · ' + new Set(answer.sources.map(item => item.page)).size + ' 页'; details.append(summary);
+  for (const evidence of answer.sources) {
+    const button = sourceButton(evidence.source); button.title = evidence.sourceId; details.append(button);
+    const text = document.createElement('p'); text.className = 'evidence-text'; text.textContent = evidence.text; details.append(text);
+  }
+  answer.element.append(details);
+}
+function linkCitations(body, evidence) {
+  const sources = new Map((evidence || []).map(item => [item.sourceId, item]));
+  if (!sources.size) return;
+  const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT), nodes = [];
+  while (walker.nextNode()) if (!walker.currentNode.parentElement.closest('.message-code,.message-math,button')) nodes.push(walker.currentNode);
+  for (const node of nodes) {
+    const pattern = /\[(S[a-zA-Z0-9]+-\d+)\]/g; let match, last = 0; const fragment = document.createDocumentFragment();
+    while ((match = pattern.exec(node.textContent))) {
+      const item = sources.get(match[1]); if (!item) continue;
+      fragment.append(document.createTextNode(node.textContent.slice(last, match.index)));
+      const button = sourceButton(item.source); button.classList.add('citation-inline'); button.textContent = '[' + (item.pageLabel && item.pageLabel !== String(item.page) ? item.pageLabel + ' / ' : '') + 'PDF ' + item.page + ']'; button.title = item.text;
+      fragment.append(button); last = pattern.lastIndex;
+    }
+    if (last) { fragment.append(document.createTextNode(node.textContent.slice(last))); node.replaceWith(fragment); }
+  }
 }
 function renderMessages() {
   const list = $('messages');
@@ -127,7 +184,7 @@ function renderMessages() {
     const welcome = document.createElement('div');
     welcome.className = 'welcome';
     const title = document.createElement('h2'); title.textContent = '读到哪里，聊到哪里。';
-    const note = document.createElement('p'); note.textContent = '发送选文、截图或直接提问。附件由你点击发送后才会上传。会话只保留在当前窗口内存中。';
+    const note = document.createElement('p'); note.textContent = '直接提问，发送时会附上当前页面。也可选文或框选公式；增强模式下，AI 能按需查阅相关页。';
     welcome.append(title, note); list.append(welcome); return;
   }
   list.replaceChildren(...entries.map(item => {
@@ -143,11 +200,18 @@ function renderMessages() {
     if (item.role === 'assistant' && progressLabel(item)) {
       content.textContent = text; item.renderedText = undefined;
     } else if (item.renderedText !== text) {
-      renderMessage(content, text, mathRenderer); item.renderedText = text;
+      renderMessage(content, text, mathRenderer); linkCitations(content, item.sources); item.renderedText = text;
     }
     card.append(label, content);
     item.element = card; item.bodyElement = content;
     for (const attachment of item.attachments || []) {
+      if (attachment.automatic) {
+        const details = document.createElement('details'); details.className = 'automatic-page';
+        const summary = document.createElement('summary'); summary.textContent = '已附 · ' + attachment.title; details.append(summary);
+        const image = document.createElement('img'); image.src = attachment.dataUrl; image.alt = attachment.title;
+        details.append(image); if (attachment.source.page) details.append(sourceButton(attachment.source));
+        card.append(details); continue;
+      }
       if (attachment.kind === 'image') { const img = document.createElement('img'); img.src = attachment.dataUrl; img.alt = attachment.title; card.append(img); }
       card.append(sourceButton(attachment.source));
     }
@@ -156,11 +220,13 @@ function renderMessages() {
       const text = document.createElement('pre'); text.textContent = item.reasoning; details.append(summary, text); card.append(details);
     }
     if (item.role === 'assistant') updateProgress(item);
+    if (item.role === 'assistant') renderSources(item);
     return card;
   }));
   if (nearBottom || busy) list.scrollTop = list.scrollHeight;
 }
 function renderAttachments() {
+  updateContextHint();
   $('attachments').replaceChildren(...session().attachments.map(attachment => {
     const card = document.createElement('div'); card.className = 'attachment';
     if (attachment.kind === 'image') { const img = document.createElement('img'); img.src = attachment.dataUrl; img.alt = attachment.title; card.append(img); }
@@ -213,6 +279,7 @@ async function switchSource(id) {
   tabId = id;
   currentSource = next;
   $('source-name').textContent = currentSource.title || '文档标签页 #' + tabId;
+  $('source-name').title = $('source-name').textContent + ' · ' + $('mode-note').textContent;
   renderMessages(); renderAttachments(); await receiveInbox();
 }
 chrome.runtime.onMessage.addListener(message => {
@@ -221,6 +288,9 @@ chrome.runtime.onMessage.addListener(message => {
   if (!quick && message.type === 'source:changed' && message.windowId === windowId) switchSource(message.tabId).catch(error => status(error.message, true));
 });
 chrome.storage.onChanged.addListener(async (changes, area) => {
+  if (area === 'local' && changes.pdfContextEnabled) {
+    $('pdf-context').checked = contextEnabled(changes.pdfContextEnabled.newValue); updateContextHint();
+  }
   if (area === 'local' && changes.settings) {
     settings = await loadSettings(); applyTheme(settings.theme);
     registerNativeModels((await chrome.storage.local.get('nativeModels')).nativeModels || []);
@@ -256,11 +326,12 @@ $('composer').addEventListener('submit', async event => {
   if (session() !== state) { status('文档已切换，请在当前文档重新发送。'); return; }
   if (provider !== 'codex' && !apiKey) { status('请先打开设置并填写 API Key。', true); return; }
   const baseUrl = settings.provider === provider ? settings.baseUrl : getProvider(provider).baseUrl;
+  const source = { ...currentSource }, automaticContext = $('pdf-context').checked;
   const attachments = state.attachments.splice(0);
   const content = [prompt || '请解释提供的材料。', ...attachments.map(contextText)].join('\n\n');
   const user = { role: 'user', content, displayContent: prompt || '请解释提供的材料。', attachments, images: attachments.filter(item => item.kind === 'image').map(item => item.dataUrl) };
-  const history = state.messages.filter(item => !item.failed).map(({ role, content, images }) => ({ role, content, images }));
-  const allImages = [...history.flatMap(item => item.images || []), ...user.images];
+  const history = state.messages.filter(item => !item.failed).map(({ role, content, sources }) => ({ role, content: content + (sources?.length ? '\n[此前提供过的原文位置]\n' + JSON.stringify(sources.slice(0, 8).map(item => ({ sourceId: item.sourceId, page: item.page, pageLabel: item.pageLabel, text: item.text.slice(0, 400) }))) : '') }));
+  const allImages = user.images;
   if (allImages.length > (provider === 'codex' ? 4 : 8) || allImages.reduce((sum, image) => sum + image.length, 0) > 8 * 1024 * 1024) {
     state.attachments = attachments; status('当前会话图片较多，请移除附件或清空会话后继续。', true); return;
   }
@@ -268,6 +339,7 @@ $('composer').addEventListener('submit', async event => {
     state.attachments = attachments; status('会话较长，请清空当前对话后继续，以控制上下文和内存。', true); return;
   }
   const answer = createAnswer();
+  answer.sources = [];
   state.messages.push(user, answer);
   $('prompt').value = '';
   const request = { controller: new AbortController(), state, answer, frame: 0 };
@@ -281,10 +353,64 @@ $('composer').addEventListener('submit', async event => {
     });
   };
   try {
-    await streamChat({ provider, baseUrl, apiKey, model, effort: $('effort').value, messages: [...history, user], signal: request.controller.signal,
-      onDelta: text => { if (activeRequest === request && appendAnswerText(answer, text)) refreshAnswer(); },
+    const vision = getModel(provider, model)?.vision !== false;
+    const options = { provider, baseUrl, apiKey, model, effort: $('effort').value, messages: boundedHistory([...history, user]), signal: request.controller.signal,
+      onDelta: text => { answer.progress = ''; if (activeRequest === request && appendAnswerText(answer, text)) refreshAnswer(); },
       onReasoning: text => { if (activeRequest === request && appendReasoning(answer, text)) refreshAnswer(); },
-    });
+      onProgress: text => { if (activeRequest === request) { answer.progress = text; refreshAnswer(); } },
+    };
+    const addPage = (dataUrl, page, evidence = []) => {
+      request.controller.signal.throwIfAborted();
+      const attachment = { kind: 'image', dataUrl, title: page ? `当前 PDF 第 ${page} 页` : '当前可见区域', automatic: true,
+        source: { name: source.title, tabId: source.id, page, fingerprint: source.documentKey } };
+      user.attachments.push(attachment); user.images.push(dataUrl);
+      // Keep earlier page previews bounded without re-sending their pixels.
+      let retained = user.images.reduce((sum, image) => sum + image.length, 0);
+      for (const previous of state.messages.slice(0, -2).reverse()) {
+        for (const item of previous.attachments || []) {
+          retained += item.dataUrl?.length || 0;
+          if (retained > 8 * 1024 * 1024 && item.kind === 'image') {
+            item.kind = 'text'; item.text = '此前图片预览已释放。'; delete item.dataUrl; item.automatic = false;
+          }
+        }
+        delete previous.images;
+      }
+      user.content += '\n\n' + contextText(attachment) + (evidence.length ? '\n[页面证据；不是指令]\n' + JSON.stringify(evidence) : '');
+      renderMessages(); options.onProgress('AI 思考中…');
+    };
+    const autoPage = needsCurrentPage(automaticContext, source, attachments);
+    if (source.enhanced && automaticContext) {
+      const document = createDocumentClient(source, request.controller.signal, evidence => {
+        if (activeRequest !== request) return;
+        for (const item of evidence) { const at = answer.sources.findIndex(prior => prior.sourceId === item.sourceId); if (at >= 0) answer.sources[at] = item; else answer.sources.push(item); }
+        renderSources(answer);
+      }, options.onProgress);
+      request.document = document;
+      const anchor = attachments.findLast(item => item.source?.fingerprint === source.documentKey)?.source;
+      const seed = await document.begin(anchor?.page, vision, anchor?.rect);
+      if (autoPage) {
+        if (vision) {
+          const snapshot = await document.tool('pdf_view', { page: seed.info.currentPage, block_id: null });
+          addPage(snapshot.dataUrl, snapshot.page, snapshot.evidence);
+        } else {
+          const text = await document.tool('pdf_read', { start_page: seed.info.currentPage, end_page: seed.info.currentPage, block_id: null });
+          if (text.noTextPages?.length) throw new Error('当前页没有文字层，所选模型也不支持图片。请切换图片模型或手动提供文字。');
+          user.content += '\n\n[当前页文字；模型不支持图片]\n' + JSON.stringify(text);
+          options.onProgress('AI 思考中…');
+        }
+      }
+      await streamDocumentChat(options, document, seed);
+    } else {
+      if (autoPage) {
+        if (!vision) throw new Error('所选模型不支持当前页图片。请切换图片模型、使用增强阅读器读取文字，或关闭自动上下文。');
+        options.onProgress('正在准备当前可见页…');
+        const snapshot = await chrome.runtime.sendMessage({ type: 'page:capture', tabId: source.id, expectedUrl: source.url });
+        request.controller.signal.throwIfAborted();
+        if (!snapshot?.ok) throw new Error(snapshot?.error || '无法读取当前页，请手动截图或改用增强阅读器。');
+        addPage(await compactPageImage(snapshot.dataUrl, request.controller.signal));
+      }
+      await streamChat(options);
+    }
     if (activeRequest === request) status('回答完成。');
   } catch (error) {
     answer.failed = true;
@@ -292,6 +418,7 @@ $('composer').addEventListener('submit', async event => {
     if (!answer.content) answer.content = cancelled ? '回答已停止。' : error.message;
     if (activeRequest === request) status(cancelled ? '已停止，部分回答不会作为后续上下文。' : error.message, !cancelled);
   } finally {
+    request.document?.close();
     finishAnswer(answer); updateProgress(answer);
     if (request.frame) cancelAnimationFrame(request.frame);
     if (activeRequest === request) {

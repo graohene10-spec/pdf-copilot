@@ -11,7 +11,8 @@ namespace PdfCopilot {
             if (args.Length > 0 && args[0] == "--self-test") return SelfTest();
             try {
                 string testMode = null, codexPath = null;
-                bool verifyIsolation = args.Length == 1 && args[0] == "--verify-isolation";
+                bool verifyDocumentTools = args.Length == 1 && args[0] == "--verify-document-tools";
+                bool verifyIsolation = args.Length == 1 && (args[0] == "--verify-isolation" || verifyDocumentTools);
                 var configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "host-config.json");
                 Dictionary<string, object> config = File.Exists(configPath) ? Json.Parse(File.ReadAllText(configPath)) : Json.Obj();
                 if (args.Length > 0 && args[0] == "--test-server") {
@@ -32,7 +33,7 @@ namespace PdfCopilot {
                 var frames = new NativeFrames(Console.OpenStandardInput(), Console.OpenStandardOutput());
                 using (var client = new CodexClient(codexPath, frames, testMode)) {
                     if (verifyIsolation) {
-                        client.VerifyIsolation(); Console.WriteLine("Codex ephemeral/read-only/no-environment handshake passed; no inference was started."); return 0;
+                        client.VerifyIsolation(verifyDocumentTools); Console.WriteLine("Codex ephemeral/read-only/no-environment" + (verifyDocumentTools ? "/PDF-tools" : "") + " handshake passed; no inference was started."); return 0;
                     }
                     while (true) {
                         Dictionary<string, object> message;
@@ -45,6 +46,11 @@ namespace PdfCopilot {
                         if (request.Type == "cancel") {
                             bool cancelled = client.Cancel(request.TargetId);
                             frames.Write(Json.Obj("id", request.Id, "ok", true, "result", Json.Obj("cancelled", cancelled))); continue;
+                        }
+                        if (request.Type == "tool-result") {
+                            try { client.CompleteDocumentTool(request); frames.Write(Json.Obj("id", request.Id, "ok", true, "result", Json.Obj())); }
+                            catch (InvalidOperationException e) { frames.Write(Json.Obj("id", request.Id, "ok", false, "error", e.Message)); }
+                            continue;
                         }
                         if (request.Type == "chat") {
                             try { client.PrepareChat(request.Id); }

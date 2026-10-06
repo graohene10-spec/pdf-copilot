@@ -12,7 +12,9 @@
 
 提交源代码、文档和锁文件；dist、release、node_modules、测试 artifacts 与 .cache 不进入 Git。发布前扫描待提交文件和 ZIP，排除密钥、用户 PDF、个人配置和临时测试文件。
 
-创建并推送与源码提交一致的版本标签（例如 v0.2.3）。先创建草稿 Release，上传六个 ZIP、SHA256SUMS.txt 和 DISTRIBUTIONS.md，使用对应版本的 docs/RELEASE_NOTES_v0.2.3.md 作为说明。核对标签、附件名称、大小和 SHA-256 后再公开 Release。
+先查询 GitHub 上最新公开发行版，以它为基线整理更新日志；不要列出仅在本机开发、未公开发行的中间版本。日志只列新增、改进和修复，已有能力留在功能介绍中。
+
+创建并推送与源码提交一致的版本标签（例如 v0.3.2）。先创建草稿 Release，上传六个 ZIP、SHA256SUMS.txt 和 DISTRIBUTIONS.md，使用对应版本的 docs/RELEASE_NOTES_v0.3.2.md 作为说明。核对标签、附件名称、大小和 SHA-256 后再公开 Release。安装教程须使用本次附件文件名，并逐步写出解压、加载扩展、连接模型、首次阅读及成功标志。
 
 GitHub 自动生成的源码归档没有编译后的扩展，应在 README 明确提示用户下载完整安装包。侧载扩展更新需要覆盖实际加载目录、重新加载扩展并重开旧页面，不能承诺自动更新。
 

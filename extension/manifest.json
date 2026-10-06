@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "PDF Copilot · 阅读助手",
-  "version": "0.2.3",
+  "version": "0.3.2",
   "description": "保留浏览器 PDF 阅读习惯，提供 AI 侧栏、临时问答与精确框选。",
   "minimum_chrome_version": "132",
   "permissions": ["activeTab", "sidePanel", "storage", "contextMenus", "nativeMessaging"],

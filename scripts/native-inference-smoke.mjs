@@ -28,6 +28,7 @@ try {
   const models = await worker.evaluate(async () => (await chrome.storage.local.get('nativeModels')).nativeModels || []);
   assert(models.length > 0, await chat.locator('#status').textContent());
   const model = models.find(model => /mini/.test(model.id)) || models[0]; result.model = model.id;
+  await chat.locator('#model-options summary').click();
   await chat.locator('#model').fill(model.id); await chat.locator('#model').press('Tab');
   const efforts = await chat.locator('#effort option').evaluateAll(options => options.map(option => option.value));
   if (efforts.includes('low')) await chat.locator('#effort').selectOption('low');
@@ -42,7 +43,7 @@ try {
   };
   const text = await send('Synthetic connection test. Reply with PDF_COPILOT_TEST_OK only. Do not use tools.');
   assert.match(text, /PDF_COPILOT_TEST_OK/); result.text = 'pass'; console.log('PASS real Codex text round trip');
-  await chat.locator('#clear').click();
+  await chat.locator('#chat-menu summary').click(); await chat.locator('#clear').click();
   await chat.evaluate(async tab => {
     const canvas = document.createElement('canvas'); canvas.width = canvas.height = 64;
     const context = canvas.getContext('2d'); context.fillStyle = 'white'; context.fillRect(0, 0, 64, 64);

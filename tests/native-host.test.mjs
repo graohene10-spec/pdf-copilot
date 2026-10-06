@@ -148,6 +148,48 @@ test('native host cancels an active turn and clears it', { skip: !supported }, a
   } finally { await client.close(); }
 });
 
+for (const mode of ['document-tool', 'document-image']) {
+  test(`native host routes allowlisted PDF requests and accepts bound results: ${mode}`, { skip: !supported }, async () => {
+    const client = host(mode);
+    try {
+      client.send({ id: 'chat', type: 'chat', text: 'Explain', pdfTools: true, pdfVision: mode === 'document-image' });
+      const call = await client.until(m => m.event === 'tool');
+      assert.equal(call.tool, mode === 'document-image' ? 'pdf_view' : 'pdf_search');
+      client.send({ id: 'foreign', type: 'tool-result', targetId: 'other-chat', callId: call.callId, text: '{}' });
+      assert.equal((await client.until(m => m.id === 'foreign')).ok, false);
+      client.send({ id: 'result', type: 'tool-result', targetId: 'chat', callId: call.callId, text: '{"sourceId":"Sfixture-1","page":2}', images: mode === 'document-image' ? ['data:image/png;base64,iVBORw=='] : [] });
+      assert.equal((await client.until(m => m.id === 'result')).ok, true);
+      await client.until(m => m.event === 'done'); assert(client.messages.some(m => m.text?.includes('Sfixture-1')));
+      client.send({ id: 'stale', type: 'tool-result', targetId: 'chat', callId: call.callId, text: '{}' });
+      assert.equal((await client.until(m => m.id === 'stale')).ok, false);
+    } finally { await client.close(); }
+  });
+}
+for (const mode of ['document-unknown', 'document-foreign']) {
+  test(`native PDF tool mode still rejects invalid actions: ${mode}`, { skip: !supported }, async () => {
+    const client = host(mode);
+    try { client.send({ id: 'chat', type: 'chat', text: 'Explain', pdfTools: true }); await client.until(m => m.event === 'error'); assert(!client.messages.some(m => m.event === 'tool')); }
+    finally { await client.close(); }
+  });
+}
+test('unsupported Codex dynamic tools fail before inference with a compatibility marker', { skip: !supported }, async () => {
+  const client = host('document-unsupported');
+  try { client.send({ id: 'chat', type: 'chat', text: 'Explain', pdfTools: true }); const failure = await client.until(m => m.event === 'error'); assert(failure.error.startsWith('PDF_TOOLS_UNAVAILABLE:')); }
+  finally { await client.close(); }
+});
+test('native host cancels while the browser is fulfilling a PDF tool call', { skip: !supported }, async () => {
+  const client = host('document-tool');
+  try {
+    client.send({ id: 'chat', type: 'chat', text: 'Explain', pdfTools: true });
+    const call = await client.until(m => m.event === 'tool');
+    client.send({ id: 'cancel', type: 'cancel', targetId: 'chat' });
+    assert.equal((await client.until(m => m.id === 'cancel')).result.cancelled, true);
+    await client.until(m => m.event === 'done');
+    client.send({ id: 'late', type: 'tool-result', targetId: 'chat', callId: call.callId, text: '{}' });
+    assert.equal((await client.until(m => m.id === 'late')).ok, false);
+  } finally { await client.close(); }
+});
+
 test('native host cancels a queued chat before app-server startup', { skip: !supported }, async () => {
   const client = host('hanging');
   try {

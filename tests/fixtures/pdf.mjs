@@ -1,5 +1,5 @@
 // Synthetic PDFs only. No external files or personal document content.
-export function samplePdf(count = 2, mixedSizes = false, navigation = false) {
+export function samplePdf(count = 2, mixedSizes = false, navigation = false, options = {}) {
   const objects = [];
   const add = value => { objects.push(value); return objects.length; };
   add(''); add('');
@@ -8,7 +8,9 @@ export function samplePdf(count = 2, mixedSizes = false, navigation = false) {
   for (let page = 1; page <= count; page++) {
     const width = mixedSizes && page % 3 === 0 ? 650 : 500;
     const height = mixedSizes && page % 3 === 0 ? 500 : 650;
-    const drawing = `BT /F1 22 Tf 45 ${height - 80} Td (Synthetic page ${page}) Tj ET\n1 0 0 rg 45 200 180 100 re f`;
+    const escape = text => text.replace(/([\\()])/g, '\\$1');
+    const lines = options.lines?.[page] || [`Synthetic page ${page}`];
+    const drawing = lines.map((text, index) => `BT /F1 ${options.lines ? 16 : 22} Tf 45 ${height - 80 - index * 28} Td (${escape(text)}) Tj ET`).join('\n') + '\n1 0 0 rg 45 200 180 100 re f';
     const content = add(`<< /Length ${Buffer.byteLength(drawing)} >>\nstream\n${drawing}\nendstream`);
     pages.push(add(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${width} ${height}] /Resources << /Font << /F1 ${font} 0 R >> >> /Contents ${content} 0 R >>`));
   }
@@ -21,7 +23,7 @@ export function samplePdf(count = 2, mixedSizes = false, navigation = false) {
     objects[pages[0] - 1] = objects[pages[0] - 1].slice(0, -2) + ` /Annots [${linkId} 0 R] >>`;
     outline = ` /Outlines ${outlineId} 0 R`;
   }
-  objects[0] = `<< /Type /Catalog /Pages 2 0 R${outline} >>`;
+  objects[0] = `<< /Type /Catalog /Pages 2 0 R${outline}${options.labels ? ' /PageLabels << /Nums [0 << /S /r >> 1 << /S /D /St 1 >>] >>' : ''} >>`;
   objects[1] = `<< /Type /Pages /Kids [${pages.map(id => `${id} 0 R`).join(' ')}] /Count ${count} >>`;
   let body = '%PDF-1.7\n';
   const offsets = [0];
