@@ -18,6 +18,7 @@ for (const file of [...await walk(join(root, 'extension')), ...await walk(join(r
 const embeddedMath = !process.argv.includes('--math=plain');
 const dist = join(root, 'dist', embeddedMath ? 'extension' : 'extension-lite');
 const manifest = JSON.parse(await readFile(join(dist, 'manifest.json'), 'utf8'));
+if (Object.values(manifest.commands || {}).filter(command => command.suggested_key).length > 4) throw new Error('Chromium supports at most four suggested command shortcuts');
 for (const file of [manifest.background.service_worker, manifest.options_page, manifest.side_panel.default_path, ...Object.values(manifest.icons), 'reader/index.html', 'capture/index.html', 'vendor/pdfjs/pdf.mjs', 'vendor/pdfjs/pdf.worker.mjs', ...(embeddedMath ? ['vendor/katex/katex.mjs', 'vendor/katex/katex.min.css', 'vendor/katex/fonts/KaTeX_Main-Regular.woff2'] : [])]) await access(join(dist, file));
 const buildProfile = await readFile(join(dist, 'common', 'build-profile.js'), 'utf8');
 if (!buildProfile.includes(`EMBEDDED_MATH = ${embeddedMath}`)) throw new Error('Math build profile mismatch');

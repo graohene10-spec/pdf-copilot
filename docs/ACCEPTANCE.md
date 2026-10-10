@@ -2,6 +2,8 @@
 
 本版结果与限制见[测试记录](QA_REPORT.md)。常规自动验证使用合成 PDF 与本机模拟接口，不需要真实 API Key；真实账户检查单独启用并记录。
 
+当前未发行的多标签页/排队改动见[开发版测试记录](MULTI_TAB_QA.md)。
+
 ## 运行准备
 
 在仓库根目录打开 PowerShell，安装 Node.js 22+ 和当前 Edge。先构建并执行基础检查：
@@ -33,6 +35,7 @@ node scripts/acceptance-smoke.mjs
 node scripts/context-smoke.mjs
 node scripts/resource-limits-smoke.mjs
 node scripts/page-smoke.mjs
+node scripts/multi-tab-smoke.mjs
 node scripts/file-url-smoke.mjs
 ~~~
 
@@ -41,6 +44,7 @@ node scripts/file-url-smoke.mjs
 ~~~powershell
 $env:PDF_COPILOT_MATH_PROFILE = 'plain'
 node scripts/page-smoke.mjs
+node scripts/multi-tab-smoke.mjs
 node scripts/file-url-smoke.mjs
 Remove-Item Env:\PDF_COPILOT_MATH_PROFILE
 ~~~
@@ -60,6 +64,7 @@ Remove-Item Env:\PDF_COPILOT_MATH_PROFILE
 - 增强框选、反向拖动、等待渲染、取消与夜间原色预览；引用回跳及区域高亮。
 - 直接问当前页、翻页后再问、手动附件优先、关闭自动上下文并重开；文字模型读取文字层，扫描页给出图片要求。
 - 两个 PDF 标签页和多个窗口之间切换，附件/会话不会串文档；侧栏与临时窗口独立。
+- 开发版：真实全局侧栏切换标签页后原回答继续接收；切回显示完整回复与草稿。多窗口共用名额、队列位置/满额恢复、取消与关闭来源释放名额，后台线程重启不超额。增强模式框选快捷键在浏览器快捷键设置中可修改。
 - 指定章节/公式/页码，让 AI 搜索、读页、查看页图；核对原文引用和物理页码/页标签；达到预算后正常收束。
 - 设置资源限制、恢复默认及范围校验；默认五次页图，修改设置后下一题生效，进行中问题保留原预算；API/Codex 与兼容阅读计划均不超过自定义上限。
 - DeepSeek / OpenAI 各一次真实文字/图片问答，检查所选模型、低/高思考强度及错误模型/权限/额度；Codex 验证真实文字、图片、工具和取消。

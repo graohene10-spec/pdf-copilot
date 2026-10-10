@@ -1,0 +1,10 @@
+node_modules/
+dist/
+public/vendor/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/resources/*.exe
+release/
+test-results/
+artifacts/
+.toolchain/

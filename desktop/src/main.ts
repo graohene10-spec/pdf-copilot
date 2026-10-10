@@ -1,0 +1,10 @@
+import { createApp } from 'vue';
+import App from './App.vue';
+import './styles.css';
+import './styles/liquid-glass.css';
+import { installLiquidGlass } from './ui/liquid-glass';
+const app = createApp(App);
+app.mount('#app');
+const disposeGlass = installLiquidGlass(document.getElementById('app')!);
+app.onUnmount(disposeGlass);
+if (import.meta.hot) import.meta.hot.dispose(disposeGlass);

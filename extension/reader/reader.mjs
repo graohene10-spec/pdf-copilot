@@ -4,6 +4,7 @@ import { cropImage } from './selection.mjs';
 import { ContinuousPdfViewer } from './continuous.mjs';
 import { DocumentService, renderDocumentImage } from './document-service.mjs';
 import { requestDocumentAccess, documentOpenError } from './document-access.mjs';
+import { animateOut, prefersReducedMotion } from '../common/motion.mjs';
 
 pdfjs.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL('vendor/pdfjs/pdf.worker.mjs');
 const $ = id => document.getElementById(id);
@@ -239,6 +240,7 @@ async function openDocument(input, newSource) {
       const hint = document.createElement('p'); hint.className = 'muted'; hint.textContent = '此 PDF 没有内置目录'; $('outline').append(hint);
     }
     $('welcome').hidden = true;
+    $('page-surface').classList.add('fade-in');
     await viewer.setDocument(loaded);
   } catch (error) {
     if (epoch !== documentEpoch) return;
@@ -282,12 +284,45 @@ $('page-number').addEventListener('change', () => renderPage(Number($('page-numb
 $('zoom-in').addEventListener('click', () => { scale = clamp((viewport?.scale || viewer.displayScale || 1) * 1.2, 0.25, 4); clearSelection(); viewer.zoom(scale).catch(report); });
 $('zoom-out').addEventListener('click', () => { scale = clamp((viewport?.scale || viewer.displayScale || 1) / 1.2, 0.25, 4); clearSelection(); viewer.zoom(scale).catch(report); });
 $('zoom-label').addEventListener('click', () => { scale = null; clearSelection(); viewer.zoom(null).catch(report); });
-$('nav-toggle').addEventListener('click', () => { $('navigation').hidden = !$('navigation').hidden; if (pdf && scale === null) { clearSelection(); viewer.zoom(null).catch(report); } });
+$('nav-toggle').addEventListener('click', () => {
+  // The drawer animates width/opacity, so `hidden` is deferred until the
+  // transition ends; `is-collapsed` carries the visual state in the meantime.
+  // A generic pop-out animation would fight the width transition, so this uses
+  // the drawer's own transitionend instead of animateOut.
+  const navigation = $('navigation');
+  const collapsing = !navigation.classList.contains('is-collapsed');
+  $('nav-toggle').setAttribute('aria-expanded', String(!collapsing));
+
+  if (!collapsing) {
+    navigation.hidden = false;
+    if (prefersReducedMotion()) { navigation.classList.remove('is-collapsed'); return; }
+    // Commit the collapsed start state before expanding, or the browser
+    // coalesces both states and the drawer snaps open.
+    void navigation.offsetWidth;
+    navigation.classList.remove('is-collapsed');
+    return;
+  }
+
+  navigation.classList.add('is-collapsed');
+  if (prefersReducedMotion()) { navigation.hidden = true; return; }
+  const finish = () => {
+    navigation.removeEventListener('transitionend', onEnd);
+    clearTimeout(timer);
+    navigation.hidden = true;
+  };
+  const onEnd = event => {
+    if (event.target === navigation && (event.propertyName === 'width' || event.propertyName === 'opacity')) finish();
+  };
+  const timer = setTimeout(finish, 320);
+  navigation.addEventListener('transitionend', onEnd);
+});
 $('bookmark').addEventListener('click', () => saveBookmarks(bookmarkPages.includes(pageNumber) ? bookmarkPages.filter(page => page !== pageNumber) : [...bookmarkPages, pageNumber]).catch(report));
 $('night').addEventListener('click', () => {
   const value = !document.body.classList.contains('night');
+  document.documentElement.classList.add('theme-transition');
   document.body.classList.toggle('night', value);
   $('night').setAttribute('aria-pressed', String(value));
+  if (!prefersReducedMotion()) setTimeout(() => document.documentElement.classList.remove('theme-transition'), 280);
   chrome.storage.local.set({ readerNightMode: value }).catch(report);
 });
 $('sidebar').addEventListener('click', () => chrome.runtime.sendMessage({ type: 'sidebar:open', windowId: readerWindow?.id }).then(response => { if (!response?.ok) throw new Error(response?.error || '请点击插件图标打开侧栏。'); }).catch(report));
@@ -334,6 +369,11 @@ window.addEventListener('resize', () => { clearTimeout(resizeTimer); if (pdf && 
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (sender.id !== chrome.runtime.id || !sender.url?.startsWith(chrome.runtime.getURL('')) || message.tabId !== readerTab?.id) return;
   if (message.type === 'reader:info') { respond({ ok: true, source, documentKey: pdf?.fingerprints[0], currentPage: pageNumber }); return; }
+  if (message.type === 'reader:capture') {
+    if (!pdf || $('capture-region').disabled) { const error = '请先打开 PDF，等待页面载入后再框选。'; status(error); respond({ ok: false, error }); return; }
+    clearPreview(); setCapture(true);
+    respond({ ok: true }); return;
+  }
   if (message.type === 'reader:query') {
     const service = documentService;
     const run = async () => {
@@ -375,6 +415,36 @@ window.addEventListener('pagehide', () => {
   documentService?.close(); documentService = null;
   viewer.reset(); loadingTask?.destroy().catch(() => {});
   clearPreview();
+});
+
+// Toolbar deepens its shadow once the reading area scrolls, so the glass
+// reads as floating chrome rather than a flat band.
+readingArea.addEventListener('scroll', () => {
+  document.querySelector('.toolbar').classList.toggle('scrolled', readingArea.scrollTop > 8);
+}, { passive: true });
+
+// Drag-and-drop affordance: the drop overlay only shows for real file drags.
+let dragDepth = 0;
+const dropOverlay = $('drop-overlay');
+const hasFiles = event => Array.from(event.dataTransfer?.types || []).includes('Files');
+window.addEventListener('dragenter', event => {
+  if (!hasFiles(event)) return;
+  event.preventDefault();
+  dragDepth += 1;
+  dropOverlay.hidden = false;
+});
+window.addEventListener('dragover', event => { if (hasFiles(event)) event.preventDefault(); });
+window.addEventListener('dragleave', event => {
+  if (!hasFiles(event)) return;
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (dragDepth === 0) dropOverlay.hidden = true;
+});
+window.addEventListener('drop', event => {
+  if (!hasFiles(event)) return;
+  event.preventDefault();
+  dragDepth = 0;
+  dropOverlay.hidden = true;
+  openFile(event.dataTransfer.files?.[0]).catch(report);
 });
 
 chrome.storage.local.get('readerNightMode').then(stored => {

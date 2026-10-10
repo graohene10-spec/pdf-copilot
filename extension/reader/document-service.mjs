@@ -191,7 +191,9 @@ export async function renderDocumentImage(pdf, number, rect, signal) {
   const raw = page.getViewport({ scale: 1 });
   const viewport = page.getViewport({ scale: Math.min(2, 1536 / Math.max(raw.width, raw.height)) });
   const canvas = document.createElement('canvas'); canvas.width = Math.ceil(viewport.width); canvas.height = Math.ceil(viewport.height);
-  const task = page.render({ canvasContext: canvas.getContext('2d'), viewport });
+  // Export intent uses promise scheduling instead of requestAnimationFrame,
+  // which browsers suspend for hidden tabs. Visible reader rendering is separate.
+  const task = page.render({ canvasContext: canvas.getContext('2d'), viewport, intent: 'print' });
   const cancel = () => task.cancel(); signal.addEventListener('abort', cancel, { once: true });
   let crop;
   try {

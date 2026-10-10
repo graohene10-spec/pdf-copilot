@@ -4,6 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>PDF Copilot · 裁剪截图</title>
+  <link rel="stylesheet" href="../common/tokens.css">
+  <link rel="stylesheet" href="../common/motion.css">
   <link rel="stylesheet" href="../reader/reader.css">
   <link rel="stylesheet" href="capture.css">
 </head>
@@ -11,7 +13,10 @@
   <header class="toolbar">
     <span class="document-title">框选要发送的区域</span>
     <label>发送到 <select id="target"><option value="sidebar">侧栏</option><option value="quick">临时对话</option></select></label>
-    <button id="close">关闭</button>
+    <button id="close" class="toolbar-action">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="../common/icons.svg#i-close"></use></svg>
+      <span>关闭</span>
+    </button>
   </header>
   <main class="capture-workspace">
     <p class="muted">在截图上拖动鼠标。只会把你框选的区域加入对话；截图不写入本地文件。</p>

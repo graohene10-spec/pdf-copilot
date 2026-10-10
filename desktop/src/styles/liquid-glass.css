@@ -1,0 +1,126 @@
+/* Light moves through the material; labels and document canvases stay sharp. */
+:where([data-glass-live]) {
+  position: relative;
+}
+
+:where([data-glass-live='control']) {
+  isolation: isolate;
+}
+
+[data-glass-live]::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at var(--glass-x, 50%) var(--glass-y, 20%), var(--glass-light, rgb(255 255 255 / .38)), transparent 54%),
+    radial-gradient(ellipse at calc(100% - var(--glass-x, 50%)) calc(100% - var(--glass-y, 20%)), var(--glass-light-soft, rgb(240 250 255 / .1)), transparent 68%);
+  opacity: calc(var(--glass-active, 0) * var(--glass-reflection, 1) * .4);
+  transition: opacity var(--dur-2) var(--ease-soft);
+  z-index: 0;
+}
+
+:where([data-glass-live='control'] > :not(.folder-shape)) {
+  position: relative;
+  z-index: 1;
+}
+
+[data-glass-live='panel']::after {
+  background: radial-gradient(ellipse 220px 140px at var(--glass-x, 50%) var(--glass-y, 20%), var(--glass-light), transparent 76%);
+  z-index: 5;
+  opacity: calc(var(--glass-active, 0) * var(--glass-reflection, 1) * .2);
+}
+
+/* Keep the reflection restrained on selected and primary glass controls. */
+[data-glass-live='control']:is(.selected, .settings-save, .send-button, .primary-button, .ai-toggle.active)::after {
+  opacity: calc(var(--glass-active, 0) * var(--glass-reflection, 1) * .24);
+}
+
+/* The rim follows the folder shoulder without changing its hit area. */
+.file-tab[data-glass-live]::after {
+  clip-path: polygon(0 100%, 0 19%, .8% 7%, 3.6% 1.5%, 86% 1.5%, 89% 4%, 91% 18%, 94% 70%, 97% 96%, 100% 100%);
+  z-index: 0;
+}
+
+[data-glass-live='control']:is(button):not(.close-tab):not([role='tab']) {
+  transition-property: background-color, border-color, color, box-shadow, translate, scale;
+  transition-duration: var(--dur-1);
+  transition-timing-function: var(--ease-soft);
+}
+
+[data-glass-live='control']:is(button):not(.close-tab):not([role='tab']):hover:not(:disabled) {
+  translate: 0 -1px;
+  scale: 1.02;
+  box-shadow: var(--glass-hover-shadow);
+}
+
+[data-glass-live='control']:is(button):not(.close-tab):not([role='tab']):active:not(:disabled) {
+  translate: 0 0;
+  scale: .96;
+  box-shadow: var(--glass-pressed-shadow);
+}
+
+/* Settings lifts as one floating sheet, then contracts on dismissal. */
+.settings-pop-enter-active {
+  transition: opacity var(--dur-4) var(--ease-out);
+}
+
+.settings-pop-leave-active {
+  transition: opacity var(--dur-2) var(--ease-out);
+  pointer-events: none;
+}
+
+.settings-pop-enter-active .settings-dialog {
+  transition: transform var(--dur-4) var(--ease-spring), opacity var(--dur-3) var(--ease-out);
+}
+
+.settings-pop-leave-active .settings-dialog {
+  transition: transform var(--dur-2) var(--ease-out), opacity var(--dur-2) var(--ease-out);
+}
+
+.settings-pop-enter-from,
+.settings-pop-leave-to {
+  opacity: 0;
+}
+
+.settings-pop-enter-from .settings-dialog {
+  opacity: 0;
+  transform: translateY(20px) scale(.93);
+}
+
+.settings-pop-leave-to .settings-dialog {
+  opacity: 0;
+  transform: translateY(12px) scale(.95);
+}
+
+:root:is([data-glass='solid'], [data-contrast='high']) [data-glass-live]::after {
+  content: none;
+}
+
+:root:is([data-glass='solid'], [data-contrast='high']) [data-glass-live='control']:is(button) {
+  translate: none !important;
+  scale: none !important;
+}
+
+@media (prefers-reduced-transparency: reduce), (forced-colors: active), (prefers-contrast: more) {
+  [data-glass-live]::after { content: none; }
+  [data-glass-live='control']:is(button):hover:not(:disabled),
+  [data-glass-live='control']:is(button):active:not(:disabled) { translate: none !important; scale: none !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-glass-live]::after { transition: none; }
+  [data-glass-live='control']:is(button):hover:not(:disabled),
+  [data-glass-live='control']:is(button):active:not(:disabled) { translate: none !important; scale: none !important; }
+  .settings-pop-enter-active,
+  .settings-pop-leave-active,
+  .settings-pop-enter-active .settings-dialog,
+  .settings-pop-leave-active .settings-dialog { transition: none; }
+  .settings-pop-enter-from .settings-dialog,
+  .settings-pop-leave-to .settings-dialog { transform: none; }
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  [data-glass-live]::after { content: none; }
+}

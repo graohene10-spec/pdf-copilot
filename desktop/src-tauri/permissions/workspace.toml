@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "reading-workspace"
+description = "Read imported documents, manage library metadata, and use configured AI providers."
+commands.allow = ["list_documents", "import_documents", "read_document", "update_document", "remove_document", "read_asset", "index_document", "get_setting", "set_setting", "get_credential", "set_credential", "native_connect", "native_send", "native_disconnect", "http_start", "http_cancel"]

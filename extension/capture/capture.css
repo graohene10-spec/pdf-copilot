@@ -1,1 +1,30 @@
-.capture-workspace{flex:1;overflow:auto;padding:18px 24px;text-align:center}.capture-workspace>p{font-size:13px;line-height:1.7}.capture-surface{display:inline-block;position:relative;max-width:100%;line-height:0;box-shadow:var(--shadow);cursor:crosshair;touch-action:none;user-select:none}.capture-surface img{display:block;max-width:100%;height:auto;pointer-events:none}.capture-surface[hidden]{display:none}.toolbar label{display:flex;align-items:center;gap:7px}.document-title{max-width:none}.night .capture-surface img{filter:none}
+/*
+ * Region-capture window. Layout reuses reader.css (toolbar, selection bar,
+ * dialogs); only the screenshot surface is specific to this page.
+ */
+
+.capture-workspace { flex: 1; overflow: auto; padding: var(--sp-4) var(--sp-5); text-align: center; }
+.capture-workspace > p { font-size: 13px; line-height: 1.7; max-width: 520px; margin: 0 auto var(--sp-4); }
+
+.capture-surface {
+  display: inline-block;
+  position: relative;
+  max-width: 100%;
+  line-height: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-2);
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+  overflow: hidden;
+}
+
+.capture-surface img { display: block; max-width: 100%; height: auto; pointer-events: none; }
+.capture-surface[hidden] { display: none; }
+
+.toolbar label { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; }
+.document-title { max-width: none; }
+
+/* The crop preview must keep the page's own colours, never the night filter. */
+.night .capture-surface img { filter: none; }

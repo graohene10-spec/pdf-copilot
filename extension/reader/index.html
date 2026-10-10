@@ -4,27 +4,54 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>PDF Copilot · 阅读器</title>
+  <link rel="stylesheet" href="../common/tokens.css">
+  <link rel="stylesheet" href="../common/motion.css">
   <link rel="stylesheet" href="../vendor/pdfjs/pdf_viewer.css">
   <link rel="stylesheet" href="reader.css">
 </head>
 <body>
   <header class="toolbar">
-    <button id="nav-toggle" title="展开或收起目录" aria-label="展开或收起目录">☰</button>
-    <button id="open-file">打开 PDF</button>
+    <button id="nav-toggle" class="icon-button" title="展开或收起目录" aria-label="展开或收起目录" aria-expanded="true">
+      <svg class="icon" aria-hidden="true"><use href="../common/icons.svg#i-menu"></use></svg>
+    </button>
+    <button id="open-file" class="toolbar-open">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="../common/icons.svg#i-doc-open"></use></svg>
+      <span>打开 PDF</span>
+    </button>
     <input id="file-input" type="file" accept="application/pdf,.pdf" hidden>
     <span id="document-title" class="document-title">PDF Copilot</span>
-    <div class="toolbar-group">
-      <button id="previous" disabled aria-label="上一页">‹</button>
-      <label class="page-label"><input id="page-number" type="number" min="1" value="1" disabled aria-label="页码"><span id="page-count">/ 0</span></label>
-      <button id="next" disabled aria-label="下一页">›</button>
-      <button id="zoom-out" disabled aria-label="缩小">−</button>
-      <button id="zoom-label" disabled title="适合宽度">100%</button>
-      <button id="zoom-in" disabled aria-label="放大">＋</button>
-      <button id="bookmark" disabled title="收藏当前页">☆</button>
+    <div class="toolbar-group" role="group" aria-label="翻页与缩放">
+      <button id="previous" class="icon-button" disabled aria-label="上一页" title="上一页">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="../common/icons.svg#i-chevron-left"></use></svg>
+      </button>
+      <label class="page-label"><input id="page-number" class="numeric" type="number" min="1" value="1" disabled aria-label="页码"><span id="page-count" class="numeric">/ 0</span></label>
+      <button id="next" class="icon-button" disabled aria-label="下一页" title="下一页">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="../common/icons.svg#i-chevron-right"></use></svg>
+      </button>
+      <span class="toolbar-divider" aria-hidden="true"></span>
+      <button id="zoom-out" class="icon-button" disabled aria-label="缩小" title="缩小">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="../common/icons.svg#i-minus"></use></svg>
+      </button>
+      <button id="zoom-label" class="numeric" disabled title="适合宽度">100%</button>
+      <button id="zoom-in" class="icon-button" disabled aria-label="放大" title="放大">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="../common/icons.svg#i-plus"></use></svg>
+      </button>
     </div>
-    <button id="night" aria-pressed="false">夜间</button>
-    <button id="sidebar" class="primary">AI 侧栏</button>
-    <button id="quick">临时对话</button>
+    <button id="bookmark" class="icon-button" disabled title="收藏当前页" aria-label="收藏当前页" aria-pressed="false">
+      <svg class="icon" aria-hidden="true"><use href="../common/icons.svg#i-bookmark"></use></svg>
+    </button>
+    <button id="night" class="icon-button" aria-pressed="false" title="夜间模式" aria-label="夜间模式">
+      <svg class="icon" aria-hidden="true"><use href="../common/icons.svg#i-moon"></use></svg>
+    </button>
+    <span class="toolbar-divider" aria-hidden="true"></span>
+    <button id="sidebar" class="primary toolbar-action">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="../common/icons.svg#i-panel"></use></svg>
+      <span>AI 侧栏</span>
+    </button>
+    <button id="quick" class="toolbar-action">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="../common/icons.svg#i-chat"></use></svg>
+      <span>临时对话</span>
+    </button>
   </header>
   <div class="workspace">
     <aside id="navigation" class="navigation">
@@ -36,7 +63,9 @@
     </aside>
     <main id="reading-area" class="reading-area">
       <section id="welcome" class="welcome">
-        <span class="welcome-icon">PDF</span>
+        <span class="welcome-icon" aria-hidden="true">
+          <svg class="icon" style="width:26px;height:26px"><use href="../common/icons.svg#i-pdf"></use></svg>
+        </span>
         <h1>把问题留在阅读旁边</h1>
         <p>拖入 PDF，开始连续阅读。直接向 AI 提问即可附上当前页，也可以选文或框选公式，深入解读。</p>
         <div id="url-prompt" hidden>
@@ -53,11 +82,17 @@
       </div>
     </main>
   </div>
-  <footer class="selection-bar">
+  <footer class="selection-bar" data-active="false">
     <span id="status" role="status" aria-live="polite">PDF 文件不会整体上传</span>
     <span id="selection-count" class="muted"></span>
-    <button id="send-text" disabled>发送选文</button>
-    <button id="capture-region" disabled aria-pressed="false">框选截图</button>
+    <button id="send-text" disabled>
+      <svg class="icon icon-sm" aria-hidden="true"><use href="../common/icons.svg#i-send"></use></svg>
+      <span>发送选文</span>
+    </button>
+    <button id="capture-region" disabled aria-pressed="false">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="../common/icons.svg#i-crop"></use></svg>
+      <span>框选截图</span>
+    </button>
     <label>发送到 <select id="target"><option value="sidebar">侧栏</option><option value="quick">临时对话</option></select></label>
   </footer>
   <dialog id="preview-dialog" class="preview-dialog">
@@ -66,6 +101,12 @@
     <img id="preview-image" alt="所选 PDF 区域">
     <div class="dialog-actions"><button id="preview-cancel">取消</button><button id="preview-send" class="primary">发送到对话</button></div>
   </dialog>
+  <div id="drop-overlay" class="drop-overlay" hidden>
+    <div class="drop-card glass">
+      <svg class="icon" style="width:24px;height:24px" aria-hidden="true"><use href="../common/icons.svg#i-download"></use></svg>
+      <strong>松开以打开 PDF</strong>
+    </div>
+  </div>
   <script type="module" src="reader.mjs"></script>
 </body>
 </html>

@@ -1,0 +1,9 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "Only the trusted bundled reading workspace can access local documents and AI providers.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default", "dialog:allow-open", "reading-workspace"
+  ]
+}

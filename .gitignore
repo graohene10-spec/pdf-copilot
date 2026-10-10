@@ -4,6 +4,7 @@ release/
 native-host/bin/
 native-host/.schema/
 .cache/
+.claude/
 artifacts/
 *.user
 .env

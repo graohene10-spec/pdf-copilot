@@ -1,9 +1,11 @@
 import { loadSettings, saveSettings, loadKey, applyTheme, apiOrigin } from '../common/settings.js';
+import { transitionTheme } from '../common/motion.mjs';
 import { PROVIDERS, getProvider, getModel, getNativeModels, getNativeStatus, registerNativeModels } from '../providers/index.js';
 import { DOCUMENT_LIMIT_FIELDS, normalizeDocumentLimits } from '../common/document-limits.mjs';
+import { REQUEST_LIMIT_FIELDS, normalizeRequestLimits } from '../common/request-queue.mjs';
 const $ = id => document.getElementById(id);
 $('extension-version').textContent = 'v' + chrome.runtime.getManifest().version;
-const shortcutLabels = [['open-sidebar', '打开 AI 侧栏'], ['quick-chat', '临时问答'], ['capture-region', '截图后框选'], ['open-reader', '增强阅读器']];
+const shortcutLabels = [['open-sidebar', '打开 AI 侧栏'], ['quick-chat', '临时问答'], ['capture-region', '框选截图（增强模式直接框选）'], ['open-reader', '增强阅读器']];
 async function refreshShortcuts() {
   try {
     const commands = await chrome.commands.getAll();
@@ -11,11 +13,13 @@ async function refreshShortcuts() {
     const missing = [];
     $('shortcut-list').replaceChildren();
     for (const [name, label] of shortcutLabels) {
+      const row = document.createElement('div');
       const title = document.createElement('span'); title.textContent = label;
       const key = document.createElement('code'); key.dataset.command = name;
       key.textContent = shortcuts.get(name) || '未设置';
       if (!shortcuts.get(name)) missing.push(label);
-      $('shortcut-list').append(title, key);
+      row.append(title, key);
+      $('shortcut-list').append(row);
     }
     $('shortcut-status').textContent = missing.length
       ? `${missing.join('、')}的快捷键尚未启用。点击“设置浏览器快捷键”分配，再返回重新检查。`
@@ -66,6 +70,22 @@ function resourceLimits() {
   return normalizeDocumentLimits(values);
 }
 function status(text, error = false) { $('status').textContent = text; $('status').classList.toggle('error', error); }
+for (const field of REQUEST_LIMIT_FIELDS) {
+  const label = document.createElement('label'), input = document.createElement('input'), hint = document.createElement('small');
+  label.append(document.createTextNode(field.label)); input.id = 'request-' + field.key; input.type = 'number'; input.required = true;
+  input.min = field.min; input.max = field.max; input.step = 1; input.value = settings.requestLimits[field.key];
+  hint.className = 'muted'; hint.textContent = `${field.min}–${field.max}，默认 ${field.default}`;
+  label.append(input, hint); $('request-fields').append(label);
+}
+function requestLimits() {
+  const values = {};
+  for (const field of REQUEST_LIMIT_FIELDS) {
+    const value = $('request-' + field.key).valueAsNumber;
+    if (!Number.isInteger(value) || value < field.min || value > field.max) throw new Error('请在提示范围内填写' + field.label + '。');
+    values[field.key] = value;
+  }
+  return normalizeRequestLimits(values);
+}
 function updateModels(defaultModel = false) {
   const provider = getProvider($('provider').value);
   $('api-fields').hidden = provider.id === 'codex'; $('base-url').required = provider.id !== 'codex';
@@ -88,7 +108,7 @@ $('provider').onchange = async () => {
   updateModels(true); status('');
 };
 $('model').onchange = () => updateModels();
-$('theme').onchange = () => applyTheme($('theme').value);
+$('theme').onchange = () => { transitionTheme(); applyTheme($('theme').value); };
 $('copy-id').onclick = () => navigator.clipboard.writeText(chrome.runtime.id).then(() => status('已复制扩展 ID。'));
 function codexStatus(text, error = false) {
   $('codex-status').textContent = text;
@@ -172,6 +192,7 @@ $('form').onsubmit = async event => {
   try {
     const provider = $('provider').value;
     const documentLimits = resourceLimits();
+    const limits = requestLimits();
     // Request host permission directly inside the click/submit gesture.
     if (provider !== 'codex') {
       const origin = apiOrigin($('base-url').value.trim());
@@ -179,7 +200,7 @@ $('form').onsubmit = async event => {
     }
     settings = { provider, model: $('model').value.trim(), effort: $('effort').value,
       baseUrl: provider === 'codex' ? '' : $('base-url').value.trim().replace(/\/+$/, ''),
-      theme: $('theme').value, rememberKey: provider !== 'codex' && $('remember').checked, documentLimits };
+      theme: $('theme').value, rememberKey: provider !== 'codex' && $('remember').checked, documentLimits, requestLimits: limits };
     await saveSettings(settings, provider === 'codex' ? '' : $('key').value.trim());
     status('已保存。可回到 PDF 打开侧栏。');
   } catch (error) { status(error.message, true); }

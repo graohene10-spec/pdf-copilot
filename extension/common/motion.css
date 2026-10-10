@@ -1,0 +1,152 @@
+/*
+ * Motion primitives shared by every page. Durations and easings come from
+ * tokens.css, so a single prefers-reduced-motion rule disables all of them.
+ */
+
+@keyframes float-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes pop-in {
+  from { opacity: 0; transform: scale(.94); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes pop-out {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: scale(.94); }
+}
+
+@keyframes sheet-in {
+  from { opacity: 0; transform: translateY(10px) scale(.99); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes breathe {
+  0%, 100% { opacity: .35; }
+  50% { opacity: 1; }
+}
+
+/* Staggered mount for a panel's own regions (head / body / composer). */
+.enter {
+  animation: float-in var(--dur-3) var(--ease-out) both;
+}
+
+.enter-stagger > * {
+  animation: float-in var(--dur-3) var(--ease-out) both;
+}
+
+.enter-stagger > *:nth-child(1) { animation-delay: 0ms; }
+.enter-stagger > *:nth-child(2) { animation-delay: 30ms; }
+.enter-stagger > *:nth-child(3) { animation-delay: 60ms; }
+.enter-stagger > *:nth-child(n + 4) { animation-delay: 90ms; }
+
+.fade-in { animation: fade-in var(--dur-2) var(--ease-out) both; }
+
+.pop-in {
+  animation: pop-in var(--dur-2) var(--ease-spring) both;
+  transform-origin: top right;
+}
+
+/* Leaving state: JS adds this, then waits for animationend. */
+.is-leaving {
+  pointer-events: none;
+  animation: pop-out var(--dur-2) var(--ease-out) both;
+}
+
+/* Native display:none cannot be transitioned; these classes bridge it for
+   elements the pages toggle with the hidden attribute. */
+.collapsible {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows var(--dur-3) var(--ease-out), opacity var(--dur-3) var(--ease-out);
+}
+
+.collapsible > * {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.collapsible[data-collapsed='true'] {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
+/* Dialogs: discrete display flip + scale/fade entry. */
+dialog {
+  opacity: 0;
+  transform: translateY(8px) scale(.98);
+  transition:
+    opacity var(--dur-3) var(--ease-out),
+    transform var(--dur-3) var(--ease-spring),
+    overlay var(--dur-3) allow-discrete,
+    display var(--dur-3) allow-discrete;
+}
+
+dialog[open] {
+  opacity: 1;
+  transform: none;
+}
+
+@starting-style {
+  dialog[open] {
+    opacity: 0;
+    transform: translateY(8px) scale(.98);
+  }
+}
+
+dialog::backdrop {
+  background: rgb(16 24 40 / 0%);
+  -webkit-backdrop-filter: blur(0px);
+  backdrop-filter: blur(0px);
+  transition:
+    background var(--dur-3) var(--ease-out),
+    backdrop-filter var(--dur-3) var(--ease-out),
+    overlay var(--dur-3) allow-discrete,
+    display var(--dur-3) allow-discrete;
+}
+
+dialog[open]::backdrop {
+  background: rgb(16 24 40 / 42%);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+}
+
+@starting-style {
+  dialog[open]::backdrop {
+    background: rgb(16 24 40 / 0%);
+    -webkit-backdrop-filter: blur(0px);
+    backdrop-filter: blur(0px);
+  }
+}
+
+/* Theme changes cross-fade rather than snap. */
+.theme-transition,
+.theme-transition * {
+  transition:
+    background-color var(--dur-3) var(--ease-soft),
+    border-color var(--dur-3) var(--ease-soft),
+    color var(--dur-3) var(--ease-soft) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .enter,
+  .enter-stagger > *,
+  .fade-in,
+  .pop-in,
+  .is-leaving {
+    animation: none !important;
+  }
+
+  .collapsible,
+  dialog,
+  dialog::backdrop {
+    transition: none !important;
+  }
+}

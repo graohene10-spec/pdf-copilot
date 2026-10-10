@@ -1,0 +1,103 @@
+%PDF-1.7
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R /Outlines 14 0 R /PageLabels << /Nums [0 << /S /r >> 1 << /S /D /St 1 >>] >> >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [5 0 R 7 0 R 9 0 R 11 0 R 13 0 R] /Count 5 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+4 0 obj
+<< /Length 222 >>
+stream
+BT /F1 16 Tf 45 570 Td (PDF reading example) Tj ET
+BT /F1 16 Tf 45 542 Td (Read pages, browse headings, and follow links.) Tj ET
+BT /F1 16 Tf 45 514 Td (This example contains five pages.) Tj ET
+1 0 0 rg 45 200 180 100 re f
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 500 650] /Resources << /Font << /F1 3 0 R >> >> /Contents 4 0 R  /Annots [16 0 R] >>
+endobj
+6 0 obj
+<< /Length 209 >>
+stream
+BT /F1 16 Tf 45 570 Td (Read and ask) Tj ET
+BT /F1 16 Tf 45 542 Td (Select text to ask about a passage.) Tj ET
+BT /F1 16 Tf 45 514 Td (Answers can link to their source page.) Tj ET
+1 0 0 rg 45 200 180 100 re f
+endstream
+endobj
+7 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 500 650] /Resources << /Font << /F1 3 0 R >> >> /Contents 6 0 R >>
+endobj
+8 0 obj
+<< /Length 215 >>
+stream
+BT /F1 16 Tf 45 570 Td (Organize your documents) Tj ET
+BT /F1 16 Tf 45 542 Td (Add tags and stars to find documents.) Tj ET
+BT /F1 16 Tf 45 514 Td (Your reading position is saved.) Tj ET
+1 0 0 rg 45 200 180 100 re f
+endstream
+endobj
+9 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 500 650] /Resources << /Font << /F1 3 0 R >> >> /Contents 8 0 R >>
+endobj
+10 0 obj
+<< /Length 224 >>
+stream
+BT /F1 16 Tf 45 570 Td (PDF and Markdown) Tj ET
+BT /F1 16 Tf 45 542 Td (PDF uses pages; Markdown uses headings.) Tj ET
+BT /F1 16 Tf 45 514 Td (Both formats can be kept in the same library.) Tj ET
+1 0 0 rg 45 200 180 100 re f
+endstream
+endobj
+11 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 500 650] /Resources << /Font << /F1 3 0 R >> >> /Contents 10 0 R >>
+endobj
+12 0 obj
+<< /Length 224 >>
+stream
+BT /F1 16 Tf 45 570 Td (Try a document question) Tj ET
+BT /F1 16 Tf 45 542 Td (Ask for a short summary of this page.) Tj ET
+BT /F1 16 Tf 45 514 Td (Use the source links to check an answer.) Tj ET
+1 0 0 rg 45 200 180 100 re f
+endstream
+endobj
+13 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 500 650] /Resources << /Font << /F1 3 0 R >> >> /Contents 12 0 R >>
+endobj
+14 0 obj
+<< /Type /Outlines /First 15 0 R /Last 15 0 R /Count 1 >>
+endobj
+15 0 obj
+<< /Title (Second page) /Parent 14 0 R /Dest [7 0 R /Fit] >>
+endobj
+16 0 obj
+<< /Type /Annot /Subtype /Link /Rect [45 530 260 580] /Border [0 0 0] /Dest [7 0 R /Fit] >>
+endobj
+xref
+0 17
+0000000000 65535 f 
+0000000009 00000 n 
+0000000135 00000 n 
+0000000218 00000 n 
+0000000288 00000 n 
+0000000561 00000 n 
+0000000705 00000 n 
+0000000965 00000 n 
+0000001091 00000 n 
+0000001357 00000 n 
+0000001483 00000 n 
+0000001759 00000 n 
+0000001887 00000 n 
+0000002163 00000 n 
+0000002291 00000 n 
+0000002365 00000 n 
+0000002442 00000 n 
+trailer
+<< /Size 17 /Root 1 0 R >>
+startxref
+2550
+%%EOF

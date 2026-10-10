@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice" fill="none">
+  <defs>
+    <linearGradient id="ripple-shadow" x1="0" y1="0" x2="0.35" y2="1">
+      <stop stop-color="#737b82" stop-opacity=".18"/>
+      <stop offset=".48" stop-color="#818991" stop-opacity=".115"/>
+      <stop offset="1" stop-color="#959ba2" stop-opacity=".05"/>
+    </linearGradient>
+    <linearGradient id="ripple-light" x1="0" y1="0" x2="0.35" y2="1">
+      <stop stop-color="#fff" stop-opacity="1"/>
+      <stop offset=".55" stop-color="#fff" stop-opacity=".85"/>
+      <stop offset="1" stop-color="#fff" stop-opacity=".38"/>
+    </linearGradient>
+    <linearGradient id="corner-shadow" x1="0" y1="0" x2="0.35" y2="1">
+      <stop stop-color="#737b82" stop-opacity=".16"/>
+      <stop offset=".48" stop-color="#818991" stop-opacity=".12"/>
+      <stop offset="1" stop-color="#959ba2" stop-opacity=".09"/>
+    </linearGradient>
+    <g id="main-rings">
+      <circle cx="1330" cy="765" r="135"/>
+      <circle cx="1330" cy="765" r="239"/>
+      <circle cx="1330" cy="765" r="357"/>
+      <circle cx="1330" cy="765" r="487"/>
+      <circle cx="1330" cy="765" r="628"/>
+    </g>
+    <g id="quiet-rings">
+      <circle cx="-160" cy="-120" r="220"/>
+      <circle cx="-160" cy="-120" r="330"/>
+      <circle cx="-160" cy="-120" r="460"/>
+      <circle cx="-160" cy="-120" r="610"/>
+    </g>
+  </defs>
+  <!-- Layered low-opacity troughs and offset crests suggest water without blur. -->
+  <use href="#main-rings" stroke="#9aa0a6" stroke-opacity=".012" stroke-width="14" transform="translate(.8 3.5)"/>
+  <use href="#main-rings" stroke="#9aa0a6" stroke-opacity=".028" stroke-width="8" transform="translate(.8 3)"/>
+  <use href="#main-rings" stroke="url(#ripple-shadow)" stroke-width="2.2" transform="translate(.8 2.4)"/>
+  <use href="#main-rings" stroke="url(#ripple-light)" stroke-width="2.8" transform="translate(-.8 -2.4)"/>
+  <use href="#main-rings" stroke="url(#ripple-light)" stroke-opacity=".5" stroke-width="1" transform="translate(.8 5.5)"/>
+  <g opacity=".6">
+    <use href="#quiet-rings" stroke="#9aa0a6" stroke-opacity=".012" stroke-width="14" transform="translate(.8 3.5)"/>
+    <use href="#quiet-rings" stroke="#9aa0a6" stroke-opacity=".028" stroke-width="8" transform="translate(.8 3)"/>
+    <use href="#quiet-rings" stroke="url(#corner-shadow)" stroke-width="2.2" transform="translate(.8 2.4)"/>
+    <use href="#quiet-rings" stroke="url(#ripple-light)" stroke-width="2.8" transform="translate(-.8 -2.4)"/>
+    <use href="#quiet-rings" stroke="url(#ripple-light)" stroke-opacity=".5" stroke-width="1" transform="translate(.8 5.5)"/>
+  </g>
+</svg>

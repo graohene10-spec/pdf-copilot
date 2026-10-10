@@ -1,4 +1,5 @@
 import { normalizeDocumentLimits } from './document-limits.mjs';
+import { normalizeRequestLimits } from './request-queue.mjs';
 export const DEFAULTS = Object.freeze({
   provider: 'deepseek', model: 'deepseek-flash', effort: 'high',
   theme: 'system', baseUrl: 'https://api.deepseek.com', rememberKey: false,
@@ -6,11 +7,11 @@ export const DEFAULTS = Object.freeze({
 
 export async function loadSettings() {
   const { settings = {} } = await chrome.storage.local.get('settings');
-  return { ...DEFAULTS, ...settings, documentLimits: normalizeDocumentLimits(settings.documentLimits) };
+  return { ...DEFAULTS, ...settings, documentLimits: normalizeDocumentLimits(settings.documentLimits), requestLimits: normalizeRequestLimits(settings.requestLimits) };
 }
 
 export async function saveSettings(settings, key) {
-  const clean = { ...settings, documentLimits: normalizeDocumentLimits(settings.documentLimits) };
+  const clean = { ...settings, documentLimits: normalizeDocumentLimits(settings.documentLimits), requestLimits: normalizeRequestLimits(settings.requestLimits) };
   delete clean.apiKey;
   await chrome.storage.local.set({ settings: clean });
   const keyName = 'apiKey:' + clean.provider;

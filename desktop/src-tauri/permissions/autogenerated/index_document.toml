@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-index-document"
+description = "Enables the index_document command without any pre-configured scope."
+commands.allow = ["index_document"]
+
+[[permission]]
+identifier = "deny-index-document"
+description = "Denies the index_document command without any pre-configured scope."
+commands.deny = ["index_document"]

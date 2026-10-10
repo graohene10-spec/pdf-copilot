@@ -1,0 +1,232 @@
+/*
+ * 动效基元。
+ *
+ * 时长与缓动全部取自 tokens.css，因此 prefers-reduced-motion 只需一处规则
+ * 即可关闭所有动画。风格克制：入场 180–380ms，退场略快，不弹跳过头。
+ */
+
+@keyframes zg-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes zg-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes zg-rise-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes zg-pop-in {
+  from { opacity: 0; transform: scale(.965); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes zg-pop-out {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: scale(.97); }
+}
+
+@keyframes zg-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes zg-breathe {
+  0%, 100% { opacity: .35; }
+  50% { opacity: 1; }
+}
+
+/* ---- 面板：固定宽度的玻璃弹出 / 收缩 -------------------------------- */
+
+/* 始终使用最终占位宽度。阅读器保留旧视口直到新画面就绪，玻璃表面
+   通过 transform 显现，因此弹出期间不让文字与 PDF 逐帧重新排版。 */
+.pane-enter-active {
+  transition: opacity var(--dur-3) var(--ease-out),
+              transform var(--dur-3) var(--ease-out);
+  transform-origin: 100% 6%;
+  will-change: opacity, transform;
+}
+
+.pane-leave-active {
+  transition: opacity var(--dur-2) var(--ease-out),
+              transform var(--dur-2) var(--ease-pane);
+  transform-origin: 100% 6%;
+  will-change: opacity, transform;
+}
+
+.pane-enter-from,
+.pane-leave-to {
+  opacity: 0;
+  transform: translate(12px, -5px) scale(.94);
+}
+
+.pane-enter-to,
+.pane-leave-from {
+  transform: none;
+}
+
+/* 保留内容原始宽度，缩放仅作用于面板的合成图层。 */
+.pane-enter-active > *,
+.pane-leave-active > * {
+  min-width: 0;
+}
+
+/* ---- 视图切换：文档库 ↔ 阅读 ---------------------------------------- */
+
+.view-enter-active {
+  transition: opacity var(--dur-3) var(--ease-out), transform var(--dur-3) var(--ease-out);
+}
+
+.view-leave-active {
+  transition: opacity var(--dur-2) var(--ease-out), transform var(--dur-2) var(--ease-out);
+  position: absolute;
+  inset: 0;
+}
+
+.view-enter-from {
+  opacity: 0;
+  transform: scale(.994);
+}
+
+.view-leave-to {
+  opacity: 0;
+  transform: scale(.996);
+}
+
+/* ---- 通用入场 -------------------------------------------------------- */
+
+.rise-in {
+  animation: zg-rise-in var(--dur-3) var(--ease-out) both;
+}
+
+.enter-stagger > * {
+  animation: zg-rise-in var(--dur-3) var(--ease-out) both;
+}
+
+.enter-stagger > *:nth-child(1) { animation-delay: 0ms; }
+.enter-stagger > *:nth-child(2) { animation-delay: 28ms; }
+.enter-stagger > *:nth-child(3) { animation-delay: 56ms; }
+.enter-stagger > *:nth-child(n + 4) { animation-delay: 84ms; }
+
+.fade-in {
+  animation: zg-fade-in var(--dur-2) var(--ease-out) both;
+}
+
+/* ---- 对话框与遮罩 ---------------------------------------------------- */
+
+.dialog-enter-active,
+.dialog-leave-active {
+  transition: opacity var(--dur-3) var(--ease-out);
+}
+
+.dialog-enter-active > *,
+.dialog-leave-active > * {
+  transition: opacity var(--dur-3) var(--ease-out), transform var(--dur-3) var(--ease-spring);
+}
+
+.dialog-enter-from,
+.dialog-leave-to {
+  opacity: 0;
+}
+
+.dialog-enter-from > *,
+.dialog-leave-to > * {
+  opacity: 0;
+  transform: translateY(10px) scale(.978);
+}
+
+/* 遮罩的模糊从 0 渐入，而不是突然出现。 */
+.dialog-backdrop,
+.settings-backdrop {
+  -webkit-backdrop-filter: blur(6px) saturate(120%);
+  backdrop-filter: blur(6px) saturate(120%);
+}
+
+.dialog-enter-active.dialog-backdrop,
+.dialog-leave-active.dialog-backdrop,
+.dialog-enter-active.settings-backdrop,
+.dialog-leave-active.settings-backdrop {
+  transition: opacity var(--dur-3) var(--ease-out),
+              backdrop-filter var(--dur-3) var(--ease-out);
+}
+
+.dialog-enter-from.dialog-backdrop,
+.dialog-leave-to.dialog-backdrop,
+.dialog-enter-from.settings-backdrop,
+.dialog-leave-to.settings-backdrop {
+  -webkit-backdrop-filter: blur(0px);
+  backdrop-filter: blur(0px);
+}
+
+/* ---- 侧栏：从左上方弹出，关闭时向原点收缩 --------------------------- */
+
+.sidebar-enter-active {
+  overflow: hidden;
+  transition: opacity var(--dur-3) var(--ease-out),
+              transform var(--dur-3) var(--ease-out);
+  transform-origin: 0 4%;
+  will-change: opacity, transform;
+}
+
+.sidebar-leave-active {
+  overflow: hidden;
+  transition: opacity var(--dur-2) var(--ease-out),
+              transform var(--dur-2) var(--ease-pane);
+  transform-origin: 0 4%;
+  will-change: opacity, transform;
+}
+
+.sidebar-enter-from,
+.sidebar-leave-to {
+  opacity: 0;
+  transform: translate(-10px, -5px) scale(.94);
+}
+
+/* 文字按最终宽度排版，避免折叠时挤成一列。 */
+.sidebar-enter-active > *,
+.sidebar-leave-active > * {
+  min-width: 0;
+  white-space: nowrap;
+}
+
+/* ---- 焦点环：玻璃感的柔和光晕，但仍清晰可见 ------------------------- */
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+
+/* ---- 降低动效 -------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .pane-enter-active,
+  .pane-leave-active,
+  .view-enter-active,
+  .view-leave-active,
+  .dialog-enter-active,
+  .dialog-leave-active,
+  .sidebar-enter-active,
+  .sidebar-leave-active,
+  .dialog-enter-active > *,
+  .dialog-leave-active > * {
+    transition: none !important;
+  }
+
+  .rise-in,
+  .enter-stagger > *,
+  .fade-in {
+    animation: none !important;
+  }
+
+  /* 位移全部去掉，但保留极短的透明度切换，避免生硬跳变。 */
+  .pane-enter-from,
+  .pane-leave-to,
+  .sidebar-enter-from,
+  .sidebar-leave-to {
+    transform: none;
+  }
+}

@@ -8,15 +8,18 @@ test('sidebar commands preserve the gesture and reader commands retain the origi
   const panels = [];
   let commandListener, queries = 0;
   globalThis.chrome = {
-    runtime: { id: 'fixture', getURL: path => 'chrome-extension://fixture/' + path, onInstalled: listen, onMessage: listen },
+    runtime: { id: 'fixture', getURL: path => 'chrome-extension://fixture/' + path, onInstalled: listen, onMessage: listen,
+      async sendMessage(message) { opened.push(message); return { ok: true }; } },
+    storage: { onChanged: listen },
     contextMenus: { onClicked: listen },
     commands: { onCommand: { addListener(fn) { commandListener = fn; } } },
     sidePanel: { open(options) { panels.push(options); return Promise.resolve(); } },
-    windows: { onRemoved: listen },
+    windows: { onRemoved: listen, async update() {} },
     tabs: {
-      onRemoved: listen, onActivated: listen,
+      onRemoved: listen, onActivated: listen, onUpdated: listen,
       async query() { queries++; return [{ id: 999, url: 'https://example.com/unrelated' }]; },
       async create(options) { opened.push(options.url); },
+      async update() {},
     },
   };
   try {
@@ -41,6 +44,8 @@ test('sidebar commands preserve the gesture and reader commands retain the origi
     finally { console.warn = previousWarn; }
     assert.deepEqual(warnings, ['Synthetic panel rejection']);
     assert.equal(opened.length, 3, 'a sidebar failure must not open an unrelated capture error page');
+    await commandListener('capture-region', { id: 123, windowId: 456, url: 'chrome-extension://fixture/reader/index.html' });
+    assert.deepEqual(opened.at(-1), { type: 'reader:capture', tabId: 123 }, 'enhanced capture goes directly to its own selector');
   } finally {
     if (previous === undefined) delete globalThis.chrome; else globalThis.chrome = previous;
   }

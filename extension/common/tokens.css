@@ -1,0 +1,212 @@
+/*
+ * PDF Copilot design tokens.
+ *
+ * Single source of truth for colour, glass material, elevation, radius and
+ * motion. Every page links this before its own stylesheet. Light values live
+ * on :root, dark values on both [data-theme=dark] (chat, settings) and .night
+ * (reader, capture) so the two dark conventions stay in sync.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* Neutrals: a near-neutral grey ramp rather than the previous blue-grey. */
+  --n-0: #ffffff;
+  --n-25: #fcfcfd;
+  --n-50: #f8f9fb;
+  --n-100: #f1f3f7;
+  --n-200: #e6e9ef;
+  --n-300: #d5dae3;
+  --n-400: #adb5c2;
+  --n-500: #7d8798;
+  --n-600: #5f6a7c;
+  --n-700: #454f60;
+  --n-800: #2d3644;
+  --n-900: #1b222e;
+  --n-950: #12171f;
+
+  --bg: var(--n-100);
+  --bg-sunken: var(--n-200);
+  --surface: var(--n-0);
+  --surface-2: var(--n-50);
+  --surface-3: var(--n-100);
+  --text: var(--n-900);
+  --text-2: var(--n-700);
+  --muted: var(--n-600); /* >= 4.6:1 on --surface */
+  --line: var(--n-200);
+  --line-strong: var(--n-300);
+
+  --accent: #3b5fdb;
+  --accent-hover: #2f4fc4;
+  --accent-text: #ffffff;
+  --accent-soft: #edf1fe;
+  --accent-ring: #3b5fdb33;
+
+  --success: #15803d;
+  --warning: #a16207;
+  --danger: #b42318;
+  --danger-soft: #fef3f2;
+
+  --select-bg: color-mix(in srgb, var(--accent) 40%, transparent);
+
+  /* Glass material. Restrained: reserved for fixed chrome only. */
+  --glass-strong: rgb(255 255 255 / 88%);
+  --glass: rgb(255 255 255 / 72%);
+  --glass-thin: rgb(255 255 255 / 55%);
+  --glass-blur: 24px;
+  --glass-sat: 180%;
+  --glass-highlight: rgb(255 255 255 / 60%);
+  --glass-edge: rgb(255 255 255 / 70%);
+
+  /* Elevation: a tight contact shadow plus a wide ambient one. */
+  --shadow-1: 0 1px 2px rgb(16 24 40 / 6%), 0 1px 3px rgb(16 24 40 / 8%);
+  --shadow-2: 0 2px 4px rgb(16 24 40 / 5%), 0 8px 20px rgb(16 24 40 / 9%);
+  --shadow-3: 0 4px 8px rgb(16 24 40 / 6%), 0 20px 44px rgb(16 24 40 / 14%);
+  --shadow: var(--shadow-2); /* legacy alias */
+  --ring-inset: inset 0 1px 0 var(--glass-highlight);
+
+  --r-xs: 6px;
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 22px;
+  --r-full: 999px;
+
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+
+  --dur-1: 120ms;
+  --dur-2: 180ms;
+  --dur-3: 260ms;
+  --dur-4: 380ms;
+  --ease-out: cubic-bezier(.22, .9, .28, 1);
+  --ease-spring: cubic-bezier(.32, 1.36, .42, 1);
+  --ease-soft: cubic-bezier(.4, 0, .2, 1);
+
+  --font: system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+
+  --target: 36px; /* minimum interactive target */
+  --z-drawer: 10;
+  --z-popover: 40;
+  --z-dialog: 60;
+}
+
+:root[data-theme='dark'],
+.night {
+  color-scheme: dark;
+
+  --bg: #10151d;
+  --bg-sunken: #0b0f16;
+  --surface: #1a212c;
+  --surface-2: #202836;
+  --surface-3: #273040;
+  --text: #e8edf5;
+  --text-2: #c3ccda;
+  --muted: #9aa6b8;
+  --line: #2c3646;
+  --line-strong: #3a4658;
+
+  --accent: #8fabff;
+  --accent-hover: #a6bcff;
+  --accent-text: #10151d;
+  --accent-soft: #24304a;
+  --accent-ring: #8fabff40;
+
+  --success: #4ade80;
+  --warning: #fbbf24;
+  --danger: #ff9d94;
+  --danger-soft: #35201f;
+
+  /* --select-bg derives from --accent via color-mix; no dark override needed. */
+
+  --glass-strong: rgb(26 33 44 / 88%);
+  --glass: rgb(26 33 44 / 74%);
+  --glass-thin: rgb(26 33 44 / 56%);
+  --glass-highlight: rgb(255 255 255 / 8%);
+  --glass-edge: rgb(255 255 255 / 10%);
+
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 30%), 0 1px 3px rgb(0 0 0 / 40%);
+  --shadow-2: 0 2px 4px rgb(0 0 0 / 32%), 0 10px 24px rgb(0 0 0 / 44%);
+  --shadow-3: 0 4px 10px rgb(0 0 0 / 36%), 0 22px 48px rgb(0 0 0 / 56%);
+}
+
+/* Glass surfaces fall back to solid panels where blur is unavailable. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root {
+    --glass-strong: var(--surface);
+    --glass: var(--surface);
+    --glass-thin: var(--surface-2);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-1: 0ms;
+    --dur-2: 0ms;
+    --dur-3: 0ms;
+    --dur-4: 0ms;
+  }
+}
+
+/* ---- Shared primitives ------------------------------------------------- */
+
+.glass {
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-2), var(--ring-inset);
+}
+
+.glass-strong {
+  background: var(--glass-strong);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-2), var(--ring-inset);
+}
+
+.icon {
+  display: block;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.icon-sm {
+  width: 15px;
+  height: 15px;
+}
+
+/* Icon-only buttons share one hit target and hover feel. */
+.icon-button {
+  display: grid;
+  place-items: center;
+  width: var(--target);
+  height: var(--target);
+  padding: 0;
+  border-radius: var(--r-sm);
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-2);
+}
+
+.icon-button:hover:not(:disabled) {
+  background: var(--surface-3);
+  border-color: transparent;
+  color: var(--text);
+}
+
+.numeric {
+  font-variant-numeric: tabular-nums;
+}

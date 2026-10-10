@@ -1,4 +1,6 @@
 // Chat-only presentation preferences never modify model settings or requests.
+import { animateOut, prefersReducedMotion } from '../common/motion.mjs';
+
 const DEFAULT_FONT_SIZE = 17;
 const MIN_FONT_SIZE = 14;
 const MAX_FONT_SIZE = 24;
@@ -6,10 +8,62 @@ const FONT_KEY = 'chatFontSize';
 const normalizeFontSize = value => typeof value === 'number' && Number.isFinite(value)
   ? Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, Math.round(value))) : DEFAULT_FONT_SIZE;
 
+/**
+ * Animate a native <details> open/closed.
+ *
+ * The panel body uses the .collapsible grid trick, which cannot animate while
+ * the element is display:none, so `open` is applied first and the collapsed
+ * attribute flipped on the next frame. Closing waits for the transition before
+ * clearing `open`. Without JS the details still opens instantly, as before.
+ */
+function animateDisclosure(details) {
+  const body = details.querySelector('.options-body');
+  if (!body) return;
+  const summary = details.querySelector('summary');
+  let animating = false;
+
+  const finish = () => { animating = false; };
+
+  summary.addEventListener('click', event => {
+    event.preventDefault();
+    if (animating) return;
+
+    if (details.open) {
+      if (prefersReducedMotion()) { details.open = false; body.dataset.collapsed = 'true'; return; }
+      animating = true;
+      body.dataset.collapsed = 'true';
+      const done = () => {
+        body.removeEventListener('transitionend', onEnd);
+        clearTimeout(timer);
+        details.open = false;
+        finish();
+      };
+      const onEnd = e => { if (e.target === body && e.propertyName === 'grid-template-rows') done(); };
+      const timer = setTimeout(done, 320);
+      body.addEventListener('transitionend', onEnd);
+      return;
+    }
+
+    details.open = true;
+    if (prefersReducedMotion()) { body.dataset.collapsed = 'false'; return; }
+    animating = true;
+    body.dataset.collapsed = 'true';
+    void body.offsetHeight; // commit the collapsed start state
+    body.dataset.collapsed = 'false';
+    setTimeout(finish, 220);
+  });
+}
+
 export async function initializeChatUi(reportError) {
   const $ = id => document.getElementById(id);
   const menu = $('chat-menu');
-  const closeMenu = () => { menu.open = false; };
+  const menuPopover = menu.querySelector('.menu-actions');
+  const closeMenu = () => {
+    if (!menu.open) return;
+    // animateOut removes .is-leaving itself; `open` only flips once done, so
+    // the panel stays painted for the duration of the exit animation.
+    animateOut(menuPopover, () => { menu.open = false; });
+  };
   let fontSize = DEFAULT_FONT_SIZE;
   let pendingFontSize = null;
   let saving = false;
@@ -70,4 +124,5 @@ export async function initializeChatUi(reportError) {
       closeMenu(); menu.querySelector('summary').focus(); event.preventDefault();
     }
   });
+  animateDisclosure($('model-options'));
 }

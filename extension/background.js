@@ -1,7 +1,12 @@
 import { validateContext, MAX_INBOX_LENGTH } from './common/context.js';
 import { captureVisiblePage } from './common/page-context.mjs';
+import { createRequestBroker } from './request-broker.mjs';
+import { documentUrl } from './common/source-identity.mjs';
+
+const requests = createRequestBroker(chrome);
 
 const captures = new Map();
+const sourceUrls = new Map();
 let inboxTask = Promise.resolve();
 const SERIAL = fn => {
   const next = inboxTask.then(fn, fn);
@@ -40,6 +45,13 @@ async function openReader(tab, url) {
   await chrome.tabs.create({ url: page('reader/index.html') + (allowed ? '?url=' + encodeURIComponent(sourceUrl) : '') });
 }
 async function capture(tab) {
+  if (tab.url?.startsWith(page('reader/'))) {
+    await chrome.tabs.update(tab.id, { active: true });
+    await chrome.windows.update(tab.windowId, { focused: true });
+    const response = await chrome.runtime.sendMessage({ type: 'reader:capture', tabId: tab.id });
+    if (!response?.ok) throw new Error(response?.error || '增强阅读器未响应，请先打开 PDF。');
+    return;
+  }
   await chrome.tabs.update(tab.id, { active: true });
   const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
   const id = crypto.randomUUID();
@@ -100,7 +112,7 @@ chrome.commands.onCommand.addListener(async (command, commandTab) => {
     if (command === 'capture-region') await capture(tab);
     if (command === 'open-reader') await openReader(tab);
   } catch (error) {
-    if (command === 'capture-region') await chrome.tabs.create({ url: page('chat/index.html?error=capture') });
+    if (command === 'capture-region' && !tab.url?.startsWith(page('reader/'))) await chrome.tabs.create({ url: page('chat/index.html?error=capture') });
     else console.warn(error);
   }
 });
@@ -112,6 +124,9 @@ chrome.windows.onRemoved.addListener(windowId => {
   });
 });
 chrome.tabs.onRemoved.addListener(tabId => {
+  sourceUrls.delete(tabId);
+  requests.invalidateTab(tabId).catch(console.warn);
+  chrome.runtime.sendMessage({ type: 'source:closed', tabId }).catch(() => {});
   SERIAL(async () => {
     const { inbox = [] } = await chrome.storage.session.get('inbox');
     await chrome.storage.session.set({ inbox: inbox.filter(item => item.tabId !== tabId) });
@@ -120,18 +135,36 @@ chrome.tabs.onRemoved.addListener(tabId => {
 chrome.tabs.onActivated.addListener(info => {
   chrome.runtime.sendMessage({ type: 'source:changed', tabId: info.tabId, windowId: info.windowId }).catch(() => {});
 });
+chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
+  if (change.status !== 'loading' && !change.url) return;
+  const prior = sourceUrls.get(tabId);
+  const next = documentUrl(change.url || tab.pendingUrl || tab.url);
+  sourceUrls.set(tabId, next);
+  // Native PDF page-fragment jumps may also emit "loading". Its already frozen
+  // question needs no live document tools, so the same URL can keep streaming.
+  if (prior === next && (change.status !== 'loading' || !tab.url?.startsWith(page('reader/')))) return;
+  requests.invalidateTab(tabId).catch(console.warn);
+  chrome.runtime.sendMessage({ type: 'source:invalidated', tabId }).catch(() => {});
+  if (tab.active) chrome.runtime.sendMessage({ type: 'source:changed', tabId, windowId: tab.windowId }).catch(() => {});
+});
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.settings) requests.refresh().catch(console.warn);
+});
 
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (!isTrusted(sender)) return false;
+  if (message.type === 'requests:owner-probe') return false;
   const needsSidebar = message.type === 'sidebar:open' ||
     (message.type === 'context:add' && (message.target || message.context?.target) !== 'quick');
   const gestureWindow = message.windowId || message.context?.source?.windowId || sender.tab?.windowId;
   const opening = needsSidebar && gestureWindow ? chrome.sidePanel.open({ windowId: gestureWindow }) : null;
   opening?.catch(() => {}); // Await below after validation; suppress premature unhandled rejection.
   const run = async () => {
+    if (['requests:acquire', 'requests:poll', 'requests:release', 'requests:summary'].includes(message.type)) return requests.handle(message, sender);
     const tab = message.tabId > 0 ? await chrome.tabs.get(message.tabId) : (sender.tab || await activeTab());
     switch (message.type) {
       case 'source:get': {
+        if (tab) sourceUrls.set(tab.id, documentUrl(tab.url));
         let info;
         if (tab?.url?.startsWith(page('reader/'))) {
           try { info = await chrome.runtime.sendMessage({ type: 'reader:info', tabId: tab.id }); } catch {}
@@ -148,6 +181,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         return await captureVisiblePage(tab, message.expectedUrl);
       }
       case 'reader:document':
+        await requests.invalidateTab(tab.id);
         chrome.runtime.sendMessage({ type: 'source:document', tabId: tab.id, windowId: tab.windowId }).catch(() => {});
         return { ok: true };
       case 'sidebar:open': await (opening || openSidebar(tab)); return { ok: true };

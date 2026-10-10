@@ -1,0 +1,58 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "开智",
+  "version": "0.2.0",
+  "identifier": "com.phydog.reading",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "开智",
+        "width": 1440,
+        "height": 940,
+        "minWidth": 1000,
+        "minHeight": 680,
+        "center": true,
+        "maximized": true,
+        "preventOverflow": true,
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "capabilities": [
+        "main"
+      ],
+      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src ipc: http://ipc.localhost https: http://localhost:* http://127.0.0.1:* ws://localhost:1420; worker-src 'self' blob:; object-src 'none'; frame-src 'none'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "publisher": "开智",
+    "targets": [
+      "nsis"
+    ],
+    "resources": {
+      "resources/PdfCopilotHost.exe": "native-host/PdfCopilotHost.exe"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": [
+          "SimpChinese",
+          "English"
+        ],
+        "displayLanguageSelector": false
+      }
+    }
+  }
+}
