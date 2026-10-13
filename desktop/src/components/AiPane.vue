@@ -6,6 +6,7 @@ import { renderMessage } from '../../../extension/chat/math.mjs'
 import { getProvider } from '../ai/providers.mjs'
 import { chatState, sendChat, stopChat, configureRequests, taskSummary, type Message } from '../ai/workspace'
 import { loadAiSettings } from '../ai/settings.mjs'
+import { useSettings } from '../settings'
 
 const props = defineProps<{ document: { id: string; title: string; kind: string }; context: any; sendShortcut?: string; consumeCapture?: (value: { documentId: string; selection: any }) => void }>()
 const emit = defineEmits<{ jump: [value: { page: number; rect?: any; line?: number }]; close: []; settings: []; error: [value: string]; clearSelection: [] }>()
@@ -24,6 +25,8 @@ let renderFrame = 0
 const providerSummary = computed(() => `${getProvider(settings.value.provider)?.name || 'AI'} · ${settings.value.model || '默认模型'}`)
 const selected = computed(() => props.context?.selection || {})
 const hasSelection = computed(() => Boolean(selected.value.text || selected.value.image))
+const { preferences } = useSettings()
+const suggestions = computed(() => preferences.value.assistant.quickPrompts)
 function restoreScroll() { if (messageList.value) messageList.value.scrollTop = state.value.scrollTop }
 watch(() => props.document.id, (id) => {
   rememberScroll()
@@ -65,7 +68,7 @@ function applySettings(value: any) { settings.value = value; configureRequests(v
 async function copy(text: string) {
   try { await navigator.clipboard.writeText(text) } catch { state.value.status = '复制失败，请手动选择文字。'; state.value.error = true }
 }
-function send() {
+function send(question?: string) {
   const id = props.document.id
   const selection = props.context?.selection
   const usesImage = includeSelection.value && Boolean(selection?.image)
@@ -73,7 +76,7 @@ function send() {
   return sendChat({ ...props.document }, { ...props.context }, () => { if (id === props.document.id) emit('settings') }, () => {
     // The request can be accepted after this pane closes or switches files.
     if (usesImage) consumeCapture?.({ documentId: id, selection })
-  })
+  }, question)
 }
 onBeforeUnmount(() => { rememberScroll(); if (renderFrame) cancelAnimationFrame(renderFrame) })
 defineExpose({ send, stop, applySettings, focusPrompt })
@@ -83,7 +86,7 @@ defineExpose({ send, stop, applySettings, focusPrompt })
   <aside class="ai-pane" aria-label="AI 阅读助手">
       <div class="model-bar"><span class="model-summary" :title="providerSummary">{{ providerSummary }}</span><span v-if="taskSummary.running || taskSummary.queued" class="task-summary" :title="`同时最多 ${taskSummary.limits.concurrent} 题，Codex ${taskSummary.limits.codex} 题`">{{ taskSummary.running }} 运行<template v-if="taskSummary.queued"> · {{ taskSummary.queued }} 等待</template></span><button class="secondary-action model-change" title="AI 设置" data-glass-interactive :disabled="busy" @click="emit('settings')">更改</button><button class="close-assistant" title="关闭阅读助手" aria-label="关闭阅读助手" data-glass-interactive @click="emit('close')">×</button></div>
       <div ref="messageList" class="ai-messages" aria-live="polite" @scroll="rememberScroll">
-        <div v-if="!messages.length" class="ai-welcome"><p>可询问当前内容，也可选取文字或框选图表。</p><div class="suggestions"><button @click="prompt = '概括当前内容的核心观点，并说明它与整篇文档的关系。'">梳理核心观点</button><button @click="prompt = '解释当前页中的关键概念与公式，引用原文依据。'">解释概念与公式</button><button @click="prompt = '找出文档中的主要假设、适用条件与局限。'">查找假设与局限</button></div></div>
+        <div v-if="!messages.length" class="ai-welcome"><p>可询问当前内容，也可选取文字或框选图表。</p><div class="suggestions"><button v-for="(suggestion, index) in suggestions" :key="index" :title="suggestion.question" :disabled="busy" @click="send(suggestion.question)">{{ suggestion.label }}</button></div></div>
         <article v-for="message in messages" :key="message.id" class="ai-message" :class="message.role">
           <div class="message-label"><strong>{{ message.role === 'user' ? '你' : '阅读助手' }}</strong><button v-if="message.content" @click="copy(message.content)">复制</button></div>
           <details v-if="message.reasoning" class="reasoning"><summary>思考过程</summary><p>{{ message.reasoning }}</p></details>
@@ -96,7 +99,7 @@ defineExpose({ send, stop, applySettings, focusPrompt })
         <div v-if="hasSelection" class="ai-selection-context"><div class="context-heading"><label><input v-model="includeSelection" type="checkbox" :disabled="busy" />{{ selected.image ? `使用第 ${selected.page} 页截图` : '使用所选文字' }}</label><button class="reset-button" @click="emit('clearSelection')" title="清除选区">×</button></div><p v-if="selected.text">{{ selected.text.slice(0, 140) }}</p><img v-if="selected.image" :src="selected.image" alt="选取的截图预览" /></div>
         <label class="document-context"><input v-model="includeDocument" type="checkbox" :disabled="busy" /> 当前页上下文与文档检索</label>
         <textarea ref="input" v-model="prompt" rows="3" placeholder="询问这份文档…" aria-label="向 AI 提问" />
-        <div class="composer-actions"><button class="reset-button secondary-action clear-conversation" data-glass-interactive :disabled="busy || !messages.length" @click="clear">清空对话</button><span v-if="sendShortcut" :title="sendShortcut">{{ sendShortcut }}</span><button v-if="busy" class="send-button stop" @click="stop">停止</button><button v-else class="send-button" :disabled="!prompt.trim()" @click="send">发送 ↑</button></div>
+        <div class="composer-actions"><button class="reset-button secondary-action clear-conversation" data-glass-interactive :disabled="busy || !messages.length" @click="clear">清空对话</button><span v-if="sendShortcut" :title="sendShortcut">{{ sendShortcut }}</span><button v-if="busy" class="send-button stop" @click="stop">停止</button><button v-else class="send-button" :disabled="!prompt.trim()" @click="send()">发送 ↑</button></div>
         <p v-if="status" class="ai-status" :class="{ error: statusError }" role="status">{{ status }}</p>
       </div>
   </aside>
@@ -123,7 +126,7 @@ button{font:inherit;cursor:pointer;color:var(--control-ink)}
 .ai-welcome p{font-size:13px;line-height:1.9;color:var(--muted);margin:0}
 .suggestions{display:flex;flex-direction:column;align-items:flex-start;gap:8px;margin-top:23px}
 /* 建议按钮用中档玻璃，与面板区分层次，同时保持可点性明确。 */
-.suggestions button{font-size:12px;background-color:var(--glass-2);background-image:var(--glass-sheen);color:var(--control-ink);border:1px solid var(--line);padding:9px 12px;border-radius:var(--r-sm);box-shadow:var(--glass-control-shadow);transition:background-color var(--dur-1) var(--ease-soft),box-shadow var(--dur-1) var(--ease-soft),transform var(--dur-1) var(--ease-out)}
+.suggestions button{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;background-color:var(--glass-2);background-image:var(--glass-sheen);color:var(--control-ink);border:1px solid var(--line);padding:9px 12px;border-radius:var(--r-sm);box-shadow:var(--glass-control-shadow);transition:background-color var(--dur-1) var(--ease-soft),box-shadow var(--dur-1) var(--ease-soft),transform var(--dur-1) var(--ease-out)}
 .suggestions button:hover:not(:disabled){background-color:var(--control-hover);color:var(--control-ink);transform:translateX(2px)}
 .ai-message{margin-bottom:28px;animation:zg-rise-in var(--dur-3) var(--ease-out) both}
 .message-label{display:flex;justify-content:space-between;align-items:center;font-size:11px;margin-bottom:12px;color:var(--muted)}

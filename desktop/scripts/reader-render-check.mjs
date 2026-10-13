@@ -18,7 +18,7 @@ let server, browser, context, page, application, nativeId, nativePath;
 let passed = false;
 const prefix = timing ? `reader-timing-${timingSample ? 'sample' : 'synthetic'}-${slow ? 'slow' : 'real'}-${process.argv.includes('--before') ? 'before' : 'after'}` : native ? (layoutBaseline ? 'native-reader-layout-baseline' : 'native-reader-render') : layoutBaseline ? 'reader-layout-baseline' : baseline ? 'reader-render-baseline' : 'reader-render';
 function fixture() {
-  const widths = [500, 900, 500, 500, 500];
+  const widths = [500, 900, 500, 500, 500, 500, 500];
   const objects = ['<< /Type /Catalog /Pages 2 0 R >>', `<< /Type /Pages /Kids [${widths.map((_, index) => `${4 + index * 2} 0 R`).join(' ')}] /Count ${widths.length} >>`, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'];
   for (const [index, width] of widths.entries()) {
     objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${width} 700] /Resources << /Font << /F1 3 0 R >> >> /Contents ${5 + index * 2} 0 R${index === 0 ? ` /Annots [${widths.length * 2 + 4} 0 R]` : ''} >>`);
@@ -111,7 +111,7 @@ function assertContinuous(result, label) {
   assert.equal(result.missing, 0, `${label}: a previously painted page disappeared`);
   assert.equal(result.black, 0, `${label}: an unpainted black canvas was displayed`);
   assert.equal(result.white, 0, `${label}: a page lost its synthetic colored background`);
-  assert.ok(result.maxPixels <= 16_000_000, `${label}: backing buffers exceeded the 16M pixel budget`);
+  assert.ok(result.maxPixels <= 24_000_000, `${label}: backing buffers exceeded the 24M pixel budget`);
 }
 function assertAtomicFit(result, label) {
   assertContinuous(result, label);
@@ -155,7 +155,7 @@ try {
     nativeId = (await page.evaluate(path => window.__TAURI_INTERNALS__.invoke('import_documents', { paths: [path] }), nativePath))[0].id;
     await page.reload();
   } else {
-    server = await createServer({ server: { host: '127.0.0.1', port: 1459, strictPort: true } }); await server.listen();
+    server = await createServer({ cacheDir: resolve('node_modules/.vite-reader-render-check'), server: { host: '127.0.0.1', port: 1459, strictPort: true } }); await server.listen();
     browser = await chromium.launch({ channel: 'msedge', headless: true });
     context = await browser.newContext({ viewport: { width: 1400, height: 980 }, deviceScaleFactor: 2 });
     page = await context.newPage();
@@ -190,7 +190,7 @@ try {
   await page.evaluate(async slow => {
     // Use the existing reader reference in both development and production;
     // Vue's development-only DOM component marker is absent from packaged apps.
-    window.__renderPdf = () => document.querySelector('#app')._vnode.component.refs.reader.getPdf();
+    window.__renderPdf = () => { const app = document.querySelector('#app')._vnode.component; return (app.exposed?.reader?.value || app.refs.reader).getPdf(); };
     const pdf = window.__renderPdf();
     const prototype = Object.getPrototypeOf(await pdf.getPage(1)), original = prototype.render;
     window.__pdfRenderCount = 0; window.__renderRasters = []; window.__renderBuffers = [];
@@ -317,7 +317,7 @@ try {
     await page.getByRole('button', { name: '文档库', exact: true }).click();
     await page.getByRole('button', { name: native ? '打开 render-synthetic-native.pdf' : '打开 渲染连续性验证.pdf', exact: true }).click();
     await waitReady(); await page.waitForFunction(() => !document.querySelector('.pdf-preview'));
-    assert.ok(await page.locator('.pdf-canvas').count() <= 3);
+    assert.ok(await page.locator('.pdf-canvas').count() <= 5);
     checks.push({ test: 'closing during redraw disposes old buffers and reopening renders cleanly', passed: true });
     // A manual zoom issued while an automatic fit is still painting wins.
     const first = page.getByLabel('页码', { exact: true });
@@ -330,20 +330,20 @@ try {
     await waitReady(); await page.waitForTimeout(600);
     assert.equal(await page.locator('#page-surface').evaluate(element => Number(element.style.getPropertyValue('--scale-factor'))), manualScale);
     checks.push({ test: 'manual zoom cancels a staged automatic fit without a late size change', passed: true });
-    // Navigating outside the three-page window releases the staged page.
+    // Navigating outside the five-page window releases the staged page.
     // The final available width must still be applied to the new active page.
     await page.getByTitle('适应宽度', { exact: true }).click(); await waitReady();
     await page.getByRole('button', { name: '切换侧栏', exact: true }).click();
     await page.waitForFunction(() => document.querySelector('#page-surface')?.classList.contains('pdf-preview'));
-    await first.fill('5'); await first.press('Enter');
+    await first.fill('7'); await first.press('Enter');
     await page.waitForFunction(() => {
       const slot = document.querySelector('#page-surface'), view = document.querySelector('.pdf-scroll');
       const style = getComputedStyle(view);
-      return slot?.dataset.page === '5' && slot.classList.contains('page-ready') && !slot.classList.contains('pdf-preview') &&
+      return slot?.dataset.page === '7' && slot.classList.contains('page-ready') && !slot.classList.contains('pdf-preview') &&
         Math.abs(slot.getBoundingClientRect().width - (view.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight))) < 1;
     });
-    assert.ok(await page.locator('.pdf-canvas').count() <= 3);
-    assert.ok(await page.evaluate(() => window.__canvasPeakPixels <= 16_000_000));
+    assert.ok(await page.locator('.pdf-canvas').count() <= 5);
+    assert.ok(await page.evaluate(() => window.__canvasPeakPixels <= 24_000_000));
     checks.push({ test: 'navigation during staged fit releases old page and fits new active page within the canvas budget', passed: true });
     await page.screenshot({ path: resolve(artifacts, `${prefix}.png`), animations: 'disabled' });
     assert.deepEqual(errors, []);
@@ -351,6 +351,18 @@ try {
   passed = true;
   console.log(JSON.stringify({ passed, baseline, native, timing, sample: timingSample, artificialContinuationDelayMs: slow ? 120 : 0, checks, errors }, null, 2));
 } finally {
+  if (!passed && page && !page.isClosed()) {
+    checks.push({ test: 'failure diagnostics', state: await page.evaluate(() => {
+      const app = document.querySelector('#app')?._vnode?.component;
+      const reader = app?.exposed?.reader?.value || app?.refs?.reader;
+      return { readerBound: !!reader, cache: app?.exposed?.getReaderCacheStats?.(),
+        scrolls: [...document.querySelectorAll('.pdf-scroll')].map(element => ({ connected: element.isConnected, width: element.clientWidth, style: element.getAttribute('style'), top: element.scrollTop })),
+        activePages: [...document.querySelectorAll('#page-surface')].map(element => ({ page: element.dataset.page, class: element.className, scale: element.style.getPropertyValue('--scale-factor'), canvas: [element.querySelector('canvas')?.width, element.querySelector('canvas')?.height] })),
+        overlays: [...document.querySelectorAll('.reader-overlay')].map(element => element.textContent), transitions: [...document.querySelectorAll('.view-enter-active,.view-leave-active,.pane-enter-active,.pane-leave-active')].map(element => element.className),
+      };
+    }).catch(error => ({ diagnosticError: error.message })) });
+    await page.screenshot({ path: resolve(artifacts, `${prefix}-failure.png`) }).catch(() => {});
+  }
   if (nativeId && page && !page.isClosed()) {
     await page.getByRole('button', { name: '文档库', exact: true }).click().catch(() => {});
     await page.evaluate(id => window.__TAURI_INTERNALS__.invoke('remove_document', { id }), nativeId);

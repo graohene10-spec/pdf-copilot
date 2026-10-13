@@ -13,7 +13,7 @@ const productName = native.productName;
 if (typeof productName !== 'string' || !productName.trim() || /[<>:"/\\|?*\u0000-\u001f]/.test(productName) || /[. ]$/.test(productName)) {
   throw new Error('Desktop productName must be a valid Windows filename.');
 }
-const output = join(root, 'release');
+const output = process.argv.includes('--staging') ? join(root, 'artifacts', 'package-staging') : join(root, 'release');
 const portable = join(output, `${productName}-portable`);
 const portableExecutable = `${productName}.exe`;
 const setupName = `${productName}_${pkg.version}_x64-setup.exe`;

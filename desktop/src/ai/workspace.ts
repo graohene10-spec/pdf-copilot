@@ -24,8 +24,8 @@ export function stopChat(id: string) {
 export function closeChat(id: string) { stopChat(id); sessions.delete(id) }
 export function closeAllChats() { for (const id of sessions.keys()) closeChat(id) }
 
-export async function sendChat(descriptor: { id: string; title: string; kind: string }, source: any, onSettings: () => void, onAccepted?: () => void) {
-  const state = chatState(descriptor.id), question = state.draft.trim()
+export async function sendChat(descriptor: { id: string; title: string; kind: string }, source: any, onSettings: () => void, onAccepted?: () => void, explicitQuestion?: string) {
+  const state = chatState(descriptor.id), question = (explicitQuestion ?? state.draft).trim()
   if (!question || state.request) return
   if (question.length > 16000) { state.status = '请将单次问题缩短至 16000 字以内。'; state.error = true; return }
   // Capture all user choices before the first await. No callback reads a
@@ -59,7 +59,9 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
     } })
     state.messages.push(user, { id: crypto.randomUUID(), role: 'assistant', content: '', reasoning: '', sources: [] })
     answer = state.messages.at(-1)!
-    state.draft = ''
+    // Immediate suggestions are independent of the user's unfinished question.
+    // A normal send also preserves any new draft typed while preparing the request.
+    if (explicitQuestion === undefined && state.draft.trim() === question) state.draft = ''
     onAccepted?.()
     await ticket.started
     signal.throwIfAborted()

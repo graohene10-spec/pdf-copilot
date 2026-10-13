@@ -1,14 +1,17 @@
 <script setup lang="ts">
 import { ref, shallowRef, computed, watch, onMounted, onBeforeUnmount, nextTick, defineAsyncComponent, toRaw } from 'vue'
-import { library, isDesktop } from './sdk'
+import { library, isDesktop, importDroppedDocuments } from './sdk'
 import type { Doc } from './sdk/types'
 import AppIcon from './components/AppIcon.vue'
 import FileTabs from './components/FileTabs.vue'
-import { chatPhase, closeChat, closeAllChats, configureRequests, stopChat } from './ai/workspace'
+import CaptureQuickPrompt from './components/CaptureQuickPrompt.vue'
+import { chatPhase, chatState, sendChat, closeChat, closeAllChats, configureRequests, stopChat } from './ai/workspace'
 import { forgetPassword, forgetAllPasswords } from './document/passwords.mjs'
-import { useSettings, matchShortcut, shortcutLabel } from './settings'
+import { useSettings, matchShortcut, matchWheelShortcut, shortcutFromEvent, shortcutLabel } from './settings'
+import { retainReaderEntries } from './reader/cache-policy.mjs'
 import { installGlassContrast } from './ui/glass-contrast'
 import { floatLeavingPanel, restoreLeavingPanel } from './ui/panel-transition'
+import { useFullscreen } from './ui/fullscreen'
 const PdfReader = defineAsyncComponent(() => import('./components/PdfReader.vue'))
 const MarkdownReader = defineAsyncComponent(() => import('./components/MarkdownReader.vue'))
 const AiPane = defineAsyncComponent(() => import('./components/AiPane.vue'))
@@ -16,16 +19,26 @@ const SettingsDialog = defineAsyncComponent(() => import('./components/SettingsD
 const { preferences, effectiveAppearance, load: loadPreferences, save: savePreferences } = useSettings()
 
 const documents = ref<Doc[]>([])
-type OpenTab = { doc: Doc; view?: any; selection?: { text: string; page: number; image?: string; rect?: any } }
+type CaptureFrame = { left: number; top: number; width: number; height: number }
+type DocumentSelection = { text: string; page: number; image?: string; rect?: any; captureFrame?: CaptureFrame }
+type OpenTab = { doc: Doc; view?: any; selection?: DocumentSelection }
 const tabs = ref<OpenTab[]>([])
 const active = ref<Doc | null>(null)
 const currentTab = computed(() => tabs.value.find(tab => tab.doc.id === active.value?.id))
 const fileTabs = computed(() => tabs.value.map(tab => ({ id: tab.doc.id, name: tab.doc.name, kind: tab.doc.kind, phase: chatPhase(tab.doc.id) })))
-const initialView = shallowRef<any>()
-const readerEvents = shallowRef<Record<string, (...args: any[]) => void>>({})
+type ReaderEntry = { id: string; doc: Doc; size: number; bytes: Uint8Array; view?: any; events: Record<string, (...args: any[]) => void> }
+const readerCache = shallowRef<ReaderEntry[]>([])
+const readerInstances = new Map<string, any>()
+const pendingReads = new Map<string, Promise<Uint8Array>>()
 const selectionAction = ref<{ left: number; top: number }>()
-const data = shallowRef<Uint8Array>()
-const selection = shallowRef<{ text: string; page: number; image?: string; rect?: any }>()
+const selection = shallowRef<DocumentSelection>()
+type CaptureQuick = { documentId: string; selection: DocumentSelection; frame: CaptureFrame; pending: boolean; status: string; ownedRequest?: ReturnType<typeof chatState>['request'] }
+const captureQuick = shallowRef<CaptureQuick>()
+let captureQuickFrame = 0
+let captureQuickResize: ResizeObserver | undefined
+let captureQuickMutation: MutationObserver | undefined
+const captureQuickBusy = computed(() => Boolean(captureQuick.value && (captureQuick.value.pending || chatState(captureQuick.value.documentId).request)))
+const captureQuickStatus = computed(() => captureQuick.value?.status || (captureQuick.value && chatState(captureQuick.value.documentId).request ? '这份文档已有问题正在处理，可点继续查看。' : ''))
 const reader = ref<any>()
 const assistant = ref<any>()
 let focusAssistantPending = false
@@ -38,6 +51,7 @@ const tagFilter = ref('')
 const display = ref<'grid' | 'list'>('grid')
 const loading = ref(true)
 const importing = ref(false)
+const draggingFiles = ref(false)
 const opening = ref(false)
 const aiOpen = ref(false)
 const sidebarOpen = ref(true)
@@ -49,6 +63,7 @@ const tagInput = ref('')
 const toast = ref('')
 const search = ref<HTMLInputElement>()
 let focusSearchPending = false
+let findPendingDocument: string | undefined
 let toastTimer: ReturnType<typeof setTimeout>
 let queryTimer: ReturnType<typeof setTimeout>
 let progressTimer: ReturnType<typeof setTimeout>
@@ -73,6 +88,7 @@ const aiContext = computed(() => ({ page: active.value?.page || 1, selection: se
 const totalPages = computed(() => documents.value.filter(doc => doc.kind === 'pdf' && doc.lastOpenedAt).reduce((sum, doc) => sum + (doc.pageCount || 0), 0))
 
 function notify(message: string) { toast.value = message; clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.value = '', 4800) }
+const { fullscreen, fullscreenPending, toggleFullscreen, exitFullscreen } = useFullscreen(isDesktop, notify)
 function reason(error: any) { return error?.message || String(error) }
 function size(bytes: number) { return bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB` }
 function date(value: number) {
@@ -103,31 +119,48 @@ async function refresh() {
 function searchDocuments() { clearTimeout(queryTimer); queryTimer = setTimeout(refresh, 180) }
 function chooseCategory(value: string) { category.value = value; tagFilter.value = ''; closeReader() }
 function chooseTag(value: string) { tagFilter.value = value; category.value = 'all'; closeReader() }
-async function importDocuments() {
-  if (importing.value) return
+async function addDocuments(load: () => Promise<Doc[]>) {
+  if (importing.value) { notify('正在加入文档，请稍候。'); return }
   importing.value = true
   try {
-    const imported = await library.importDocuments()
+    const imported = await load()
     if (!imported.length) return
+    const changed = new Set<string>()
+    for (const doc of imported) {
+      const tab = tabs.value.find(tab => tab.doc.id === doc.id)
+      const cached = readerCache.value.find(entry => entry.id === doc.id)
+      const previous = cached?.doc || tab?.doc
+      if (previous && (previous.size !== doc.size || previous.modifiedAt !== doc.modifiedAt)) {
+        changed.add(doc.id)
+        if (active.value?.id === doc.id) { pauseReader(); ++openEpoch; opening.value = true; selection.value = undefined; active.value = doc }
+        evictReader(doc.id); pendingReads.delete(doc.id); forgetPassword(doc.id)
+        clearTimeout(indexTimers.get(doc.id)); indexTimers.delete(doc.id)
+        if (tab) tab.selection = undefined
+      }
+      if (tab) tab.doc = { ...doc, page: tab.doc.page, pageCount: tab.doc.pageCount, progress: tab.doc.progress, lastOpenedAt: Math.max(tab.doc.lastOpenedAt, doc.lastOpenedAt) }
+      else tabs.value.push({ doc })
+    }
     query.value = ''; await refresh()
     notify(`已加入 ${imported.length} 份文档`)
-    for (const doc of imported) if (!tabs.value.some(tab => tab.doc.id === doc.id)) tabs.value.push({ doc })
-    await openDocument(imported[0])
+    await openDocument(imported[0], changed.has(imported[0].id))
   } catch (error) { notify(`导入失败：${reason(error)}`) }
   finally { importing.value = false }
 }
+function importDocuments() { return addDocuments(() => library.importDocuments()) }
+function dropDocuments(files: string[] | File[]) { draggingFiles.value = false; return addDocuments(() => importDroppedDocuments(files)) }
 async function flushProgress() {
   clearTimeout(progressTimer)
   const pending = [...pendingProgress]; pendingProgress.clear()
-  await Promise.all(pending.map(([id, patch]) => {
-    const write = (progressWrites.get(id) || Promise.resolve()).then(async () => {
-      try { updateLocal(await library.update(id, patch)) }
-      catch (error) { notify(`阅读位置保存失败：${reason(error)}`) }
-    })
-    progressWrites.set(id, write)
-    void write.finally(() => { if (progressWrites.get(id) === write) progressWrites.delete(id) })
-    return write
-  }))
+  await Promise.all(pending.map(([id, patch]) => writeReadingUpdate(id, patch, '阅读位置保存失败')))
+}
+function writeReadingUpdate(id: string, patch: Partial<Doc>, message: string) {
+  const write = (progressWrites.get(id) || Promise.resolve()).then(async () => {
+    try { updateLocal(await library.update(id, patch)) }
+    catch (error) { notify(`${message}：${reason(error)}`) }
+  })
+  progressWrites.set(id, write)
+  void write.finally(() => { if (progressWrites.get(id) === write) progressWrites.delete(id) })
+  return write
 }
 function rememberReader() {
   const tab = currentTab.value
@@ -135,40 +168,76 @@ function rememberReader() {
   selectionAction.value = undefined
   window.getSelection()?.removeAllRanges()
 }
-async function openDocument(doc: Doc) {
-  if (active.value?.id === doc.id) return
-  rememberReader()
+function pauseReader() { dismissCaptureQuick(); rememberReader(); reader.value?.suspend?.(); reader.value = undefined; findPendingDocument = undefined; clearWheelZoom() }
+function bindReader(id: string, value: any) {
+  if (value) readerInstances.set(id, value)
+  if (active.value?.id === id) reader.value = value || undefined
+}
+function retainReaders(entries: ReaderEntry[], id: string) {
+  const retained = retainReaderEntries(entries, id)
+  for (const entry of readerCache.value) if (!retained.includes(entry)) readerInstances.delete(entry.id)
+  readerCache.value = retained
+}
+function evictReader(id: string) { readerCache.value = readerCache.value.filter(entry => entry.id !== id); readerInstances.delete(id) }
+function readDocument(id: string) {
+  let promise = pendingReads.get(id)
+  if (!promise) {
+    promise = library.read(id); pendingReads.set(id, promise)
+    const current = promise
+    void promise.finally(() => { if (pendingReads.get(id) === current) pendingReads.delete(id) }).catch(() => {})
+  }
+  return promise
+}
+function cacheReader(doc: Doc, bytes: Uint8Array, view: any) {
+  const entry: ReaderEntry = { id: doc.id, doc, bytes, size: bytes.byteLength, view, events: {} }
+  const present = () => readerCache.value.includes(entry) && tabs.value.some(tab => tab.doc.id === entry.id)
+  const visible = () => present() && active.value?.id === entry.id
+  entry.events = {
+    ready: () => { if (visible()) opening.value = false },
+    progress: value => { if (visible()) readingProgress(entry.id, value) },
+    selection: value => { if (visible()) selectedContext(value) },
+    text: value => { if (visible()) indexText(entry.id, value) },
+    error: message => { if (visible()) { opening.value = false; notify(message) } },
+    'font-size-change': value => { if (visible()) setMarkdownFontSize(value) },
+  }
+  return entry
+}
+async function openDocument(doc: Doc, reload = false) {
+  if (active.value?.id === doc.id && !reload) return
+  pauseReader()
   const epoch = ++openEpoch
   void flushProgress()
   let tab = tabs.value.find(tab => tab.doc.id === doc.id)
   if (!tab) { tab = { doc }; tabs.value.push(tab) }
-  active.value = tab.doc; initialView.value = tab.view; selection.value = tab.selection
-  data.value = undefined
+  active.value = tab.doc; selection.value = tab.selection
   opening.value = true; detailsOpen.value = false
-  readerEvents.value = {
-    progress: value => { if (epoch === openEpoch) readingProgress(doc.id, value) },
-    selection: value => { if (epoch === openEpoch) selectedContext(value) },
-    text: value => indexText(doc.id, value),
-    error: message => { if (epoch === openEpoch) notify(message) },
-  }
   try {
-    const bytes = await library.read(doc.id)
+    const cached = readerCache.value.find(entry => entry.id === doc.id)
+    if (cached) retainReaders(readerCache.value, doc.id)
+    else {
+      const bytes = await readDocument(doc.id)
+      if (epoch !== openEpoch || !tabs.value.includes(tab)) return
+      retainReaders([...readerCache.value, cacheReader(tab.doc, bytes, tab.view)], doc.id)
+    }
+    await nextTick()
     if (epoch !== openEpoch) return
-    data.value = bytes
-    const updated = await library.update(doc.id, { lastOpenedAt: Date.now() })
-    if (tabs.value.includes(tab)) updateLocal(updated)
+    const instance = readerInstances.get(doc.id)
+    if (instance) { reader.value = instance; void instance.resume?.() }
+    // Reading must not wait for a database write or an older position save.
+    void writeReadingUpdate(doc.id, { lastOpenedAt: Date.now() }, '阅读记录更新失败')
   } catch (error) { if (epoch === openEpoch) { notify(`无法打开文档：${reason(error)}`); closeTab(doc.id) } }
-  finally { if (epoch === openEpoch) opening.value = false }
 }
-function closeReader() { rememberReader(); ++openEpoch; void flushProgress(); active.value = null; data.value = undefined; selection.value = undefined; detailsOpen.value = false; void refresh() }
+function closeReader() { pauseReader(); ++openEpoch; void flushProgress(); active.value = null; readerCache.value = []; readerInstances.clear(); opening.value = false; selection.value = undefined; detailsOpen.value = false; void refresh() }
 function selectTab(id: string) { const tab = tabs.value.find(tab => tab.doc.id === id); if (tab) void openDocument(tab.doc) }
 function closeTab(id: string) {
   const index = tabs.value.findIndex(tab => tab.doc.id === id)
   if (index < 0) return
   const selected = active.value?.id === id
-  if (selected) closeReader()
+  if (selected) { pauseReader(); ++openEpoch; void flushProgress(); active.value = null; selection.value = undefined; detailsOpen.value = false; opening.value = false }
+  evictReader(id)
   closeChat(id); forgetPassword(id); tabs.value.splice(index, 1)
   if (selected && tabs.value.length) selectTab(tabs.value[Math.min(index, tabs.value.length - 1)].doc.id)
+  else if (selected) closeReader()
 }
 function moveTab(direction: number) {
   if (!tabs.value.length) return
@@ -180,15 +249,97 @@ function openAssistant(focus = false) {
   void nextTick(() => { if (focusAssistantPending && assistant.value) { assistant.value.focusPrompt?.(); focusAssistantPending = false } })
 }
 function selectedContext(value: typeof selection.value) {
+  dismissCaptureQuick()
   selection.value = value
   if (currentTab.value) currentTab.value.selection = value
   if (value?.image) {
     selectionAction.value = undefined
-    if (preferences.value.pdf.openAssistantOnCapture) openAssistant(true)
+    if (preferences.value.pdf.quickAskOnCapture && active.value?.kind === 'pdf') {
+      const frame = reader.value?.getCaptureFrame?.(value) || value.captureFrame
+      if (frame) {
+        captureQuick.value = { documentId: active.value.id, selection: value, frame, pending: false, status: '' }
+        monitorCaptureQuick()
+      } else notify('选区位置已变化，可在阅读助手中继续提问。')
+    } else if (preferences.value.pdf.openAssistantOnCapture) openAssistant(true)
   } else if (value?.text) {
     const native = window.getSelection()
     const rect = native?.rangeCount ? native.getRangeAt(0).getBoundingClientRect() : null
     if (rect?.width) selectionAction.value = { left: Math.max(8, Math.min(window.innerWidth - 88, rect.right - 70)), top: Math.max(8, Math.min(window.innerHeight - 40, rect.bottom + 5)) }
+  }
+}
+function dismissCaptureQuick(clear = false) {
+  const current = captureQuick.value
+  captureQuick.value = undefined
+  if (captureQuickFrame) cancelAnimationFrame(captureQuickFrame)
+  captureQuickFrame = 0
+  captureQuickResize?.disconnect(); captureQuickResize = undefined
+  captureQuickMutation?.disconnect(); captureQuickMutation = undefined
+  if (current?.pending && current.ownedRequest && chatState(current.documentId).request === current.ownedRequest) stopChat(current.documentId)
+  if (clear && current && active.value?.id === current.documentId && toRaw(selection.value) === toRaw(current.selection)) clearSelection()
+}
+function monitorCaptureQuick() {
+  if (captureQuickFrame) cancelAnimationFrame(captureQuickFrame)
+  captureQuickFrame = 0
+  captureQuickResize?.disconnect(); captureQuickMutation?.disconnect()
+  const check = () => {
+    captureQuickFrame = 0
+    const current = captureQuick.value
+    if (!current) return
+    if (active.value?.id !== current.documentId || toRaw(selection.value) !== toRaw(current.selection)) { dismissCaptureQuick(); return }
+    // Settings covers the capture without changing the underlying attachment.
+    if (!settingsOpen.value) {
+      const frame = reader.value?.getCaptureFrame?.(current.selection)
+      if (!frame || [frame.left, frame.top, frame.width, frame.height].some((value, index) => Math.abs(value - [current.frame.left, current.frame.top, current.frame.width, current.frame.height][index]) > .5)) { dismissCaptureQuick(); return }
+    }
+  }
+  const schedule = () => { if (!captureQuickFrame) captureQuickFrame = requestAnimationFrame(check) }
+  captureQuickResize = new ResizeObserver(schedule)
+  const elements: HTMLElement[] = reader.value?.getCaptureElements?.(captureQuick.value?.selection) || []
+  const slot = elements.find(element => element.matches('.page-slot'))
+  for (const element of [document.querySelector('.reading-main'), ...elements]) if (element) captureQuickResize.observe(element)
+  if (slot) {
+    captureQuickMutation = new MutationObserver(schedule)
+    captureQuickMutation.observe(slot, { childList: true, attributes: true, subtree: true, attributeFilter: ['style', 'class', 'width', 'height'] })
+  }
+  schedule()
+}
+function captureViewportChanged(event?: Event) {
+  if (event?.target instanceof Element && event.target.closest('.capture-quick-actions,.settings-dialog')) return
+  dismissCaptureQuick()
+}
+function continueCaptureQuick() { dismissCaptureQuick(); openAssistant(true) }
+async function askCaptureQuick(question: string) {
+  const current = captureQuick.value
+  if (!current || current.pending || active.value?.id !== current.documentId) return
+  const state = chatState(current.documentId)
+  if (state.request) { current.status = '这份文档已有问题正在处理，可点继续查看。'; captureQuick.value = { ...current }; return }
+  const doc = { id: current.documentId, title: active.value.name, kind: active.value.kind }
+  const context = { page: current.selection.page, selection: current.selection }
+  current.pending = true; current.status = '准备提问…'; captureQuick.value = { ...current }
+  // sendChat takes its selection snapshot before its first await. Force the
+  // selected screenshot for this request without changing the user's choice.
+  const includeSelection = state.includeSelection
+  state.includeSelection = true
+  let accepted = false
+  const sending = sendChat(doc, context, () => {
+    if (active.value?.id === doc.id && toRaw(selection.value) === toRaw(context.selection)) openSettings('ai')
+  }, () => {
+    accepted = true; current.pending = false
+    // Do not abort an accepted queued request when removing its capture UI.
+    if (captureQuick.value?.documentId === doc.id && toRaw(captureQuick.value.selection) === toRaw(context.selection)) {
+      captureQuick.value.pending = false; captureQuick.value.ownedRequest = undefined; dismissCaptureQuick()
+    }
+    consumeSelection({ documentId: doc.id, selection: context.selection })
+    if (active.value?.id === doc.id) openAssistant()
+  }, question)
+  state.includeSelection = includeSelection
+  if (captureQuick.value?.documentId === current.documentId) captureQuick.value.ownedRequest = state.request
+  try { await sending }
+  finally {
+    const retained = captureQuick.value
+    if (!accepted && retained?.documentId === doc.id && toRaw(retained.selection) === toRaw(context.selection)) {
+      retained.pending = false; retained.ownedRequest = undefined; retained.status = state.status || '未能发送，请重试。'; captureQuick.value = { ...retained }
+    }
   }
 }
 function selectionChanged() { if (window.getSelection()?.isCollapsed) selectionAction.value = undefined }
@@ -199,6 +350,7 @@ async function toggleStar(doc: Doc) {
 }
 function readingProgress(id: string, value: { page: number; pageCount: number; progress: number }) {
   if (active.value?.id !== id || !value.pageCount) return
+  if (captureQuick.value?.documentId === id && captureQuick.value.selection.page !== value.page) dismissCaptureQuick()
   const patch = { page: value.page, pageCount: value.pageCount, progress: value.progress }
   active.value = { ...active.value, ...patch }
   const local = documents.value.find(doc => doc.id === active.value!.id)
@@ -211,7 +363,7 @@ function indexText(id: string, text: string) {
   clearTimeout(indexTimers.get(id))
   indexTimers.set(id, setTimeout(() => { indexTimers.delete(id); void library.index(id, text.slice(0, 2000000)).catch(error => notify(`搜索索引更新失败：${reason(error)}`)) }, 1200))
 }
-function clearSelection() { selection.value = undefined; selectionAction.value = undefined; if (currentTab.value) currentTab.value.selection = undefined; window.getSelection()?.removeAllRanges(); reader.value?.clearSelection?.() }
+function clearSelection() { dismissCaptureQuick(); selection.value = undefined; selectionAction.value = undefined; if (currentTab.value) currentTab.value.selection = undefined; window.getSelection()?.removeAllRanges(); reader.value?.clearSelection?.() }
 function consumeSelection(value: { documentId: string; selection: any }) {
   const tab = tabs.value.find(tab => tab.doc.id === value.documentId)
   if (!tab || toRaw(tab.selection) !== toRaw(value.selection)) return
@@ -302,29 +454,58 @@ watch(effectiveAppearance, () => { applyTheme(); display.value = effectiveAppear
 // A tab may mount its reader while several panels are still transitioning.
 watch(reader, value => {
   if (active.value?.kind === 'pdf' && resizingPanels.size && !window.matchMedia('(max-width: 720px)').matches) value?.holdPanelResize?.(true)
+  if (value && active.value?.id === findPendingDocument) { value.focusSearch?.(); findPendingDocument = undefined }
 })
 watch(search, value => {
   if (value && focusSearchPending) { value.focus(); focusSearchPending = false }
 })
+watch(settingsOpen, value => { if (!value && captureQuick.value) monitorCaptureQuick() })
+watch(() => preferences.value.pdf.quickAskOnCapture, value => { if (!value) dismissCaptureQuick() })
 watch(assistant, async value => {
   if (value && aiOpen.value && focusAssistantPending) { value.focusPrompt?.(); focusAssistantPending = false }
 })
 function keydown(event: KeyboardEvent) {
   if (event.defaultPrevented || event.isComposing || event.keyCode === 229) return
-  if (event.key === 'Escape') { settingsOpen.value = false; detailsOpen.value = false; removeTarget.value = null; return }
-  if (settingsOpen.value || removeTarget.value || event.defaultPrevented) return
+  if (event.key === 'Escape') {
+    if (settingsOpen.value) { settingsOpen.value = false; event.preventDefault() }
+    else if (captureQuick.value) { dismissCaptureQuick(true); event.preventDefault() }
+    else if (removeTarget.value) { removeTarget.value = null; event.preventDefault() }
+    else if (detailsOpen.value) { detailsOpen.value = false; event.preventDefault() }
+    else if (reader.value?.cancelCapture?.()) event.preventDefault()
+    else if (fullscreen.value) { event.preventDefault(); void exitFullscreen() }
+    return
+  }
+  const binding = shortcutFromEvent(event)
+  if (settingsOpen.value || removeTarget.value) {
+    if (binding && ['Ctrl+KeyF', 'F11', preferences.value.shortcuts.find, preferences.value.shortcuts.fullscreen].includes(binding)) event.preventDefault()
+    return
+  }
+  if (captureQuick.value) {
+    if (binding || ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown', 'Home', 'End'].includes(event.key)) event.preventDefault()
+    return
+  }
   let action = matchShortcut(event, preferences.value)
   if (!action && active.value) {
     const candidate = matchShortcut(event, preferences.value, { scope: 'ai' })
     if (candidate === 'aiStop' || (aiOpen.value && event.target instanceof Element && event.target.closest('.ai-pane'))) action = candidate
   }
-  if (!action) return
-  if (event.repeat && !['zoomIn', 'zoomOut', 'previousPage', 'nextPage'].includes(action)) return
+  if (!action) {
+    if (binding === 'Ctrl+KeyF' || binding === 'F11') event.preventDefault()
+    return
+  }
+  if (event.repeat && !['zoomIn', 'zoomOut', 'previousPage', 'nextPage'].includes(action)) { event.preventDefault(); return }
   if (['outline', 'fitWidth', 'zoomOut', 'zoomIn', 'previousPage', 'nextPage', 'capture'].includes(action) && !active.value) return
   if (['capture', 'fitWidth'].includes(action) && active.value?.kind !== 'pdf') return
   event.preventDefault()
   switch (action) {
     case 'import': void importDocuments(); break
+    case 'fullscreen': void toggleFullscreen(); break
+    case 'find':
+      if (active.value) {
+        if (reader.value) reader.value.focusSearch?.()
+        else findPendingDocument = active.value.id
+      } else search.value?.focus()
+      break
     case 'search':
       focusSearchPending = true
       if (active.value) closeReader()
@@ -347,18 +528,78 @@ function keydown(event: KeyboardEvent) {
     case 'aiStop': if (active.value) stopChat(active.value.id); break
   }
 }
+let wheelTimer: ReturnType<typeof setTimeout> | undefined
+let wheelAction: 'zoomIn' | 'zoomOut' | undefined
+let wheelTime = 0
+function clearWheelZoom() { clearTimeout(wheelTimer); wheelTimer = undefined; wheelAction = undefined; wheelTime = 0 }
+function applyWheelZoom() {
+  wheelTimer = undefined
+  const action = wheelAction; wheelAction = undefined
+  if (!action || !active.value || !reader.value || settingsOpen.value || removeTarget.value) return
+  wheelTime = performance.now(); reader.value[action]?.()
+}
+function wheel(event: WheelEvent) {
+  if (captureQuick.value && !settingsOpen.value) { event.preventDefault(); return }
+  if (!active.value || !reader.value || settingsOpen.value || removeTarget.value) return
+  if (!(event.target instanceof Element) || !event.target.closest('.reading-main')) return
+  const action = matchWheelShortcut(event, preferences.value)
+  if (!action) return
+  event.preventDefault()
+  wheelAction = action
+  const elapsed = performance.now() - wheelTime
+  if (elapsed >= 60) { clearTimeout(wheelTimer); applyWheelZoom() }
+  else if (!wheelTimer) wheelTimer = setTimeout(applyWheelZoom, 60 - elapsed)
+}
+let dragDepth = 0
+let stopDropListening: (() => void) | undefined
+let disposed = false
+function fileDrag(event: DragEvent) { return !isDesktop && [...(event.dataTransfer?.types || [])].includes('Files') }
+function dragEnter(event: DragEvent) { if (fileDrag(event)) { event.preventDefault(); dragDepth++; draggingFiles.value = true } }
+function dragOver(event: DragEvent) { if (fileDrag(event)) { event.preventDefault(); if (event.dataTransfer) event.dataTransfer.dropEffect = importing.value ? 'none' : 'copy'; draggingFiles.value = true } }
+function dragLeave(event: DragEvent) { if (fileDrag(event) && (--dragDepth <= 0 || !event.relatedTarget)) { dragDepth = 0; draggingFiles.value = false } }
+function fileDrop(event: DragEvent) {
+  if (!fileDrag(event)) return
+  event.preventDefault(); dragDepth = 0; draggingFiles.value = false
+  void dropDocuments([...(event.dataTransfer?.files || [])])
+}
+async function listenForFileDrop() {
+  if (!isDesktop) return
+  try {
+    const { getCurrentWebview } = await import('@tauri-apps/api/webview')
+    const unlisten = await getCurrentWebview().onDragDropEvent(event => {
+      if (disposed) return
+      const value = event.payload
+      if (value.type === 'enter') draggingFiles.value = value.paths.some(path => /\.(pdf|md|markdown)$/i.test(path))
+      else if (value.type === 'leave') draggingFiles.value = false
+      else if (value.type === 'drop') void dropDocuments(value.paths)
+    })
+    if (disposed) unlisten(); else stopDropListening = unlisten
+  } catch (error) { notify(`文件拖入暂不可用：${reason(error)}`) }
+}
+function getReaderCacheStats() {
+  return readerCache.value.map(entry => ({ id: entry.id, bytes: entry.size, active: active.value?.id === entry.id, ...readerInstances.get(entry.id)?.getCacheStats?.() }))
+}
+defineExpose({ reader, getReaderCacheStats })
 onMounted(async () => {
   glassContrast = installGlassContrast(document.getElementById('app')!)
   glassContrast.setBackground(appliedBackground ?? null)
   document.addEventListener('keydown', keydown)
+  document.addEventListener('wheel', wheel, { capture: true, passive: false })
+  document.addEventListener('dragenter', dragEnter)
+  document.addEventListener('dragover', dragOver)
+  document.addEventListener('dragleave', dragLeave)
+  document.addEventListener('drop', fileDrop)
+  void listenForFileDrop()
   document.addEventListener('selectionchange', selectionChanged)
   document.addEventListener('scroll', dismissSelectionAction, true)
+  document.addEventListener('scroll', captureViewportChanged, true)
   window.addEventListener('resize', dismissSelectionAction)
+  window.addEventListener('resize', captureViewportChanged)
   systemTheme.addEventListener('change', applyTheme)
   try { await loadPreferences() } catch (error) { notify(`设置加载失败：${reason(error)}`) }
   await refresh()
 })
-onBeforeUnmount(() => { glassContrast?.dispose(); document.removeEventListener('keydown', keydown); document.removeEventListener('selectionchange', selectionChanged); document.removeEventListener('scroll', dismissSelectionAction, true); window.removeEventListener('resize', dismissSelectionAction); closeAllChats(); forgetAllPasswords(); systemTheme.removeEventListener('change', applyTheme); flushProgress(); for (const timer of indexTimers.values()) clearTimeout(timer); clearTimeout(queryTimer); clearTimeout(toastTimer) })
+onBeforeUnmount(() => { disposed = true; ++openEpoch; dismissCaptureQuick(); stopDropListening?.(); clearWheelZoom(); readerInstances.clear(); glassContrast?.dispose(); document.removeEventListener('keydown', keydown); document.removeEventListener('wheel', wheel, true); document.removeEventListener('dragenter', dragEnter); document.removeEventListener('dragover', dragOver); document.removeEventListener('dragleave', dragLeave); document.removeEventListener('drop', fileDrop); document.removeEventListener('selectionchange', selectionChanged); document.removeEventListener('scroll', dismissSelectionAction, true); document.removeEventListener('scroll', captureViewportChanged, true); window.removeEventListener('resize', dismissSelectionAction); window.removeEventListener('resize', captureViewportChanged); closeAllChats(); forgetAllPasswords(); systemTheme.removeEventListener('change', applyTheme); flushProgress(); for (const timer of indexTimers.values()) clearTimeout(timer); clearTimeout(queryTimer); clearTimeout(toastTimer) })
 </script>
 
 <template>
@@ -384,7 +625,12 @@ onBeforeUnmount(() => { glassContrast?.dispose(); document.removeEventListener('
         <button class="icon-button sidebar-toggle" @click="sidebarOpen = !sidebarOpen" title="切换侧栏" aria-label="切换侧栏" :aria-expanded="sidebarOpen"><AppIcon name="panel" :size="18" /></button>
         <FileTabs v-if="tabs.length" :tabs="fileTabs" :active-id="active?.id" @select="selectTab" @close="closeTab" @library="closeReader" />
         <span v-else class="breadcrumb">{{ currentTitle }}</span>
-        <div class="topbar-actions"><template v-if="active"><button class="icon-button" :class="{ 'is-starred': active.starred }" @click="toggleStar(active)" title="收藏文档"><AppIcon name="star" :size="18" /></button><button class="icon-button" :class="{ active: detailsOpen }" @click="detailsOpen = !detailsOpen" title="文档详情与标签" :aria-expanded="detailsOpen"><AppIcon name="tag" :size="18" /></button><button class="ai-toggle" :class="{ active: aiOpen }" @click="aiOpen ? aiOpen = false : openAssistant(true)" :aria-expanded="aiOpen"><AppIcon name="sparkle" :size="17" />阅读助手</button></template><button v-else class="icon-button" @click="toggleTheme" :title="theme === 'dark' ? '切换浅色主题' : '切换深色主题'"><AppIcon :name="theme === 'dark' ? 'sun' : 'moon'" :size="18" /></button><button class="icon-button" @click="openSettings()" title="设置" aria-label="打开设置"><AppIcon name="settings" :size="18" /></button></div>
+        <div class="topbar-actions">
+          <template v-if="active"><button class="icon-button" :class="{ 'is-starred': active.starred }" @click="toggleStar(active)" title="收藏文档"><AppIcon name="star" :size="18" /></button><button class="icon-button" :class="{ active: detailsOpen }" @click="detailsOpen = !detailsOpen" title="文档详情与标签" :aria-expanded="detailsOpen"><AppIcon name="tag" :size="18" /></button><button class="ai-toggle" :class="{ active: aiOpen }" @click="aiOpen ? aiOpen = false : openAssistant(true)" :aria-expanded="aiOpen"><AppIcon name="sparkle" :size="17" />阅读助手</button></template>
+          <button v-else class="icon-button" @click="toggleTheme" :title="theme === 'dark' ? '切换浅色主题' : '切换深色主题'"><AppIcon :name="theme === 'dark' ? 'sun' : 'moon'" :size="18" /></button>
+          <button class="icon-button" @click="toggleFullscreen" :disabled="fullscreenPending" :aria-label="fullscreen ? '退出全屏' : '进入全屏'" :aria-pressed="fullscreen" :title="`${fullscreen ? '退出全屏' : '进入全屏'}${preferences.shortcuts.fullscreen ? `（${shortcut('fullscreen')}）` : ''}`"><AppIcon :name="fullscreen ? 'exit-fullscreen' : 'fullscreen'" :size="18" /></button>
+          <button class="icon-button" @click="openSettings()" title="设置" aria-label="打开设置"><AppIcon name="settings" :size="18" /></button>
+        </div>
       </header>
 
       <Transition name="view" mode="out-in">
@@ -407,9 +653,12 @@ onBeforeUnmount(() => { glassContrast?.dispose(); document.removeEventListener('
       <div v-else class="reading-workspace">
         <section class="reading-main">
           <div v-if="opening" class="reader-overlay"><span class="spinner"></span><p>正在打开 {{ active.name }}…</p></div>
-          <PdfReader v-else-if="data && active.kind === 'pdf'" ref="reader" :key="active.id" :data="data" :document-id="active.id" :initial-page="active.page || 1" :sidebar-fit-enabled="preferences.pdf.fitOnPanelOverflow" :initial-zoom="preferences.pdf.initialZoom === 'fit-width' ? 'fit' : preferences.pdf.initialZoom / 100" :zoom-step="preferences.pdf.zoomStep / 100" :fit-request="fitRequest" :initial-view="initialView" v-on="readerEvents" />
-          <MarkdownReader v-else-if="data" ref="reader" :key="active.id" :data="data" :document-id="active.id" :initial-progress="active.progress || 0" :font-size="preferences.markdown.fontSize" :content-width="preferences.markdown.contentWidth" @font-size-change="setMarkdownFontSize" :initial-view="initialView" v-on="readerEvents" />
-          <div v-if="selection && !aiOpen && selection.image" class="selection-context"><AppIcon name="crop" :size="16" /><span>{{ selection.image ? `已框选第 ${selection.page} 页的图表或公式` : `已选择 ${selection.text.length} 个字符` }}</span><button @click="openAssistant(true)"><AppIcon name="sparkle" :size="15" />向 AI 提问</button><button class="icon-button" @click="clearSelection" title="清除选区"><AppIcon name="close" :size="14" /></button></div>
+          <template v-for="entry in readerCache" :key="entry.id">
+            <KeepAlive>
+              <component v-if="active.id === entry.id" :is="entry.doc.kind === 'pdf' ? PdfReader : MarkdownReader" :ref="value => bindReader(entry.id, value)" :key="entry.id" :data="entry.bytes" :document-id="entry.id" :initial-page="entry.doc.page || 1" :initial-progress="entry.doc.progress || 0" :sidebar-fit-enabled="preferences.pdf.fitOnPanelOverflow" :initial-zoom="preferences.pdf.initialZoom === 'fit-width' ? 'fit' : preferences.pdf.initialZoom / 100" :zoom-step="preferences.pdf.zoomStep / 100" :fit-request="fitRequest" :font-size="preferences.markdown.fontSize" :content-width="preferences.markdown.contentWidth" :find-shortcut="preferences.shortcuts.find ? shortcut('find') : ''" :initial-view="entry.view" v-on="entry.events" />
+            </KeepAlive>
+          </template>
+          <div v-if="selection && !captureQuick && !aiOpen && selection.image" class="selection-context"><AppIcon name="crop" :size="16" /><span>{{ selection.image ? `已框选第 ${selection.page} 页的图表或公式` : `已选择 ${selection.text.length} 个字符` }}</span><button @click="openAssistant(true)"><AppIcon name="sparkle" :size="15" />向 AI 提问</button><button class="icon-button" @click="clearSelection" title="清除选区"><AppIcon name="close" :size="14" /></button></div>
           <footer class="reading-status"><span><span class="status-dot"></span>阅读位置自动保存</span><span>{{ active.kind === 'pdf' ? `第 ${active.page || 1} / ${active.pageCount || '—'} 页` : 'Markdown 文档' }}<span class="status-divider">·</span>{{ progressPercent(active) }}%</span></footer>
         </section>
         <Transition name="pane" @before-enter="paneResizeStart($event, true)" @before-leave="paneResizeStart($event, false)" @after-enter="paneResizeEnd" @after-leave="paneResizeEnd" @enter-cancelled="paneResizeEnd($event, true)" @leave-cancelled="paneResizeEnd($event, true)">
@@ -422,6 +671,8 @@ onBeforeUnmount(() => { glassContrast?.dispose(); document.removeEventListener('
       </Transition>
     </main>
 
+    <CaptureQuickPrompt v-if="captureQuick && !settingsOpen" :frame="captureQuick.frame" :prompts="preferences.assistant.quickPrompts" :busy="captureQuickBusy" :status="captureQuickStatus" @ask="askCaptureQuick" @continue="continueCaptureQuick" @cancel="dismissCaptureQuick(true)" />
+    <div v-if="draggingFiles" class="file-drop-overlay" aria-live="polite"><div class="file-drop-target"><AppIcon name="plus" :size="32" /><strong>加入文档库</strong><span>松开以加入 PDF / Markdown 文档</span></div></div>
     <button v-if="selectionAction && selection?.text && !aiOpen && active" class="selection-ask" :style="{ left: selectionAction.left + 'px', top: selectionAction.top + 'px' }" @mousedown.prevent @click="openAssistant(true)" aria-label="用所选文字向 AI 提问"><AppIcon name="sparkle" :size="14" />问 AI</button>
     <Transition name="toast"><div v-if="toast" class="toast-message" role="status"><span>{{ toast }}</span><button @click="toast = ''" title="关闭提示"><AppIcon name="close" :size="15" /></button></div></Transition>
     <Transition name="dialog">

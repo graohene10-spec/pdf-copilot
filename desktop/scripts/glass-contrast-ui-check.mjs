@@ -105,7 +105,7 @@ async function shot(name) {
 
 try {
   await mkdir(folder, { recursive: true });
-  server = await createServer({ server: { host: '127.0.0.1', port: 1493, strictPort: true, watch: { ignored: ['**/src-tauri/**','**/artifacts/**','**/release/**'] } } });
+  server = await createServer({ cacheDir: resolve('artifacts/vite-glass-contrast-ui'), server: { host: '127.0.0.1', port: 1493, strictPort: true, watch: { ignored: ['**/src-tauri/**','**/artifacts/**','**/release/**'] } } });
   await server.listen();
   browser = await chromium.launch({ channel: 'msedge', headless: true });
   context = await browser.newContext({ viewport: { width: 1440, height: 940 }, colorScheme: 'light' });
@@ -133,10 +133,10 @@ try {
   });
   const fixtures = await page.evaluate(() => {
     const data = {};
-    for (const kind of ['white', 'black', 'split']) {
+    for (const kind of ['white', 'black', 'split', 'gray']) {
       const canvas = document.createElement('canvas'); canvas.width = 1920; canvas.height = 1200;
       const drawing = canvas.getContext('2d');
-      drawing.fillStyle = kind === 'black' ? '#000' : '#fff'; drawing.fillRect(0, 0, 1920, 1200);
+      drawing.fillStyle = kind === 'black' ? '#000' : kind === 'gray' ? '#5a5a5a' : '#fff'; drawing.fillRect(0, 0, 1920, 1200);
       if (kind === 'split') { drawing.fillStyle = '#000'; drawing.fillRect(0, 0, 960, 1200); }
       data[kind] = canvas.toDataURL('image/png').split(',')[1];
     }
@@ -144,6 +144,7 @@ try {
   });
 
   const normalMaterial = {};
+  const uploaded = {};
   for (const theme of ['light', 'dark']) {
     await appearance({ theme, glassTransparency: 83 });
     normalMaterial[theme] = await page.locator('.app-sidebar').evaluate(element => getComputedStyle(element).backgroundColor);
@@ -151,6 +152,7 @@ try {
   for (const kind of ['white', 'black']) {
     await appearance({ theme: 'light', glassTransparency: 83 });
     await upload(Buffer.from(fixtures[kind], 'base64'), `纯${kind === 'white' ? '白' : '黑'}底板.png`);
+    uploaded[kind] = await page.evaluate(async () => { const { useSettings } = await import('/src/settings/index.ts'); return useSettings().preferences.value.appearance.background; });
     for (const theme of ['light', 'dark']) {
       await appearance({ theme, glassTransparency: 83 });
       await ink('.app-sidebar,.app-topbar,.library-heading,.library-search,.library-summary,.document-card', kind === 'white' ? 'dark' : 'light');
@@ -161,6 +163,67 @@ try {
     }
   }
   checks.push('Actual white and black PNG uploads compensate each glass region in both themes; selected controls preserve the same foreground color.');
+
+  await appearance({ theme: 'light', glassTransparency: 50 });
+  await upload(Buffer.from(fixtures.gray, 'base64'), '主题往返灰阶底板.png');
+  const themeControls = '.app-sidebar .import-button,.app-sidebar .brand,.app-topbar .sidebar-toggle';
+  for (const theme of ['light', 'dark', 'light', 'dark', 'light']) {
+    await appearance({ theme, glassTransparency: 50 });
+    await page.waitForTimeout(320);
+    await ink('.app-sidebar .import-button', theme === 'light' ? 'dark' : 'light');
+    const wrong = await page.locator(themeControls).evaluateAll((elements, theme) => elements.filter(element => element.dataset.glassInk !== (theme === 'light' ? 'dark' : 'light')).map(element => element.className), theme);
+    assert.deepEqual(wrong, [], 'Foregrounds must settle on the current material after repeated theme changes.');
+  }
+  await page.evaluate(async () => {
+    const { useSettings } = await import('/src/settings/index.ts');
+    const settings = useSettings();
+    for (const theme of ['dark', 'light', 'dark', 'light']) {
+      settings.previewAppearance({ ...settings.preferences.value.appearance, theme });
+      await new Promise(resolve => setTimeout(resolve, 35));
+    }
+  });
+  await page.waitForTimeout(320);
+  await ink('.app-sidebar .import-button', 'dark');
+  await page.evaluate(async () => { const { useSettings } = await import('/src/settings/index.ts'); useSettings().previewAppearance(null); });
+  await page.evaluate(async () => {
+    for (const theme of ['dark', 'light', 'dark', 'light']) {
+      document.documentElement.dataset.theme = theme;
+      // Force style calculation, then return before the next full frame. The
+      // final theme name can match the previous cache despite real transitions.
+      getComputedStyle(document.querySelector('.import-button')).backgroundColor;
+      await new Promise(resolve => setTimeout(resolve, 6));
+    }
+  });
+  await page.waitForTimeout(320);
+  await ink('.app-sidebar .import-button,.app-topbar .sidebar-toggle', 'dark');
+  checks.push('Gray imagery restores every sampled foreground after settled and rapid dark/light round trips, including controls whose material colors are still transitioning on the first frame.');
+
+  await page.evaluate(async uploaded => {
+    const { useSettings } = await import('/src/settings/index.ts');
+    const settings = useSettings();
+    const decode = window.createImageBitmap.bind(window);
+    window.__originalContrastDecode = window.createImageBitmap;
+    let request = 0;
+    window.createImageBitmap = async (...args) => {
+      const current = ++request;
+      const bitmap = await decode(...args);
+      if (current === 1) await new Promise(resolve => setTimeout(resolve, 180));
+      return bitmap;
+    };
+    settings.previewAppearance({ ...settings.preferences.value.appearance, theme: 'dark', glassTransparency: 83, background: uploaded.white });
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    settings.previewAppearance({ ...settings.preferences.value.appearance, theme: 'light', glassTransparency: 83, background: uploaded.black });
+  }, uploaded);
+  await ink('.app-sidebar,.app-topbar,.library-heading,.library-search,.library-summary,.document-card', 'light');
+  await page.waitForTimeout(260);
+  await ink('.app-sidebar,.app-topbar,.library-heading,.library-search,.library-summary,.document-card', 'light');
+  await page.evaluate(async () => {
+    window.createImageBitmap = window.__originalContrastDecode;
+    delete window.__originalContrastDecode;
+    const { useSettings } = await import('/src/settings/index.ts');
+    useSettings().previewAppearance(null);
+  });
+  checks.push('A delayed old image decode cannot overwrite the current wallpaper foreground after a simultaneous background and theme change.');
 
   await appearance({ theme: 'light', glassTransparency: 83 });
   await upload(Buffer.from(fixtures.split, 'base64'), '左黑右白底板.png');

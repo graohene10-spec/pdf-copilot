@@ -27,6 +27,8 @@ const paths: Record<string, string> = {
   send: 'm3 3 18 9-18 9 4-9z M7 12h14',
   stop: 'M6 6h12v12H6z',
   external: 'M14 3h7v7 M21 3 11 13 M10 3H3v18h18v-7',
+  fullscreen: 'M8 3H3v5 M16 3h5v5 M21 16v5h-5 M8 21H3v-5',
+  'exit-fullscreen': 'M3 8h5V3 M21 8h-5V3 M16 21v-5h5 M8 21v-5H3',
 }
 </script>
 

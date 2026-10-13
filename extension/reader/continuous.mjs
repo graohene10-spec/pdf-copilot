@@ -5,7 +5,7 @@ import { pageOffsets, visiblePage, renderWindow, PAGE_GAP, MAX_RENDERED_PAGES } 
 // Lightweight page shells keep the browser's native scroll behavior. Only a
 // three-page window owns canvases/text layers, including at low zoom levels.
 export class ContinuousPdfViewer {
-  constructor({ container, pdfjs, onPageChange, onPageReady, onSelect, onSelectionPending, onDestination, onError }) {
+  constructor({ container, pdfjs, onPageChange, onPageReady, onSelect, onSelectionPending, onDestination, onError, maxRenderedPages = MAX_RENDERED_PAGES }) {
     Object.assign(this, { container, pdfjs, onPageChange, onPageReady, onSelect, onSelectionPending, onDestination, onError });
     this.stack = document.createElement('div');
     this.stack.className = 'page-stack';
@@ -17,6 +17,7 @@ export class ContinuousPdfViewer {
     this.frame = 0;
     this.capturing = false;
     this.selection = 0;
+    this.maxRenderedPages = Math.max(1, Math.min(9, Math.trunc(maxRenderedPages) || MAX_RENDERED_PAGES));
     this.scale = null;
     container.addEventListener('scroll', () => this.schedule(), { passive: true });
   }
@@ -108,11 +109,11 @@ export class ContinuousPdfViewer {
     const top = this.container.scrollTop;
     if (this.explicitPosition && Math.abs(this.explicitPosition.top - top) > 1) this.explicitPosition = null;
     const number = forcedPage || this.explicitPosition?.page || visiblePage(this.offsets, this.heights, top - this.stack.offsetTop, this.container.clientHeight);
-    const desired = renderWindow(number, this.pdf.numPages);
+    const desired = renderWindow(number, this.pdf.numPages, this.maxRenderedPages);
     // Release first, keeping the aggregate canvas allocation below its budget.
     for (const [page, view] of this.views) if (!desired.includes(page)) { this.release(view); this.views.delete(page); }
     this.currentPage = number;
-    for (const page of [number, ...desired.filter(page => page !== number)]) this.ensure(page);
+    for (const page of [number, ...desired.filter(page => page !== number).sort((a, b) => Math.abs(a - number) - Math.abs(b - number))]) this.ensure(page);
     this.assignActiveIds();
     this.onPageChange?.(number, this.displayScale);
   }

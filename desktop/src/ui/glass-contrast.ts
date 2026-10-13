@@ -128,6 +128,7 @@ export function installGlassContrast(root: HTMLElement): { setBackground(dataUrl
   const contrast = win.matchMedia('(forced-colors: active), (prefers-contrast: more)')
   let dataUrl: string | null = null, grid: PixelGrid | null = null
   let generation = 0, frame = 0, disposed = false
+  let lastAppearanceKey = '', materialRevision = 0, settlement = 0
   let classShell: HTMLElement | null = null
   const resize = new ResizeObserver(refresh)
   const classes = new MutationObserver(refresh)
@@ -145,6 +146,8 @@ export function installGlassContrast(root: HTMLElement): { setBackground(dataUrl
     original.delete(element)
   }
   function reset() {
+    settlement++
+    lastAppearanceKey = ''
     for (const element of original.keys()) restore(element)
     resize.disconnect(); observed.clear()
   }
@@ -179,6 +182,8 @@ export function installGlassContrast(root: HTMLElement): { setBackground(dataUrl
     if (!observed.has(shell)) { resize.observe(shell); observed.add(shell) }
     const changes: { element: HTMLElement; ink: Ink; key: string }[] = []
     const appearanceKey = `${generation}:${appearance.theme}:${win.getComputedStyle(document.documentElement).getPropertyValue('--glass-transparency')}`
+    const appearanceChanged = appearanceKey !== lastAppearanceKey
+    lastAppearanceKey = appearanceKey
     // Complete geometry/style reads before writing foreground variables. No PDF
     // pixels, body styles, layout dimensions or pointer events are involved.
     for (const element of targets) {
@@ -186,7 +191,7 @@ export function installGlassContrast(root: HTMLElement): { setBackground(dataUrl
       const rectangle = textRectangle(element)
       if (!rectangle.width || !rectangle.height || rectangle.bottom <= bounds.top || rectangle.top >= bounds.bottom || rectangle.right <= bounds.left || rectangle.left >= bounds.right) continue
       let background = photoColor(grid, bounds, rectangle)
-      const key = `${appearanceKey}:${background.map(channel => Math.round(channel)).join(',')}`
+      const key = `${appearanceKey}:${materialRevision}:${background.map(channel => Math.round(channel)).join(',')}`
       const previous = original.get(element)
       // Selected and hover backgrounds change only their neutral shade. Keep
       // the control's glyph color steady until its photo region or material
@@ -200,7 +205,10 @@ export function installGlassContrast(root: HTMLElement): { setBackground(dataUrl
         const alpha = Math.max(0, Math.min(1, material.alpha))
         if (alpha) background = background.map((channel, index) => channel * (1 - alpha) + material.rgb[index]! * alpha) as unknown as RGB
       }
-      changes.push({ element, ink: chooseGlassInk(background, previous?.ink), key })
+      // Theme changes are deliberate contrast changes, rather than tiny shifts
+      // caused by scrolling. Do not carry the old theme's hysteresis into them.
+      const previousInk = !appearanceChanged && previous?.key.startsWith(`${appearanceKey}:${materialRevision}:`) ? previous.ink : undefined
+      changes.push({ element, ink: chooseGlassInk(background, previousInk), key })
     }
     for (const { element, ink, key } of changes) {
       let saved = original.get(element)
@@ -216,6 +224,20 @@ export function installGlassContrast(root: HTMLElement): { setBackground(dataUrl
       }
       element.dataset.glassInk = ink
     }
+    if (appearanceChanged) {
+      const request = ++settlement
+      // The first frame of a theme/opacity change can still contain the old
+      // interpolated material color. Once those actual CSS transitions finish,
+      // invalidate control keys and read the final color exactly once. Hover
+      // alone does not enter this path, and idle pages schedule no frame loop.
+      const materials = root.getAnimations({ subtree: true }).filter(animation =>
+        'transitionProperty' in animation && ['background-color', 'fill'].includes(String(animation.transitionProperty)))
+      if (materials.length) void Promise.allSettled(materials.map(animation => animation.finished)).then(() => {
+        if (disposed || request !== settlement || appearanceKey !== lastAppearanceKey) return
+        materialRevision++
+        refresh()
+      })
+    }
   }
   function setBackground(value: string | null) {
     if (disposed || value === dataUrl) return
@@ -223,7 +245,8 @@ export function installGlassContrast(root: HTMLElement): { setBackground(dataUrl
     const request = generation
     const valid = value ? normalizeBackground({ name: '底板', dataUrl: value }) : null
     dataUrl = valid?.dataUrl ?? null; grid = null
-    if (!dataUrl) { reset(); return }
+    reset()
+    if (!dataUrl) return
     void readPixels(dataUrl, document).then(next => {
       if (disposed || request !== generation) return
       grid = next; refresh()
@@ -236,7 +259,12 @@ export function installGlassContrast(root: HTMLElement): { setBackground(dataUrl
   function transition(event: TransitionEvent) { if (event.propertyName === 'background-color' && event.target instanceof Element && event.target.matches(TARGETS)) refresh() }
   const mutations = new MutationObserver(refresh)
   mutations.observe(root, { childList: true, subtree: true })
-  const appearance = new MutationObserver(refresh)
+  const appearance = new MutationObserver(() => {
+    // Two switches may occur before the scheduled frame and end on the same
+    // theme name. The intervening material transition still needs settling.
+    lastAppearanceKey = ''
+    refresh()
+  })
   appearance.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-glass', 'data-contrast', 'data-background'] })
   win.addEventListener('resize', refresh, { passive: true })
   root.addEventListener('scroll', scroll, { passive: true, capture: true })

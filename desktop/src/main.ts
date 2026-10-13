@@ -2,6 +2,7 @@ import { createApp } from 'vue';
 import App from './App.vue';
 import './styles.css';
 import './styles/liquid-glass.css';
+import './styles/select.css';
 import { installLiquidGlass } from './ui/liquid-glass';
 const app = createApp(App);
 app.mount('#app');

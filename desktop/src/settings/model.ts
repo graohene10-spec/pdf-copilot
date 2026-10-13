@@ -1,12 +1,14 @@
 import { normalizeBackground, backgroundErrors, type BackgroundImage } from './background.ts'
+import { defaultQuickPrompts, normalizeQuickPrompts, quickPromptErrors, type QuickPrompts } from './quick-prompts.ts'
 
-export type ShortcutAction = 'import' | 'search' | 'settings' | 'sidebar' | 'ai' | 'outline' | 'capture' | 'fitWidth' | 'zoomOut' | 'zoomIn' | 'previousPage' | 'nextPage' | 'aiSend' | 'aiStop' | 'nextTab' | 'previousTab' | 'closeTab'
+export type ShortcutAction = 'import' | 'search' | 'find' | 'fullscreen' | 'settings' | 'sidebar' | 'ai' | 'outline' | 'capture' | 'fitWidth' | 'zoomOut' | 'zoomIn' | 'previousPage' | 'nextPage' | 'aiSend' | 'aiStop' | 'nextTab' | 'previousTab' | 'closeTab'
 export type ThemePreference = 'system' | 'light' | 'dark'
 export interface AppPreferences {
-  version: 1
+  version: 2
   appearance: { theme: ThemePreference; libraryView: 'grid' | 'list'; glassTransparency: number; background: BackgroundImage | null }
-  pdf: { initialZoom: 'fit-width' | number; zoomStep: number; fitOnPanelOverflow: boolean; openAssistantOnCapture: boolean }
+  pdf: { initialZoom: 'fit-width' | number; zoomStep: number; fitOnPanelOverflow: boolean; openAssistantOnCapture: boolean; quickAskOnCapture: boolean }
   markdown: { fontSize: number; contentWidth: number }
+  assistant: { quickPrompts: QuickPrompts }
   shortcuts: Record<ShortcutAction, string>
 }
 export type AppearancePreferences = AppPreferences['appearance']
@@ -14,6 +16,7 @@ export type AppearancePreferences = AppPreferences['appearance']
 export const SETTINGS_KEY = 'app.preferences.v1'
 export const SHORTCUTS: { action: ShortcutAction; label: string }[] = [
   { action: 'import', label: '导入文档' }, { action: 'search', label: '搜索文档' },
+  { action: 'find', label: '文档内搜索' }, { action: 'fullscreen', label: '进入 / 退出全屏' },
   { action: 'settings', label: '打开设置' }, { action: 'sidebar', label: '显示 / 隐藏侧栏' },
   { action: 'ai', label: '显示 / 隐藏 AI 助手' }, { action: 'outline', label: '显示 / 隐藏目录' },
   { action: 'capture', label: '框选 PDF 区域' },
@@ -25,22 +28,23 @@ export const SHORTCUTS: { action: ShortcutAction; label: string }[] = [
 ]
 export const DEFAULT_SHORTCUTS: Readonly<Record<ShortcutAction, string>> = Object.freeze({
   import: 'Ctrl+KeyO', search: 'Ctrl+KeyK', settings: 'Ctrl+Comma', sidebar: 'Ctrl+KeyB',
+  find: 'Ctrl+KeyF', fullscreen: 'F11',
   ai: 'Ctrl+Shift+Digit7', outline: 'Ctrl+Shift+KeyO', capture: 'Alt+Shift+KeyS', fitWidth: 'Ctrl+Digit0',
-  zoomOut: 'Ctrl+Minus', zoomIn: 'Ctrl+Equal', previousPage: 'Alt+ArrowUp', nextPage: 'Alt+ArrowDown',
+  zoomOut: 'Ctrl+WheelDown', zoomIn: 'Ctrl+WheelUp', previousPage: 'Alt+ArrowUp', nextPage: 'Alt+ArrowDown',
   aiSend: 'Ctrl+Enter', aiStop: 'Ctrl+Shift+Enter',
   nextTab: 'Ctrl+Tab', previousTab: 'Ctrl+Shift+Tab', closeTab: 'Ctrl+KeyW',
 })
 const LEGACY_GLASS: Record<string, number> = { clear: 85, balanced: 70, rich: 30, solid: 0 }
 export function defaultPreferences(): AppPreferences {
-  return { version: 1, appearance: { theme: 'system', libraryView: 'grid', glassTransparency: 70, background: null },
-    pdf: { initialZoom: 'fit-width', zoomStep: 15, fitOnPanelOverflow: true, openAssistantOnCapture: true },
-    markdown: { fontSize: 17, contentWidth: 840 }, shortcuts: { ...DEFAULT_SHORTCUTS } }
+  return { version: 2, appearance: { theme: 'system', libraryView: 'grid', glassTransparency: 70, background: null },
+    pdf: { initialZoom: 'fit-width', zoomStep: 15, fitOnPanelOverflow: true, openAssistantOnCapture: true, quickAskOnCapture: false },
+    markdown: { fontSize: 17, contentWidth: 840 }, assistant: { quickPrompts: defaultQuickPrompts() }, shortcuts: { ...DEFAULT_SHORTCUTS } }
 }
 const modifierOrder = ['Ctrl', 'Alt', 'Shift', 'Meta']
 const aliases: Record<string, string> = { control: 'Ctrl', ctrl: 'Ctrl', alt: 'Alt', option: 'Alt', shift: 'Shift', meta: 'Meta', cmd: 'Meta', command: 'Meta' }
-const labels: Record<string, string> = { Comma: ',', Period: '.', Minus: '−', Equal: '=', BracketLeft: '[', BracketRight: ']', Semicolon: ';', Quote: "'", Slash: '/', Backslash: '\\', Backquote: '`', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Enter: 'Enter', Space: 'Space', Tab: 'Tab', Backspace: 'Backspace', Delete: 'Delete', Home: 'Home', End: 'End', PageUp: 'Page Up', PageDown: 'Page Down' }
+const labels: Record<string, string> = { Comma: ',', Period: '.', Minus: '−', Equal: '=', BracketLeft: '[', BracketRight: ']', Semicolon: ';', Quote: "'", Slash: '/', Backslash: '\\', Backquote: '`', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Enter: 'Enter', Space: 'Space', Tab: 'Tab', Backspace: 'Backspace', Delete: 'Delete', Home: 'Home', End: 'End', PageUp: 'Page Up', PageDown: 'Page Down', WheelUp: '滚轮向上', WheelDown: '滚轮向下' }
 const reserved = new Set([
-  'Ctrl+KeyT', 'Ctrl+KeyN', 'Ctrl+KeyL', 'Ctrl+KeyR', 'Ctrl+KeyF', 'Ctrl+KeyP', 'Ctrl+KeyS', 'Ctrl+KeyH', 'Ctrl+KeyD', 'Ctrl+KeyJ',
+  'Ctrl+KeyT', 'Ctrl+KeyN', 'Ctrl+KeyL', 'Ctrl+KeyR', 'Ctrl+KeyP', 'Ctrl+KeyS', 'Ctrl+KeyH', 'Ctrl+KeyD', 'Ctrl+KeyJ',
   'Ctrl+Shift+KeyT', 'Ctrl+Shift+KeyN', 'Ctrl+Shift+KeyW', 'Ctrl+Shift+KeyI', 'Ctrl+Shift+KeyJ', 'Ctrl+Shift+KeyB', 'Ctrl+Shift+Delete',
   'Ctrl+PageUp', 'Ctrl+PageDown', 'Ctrl+F4', 'Alt+F4', 'Alt+ArrowLeft', 'Alt+ArrowRight', 'Alt+Home',
   'Meta+KeyL', 'Meta+KeyD',
@@ -55,6 +59,7 @@ function keyCode(value: string): string | null {
 }
 export function normalizeShortcut(value: unknown): string | null {
   if (value === '') return ''
+  if (value === 'F11') return 'F11'
   if (typeof value !== 'string' || value.length > 80) return null
   const parts = value.split('+').map(part => part.trim())
   if (parts.length < 2 || parts.some(part => !part)) return null
@@ -85,6 +90,7 @@ function record(value: unknown): Record<string, any> { return value && typeof va
 export function normalizePreferences(value: unknown, legacyTheme?: string | null): AppPreferences {
   const defaults = defaultPreferences(), input = record(value)
   const appearance = record(input.appearance), pdf = record(input.pdf), markdown = record(input.markdown), shortcuts = record(input.shortcuts)
+  defaults.assistant.quickPrompts = normalizeQuickPrompts(record(input.assistant).quickPrompts)
   const theme = appearance.theme || legacyTheme
   defaults.appearance.theme = ['system', 'light', 'dark'].includes(theme) ? theme : defaults.appearance.theme
   defaults.appearance.libraryView = ['grid', 'list'].includes(appearance.libraryView) ? appearance.libraryView : defaults.appearance.libraryView
@@ -95,9 +101,16 @@ export function normalizePreferences(value: unknown, legacyTheme?: string | null
   defaults.pdf.zoomStep = range(pdf.zoomStep, 5, 50, defaults.pdf.zoomStep)
   defaults.pdf.fitOnPanelOverflow = typeof pdf.fitOnPanelOverflow === 'boolean' ? pdf.fitOnPanelOverflow : defaults.pdf.fitOnPanelOverflow
   defaults.pdf.openAssistantOnCapture = typeof pdf.openAssistantOnCapture === 'boolean' ? pdf.openAssistantOnCapture : true
+  defaults.pdf.quickAskOnCapture = typeof pdf.quickAskOnCapture === 'boolean' ? pdf.quickAskOnCapture : false
   defaults.markdown.fontSize = range(markdown.fontSize, 13, 28, defaults.markdown.fontSize)
   defaults.markdown.contentWidth = range(markdown.contentWidth, 600, 1400, defaults.markdown.contentWidth)
   for (const { action } of SHORTCUTS) defaults.shortcuts[action] = normalizeShortcut(shortcuts[action]) ?? defaults.shortcuts[action]
+  // Upgrade the old default pair; individually customized keys remain intact.
+  if ((input.version === undefined || input.version === 1) && shortcuts.zoomIn === 'Ctrl+Equal' && shortcuts.zoomOut === 'Ctrl+Minus') {
+    defaults.shortcuts.zoomIn = DEFAULT_SHORTCUTS.zoomIn
+    defaults.shortcuts.zoomOut = DEFAULT_SHORTCUTS.zoomOut
+  }
+  for (const { action } of SHORTCUTS) if (!['zoomIn', 'zoomOut'].includes(action) && /Wheel(?:Up|Down)$/.test(defaults.shortcuts[action])) defaults.shortcuts[action] = DEFAULT_SHORTCUTS[action]
   if (shortcutConflicts(defaults.shortcuts).length) defaults.shortcuts = { ...DEFAULT_SHORTCUTS }
   return defaults
 }
@@ -108,13 +121,18 @@ export function preferenceErrors(value: AppPreferences): string[] {
   const check = (name: string, number: number, min: number, max: number) => { if (!Number.isFinite(number) || !Number.isInteger(number) || number < min || number > max) errors.push(`${name}须为 ${min}–${max} 的整数。`) }
   check('玻璃透明度', value.appearance.glassTransparency, 0, 100)
   errors.push(...backgroundErrors(value.appearance.background))
+  errors.push(...quickPromptErrors(value.assistant?.quickPrompts))
   if (value.pdf.initialZoom !== 'fit-width') check('PDF 初始缩放', value.pdf.initialZoom, 25, 400)
   check('缩放步长', value.pdf.zoomStep, 5, 50)
   check('Markdown 字号', value.markdown.fontSize, 13, 28)
   check('Markdown 内容宽度', value.markdown.contentWidth, 600, 1400)
   if (typeof value.pdf.fitOnPanelOverflow !== 'boolean') errors.push('自动适应选项无效。')
   if (typeof value.pdf.openAssistantOnCapture !== 'boolean') errors.push('框选提问选项无效。')
-  for (const { action, label } of SHORTCUTS) if (normalizeShortcut(value.shortcuts[action]) === null) errors.push(`${label}：请选择带 Ctrl、Alt 或 Meta 的按键组合，并避开浏览器保留快捷键。`)
+  if (typeof value.pdf.quickAskOnCapture !== 'boolean') errors.push('框选快捷提问选项无效。')
+  for (const { action, label } of SHORTCUTS) {
+    if (normalizeShortcut(value.shortcuts[action]) === null) errors.push(`${label}：请选择 F11 或带 Ctrl、Alt、Meta 的按键组合，并避开浏览器保留快捷键。`)
+    if (!['zoomIn', 'zoomOut'].includes(action) && /Wheel(?:Up|Down)$/.test(value.shortcuts[action])) errors.push(`${label}：滚轮组合只用于放大和缩小。`)
+  }
   for (const conflict of shortcutConflicts(value.shortcuts)) errors.push(`${shortcutLabel(conflict.binding)} 已同时用于 ${conflict.actions.map(action => SHORTCUTS.find(item => item.action === action)?.label).join('、')}。`)
   return errors
 }
@@ -144,6 +162,21 @@ export function matchShortcut(event: KeyEvent, preferences: AppPreferences, opti
   if (options.scope === 'ai') return ai ? action : null
   if (ai) return null
   const editable = element?.closest('input,textarea,select,[contenteditable="true"],[contenteditable=""],[role="textbox"]')
-  if (editable && !['import', 'search', 'settings', 'nextTab', 'previousTab', 'closeTab'].includes(action)) return null
+  if (editable && !['import', 'search', 'find', 'fullscreen', 'settings', 'nextTab', 'previousTab', 'closeTab'].includes(action)) return null
   return action
+}
+
+type WheelInput = Pick<WheelEvent, 'deltaY' | 'ctrlKey' | 'altKey' | 'shiftKey' | 'metaKey'> & Partial<Pick<WheelEvent, 'target' | 'defaultPrevented'>>
+export function shortcutFromWheelEvent(event: WheelInput): string | null {
+  if (!Number.isFinite(event.deltaY) || event.deltaY === 0) return null
+  const modifiers = [event.ctrlKey && 'Ctrl', event.altKey && 'Alt', event.shiftKey && 'Shift', event.metaKey && 'Meta'].filter(Boolean)
+  return normalizeShortcut([...modifiers, event.deltaY < 0 ? 'WheelUp' : 'WheelDown'].join('+'))
+}
+export function matchWheelShortcut(event: WheelInput, preferences: AppPreferences): 'zoomIn' | 'zoomOut' | null {
+  if (event.defaultPrevented) return null
+  const element = typeof Element !== 'undefined' && event.target instanceof Element ? event.target : null
+  if (element?.closest('input,textarea,select,[contenteditable],[role="dialog"],[role="alertdialog"],[data-shortcut-capture]')) return null
+  const binding = shortcutFromWheelEvent(event)
+  if (!binding) return null
+  return (['zoomIn', 'zoomOut'] as const).find(action => preferences.shortcuts[action] === binding) || null
 }

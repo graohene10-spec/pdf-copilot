@@ -107,7 +107,7 @@ try {
     for (const name of names) { await page.getByRole('button',{name:`打开 ${name}`,exact:true}).click(); await page.getByRole('button',{name:'文档库',exact:true}).click(); }
     await select(0);
   } else {
-    server = await viteServer({server:{host:'127.0.0.1',port:1461,strictPort:true,watch:{ignored:['**/src-tauri/**','**/artifacts/**']}}}); await server.listen();
+    server = await viteServer({cacheDir:resolve(artifacts,'vite-tabs-ui'),server:{host:'127.0.0.1',port:1461,strictPort:true,watch:{ignored:['**/src-tauri/**','**/artifacts/**']}}}); await server.listen();
     browser = await chromium.launch({channel:'msedge',headless:true}); context = await browser.newContext({viewport:{width:1400,height:900}}); page = await context.newPage();
     await page.goto('http://127.0.0.1:1461');
     const chooser = page.waitForEvent('filechooser'); await page.getByRole('button',{name:'加入文档',exact:true}).click();

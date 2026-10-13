@@ -3,6 +3,7 @@ import { library } from '../sdk'
 import { SETTINGS_KEY, defaultPreferences, normalizePreferences, preferenceErrors, type AppPreferences, type AppearancePreferences } from './model'
 export * from './model'
 export * from './background'
+export * from './quick-prompts'
 
 const preferences = ref<AppPreferences>(defaultPreferences())
 const loaded = ref(false)

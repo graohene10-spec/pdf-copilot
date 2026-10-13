@@ -63,7 +63,7 @@ async function markdownStyle(fontSize, contentWidth) {
 
 try {
   if (!process.env.PHYDOG_SETTINGS_UI_URL) {
-    server = await createServer({ server: { host: '127.0.0.1', port, strictPort: true, watch: { ignored: ['**/src-tauri/**', '**/public/vendor/**', '**/artifacts/**', '**/test-results/**'] } } });
+    server = await createServer({ cacheDir: resolve('artifacts/vite-settings-ui'), server: { host: '127.0.0.1', port, strictPort: true, watch: { ignored: ['**/src-tauri/**', '**/public/vendor/**', '**/artifacts/**', '**/test-results/**'] } } });
     await server.listen();
   }
   browser = await chromium.launch({ channel: 'msedge', headless: true });
@@ -281,6 +281,28 @@ try {
   await settings().getByRole('button', { name: '取消', exact: true }).click();
   await settings().waitFor({ state: 'hidden' });
   report.push('AI drafts survive tab switches; saving from Reading also persists the visited AI configuration.');
+
+  await openSettings('AI');
+  await settings().locator('summary').filter({ hasText: '多文件提问' }).click();
+  await settings().getByLabel('同时运行的提问', { exact: true }).fill('3');
+  await settings().getByLabel('快捷提问 1 按钮介绍', { exact: true }).fill('保存重试');
+  await page.evaluate(async () => {
+    const { library } = await import('/src/sdk/index.ts');
+    window.__settingsOriginalSave = library.setSetting;
+    library.setSetting = async () => { throw new Error('模拟快捷提问保存失败'); };
+  });
+  await settings().getByRole('button', { name: '保存', exact: true }).click();
+  await settings().getByRole('status').filter({ hasText: '模拟快捷提问保存失败' }).waitFor();
+  assert.equal(await page.evaluate(async () => (await import('/src/ai/settings.mjs')).loadAiSettings().requestLimits.concurrent), 3);
+  assert.equal(await page.evaluate(async () => (await import('/src/ai/workspace.ts')).taskSummary.limits.concurrent), 3);
+  await page.evaluate(async () => {
+    const { library } = await import('/src/sdk/index.ts');
+    library.setSetting = window.__settingsOriginalSave; delete window.__settingsOriginalSave;
+  });
+  await save();
+  assert.equal((await storedPreferences()).assistant.quickPrompts[0].label, '保存重试');
+  assert.equal(await page.evaluate(async () => (await import('/src/ai/workspace.ts')).taskSummary.limits.concurrent), 3);
+  report.push('Combined AI and quick-prompt edits apply saved AI limits even if preference storage fails; retry saves the remaining prompt draft without losing the AI update.');
 
   await openMarkdown();
   await markdownStyle(22, 1000);

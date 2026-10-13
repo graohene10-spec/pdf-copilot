@@ -1144,6 +1144,7 @@ kbd {
 }
 
 .reading-main {
+  container: reading-pane / inline-size;
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -1152,6 +1153,21 @@ kbd {
   position: relative;
   background: transparent;
 }
+
+.file-drop-overlay {
+  position: fixed;
+  inset: 12px;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--accent);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  backdrop-filter: blur(10px);
+  pointer-events: none;
+}
+.file-drop-target { display: flex; flex-direction: column; align-items: center; gap: 14px; color: var(--ink); padding: 36px; background: var(--surface); box-shadow: var(--shadow-pane); }
+.file-drop-target strong { font-size: 22px; }
+.file-drop-target span { font-size: 14px; }
 
 .reader-engine {
   flex: 1;
@@ -1294,6 +1310,20 @@ kbd {
   color: var(--muted);
   font-size: 10px;
   letter-spacing: .4px;
+}
+
+@container reading-pane (max-width: 650px) {
+  .reader-tools { gap: 6px; padding-inline: 9px; }
+  .reader-tools > .quiet-button:has(svg) { font-size: 0; gap: 0; min-width: 30px; padding: 5px 6px; }
+  .reader-format-label { display: none; }
+  .reader-page-control { gap: 2px; }
+  .reader-page-control button { padding-inline: 5px; }
+  .reader-zoom button { padding-inline: 5px; min-width: 24px; }
+}
+
+@container reading-pane (max-width: 420px) {
+  .reader-tools { height: auto; min-height: 75px; flex-wrap: wrap; padding-block: 7px; row-gap: 5px; }
+  .reader-tools > .reader-search { flex: 1 1 100%; width: 100%; min-width: 0; margin-left: 0; }
 }
 
 .reader-engine-body {

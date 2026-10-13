@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch, onMounted, onBeforeUnmount, nextTick, defineAsyncComponent } from 'vue'
 import AppIcon from './AppIcon.vue'
-import { useSettings, defaultPreferences, normalizePreferences, preferenceErrors, importBackgroundImage, SHORTCUTS, DEFAULT_SHORTCUTS, shortcutLabel, shortcutFromEvent, type AppPreferences, type ShortcutAction } from '../settings'
+import { useSettings, defaultPreferences, normalizePreferences, preferenceErrors, importBackgroundImage, defaultQuickPrompts, quickPromptLabelLength, limitQuickPromptLabel, QUICK_PROMPT_LABEL_LIMIT, QUICK_PROMPT_QUESTION_LIMIT, SHORTCUTS, DEFAULT_SHORTCUTS, shortcutLabel, shortcutFromEvent, shortcutFromWheelEvent, type AppPreferences, type ShortcutAction } from '../settings'
 
 type Tab = 'appearance' | 'reading' | 'shortcuts' | 'ai'
 const props = withDefaults(defineProps<{ initialTab?: Tab }>(), { initialTab: 'appearance' })
@@ -23,6 +23,7 @@ let imageRequest = 0
 const status = ref('')
 const recording = ref<ShortcutAction | null>(null)
 const captureError = ref('')
+const composingLabel = ref<number | null>(null)
 const aiSettings = ref<any>()
 const dialog = ref<HTMLElement>()
 const previousFocus = document.activeElement as HTMLElement | null
@@ -77,7 +78,32 @@ function restoreBackground() {
   imageRequest++; importingImage.value = false; imageError.value = ''
   draft.value.appearance.background = null
 }
-function switchTab(value: Tab) { tab.value = value; if (value === 'ai') aiVisited.value = true; recording.value = null; captureError.value = ''; status.value = '' }
+function switchTab(value: Tab) { tab.value = value; if (value === 'ai') aiVisited.value = true; recording.value = null; captureError.value = ''; composingLabel.value = null; status.value = '' }
+function editQuickPromptLabel(event: Event, index: number) {
+  if (saving.value) return
+  const input = event.target as HTMLInputElement
+  // Keep the controlled value synchronized during IME composition. Deferring
+  // the draft update would let any other reactive change overwrite candidates.
+  if ((event as InputEvent).isComposing || composingLabel.value === index) {
+    draft.value.assistant.quickPrompts[index].label = input.value
+    return
+  }
+  const label = limitQuickPromptLabel(input.value)
+  if (input.value !== label) input.value = label
+  draft.value.assistant.quickPrompts[index].label = label
+}
+function finishQuickPromptLabel(event: CompositionEvent, index: number) {
+  composingLabel.value = null
+  editQuickPromptLabel(event, index)
+}
+function restoreQuickPrompt(index: number) {
+  draft.value.assistant.quickPrompts[index] = defaultQuickPrompts()[index]
+  composingLabel.value = null; status.value = ''
+}
+function restoreQuickPrompts() {
+  draft.value.assistant.quickPrompts = defaultQuickPrompts()
+  composingLabel.value = null; status.value = ''
+}
 function startRecording(action: ShortcutAction) { recording.value = action; captureError.value = '' }
 function record(event: KeyboardEvent, action: ShortcutAction) {
   event.stopPropagation()
@@ -85,12 +111,19 @@ function record(event: KeyboardEvent, action: ShortcutAction) {
   if (event.key === 'Tab' && !event.ctrlKey && !event.altKey && !event.metaKey) return
   if (event.isComposing || event.keyCode === 229 || ['Control', 'Alt', 'Shift', 'Meta'].includes(event.key)) return
   const binding = shortcutFromEvent(event)
-  if (!binding) { captureError.value = '使用 Ctrl、Alt 或 Meta 加其他按键；浏览器保留快捷键不可使用。'; return }
+  if (!binding) { captureError.value = '使用 F11 或 Ctrl、Alt、Meta 加其他按键；浏览器保留快捷键不可使用。'; return }
   event.preventDefault()
   draft.value.shortcuts[action] = binding
   recording.value = null; captureError.value = ''
 }
 function disable(action: ShortcutAction) { draft.value.shortcuts[action] = ''; recording.value = null; captureError.value = '' }
+function recordWheel(event: WheelEvent, action: ShortcutAction) {
+  if (recording.value !== action || !['zoomIn', 'zoomOut'].includes(action)) return
+  event.preventDefault(); event.stopPropagation()
+  const binding = shortcutFromWheelEvent(event)
+  if (!binding) { captureError.value = '按住 Ctrl、Alt 或 Meta，再滚动鼠标滚轮。'; return }
+  draft.value.shortcuts[action] = binding; recording.value = null; captureError.value = ''
+}
 function restoreShortcut(action: ShortcutAction) { draft.value.shortcuts[action] = DEFAULT_SHORTCUTS[action]; recording.value = null; captureError.value = '' }
 function restoreAll() { draft.value.shortcuts = { ...DEFAULT_SHORTCUTS }; recording.value = null; captureError.value = '' }
 function resetTab() {
@@ -101,21 +134,20 @@ function resetTab() {
   status.value = ''
 }
 async function save() {
-  if (saving.value || importingImage.value || !ready.value || disposed || closing) return
+  if (saving.value || importingImage.value || composingLabel.value !== null || !ready.value || disposed || closing) return
   if (errors.value.length) { status.value = errors.value[0]; return }
   saving.value = true; status.value = ''
   try {
     let ai: any
-    if (aiVisited.value) {
-      if (!aiSettings.value) return
+    if (aiVisited.value && aiSettings.value?.hasChanges()) {
       ai = await aiSettings.value.save()
       if (!ai) { tab.value = 'ai'; return }
+      emit('ai-saved', ai)
     }
     if (tab.value !== 'ai' || JSON.stringify(draft.value) !== baseline) {
       const value = await shared.save(draft.value)
       emit('saved', value)
     }
-    if (ai) emit('ai-saved', ai)
     shared.previewAppearance(null)
     closing = true; imageRequest++
     emit('close')
@@ -131,7 +163,7 @@ function dialogKeydown(event: KeyboardEvent) {
     if (!event.shiftKey && (document.activeElement === last || document.activeElement === dialog.value)) { event.preventDefault(); first.focus() }
     else if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog.value)) { event.preventDefault(); last?.focus() }
   }
-  if (event.key === 'Escape' && !recording.value) { event.preventDefault(); close() }
+  if (event.key === 'Escape' && !recording.value && !event.isComposing && event.keyCode !== 229 && composingLabel.value === null) { event.preventDefault(); close() }
 }
 </script>
 
@@ -158,22 +190,36 @@ function dialogKeydown(event: KeyboardEvent) {
             <label class="setting-row"><span>缩放步长</span><span class="number-control"><input v-model.number="draft.pdf.zoomStep" type="number" min="5" max="50" step="1" aria-label="PDF 缩放步长" /><span>%</span></span></label>
             <label class="setting-check"><input v-model="draft.pdf.fitOnPanelOverflow" type="checkbox" aria-label="侧栏打开后页面超宽时适应宽度" /><span>侧栏打开后，仅在页面超宽时适应宽度</span></label>
             <label class="setting-check"><input v-model="draft.pdf.openAssistantOnCapture" type="checkbox" aria-label="PDF 框选后自动打开阅读助手" /><span>PDF 框选后自动打开阅读助手</span></label>
+            <p class="settings-help">启用 AI 页的框选快捷提问后，优先显示选区旁的按钮。</p>
             <h3 class="section-heading">Markdown</h3>
             <label class="setting-row"><span>默认字号</span><span class="number-control"><input v-model.number="draft.markdown.fontSize" type="number" min="13" max="28" step="1" aria-label="Markdown 默认字号" /><span>px</span></span></label>
             <label class="setting-row"><span>内容宽度</span><span class="number-control"><input v-model.number="draft.markdown.contentWidth" type="number" min="600" max="1400" step="20" aria-label="Markdown 内容宽度" /><span>px</span></span></label>
           </template>
           <template v-else-if="tab === 'shortcuts'">
             <div class="shortcuts-heading"><h3>快捷键</h3><button class="text-action" @click="restoreAll">恢复全部默认</button></div>
-            <p class="settings-help">点击按键组合后录入。Esc 取消录入；已禁用的动作仍可通过按钮使用。</p>
-            <div v-for="item in SHORTCUTS" :key="item.action" class="shortcut-row"><label :for="`shortcut-${item.action}`">{{ item.label }}</label><input :id="`shortcut-${item.action}`" :value="recording === item.action ? '按下快捷键…' : shortcutLabel(draft.shortcuts[item.action])" :class="{ recording: recording === item.action }" readonly :aria-label="`${item.label}快捷键`" data-shortcut-capture @focus="startRecording(item.action)" @click="startRecording(item.action)" @keydown="record($event, item.action)" @blur="recording === item.action && (recording = null)" /><button @click="disable(item.action)" :aria-label="`禁用${item.label}快捷键`" :disabled="!draft.shortcuts[item.action]">禁用</button><button @click="restoreShortcut(item.action)" :aria-label="`恢复${item.label}默认快捷键`">默认</button></div>
+            <p class="settings-help">点击后录入按键，支持 F11；缩放也可按住 Ctrl 滚动鼠标录入。Esc 取消录入。</p>
+            <div v-for="item in SHORTCUTS" :key="item.action" class="shortcut-row"><label :for="`shortcut-${item.action}`">{{ item.label }}</label><input :id="`shortcut-${item.action}`" :value="recording === item.action ? '按下快捷键…' : shortcutLabel(draft.shortcuts[item.action])" :class="{ recording: recording === item.action }" readonly :aria-label="`${item.label}快捷键`" data-shortcut-capture @focus="startRecording(item.action)" @click="startRecording(item.action)" @keydown="record($event, item.action)" @wheel="recordWheel($event, item.action)" @blur="recording === item.action && (recording = null)" /><button @click="disable(item.action)" :aria-label="`禁用${item.label}快捷键`" :disabled="!draft.shortcuts[item.action]">禁用</button><button @click="restoreShortcut(item.action)" :aria-label="`恢复${item.label}默认快捷键`">默认</button></div>
             <p v-if="captureError" class="settings-error" role="status">{{ captureError }}</p>
           </template>
           <AiSettings v-if="ready && aiVisited" v-show="tab === 'ai'" ref="aiSettings" embedded />
+          <section v-if="ready && tab === 'ai'" class="quick-prompts-section" aria-label="快捷提问设置">
+            <div class="quick-prompts-heading"><h3>快捷提问</h3><button type="button" class="text-action" :disabled="saving" @click="restoreQuickPrompts" aria-label="恢复全部快捷提问默认">恢复默认</button></div>
+            <p class="settings-help">点击侧栏按钮即可发送对应提示词。按钮介绍最多 {{ QUICK_PROMPT_LABEL_LIMIT }} 字，提示词最多 {{ QUICK_PROMPT_QUESTION_LIMIT }} 个字符；保存后生效。</p>
+            <label class="setting-check"><input v-model="draft.pdf.quickAskOnCapture" type="checkbox" :disabled="saving" aria-label="PDF 框选后显示快捷提问" aria-describedby="capture-quick-ask-help" /><span>PDF 框选后显示快捷提问</span></label>
+            <p id="capture-quick-ask-help" class="settings-help">框选后先显示选区旁的快捷问题，点击继续再打开助手。</p>
+            <section v-for="(item, index) in draft.assistant.quickPrompts" :key="index" class="quick-prompt-editor" :aria-labelledby="`quick-prompt-heading-${index}`">
+              <div class="quick-prompt-heading"><h4 :id="`quick-prompt-heading-${index}`">按钮 {{ index + 1 }}</h4><button type="button" :disabled="saving" @click="restoreQuickPrompt(index)" :aria-label="`恢复快捷提问 ${index + 1} 默认`">恢复默认</button></div>
+              <label :for="`quick-prompt-label-${index}`">按钮介绍 <span class="quick-prompt-counter" :id="`quick-prompt-count-${index}`">{{ quickPromptLabelLength(item.label) }} / {{ QUICK_PROMPT_LABEL_LIMIT }}</span></label>
+              <input :id="`quick-prompt-label-${index}`" :value="item.label" :disabled="saving" type="text" :aria-label="`快捷提问 ${index + 1} 按钮介绍`" :aria-describedby="`quick-prompt-count-${index}`" @input="editQuickPromptLabel($event, index)" @compositionstart="composingLabel = index" @compositionend="finishQuickPromptLabel($event, index)" />
+              <label :for="`quick-prompt-question-${index}`">提示词</label>
+              <textarea :id="`quick-prompt-question-${index}`" v-model="item.question" :disabled="saving" :maxlength="QUICK_PROMPT_QUESTION_LIMIT" rows="3" :aria-label="`快捷提问 ${index + 1} 提示词`" />
+            </section>
+          </section>
           <p v-if="ready && errors.length" class="settings-error" role="status">{{ errors[0] }}</p>
           <p v-if="ready && status" class="settings-error" role="status">{{ status }}</p>
         </div>
       </div>
-      <footer class="settings-footer"><button v-if="tab !== 'ai'" class="text-action" @click="resetTab" :disabled="saving || importingImage || !ready">恢复默认</button><span class="footer-space"></span><button @click="close" :disabled="saving">取消</button><button class="settings-save" @click="save" :disabled="saving || importingImage || !ready || !!errors.length">{{ saving ? '保存中…' : '保存' }}</button></footer>
+      <footer class="settings-footer"><button v-if="tab !== 'ai'" class="text-action" @click="resetTab" :disabled="saving || importingImage || !ready">恢复默认</button><span class="footer-space"></span><button @click="close" :disabled="saving">取消</button><button class="settings-save" @click="save" :disabled="saving || importingImage || composingLabel !== null || !ready || !!errors.length">{{ saving ? '保存中…' : '保存' }}</button></footer>
     </section>
   </div>
 </template>
@@ -233,6 +279,19 @@ button{color:var(--control-ink)}
 .background-preview img{width:114px;height:64px;object-fit:cover;flex-shrink:0;border:1px solid var(--glass-outline);box-shadow:var(--shadow-1)}
 .background-preview>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--control-ink);font-size:11px}
 .background-default{margin-bottom:0}
+.quick-prompts-section{margin-top:26px;padding-top:22px;border-top:1px solid var(--line-soft)}
+.quick-prompts-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:19px}
+.quick-prompts-heading h3{margin:0}
+.quick-prompt-editor{padding:0 0 20px;margin:0 0 20px;border-bottom:1px solid var(--line-soft);min-width:0}
+.quick-prompt-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+.quick-prompt-heading h4{font-size:12px;font-weight:600;margin:0;color:var(--control-ink)}
+.quick-prompt-heading button{padding:5px 9px;font-size:11px;border:1px solid var(--glass-outline);border-radius:0;background-color:var(--glass-2);color:var(--control-ink);box-shadow:var(--glass-edge)}
+.quick-prompt-heading button:hover:not(:disabled){background-color:var(--control-hover)}
+.quick-prompt-editor>label{display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--secondary);font-size:11px;margin-bottom:7px}
+.quick-prompt-counter{color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.quick-prompt-editor>input,.quick-prompt-editor>textarea{box-sizing:border-box;display:block;width:100%;min-width:0;font:inherit;font-size:12px;line-height:1.7;padding:8px 10px;border:1px solid var(--glass-outline);border-radius:0;background-color:var(--glass-2);color:var(--control-ink);box-shadow:var(--glass-edge);text-shadow:none}
+.quick-prompt-editor>input{margin-bottom:13px}
+.quick-prompt-editor>textarea{resize:vertical;min-height:82px;max-height:240px}
 .settings-error{font-size:11px;line-height:1.8;color:var(--danger);margin:17px 0 0;white-space:pre-line}
 .settings-footer{margin:0 8px 8px;border:1px solid var(--glass-outline);border-radius:0;background-color:var(--glass-1);background-image:var(--glass-sheen);box-shadow:var(--glass-edge);padding:12px 15px;display:flex;align-items:center;gap:9px}
 .footer-space{flex:1}

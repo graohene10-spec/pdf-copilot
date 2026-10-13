@@ -41,9 +41,11 @@ export async function importFiles(files: File[]): Promise<Doc[]> {
     const duplicate = records.find(r => r.doc.path === file.name && r.doc.size === file.size && r.doc.modifiedAt === file.lastModified);
     if (duplicate) { docs.push(duplicate.doc); continue; }
     const doc: Doc = { id: crypto.randomUUID(), name: file.name, kind, path: file.name, size: file.size, modifiedAt: file.lastModified, addedAt: Date.now(), lastOpenedAt: 0, progress: 0, page: 1, pageCount: 0, tags: [], starred: false };
-    docs.push(await put({ doc, data, text: kind === 'markdown' ? new TextDecoder().decode(data) : '' }));
+    const record = { doc, data, text: kind === 'markdown' ? new TextDecoder().decode(data) : '' };
+    docs.push(await put(record));
+    records.push(record);
   }
-  return docs;
+  return [...new Map(docs.map(doc => [doc.id, doc])).values()];
 }
 let seed: Promise<void> | null = null;
 async function seedSamples() {

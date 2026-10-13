@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import type { Doc, Library } from './types';
-import { browserLibrary } from './browser';
+import { browserLibrary, importFiles } from './browser';
 export type { Doc, Library } from './types';
 export const isDesktop = '__TAURI_INTERNALS__' in window;
 async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -29,6 +29,16 @@ const nativeLibrary: Library = {
   setSetting: (key, value) => call('set_setting', { key, value }),
 };
 export const library = isDesktop ? nativeLibrary : browserLibrary;
+export async function importDroppedDocuments(files: string[] | File[]): Promise<Doc[]> {
+  if (isDesktop) {
+    const paths = [...new Set((files as string[]).filter(path => typeof path === 'string' && /\.(pdf|md|markdown)$/i.test(path)))];
+    if (!paths.length) throw new Error('请拖入 PDF 或 Markdown 文件。');
+    return call('import_documents', { paths });
+  }
+  const documents = (files as File[]).filter(file => /\.(pdf|md|markdown)$/i.test(file.name));
+  if (!documents.length) throw new Error('请拖入 PDF 或 Markdown 文件。');
+  return importFiles(documents);
+}
 const transientCredentials = new Map<string, string>();
 export async function getCredential(provider: string): Promise<string> {
   return isDesktop ? (await call<string | null>('get_credential', { provider })) || '' : transientCredentials.get(provider) || '';

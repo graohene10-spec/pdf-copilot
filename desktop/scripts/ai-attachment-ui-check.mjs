@@ -131,7 +131,7 @@ async function preparationRace(replaceCrop) {
 
 try {
   await mkdir(artifacts, { recursive: true });
-  server = await viteServer({ server: { host: '127.0.0.1', port, strictPort: true, watch: null } }); await server.listen();
+  server = await viteServer({ cacheDir: resolve(artifacts, 'vite-ai-attachment-ui'), server: { host: '127.0.0.1', port, strictPort: true, watch: null } }); await server.listen();
   browser = await chromium.launch({ channel: 'msedge', headless: true });
   context = await browser.newContext({ viewport: { width: 1440, height: 940 }, colorScheme: 'light' });
   page = await context.newPage(); page.setDefaultTimeout(20000);

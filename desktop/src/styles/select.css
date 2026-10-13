@@ -1,0 +1,25 @@
+/* The native Windows menu is an opaque surface, even when its closed control
+   sits on glass. Give options their own theme colors rather than adaptive ink. */
+select {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] select {
+  color-scheme: dark;
+}
+
+select option,
+select optgroup {
+  background-color: var(--surface-2);
+  color: var(--surface-ink);
+  text-shadow: none;
+}
+
+@media (forced-colors: active) {
+  select,
+  select option,
+  select optgroup {
+    background-color: Canvas;
+    color: CanvasText;
+  }
+}
