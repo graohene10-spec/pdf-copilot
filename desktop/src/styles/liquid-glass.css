@@ -242,6 +242,8 @@
   align-items: center;
   gap: 8px;
   max-width: min(340px, calc(100vw - 16px));
+  max-height: min(180px, calc(100vh - 16px));
+  overflow: hidden;
   padding: 5px 9px 5px 11px;
   border: 1px solid var(--glass-outline);
   border-radius: 10px;
@@ -336,8 +338,12 @@
 }
 
 :root:is([data-glass='solid'], [data-contrast='high']) :is(button, .liquid-indicator) {
-  translate: none !important;
   scale: none !important;
+}
+
+/* The indicator's translate is its selected-item position, not a hover effect. */
+:root:is([data-glass='solid'], [data-contrast='high']) button {
+  translate: none !important;
 }
 
 @media (prefers-reduced-transparency: reduce), (forced-colors: active), (prefers-contrast: more) {

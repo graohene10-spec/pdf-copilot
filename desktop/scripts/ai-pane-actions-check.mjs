@@ -138,6 +138,85 @@ try {
   assert.equal(await pane().count(), 1, 'Esc closes only the picker.');
   assert.equal(await picker.evaluate(element => document.activeElement === element), true, 'Focus returns to the picker.');
   checks.push({ label: 'Model picker beside Send stores only model / effort and closes with Esc', afterPick });
+
+  // Recreate a cold Codex pane without visiting Settings. The native transport is
+  // replaced in this disposable browser context; no real login is inspected.
+  const apiSettings = await stored();
+  await pane().getByRole('button', { name: '关闭阅读助手', exact: true }).click();
+  await pane().waitFor({ state: 'detached' });
+  await page.evaluate(async () => {
+    const { registerNativeModelInventory } = await import('/src/ai/native-models.ts');
+    registerNativeModelInventory([]);
+    const value = JSON.parse(localStorage.getItem('paperdesk.ai.settings.v1'));
+    localStorage.setItem('paperdesk.ai.settings.v1', JSON.stringify({ ...value, provider: 'codex', model: 'picker-native-5', effort: 'max' }));
+    const ports = new Map(); let next = 0;
+    window.__pickerDiscovery = {
+      calls: [], pending: [], hold: false, failure: '', disconnected: 0,
+      models: Array.from({ length: 7 }, (_, index) => ({ id: `picker-native-${index}`, name: `菜单测试模型 ${index}`, efforts: index === 5 ? ['low', 'high'] : ['none', 'low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'high', vision: true })),
+    };
+    window.__TAURI_INTERNALS__ = {
+      transformCallback() { return ++next; }, unregisterCallback() {},
+      async invoke(command, args) {
+        if (command === 'get_credential') return '';
+        if (command === 'native_connect') { ports.set(++next, args.channel); return next; }
+        if (command === 'native_disconnect') { window.__pickerDiscovery.disconnected++; ports.delete(args.sessionId); return; }
+        if (command !== 'native_send') throw new Error(`Unexpected mocked picker command: ${command}`);
+        const channel = ports.get(args.sessionId), message = args.message, fixture = window.__pickerDiscovery;
+        assertType(message.type);
+        fixture.calls.push(message.type);
+        // Native IPC serializes each response. Return a fresh inventory rather
+        // than leaking the fixture's mutable array into Vue's shallow ref.
+        const reply = fixture.failure ? { id: message.id, ok: false, error: fixture.failure } : { id: message.id, ok: true, result: message.type === 'status' ? { compatible: true, loggedIn: true, version: 'picker-local-test' } : structuredClone(fixture.models) };
+        const deliver = () => channel.onmessage(reply);
+        if (fixture.hold) fixture.pending.push(deliver); else queueMicrotask(deliver);
+      },
+    };
+    function assertType(type) { if (!['status', 'models'].includes(type)) throw new Error(`Unexpected native request: ${type}`); }
+  });
+  await page.getByRole('button', { name: '阅读助手', exact: true }).click(); await prompt().waitFor();
+  const codexBefore = await stored();
+  const coldPicker = pane().getByRole('button', { name: '选择模型与思考强度', exact: true });
+  await coldPicker.click();
+  const nativeMenu = pane().getByRole('dialog', { name: '模型与思考强度', exact: true });
+  await until(() => nativeMenu.locator('.menu-models button').count().then(count => count === 8));
+  assert.deepEqual(await page.evaluate(() => window.__pickerDiscovery.calls), ['status', 'models']);
+  assert.deepEqual(await stored(), codexBefore, 'Discovering models never rewrites saved configuration.');
+  await nativeMenu.getByRole('button', { name: '菜单测试模型 5', exact: true }).click();
+  const selectedNative = await stored();
+  assert.equal(selectedNative.effort, 'high', 'Choosing a limited model normalizes an unsupported effort.');
+  assert.deepEqual({ ...selectedNative, model: codexBefore.model, effort: codexBefore.effort }, codexBefore, 'Model choice preserves every unrelated field.');
+  assert.deepEqual(await nativeMenu.locator('.menu-efforts button').allTextContents(), ['默认', '低', '高']);
+  await page.evaluate(() => window.__pickerDiscovery.models.push({ id: 'picker-native-7', name: '新增菜单模型', efforts: ['low', 'high'], defaultEffort: 'low', vision: true }));
+  await nativeMenu.getByRole('button', { name: '重新读取模型', exact: true }).click();
+  await nativeMenu.getByRole('button', { name: '新增菜单模型', exact: true }).waitFor();
+  assert.equal(await nativeMenu.locator('.menu-models button').count(), 9);
+  assert.deepEqual(await stored(), selectedNative);
+  await page.evaluate(() => { window.__pickerDiscovery.failure = 'PICKER_DISCOVERY_FAILURE'; });
+  await nativeMenu.getByRole('button', { name: '重新读取模型', exact: true }).click();
+  await nativeMenu.getByRole('status').filter({ hasText: 'PICKER_DISCOVERY_FAILURE' }).waitFor();
+  assert.equal(await nativeMenu.locator('.menu-models button').count(), 9, 'A failed refresh keeps the known model inventory.');
+  assert.deepEqual(await stored(), selectedNative);
+  await page.evaluate(() => { window.__pickerDiscovery.failure = ''; window.__pickerDiscovery.hold = true; });
+  const callsBeforeCancel = await page.evaluate(() => window.__pickerDiscovery.calls.length);
+  const disconnectedBefore = await page.evaluate(() => window.__pickerDiscovery.disconnected);
+  await nativeMenu.getByRole('button', { name: '重新读取模型', exact: true }).click();
+  await until(() => page.evaluate(() => window.__pickerDiscovery.pending.length === 1));
+  await page.keyboard.press('Escape'); await nativeMenu.waitFor({ state: 'detached' });
+  await until(() => page.evaluate(value => window.__pickerDiscovery.disconnected > value, disconnectedBefore));
+  await page.evaluate(() => { window.__pickerDiscovery.hold = false; for (const deliver of window.__pickerDiscovery.pending.splice(0)) deliver(); });
+  await coldPicker.click(); await nativeMenu.waitFor();
+  await page.waitForTimeout(120);
+  assert.equal(await nativeMenu.locator('.menu-models button').count(), 9, 'A cancelled late reply cannot replace the current inventory.');
+  assert.equal(await nativeMenu.getByRole('button', { name: '重新读取模型', exact: true }).isEnabled(), true);
+  assert.equal(await page.evaluate(() => window.__pickerDiscovery.calls.length), callsBeforeCancel + 1, 'Cancelling status lookup prevents the subsequent models lookup.');
+  assert.deepEqual(await stored(), selectedNative);
+  await page.keyboard.press('Escape'); await nativeMenu.waitFor({ state: 'detached' });
+  assert.equal(await coldPicker.evaluate(element => document.activeElement === element), true);
+  checks.push({ label: 'Cold Codex picker discovers the full inventory without Settings; refresh adds models, failures preserve cache, Esc cancels native lookup and ignores late replies; only model/effort can change' });
+  await pane().getByRole('button', { name: '关闭阅读助手', exact: true }).click(); await pane().waitFor({ state: 'detached' });
+  await page.evaluate(value => { delete window.__TAURI_INTERNALS__; delete window.__pickerDiscovery; localStorage.setItem('paperdesk.ai.settings.v1', JSON.stringify(value)); }, apiSettings);
+  await page.getByRole('button', { name: '阅读助手', exact: true }).click(); await prompt().waitFor();
+  assert.deepEqual(await stored(), apiSettings, 'The original local API fixture is restored exactly.');
   await page.locator('.markdown-paper p').first().evaluate(element => {
     const range = document.createRange(); range.selectNodeContents(element);
     const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range);

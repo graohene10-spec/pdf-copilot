@@ -1,6 +1,6 @@
 # PDF Copilot · PDF 阅读助手
 
-本仓库同时提供 **开智 0.2.1 Windows 桌面版**，支持 PDF / Markdown 文档库、多文件标签、全文搜索、全屏阅读和可自定义的 AI 快捷提问，以及可自定义底板的玻璃界面。[下载开智桌面版](https://github.com/graohene10-spec/pdf-copilot/releases/tag/desktop-v0.2.1) · [本版更新](desktop/RELEASE_NOTES_0.2.1.md) · [桌面版使用与构建说明](desktop/README.md)。桌面源码位于 `desktop/`，复用本仓库的阅读与 AI 公共模块；桌面与浏览器插件分别使用独立版本号。
+本仓库同时提供 **开智 0.2.2 Windows 桌面版**，支持 PDF / Markdown 文档库、多文件标签、全文搜索、全屏阅读和可自定义的 AI 快捷提问，以及可自定义底板的液态玻璃界面。[下载开智桌面版](https://github.com/graohene10-spec/pdf-copilot/releases/tag/desktop-v0.2.2) · [本版更新](desktop/RELEASE_NOTES_0.2.2.md) · [桌面版使用与构建说明](desktop/README.md)。桌面源码位于 `desktop/`，复用本仓库的阅读与 AI 公共模块；桌面与浏览器插件分别使用独立版本号。
 
 轻量的 Windows Edge / Chrome 扩展，把 AI 对话放在 PDF 阅读旁边。继续使用浏览器自带阅读器，也可以切换到基于 PDF.js 的增强阅读器，连续滚动、选文、框选公式，并让 AI 按需查阅相关页。
 

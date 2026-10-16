@@ -169,6 +169,40 @@ try {
     await dialog().getByRole('button', { name: '取消', exact: true }).click(); await dialog().waitFor({ state: 'detached' });
     await libraryTab.click(); await settle();
     checks.push(`${theme}: category, list, library/file tabs, Markdown/PDF modes, details, AI, settings category and glass selection preserve foreground including hover.`);
+
+    // Accessibility materials suppress pointer movement, but retain the indicator's
+    // layout translation: the selected item is often far from the group's origin.
+    for (const material of ['solid', 'high']) {
+      const original = await page.locator('html').evaluate(element => ({ glass: element.getAttribute('data-glass'), contrast: element.getAttribute('data-contrast') }));
+      const applyMaterial = () => page.evaluate(material => {
+        if (material === 'solid') document.documentElement.dataset.glass = 'solid';
+        else document.documentElement.dataset.contrast = 'high';
+      }, material);
+      try {
+        await applyMaterial();
+        await recent.click(); await settle();
+        await indicator(`${theme}/${material}: category`, '.workspace-nav', 'button.selected');
+        await page.locator('[data-tip="卡片视图"]').click();
+        await list.click(); await settle();
+        await indicator(`${theme}/${material}: list layout`, '.view-switch', 'button.selected');
+        await page.getByRole('tab', { name: '阅读工作台指南.md', exact: true }).click(); await settle();
+        await indicator(`${theme}/${material}: file tabs`, '.tab-strip', '.file-tab.selected');
+        await page.getByRole('button', { name: '打开设置', exact: true }).click(); await dialog().waitFor();
+        await applyMaterial();
+        await dialog().getByRole('button', { name: '快捷键', exact: true }).click(); await settle();
+        await indicator(`${theme}/${material}: settings category`, '.settings-tabs', 'button.selected');
+        await dialog().getByRole('button', { name: '取消', exact: true }).click(); await dialog().waitFor({ state: 'detached' });
+        await libraryTab.click(); await settle();
+        await page.locator('.workspace-nav button').filter({ hasText: '全部文档' }).click(); await settle();
+      } finally {
+        await page.evaluate(original => {
+          for (const [attribute, value] of [['data-glass', original.glass], ['data-contrast', original.contrast]]) {
+            if (value === null) document.documentElement.removeAttribute(attribute);
+            else document.documentElement.setAttribute(attribute, value);
+          }
+        }, original);
+      }
+    }
   }
 
   await page.getByRole('button', { name: '切换侧栏', exact: true }).click();

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
-import { PROVIDERS, getProvider, getNativeModels, getNativeStatus, registerNativeModels } from '../ai/providers.mjs'
+import { PROVIDERS, getProvider, getNativeModels, getNativeStatus } from '../ai/providers.mjs'
+import { nativeModelInventory, registerNativeModelInventory } from '../ai/native-models'
 import { loadAiSettings, loadApiKey, saveAiSettings } from '../ai/settings.mjs'
 import { DOCUMENT_LIMIT_FIELDS } from '../../../extension/common/document-limits.mjs'
 import { apiOrigin } from '../../../extension/common/settings.js'
@@ -17,7 +18,7 @@ const refreshing = ref(false)
 const keyLoading = ref(false)
 const edited = ref(false)
 function markEdited() { edited.value = true }
-const nativeModels = ref<any[]>((getProvider('codex') as any)?.models || [])
+const nativeModels = nativeModelInventory
 const provider = computed<any>(() => getProvider(settings.value.provider))
 const models = computed<any[]>(() => settings.value.provider === 'codex' ? nativeModels.value : provider.value?.models || [])
 const model = computed<any>(() => models.value.find(item => item.id === settings.value.model))
@@ -59,7 +60,7 @@ async function refreshNative() {
     if (!info.compatible || !info.loggedIn) throw new Error(info.diagnostic || (info.loggedIn === false ? 'Codex 尚未登录。请先在 Codex 中登录。' : '未找到可用 Codex。'))
     const list: any[] = await getNativeModels(request.signal)
     if (disposed || request.signal.aborted) return
-    registerNativeModels(list); nativeModels.value = list
+    registerNativeModelInventory(list)
     if (!settings.value.model && list.length) { settings.value.model = list[0].id; settings.value.effort = list[0].defaultEffort || '' }
     if (settings.value.provider === 'codex') status.value = `Codex ${info.version} · 已登录 · ${list.length} 个模型`
   } catch (cause: any) { if (!disposed && !request.signal.aborted && settings.value.provider === 'codex') { status.value = cause?.message || String(cause); error.value = true } }

@@ -3,7 +3,8 @@ import { ref, shallowRef, computed, watch, onMounted, onBeforeUnmount, nextTick 
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
 import { renderMessage } from '../../../extension/chat/math.mjs'
-import { getProvider } from '../ai/providers.mjs'
+import { getProvider, getNativeModels, getNativeStatus } from '../ai/providers.mjs'
+import { nativeModelInventory, registerNativeModelInventory } from '../ai/native-models'
 import { chatState, sendChat, stopChat, configureRequests, taskSummary, type Message } from '../ai/workspace'
 import { loadAiSettings, saveModelChoice } from '../ai/settings.mjs'
 import { useSettings } from '../settings'
@@ -34,8 +35,11 @@ const EFFORT_LABELS: Record<string, string> = { none: '不思考', minimal: '极
 const pickerOpen = ref(false)
 const pickerHost = ref<HTMLElement>()
 const pickerButton = ref<HTMLButtonElement>()
+const pickerLoading = ref(false)
+const pickerError = ref('')
+let pickerRequest: AbortController | undefined
 const pickerModels = computed<{ id: string; name: string; efforts?: string[]; defaultEffort?: string }[]>(() => {
-  const list: any[] = getProvider(settings.value.provider)?.models || []
+  const list: any[] = settings.value.provider === 'codex' ? nativeModelInventory.value : getProvider(settings.value.provider)?.models || []
   const current = settings.value.model || ''
   const extra = settings.value.provider === 'codex' && !list.some(item => !item.id) ? [{ id: '', name: '模型默认' }] : []
   const custom = current && !list.some(item => item.id === current) ? [{ id: current, name: current }] : []
@@ -58,6 +62,7 @@ function chooseModel(id: string) {
 function chooseEffort(value: string) { commitChoice(settings.value.model || '', value) }
 function closePicker(returnFocus = false) {
   pickerOpen.value = false
+  cancelPickerRequest()
   if (returnFocus) pickerButton.value?.focus()
 }
 function togglePicker() {
@@ -67,14 +72,57 @@ function togglePicker() {
 function pickerOutside(event: PointerEvent) {
   if (event.target instanceof Node && !pickerHost.value?.contains(event.target)) closePicker()
 }
+function pickerKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Escape' || event.isComposing) return
+  event.preventDefault()
+  event.stopPropagation()
+  closePicker(true)
+}
+function cancelPickerRequest() {
+  pickerRequest?.abort()
+  pickerRequest = undefined
+  pickerLoading.value = false
+}
+async function refreshPickerModels() {
+  if (pickerLoading.value || settings.value.provider !== 'codex') return
+  pickerError.value = ''
+  if (!(globalThis as any).__TAURI_INTERNALS__) {
+    pickerError.value = '完整模型列表需在 Windows 桌面版中读取。'
+    return
+  }
+  const request = new AbortController()
+  pickerRequest = request
+  pickerLoading.value = true
+  try {
+    const info: any = await getNativeStatus(request.signal)
+    if (!info.compatible || !info.loggedIn) throw new Error(info.diagnostic || (info.loggedIn === false ? 'Codex 尚未登录。请先在 Codex 中登录。' : '未找到可用 Codex。'))
+    const list: any[] = await getNativeModels(request.signal)
+    if (request.signal.aborted || pickerRequest !== request) return
+    registerNativeModelInventory(list)
+    if (!list.length) pickerError.value = '未读取到可用模型，可重新读取或打开 AI 设置。'
+  } catch (cause: any) {
+    if (!request.signal.aborted && pickerRequest === request) pickerError.value = cause?.message || String(cause)
+  } finally {
+    if (pickerRequest === request) { pickerRequest = undefined; pickerLoading.value = false }
+  }
+}
 watch(pickerOpen, open => {
-  if (open) document.addEventListener('pointerdown', pickerOutside, true)
-  else document.removeEventListener('pointerdown', pickerOutside, true)
+  if (open) {
+    document.addEventListener('pointerdown', pickerOutside, true)
+    document.addEventListener('keydown', pickerKeydown, true)
+    if (settings.value.provider === 'codex' && !nativeModelInventory.value.length) void refreshPickerModels()
+  } else {
+    document.removeEventListener('pointerdown', pickerOutside, true)
+    document.removeEventListener('keydown', pickerKeydown, true)
+    cancelPickerRequest()
+  }
 })
+watch(() => settings.value.provider, () => { closePicker(); pickerError.value = '' })
 watch(busy, value => { if (value) closePicker() })
 function moreSettings() { closePicker(); emit('settings') }
 function restoreScroll() { if (messageList.value) messageList.value.scrollTop = state.value.scrollTop }
 watch(() => props.document.id, (id) => {
+  closePicker()
   rememberScroll()
   state.value = chatState(id)
   settings.value = loadAiSettings()
@@ -124,7 +172,7 @@ function send(question?: string) {
     if (usesImage) consumeCapture?.({ documentId: id, selection })
   }, question)
 }
-onBeforeUnmount(() => { rememberScroll(); if (renderFrame) cancelAnimationFrame(renderFrame); document.removeEventListener('pointerdown', pickerOutside, true) })
+onBeforeUnmount(() => { rememberScroll(); if (renderFrame) cancelAnimationFrame(renderFrame); cancelPickerRequest(); document.removeEventListener('pointerdown', pickerOutside, true); document.removeEventListener('keydown', pickerKeydown, true) })
 defineExpose({ send, stop, applySettings, focusPrompt })
 </script>
 
@@ -156,6 +204,10 @@ defineExpose({ send, stop, applySettings, focusPrompt })
                 <div class="menu-models">
                   <button v-for="item in pickerModels" :key="item.id || 'default'" type="button" :aria-pressed="item.id === (settings.model || '')" @click="chooseModel(item.id)"><span>{{ item.name || item.id }}</span><AppIcon v-if="item.id === (settings.model || '')" name="check" :size="14" /></button>
                 </div>
+                <template v-if="settings.provider === 'codex'">
+                  <p v-if="pickerLoading || pickerError" class="menu-status" role="status">{{ pickerLoading ? '正在读取本机模型…' : pickerError }}</p>
+                  <button type="button" class="menu-refresh" :disabled="pickerLoading" @click="refreshPickerModels">重新读取模型</button>
+                </template>
                 <p class="menu-label">思考强度</p>
                 <div class="menu-efforts">
                   <button v-for="value in pickerEfforts" :key="value || 'default'" type="button" :aria-pressed="value === (settings.effort || '')" @click="chooseEffort(value)">{{ effortLabel(value) }}</button>
@@ -266,6 +318,9 @@ button:disabled{opacity:.42;cursor:default}
 .menu-models button:hover{background:var(--fill-3)}
 .menu-models button[aria-pressed='true']{background:color-mix(in srgb,var(--accent) 12%,transparent);font-weight:600}
 .menu-models button svg{color:var(--accent)}
+.menu-status{margin:4px 8px 8px;font-size:11px;line-height:1.6;color:var(--surface-muted);overflow-wrap:anywhere}
+.menu-refresh{display:block;width:100%;padding:6px 10px;margin-bottom:6px;border:0;background:transparent;box-shadow:none;text-align:left;font-size:11.5px;color:var(--accent)}
+.menu-refresh:hover:not(:disabled){background:var(--fill-4)}
 .menu-efforts{display:flex;flex-wrap:wrap;gap:5px;padding:0 4px 8px}
 .menu-efforts button{height:30px;padding:0 11px;border:1px solid var(--glass-outline);border-radius:var(--r-full);background:var(--fill-4);box-shadow:none;font-size:12px;color:var(--surface-ink)}
 .menu-efforts button:hover{background:var(--fill-3)}
