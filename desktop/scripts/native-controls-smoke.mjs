@@ -29,7 +29,7 @@ async function until(condition, message = 'Native control condition timed out.',
 const dialog = () => page.getByRole('dialog', { name: '设置', exact: true });
 const settled = () => page.waitForFunction(() => !document.querySelector('.settings-pop-enter-active,.settings-pop-leave-active,.view-enter-active,.view-leave-active,.pane-enter-active,.pane-leave-active,.sidebar-enter-active,.sidebar-leave-active'));
 const pdf = () => page.locator('.pdf-scroll:visible');
-const zoom = () => page.locator('.reader-tools:visible .reader-zoom [title="适应宽度"]').innerText();
+const zoom = () => page.locator('.reader-tools:visible .reader-zoom [data-tip="适应宽度"]').innerText();
 async function readyPdf() {
   await page.locator('.pdf-scroll:visible .page-ready:not(.pdf-preview) .pdf-canvas').first().waitFor();
   await settled();
@@ -62,7 +62,7 @@ async function physicalWheel(deltaY, control = false) {
   finally { if (control) await page.keyboard.up('Control'); }
 }
 async function inkRoundTrip(theme) {
-  if (await page.locator('html').getAttribute('data-theme') !== theme) await page.getByTitle(theme === 'light' ? '切换浅色主题' : '切换深色主题', { exact: true }).click();
+  if (await page.locator('html').getAttribute('data-theme') !== theme) await page.locator(`[data-tip="${theme === 'light' ? '切换浅色主题' : '切换深色主题'}"]`).click();
   await page.waitForFunction(theme => document.documentElement.dataset.theme === theme, theme);
   await until(() => page.locator('.app-sidebar .import-button,.app-sidebar .brand,.app-topbar .sidebar-toggle').evaluateAll((elements, theme) => elements.length === 3 && elements.every(element => element.dataset.glassInk === (theme === 'light' ? 'dark' : 'light')), theme), 'Gray wallpaper foreground did not restore after theme change.');
   await page.waitForTimeout(250);

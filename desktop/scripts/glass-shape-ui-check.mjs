@@ -91,18 +91,23 @@ try {
   await page.getByRole('button', { name: '文档库', exact: true }).click(); await settle();
 
   for (const theme of ['light', 'dark']) {
-    if (await page.locator('html').getAttribute('data-theme') !== theme) await page.getByTitle(theme === 'light' ? '切换浅色主题' : '切换深色主题', { exact: true }).first().click();
+    if (await page.locator('html').getAttribute('data-theme') !== theme) await page.locator(`[data-tip="${theme === 'light' ? '切换浅色主题' : '切换深色主题'}"]`).first().click();
     await page.waitForFunction(theme => document.documentElement.dataset.theme === theme, theme); await settle();
     const recent = page.locator('.workspace-nav button').filter({ hasText: '最近阅读' });
     await compareState(`${theme}: category`, recent, () => recent.click(), () => page.locator('.workspace-nav button').filter({ hasText: '全部文档' }).click());
-    const list = page.getByTitle('列表视图', { exact: true });
-    await page.getByTitle('卡片视图', { exact: true }).click(); await settle();
+    const list = page.locator('[data-tip="列表视图"]');
+    await page.locator('[data-tip="卡片视图"]').click(); await settle();
     await compareState(`${theme}: list layout`, list, () => list.click());
     await indicator(`${theme}: list layout`, '.view-switch', 'button.selected');
     await recent.click(); await settle(); await indicator(`${theme}: category`, '.workspace-nav', 'button.selected');
     await page.locator('.workspace-nav button').filter({ hasText: '全部文档' }).click(); await settle();
     await shapes(`${theme}: library surfaces`, '.app-sidebar,.document-card,.document-cover', { minRadius: 10 });
-    await shapes(`${theme}: library capsules`, '.app-topbar,.import-button,.library-search,.library-summary > div,.view-switch,.view-switch button,.workspace-nav button,.heading-count,.topbar-actions,.topbar-actions .icon-button', { capsule: true });
+    await shapes(`${theme}: library capsules`, '.app-topbar,.library-search,.library-summary > div,.view-switch,.view-switch button,.heading-count,.topbar-actions,.topbar-actions .icon-button', { capsule: true });
+    // Sidebar controls are squarer rounded rectangles (12px), concentric with the 28px panel.
+    const sidebarRadii = await page.locator('.app-sidebar .import-button,.workspace-nav button,.sidebar-bottom button').evaluateAll(elements => elements.map(element => parseFloat(getComputedStyle(element).borderTopLeftRadius)));
+    assert.ok(sidebarRadii.length >= 4 && sidebarRadii.every(value => value === 12), `${theme}: sidebar controls use 12px corners (${sidebarRadii}).`);
+    assert.equal(await page.locator('.workspace-nav > .liquid-indicator').evaluate(element => getComputedStyle(element).borderTopLeftRadius), '12px', `${theme}: the sidebar droplet matches its items.`);
+    checks.push(`${theme}: sidebar controls and droplet share 12px corners.`);
     await shot(`glass-shape-library-${theme}.png`);
 
     const libraryTab = page.getByRole('button', { name: '文档库', exact: true });
@@ -118,10 +123,10 @@ try {
     await compareState(`${theme}: Markdown outline`, outline, () => outline.click(), () => outline.click());
     const source = page.locator('.markdown-reader .quiet-button').filter({ hasText: /查看源码|阅读视图/ });
     await compareState(`${theme}: Markdown source`, source, () => source.click(), () => source.click());
-    const star = page.getByTitle('收藏文档', { exact: true });
+    const star = page.locator('[data-tip="收藏文档"]');
     await compareState(`${theme}: favorite control`, star, () => star.click(), () => star.click());
-    const details = page.getByTitle('文档详情与标签', { exact: true });
-    await compareState(`${theme}: details control`, details, () => details.click(), () => page.getByTitle('关闭文档详情', { exact: true }).click());
+    const details = page.locator('[data-tip="文档详情与标签"]');
+    await compareState(`${theme}: details control`, details, () => details.click(), () => page.locator('[data-tip="关闭文档详情"]').click());
     const ai = page.getByRole('button', { name: '阅读助手', exact: true });
     await compareState(`${theme}: AI assistant`, ai, () => ai.click());
     await indicator(`${theme}: file tabs`, '.tab-strip', '.file-tab.selected');

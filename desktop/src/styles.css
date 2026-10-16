@@ -366,8 +366,14 @@ kbd {
   letter-spacing: 1.4px;
 }
 
+/* 侧栏控件用 12px 圆角矩形（与面板 28px 圆角同心），比胶囊更稳重、易于纵向排列。 */
+.app-sidebar {
+  --sidebar-control-radius: 12px;
+}
+
 .import-button {
   height: 42px;
+  border-radius: var(--sidebar-control-radius);
   background-color: var(--glass-2);
   background-image: var(--glass-sheen);
   border-color: var(--glass-outline);
@@ -389,7 +395,7 @@ kbd {
   color: inherit;
   opacity: .66;
   padding: 3px 8px;
-  border-radius: var(--r-full);
+  border-radius: 7px;
   background: var(--fill-4);
 }
 
@@ -418,7 +424,7 @@ kbd {
   padding: 10px 13px;
   color: var(--control-ink);
   font-size: 13px;
-  border-radius: var(--r-full);
+  border-radius: var(--sidebar-control-radius);
   transition: background var(--dur-1) var(--ease-soft),
               color var(--dur-1) var(--ease-soft);
 }
@@ -542,7 +548,7 @@ kbd {
   padding: 6px 13px 6px 10px;
   font-size: 12px;
   gap: 7px;
-  border-radius: var(--r-full);
+  border-radius: var(--sidebar-control-radius);
 }
 
 .sidebar-bottom .icon-button {

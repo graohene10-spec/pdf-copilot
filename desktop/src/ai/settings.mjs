@@ -29,3 +29,11 @@ export async function saveAiSettings(settings, apiKey) {
   }
   localStorage.setItem(storageKey, JSON.stringify(clean));
 }
+// The composer's quick picker changes only the model and effort. Credentials
+// and every other field keep their stored values.
+export function saveModelChoice(model, effort) {
+  let stored = {};
+  try { stored = JSON.parse(localStorage.getItem(storageKey) || '{}'); } catch {}
+  delete stored.apiKey;
+  localStorage.setItem(storageKey, JSON.stringify({ ...stored, model, effort }));
+}

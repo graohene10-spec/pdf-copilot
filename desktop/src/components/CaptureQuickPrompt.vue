@@ -70,11 +70,11 @@ onBeforeUnmount(() => {
     <div class="capture-quick-hole" :style="holeStyle" aria-hidden="true" />
     <section ref="panel" class="capture-quick-actions" :style="panelStyle" aria-label="对截图提问" data-glass-interactive="panel">
       <div class="capture-quick-buttons">
-        <button v-for="(prompt, index) in prompts" :key="index" :title="prompt.question" :disabled="busy" data-glass-interactive @click="emit('ask', prompt.question)"><AppIcon name="sparkle" :size="14" /><span>{{ prompt.label }}</span></button>
+        <button v-for="(prompt, index) in prompts" :key="index" :data-tip="prompt.question" :disabled="busy" data-glass-interactive @click="emit('ask', prompt.question)"><AppIcon name="sparkle" :size="14" /><span>{{ prompt.label }}</span></button>
       </div>
       <div class="capture-quick-footer">
         <button class="capture-continue" aria-label="继续到阅读助手" data-glass-interactive @click="emit('continue')">继续<AppIcon class="continue-arrow" name="arrow" :size="15" /></button>
-        <button class="capture-cancel" aria-label="取消框选提问" title="取消（Esc）" data-glass-interactive @click="emit('cancel')"><AppIcon name="close" :size="16" /></button>
+        <button class="capture-cancel" aria-label="取消框选提问" data-tip="取消" data-tip-key="Esc" data-glass-interactive @click="emit('cancel')"><AppIcon name="close" :size="16" /></button>
       </div>
       <p v-if="status" class="capture-quick-status" role="status">{{ status }}</p>
     </section>

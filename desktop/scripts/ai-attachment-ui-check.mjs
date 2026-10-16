@@ -59,7 +59,7 @@ async function readyPdf() {
 async function select(index) { await page.getByRole('tab', { name: names[index], exact: true }).click(); await readyPdf(); await prompt().waitFor(); }
 async function crop(index = 0) {
   await readyPdf();
-  await page.getByTitle('框选公式或图表作为 AI 上下文', { exact: true }).click();
+  await page.locator('[data-tip="框选公式或图表作为 AI 上下文"]').click();
   const bounds = await page.locator('#page-surface').boundingBox();
   const x = bounds.x + 35 + index * 8, y = bounds.y + 50 + index * 14;
   await page.mouse.move(x, y); await page.mouse.down();
@@ -69,7 +69,7 @@ async function crop(index = 0) {
   return preview().getAttribute('src');
 }
 async function configure(key) {
-  await page.getByTitle('AI 设置', { exact: true }).click(); await dialog().waitFor();
+  await page.locator('[data-tip="AI 设置"]').click(); await dialog().waitFor();
   await dialog().getByLabel('服务商', { exact: true }).selectOption('openai');
   await dialog().getByLabel('API 地址', { exact: true }).fill(`${modelOrigin}/v1`);
   await dialog().getByLabel('API Key', { exact: true }).fill(key);
@@ -114,7 +114,7 @@ async function preparationRace(replaceCrop) {
   assert.equal(calls.some(call => call.job === job), false);
   let newer;
   if (replaceCrop) { newer = await crop(2); assert.notEqual(newer, original); }
-  else { await page.getByTitle('文档库', { exact: true }).click(); await page.locator('.ai-pane').waitFor({ state: 'detached' }); }
+  else { await page.locator('[data-tip="文档库"]').click(); await page.locator('.ai-pane').waitFor({ state: 'detached' }); }
   releasePendingModule(); releasePendingModule = undefined;
   await until(() => calls.some(call => call.job === job));
   if (!replaceCrop) await select(0);

@@ -15,14 +15,14 @@ defineExpose({ focus })
 </script>
 
 <template>
-  <div class="reader-search" role="search" :aria-busy="busy" :title="status || `搜索本文${shortcut ? ` · ${shortcut}` : ''}`">
+  <div class="reader-search" role="search" :aria-busy="busy" :data-tip="status || '搜索本文'" :data-tip-key="status ? undefined : shortcut || undefined">
     <AppIcon name="search" :size="14" />
     <input ref="input" type="text" aria-label="文档内搜索" placeholder="搜索本文…" :value="modelValue" autocomplete="off" spellcheck="false" maxlength="256" @input="emit('update:modelValue', ($event.target as HTMLInputElement).value)" @keydown="keydown" />
     <template v-if="modelValue">
       <span class="reader-find-count reader-search-count" role="status" aria-live="polite">{{ current }} / {{ total }}{{ busy ? '…' : '' }}</span>
-      <button type="button" aria-label="上一个搜索结果" title="上一个匹配 · Shift + Enter" :disabled="!total" @click="emit('previous')"><AppIcon name="down" :size="13" class="reader-search-previous" /></button>
-      <button type="button" aria-label="下一个搜索结果" title="下一个匹配 · Enter" :disabled="!total" @click="emit('next')"><AppIcon name="down" :size="13" /></button>
-      <button type="button" aria-label="清除搜索" title="清除搜索 · Esc" @click="emit('clear')"><AppIcon name="close" :size="13" /></button>
+      <button type="button" aria-label="上一个搜索结果" data-tip="上一个匹配" data-tip-key="Shift + Enter" :disabled="!total" @click="emit('previous')"><AppIcon name="down" :size="13" class="reader-search-previous" /></button>
+      <button type="button" aria-label="下一个搜索结果" data-tip="下一个匹配" data-tip-key="Enter" :disabled="!total" @click="emit('next')"><AppIcon name="down" :size="13" /></button>
+      <button type="button" aria-label="清除搜索" data-tip="清除搜索" data-tip-key="Esc" @click="emit('clear')"><AppIcon name="close" :size="13" /></button>
     </template>
   </div>
 </template>

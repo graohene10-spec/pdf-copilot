@@ -72,7 +72,7 @@ try {
   await query('\\text', 1, 1);
   await page.getByRole('button', { name: '阅读视图', exact: true }).click(); await count(0, 0);
   await query('needle', 1, 4);
-  await page.getByTitle('放大字号', { exact: true }).click(); await count(1, 4);
+  await page.locator('[data-tip="放大字号"]').click(); await count(1, 4);
   assert.equal(await page.locator('.markdown-paper .katex').count(), 1);
   report.push('Source mode searches the exact original source, mode changes rebuild ranges, font-size changes preserve safe ranges and formulas');
 

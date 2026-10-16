@@ -34,7 +34,7 @@ try {
   await page.locator('.ai-pane').waitFor(); await ready(); await page.waitForTimeout(200);
   const control = page.getByRole('button', { name: '阅读助手', exact: true });
   for (const theme of ['light', 'dark']) {
-    if (theme === 'dark') await page.getByTitle('切换深色主题', { exact: true }).click();
+    if (theme === 'dark') await page.locator('[data-tip="切换深色主题"]').click();
     await page.waitForFunction(theme => document.documentElement.dataset.theme === theme, theme);
     const paperBefore = await page.locator('#page-surface').boundingBox();
     const internalLink = page.locator('#page-surface .pdf-link').first();
@@ -67,6 +67,31 @@ try {
   assert.equal(await control.evaluate(element => getComputedStyle(element, '::after').content), 'none');
   await page.evaluate(value => { document.documentElement.dataset.glass = value; }, originalGlass);
   checks.push('Opaque glass disables hover movement and reflection; internal PDF links remain transparent document hit areas.');
+  // Delayed glass tooltip: name + current shortcut, instant hand-off, dismissed by clicks.
+  const tooltip = page.locator('.glass-tooltip');
+  const fullscreen = page.getByRole('button', { name: '进入全屏', exact: true });
+  // Rest on the PDF page (no tooltips) long enough to leave the warm hand-off window.
+  await page.locator('#page-surface').hover(); await page.waitForTimeout(700);
+  assert.equal(await tooltip.isVisible(), false);
+  await fullscreen.hover(); await page.waitForTimeout(250);
+  assert.equal(await tooltip.isVisible(), false, 'The tooltip waits for the pointer to rest.');
+  await page.waitForTimeout(650);
+  assert.equal(await tooltip.isVisible(), true);
+  assert.equal(await tooltip.locator('span').innerText(), '进入全屏');
+  assert.equal(await tooltip.locator('kbd').innerText(), 'F11');
+  const anchor = await fullscreen.boundingBox(), bubble = await tooltip.boundingBox();
+  assert.ok(Math.abs(bubble.x + bubble.width / 2 - (anchor.x + anchor.width / 2)) < 2 || bubble.x <= 9 || bubble.x + bubble.width >= 1431, 'The tooltip centres under its control unless clamped to the window.');
+  await page.getByRole('button', { name: '打开设置', exact: true }).hover(); await page.waitForTimeout(80);
+  assert.equal(await tooltip.locator('span').innerText(), '设置', 'Neighbouring controls answer at once while a tooltip is open.');
+  assert.match(await tooltip.locator('kbd').innerText(), /Ctrl \+ ,/);
+  await page.mouse.down(); await page.mouse.up();
+  await page.waitForFunction(() => document.querySelector('.glass-tooltip')?.hidden);
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => !document.querySelector('.settings-dialog'));
+  await page.locator('#page-surface').hover(); await page.waitForTimeout(900);
+  assert.equal(await tooltip.isVisible(), false, 'Document content never shows glass tooltips.');
+  assert.equal(await page.locator('[title]').evaluateAll(elements => elements.filter(element => element.closest('#app') && !element.closest('.pdf-scroll, .markdown-paper')).length), 0, 'No native title tooltips remain in the app chrome.');
+  checks.push('Glass tooltip appears after a rest with the control name and shortcut, hands off instantly, hides on click and never covers document content.');
   await page.getByRole('button', { name: '打开设置', exact: true }).click();
   await dialog().waitFor();
   await page.waitForFunction(() => !document.querySelector('.settings-pop-enter-active'));

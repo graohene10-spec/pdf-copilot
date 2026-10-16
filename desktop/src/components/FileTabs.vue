@@ -16,11 +16,11 @@ function navigate(event: KeyboardEvent, index: number) {
 
 <template>
   <div class="file-tabs">
-    <button class="tab-library" data-glass-interactive @click="emit('library')" :class="{ selected: !activeId }" title="文档库"><AppIcon name="library" :size="16" /><span>文档库</span></button>
+    <button class="tab-library" data-glass-interactive @click="emit('library')" :class="{ selected: !activeId }" data-tip="文档库" aria-label="文档库"><AppIcon name="library" :size="16" /><span>文档库</span></button>
     <div ref="strip" v-liquid-selection="'.file-tab.selected'" class="tab-strip" role="tablist" aria-label="打开的文件">
       <div v-for="(tab, index) in tabs" :key="tab.id" class="file-tab" data-glass-interactive="tab" :class="{ selected: tab.id === activeId }" @auxclick.prevent="$event.button === 1 && emit('close', tab.id)">
-        <button role="tab" :aria-label="tab.name" :aria-description="tab.phase ? (tab.phase === 'queued' ? 'AI 等待中' : 'AI 回答中') : undefined" :aria-selected="tab.id === activeId" :tabindex="tab.id === activeId || (!activeId && index === 0) ? 0 : -1" :title="tab.name" @click="emit('select', tab.id)" @keydown="navigate($event, index)"><AppIcon :name="tab.kind === 'pdf' ? 'file' : 'markdown'" :size="14" /><span>{{ tab.name }}</span><i v-if="tab.phase" class="tab-task" :class="tab.phase" :title="tab.phase === 'queued' ? 'AI 等待中' : 'AI 回答中'" aria-hidden="true"></i></button>
-        <button class="close-tab" :aria-label="`关闭 ${tab.name} 标签`" :title="`关闭 ${tab.name}`" @click="emit('close', tab.id)"><AppIcon name="close" :size="12" /></button>
+        <button role="tab" :aria-label="tab.name" :aria-description="tab.phase ? (tab.phase === 'queued' ? 'AI 等待中' : 'AI 回答中') : undefined" :aria-selected="tab.id === activeId" :tabindex="tab.id === activeId || (!activeId && index === 0) ? 0 : -1" :data-tip="tab.name" @click="emit('select', tab.id)" @keydown="navigate($event, index)"><AppIcon :name="tab.kind === 'pdf' ? 'file' : 'markdown'" :size="14" /><span>{{ tab.name }}</span><i v-if="tab.phase" class="tab-task" :class="tab.phase" :data-tip="tab.phase === 'queued' ? 'AI 等待中' : 'AI 回答中'" aria-hidden="true"></i></button>
+        <button class="close-tab" :aria-label="`关闭 ${tab.name} 标签`" :data-tip="`关闭 ${tab.name}`" @click="emit('close', tab.id)"><AppIcon name="close" :size="12" /></button>
       </div>
     </div>
   </div>

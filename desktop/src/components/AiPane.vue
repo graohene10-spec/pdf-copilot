@@ -5,7 +5,7 @@ import 'katex/dist/katex.min.css'
 import { renderMessage } from '../../../extension/chat/math.mjs'
 import { getProvider } from '../ai/providers.mjs'
 import { chatState, sendChat, stopChat, configureRequests, taskSummary, type Message } from '../ai/workspace'
-import { loadAiSettings } from '../ai/settings.mjs'
+import { loadAiSettings, saveModelChoice } from '../ai/settings.mjs'
 import { useSettings } from '../settings'
 import AppIcon from './AppIcon.vue'
 
@@ -28,6 +28,51 @@ const selected = computed(() => props.context?.selection || {})
 const hasSelection = computed(() => Boolean(selected.value.text || selected.value.image))
 const { preferences } = useSettings()
 const suggestions = computed(() => preferences.value.assistant.quickPrompts)
+// Quick model / effort picker beside Send. It writes only these two fields;
+// keys, endpoints and limits stay in Settings → AI.
+const EFFORT_LABELS: Record<string, string> = { none: '不思考', minimal: '极低', low: '低', medium: '中', high: '高', xhigh: '很高', max: '最高', ultra: '极高' }
+const pickerOpen = ref(false)
+const pickerHost = ref<HTMLElement>()
+const pickerButton = ref<HTMLButtonElement>()
+const pickerModels = computed<{ id: string; name: string; efforts?: string[]; defaultEffort?: string }[]>(() => {
+  const list: any[] = getProvider(settings.value.provider)?.models || []
+  const current = settings.value.model || ''
+  const extra = settings.value.provider === 'codex' && !list.some(item => !item.id) ? [{ id: '', name: '模型默认' }] : []
+  const custom = current && !list.some(item => item.id === current) ? [{ id: current, name: current }] : []
+  return [...extra, ...custom, ...list]
+})
+const currentModel = computed(() => pickerModels.value.find(item => item.id === (settings.value.model || '')))
+const pickerEfforts = computed(() => ['', ...(currentModel.value?.efforts || ['none', 'low', 'medium', 'high', 'xhigh', 'max']).filter(Boolean)])
+const modelLabel = computed(() => currentModel.value?.name || settings.value.model || '默认模型')
+const effortLabel = (value: string) => value ? EFFORT_LABELS[value] || value : '默认'
+function commitChoice(model: string, effort: string) {
+  saveModelChoice(model, effort)
+  settings.value = loadAiSettings()
+}
+function chooseModel(id: string) {
+  const model = pickerModels.value.find(item => item.id === id)
+  let effort = settings.value.effort || ''
+  if (effort && model?.efforts && !model.efforts.includes(effort)) effort = model.defaultEffort || ''
+  commitChoice(id, effort)
+}
+function chooseEffort(value: string) { commitChoice(settings.value.model || '', value) }
+function closePicker(returnFocus = false) {
+  pickerOpen.value = false
+  if (returnFocus) pickerButton.value?.focus()
+}
+function togglePicker() {
+  pickerOpen.value = !pickerOpen.value
+  if (pickerOpen.value) void nextTick(() => pickerHost.value?.querySelector<HTMLElement>('.model-menu [aria-pressed="true"]')?.focus())
+}
+function pickerOutside(event: PointerEvent) {
+  if (event.target instanceof Node && !pickerHost.value?.contains(event.target)) closePicker()
+}
+watch(pickerOpen, open => {
+  if (open) document.addEventListener('pointerdown', pickerOutside, true)
+  else document.removeEventListener('pointerdown', pickerOutside, true)
+})
+watch(busy, value => { if (value) closePicker() })
+function moreSettings() { closePicker(); emit('settings') }
 function restoreScroll() { if (messageList.value) messageList.value.scrollTop = state.value.scrollTop }
 watch(() => props.document.id, (id) => {
   rememberScroll()
@@ -54,7 +99,7 @@ function renderAnswer(element: HTMLElement, message: Message) {
       const source: any = sourceMap.get(match[1]); if (!source) continue
       fragment.append(document.createTextNode(text.slice(last, match.index)))
       const button = document.createElement('button')
-      button.className = 'inline-citation'; button.textContent = source.line ? `第 ${source.line} 行` : `第 ${source.page} 页`; button.title = source.text
+      button.className = 'inline-citation'; button.textContent = source.line ? `第 ${source.line} 行` : `第 ${source.page} 页`; button.dataset.tip = source.text
       button.onclick = () => jump(source); fragment.append(button); last = pattern.lastIndex
     }
     if (last) { fragment.append(document.createTextNode(text.slice(last))); node.parentNode?.replaceChild(fragment, node) }
@@ -79,15 +124,15 @@ function send(question?: string) {
     if (usesImage) consumeCapture?.({ documentId: id, selection })
   }, question)
 }
-onBeforeUnmount(() => { rememberScroll(); if (renderFrame) cancelAnimationFrame(renderFrame) })
+onBeforeUnmount(() => { rememberScroll(); if (renderFrame) cancelAnimationFrame(renderFrame); document.removeEventListener('pointerdown', pickerOutside, true) })
 defineExpose({ send, stop, applySettings, focusPrompt })
 </script>
 
 <template>
   <aside class="ai-pane" aria-label="AI 阅读助手">
-      <div class="model-bar"><span class="model-summary" :title="providerSummary">{{ providerSummary }}</span><span v-if="taskSummary.running || taskSummary.queued" class="task-summary" :title="`同时最多 ${taskSummary.limits.concurrent} 题，Codex ${taskSummary.limits.codex} 题`">{{ taskSummary.running }} 运行<template v-if="taskSummary.queued"> · {{ taskSummary.queued }} 等待</template></span><button class="secondary-action model-change" title="AI 设置" data-glass-interactive :disabled="busy" @click="emit('settings')">更改</button><button class="close-assistant" title="关闭阅读助手" aria-label="关闭阅读助手" data-glass-interactive @click="emit('close')">×</button></div>
+      <div class="model-bar"><span class="model-summary" :data-tip="providerSummary">{{ providerSummary }}</span><span v-if="taskSummary.running || taskSummary.queued" class="task-summary" :data-tip="`同时最多 ${taskSummary.limits.concurrent} 题，Codex ${taskSummary.limits.codex} 题`">{{ taskSummary.running }} 运行<template v-if="taskSummary.queued"> · {{ taskSummary.queued }} 等待</template></span><button class="secondary-action model-change" data-tip="AI 设置" data-glass-interactive :disabled="busy" @click="emit('settings')">更改</button><button class="close-assistant" data-tip="关闭阅读助手" aria-label="关闭阅读助手" data-glass-interactive @click="emit('close')">×</button></div>
       <div ref="messageList" class="ai-messages" aria-live="polite" @scroll="rememberScroll">
-        <div v-if="!messages.length" class="ai-welcome"><div class="ai-welcome-mark" aria-hidden="true"><AppIcon name="sparkle" :size="26" /></div><p class="ai-welcome-lead">关于这份文档，想了解什么？</p><p>可询问当前内容，也可选取文字或框选图表。</p><div class="suggestions"><button v-for="(suggestion, index) in suggestions" :key="index" :title="suggestion.question" :disabled="busy" @click="send(suggestion.question)">{{ suggestion.label }}</button></div></div>
+        <div v-if="!messages.length" class="ai-welcome"><div class="ai-welcome-mark" aria-hidden="true"><AppIcon name="sparkle" :size="26" /></div><p class="ai-welcome-lead">关于这份文档，想了解什么？</p><p>可询问当前内容，也可选取文字或框选图表。</p><div class="suggestions"><button v-for="(suggestion, index) in suggestions" :key="index" :data-tip="suggestion.question" :disabled="busy" @click="send(suggestion.question)">{{ suggestion.label }}</button></div></div>
         <article v-for="message in messages" :key="message.id" class="ai-message" :class="message.role">
           <div class="message-label"><strong>{{ message.role === 'user' ? '你' : '阅读助手' }}</strong><button v-if="message.content" @click="copy(message.content)">复制</button></div>
           <details v-if="message.reasoning" class="reasoning"><summary>思考过程</summary><p>{{ message.reasoning }}</p></details>
@@ -97,11 +142,31 @@ defineExpose({ send, stop, applySettings, focusPrompt })
         </article>
       </div>
       <div class="ai-composer">
-        <div v-if="hasSelection" class="ai-selection-context"><div class="context-heading"><label><input v-model="includeSelection" type="checkbox" :disabled="busy" />{{ selected.image ? `使用第 ${selected.page} 页截图` : '使用所选文字' }}</label><button class="reset-button" @click="emit('clearSelection')" title="清除选区">×</button></div><p v-if="selected.text">{{ selected.text.slice(0, 140) }}</p><img v-if="selected.image" :src="selected.image" alt="选取的截图预览" /></div>
+        <div v-if="hasSelection" class="ai-selection-context"><div class="context-heading"><label><input v-model="includeSelection" type="checkbox" :disabled="busy" />{{ selected.image ? `使用第 ${selected.page} 页截图` : '使用所选文字' }}</label><button class="reset-button" @click="emit('clearSelection')" data-tip="清除选区" aria-label="清除选区">×</button></div><p v-if="selected.text">{{ selected.text.slice(0, 140) }}</p><img v-if="selected.image" :src="selected.image" alt="选取的截图预览" /></div>
         <label class="document-context"><input v-model="includeDocument" type="checkbox" :disabled="busy" /> 当前页上下文与文档检索</label>
         <div class="composer-field">
         <textarea ref="input" v-model="prompt" rows="3" placeholder="询问这份文档…" aria-label="向 AI 提问" />
-        <div class="composer-actions"><button class="reset-button secondary-action clear-conversation" data-glass-interactive :disabled="busy || !messages.length" @click="clear">清空对话</button><span v-if="sendShortcut" :title="sendShortcut">{{ sendShortcut }}</span><button v-if="busy" class="send-button stop" @click="stop">停止</button><button v-else class="send-button" :disabled="!prompt.trim()" @click="send()">发送 ↑</button></div>
+        <div class="composer-actions">
+          <button class="reset-button secondary-action clear-conversation" aria-label="清空对话" data-tip="清空对话" data-glass-interactive :disabled="busy || !messages.length" @click="clear"><AppIcon name="trash" :size="16" /></button>
+          <div ref="pickerHost" class="model-picker-host">
+            <button ref="pickerButton" type="button" class="model-picker" :disabled="busy" aria-haspopup="dialog" :aria-expanded="pickerOpen" aria-label="选择模型与思考强度" data-tip="模型与思考强度" @click="togglePicker"><span class="picker-model">{{ modelLabel }}</span><span class="picker-effort">{{ effortLabel(settings.effort || '') }}</span><AppIcon name="down" :size="12" class="picker-chevron" /></button>
+            <Transition name="picker">
+              <div v-if="pickerOpen" class="model-menu" role="dialog" aria-label="模型与思考强度" @keydown.esc.stop.prevent="closePicker(true)">
+                <p class="menu-label">模型</p>
+                <div class="menu-models">
+                  <button v-for="item in pickerModels" :key="item.id || 'default'" type="button" :aria-pressed="item.id === (settings.model || '')" @click="chooseModel(item.id)"><span>{{ item.name || item.id }}</span><AppIcon v-if="item.id === (settings.model || '')" name="check" :size="14" /></button>
+                </div>
+                <p class="menu-label">思考强度</p>
+                <div class="menu-efforts">
+                  <button v-for="value in pickerEfforts" :key="value || 'default'" type="button" :aria-pressed="value === (settings.effort || '')" @click="chooseEffort(value)">{{ effortLabel(value) }}</button>
+                </div>
+                <button type="button" class="menu-more" @click="moreSettings">服务商、密钥与预算…</button>
+              </div>
+            </Transition>
+          </div>
+          <button v-if="busy" class="send-button stop" data-tip="停止回答" @click="stop">停止</button>
+          <button v-else class="send-button" :disabled="!prompt.trim()" data-tip="发送" :data-tip-key="sendShortcut || undefined" @click="send()">发送 ↑</button>
+        </div>
         </div>
         <p v-if="status" class="ai-status" :class="{ error: statusError }" role="status">{{ status }}</p>
       </div>
@@ -174,8 +239,8 @@ button{font:inherit;cursor:pointer;color:var(--control-ink)}
 textarea{box-sizing:border-box;display:block;width:100%;resize:vertical;max-height:180px;min-height:64px;background:transparent;border:0;color:var(--control-ink);border-radius:22px 22px 0 0;font:inherit;font-size:13px;line-height:1.6;padding:12px 15px 4px;margin:0;outline:none;box-shadow:none}
 textarea:hover:not(:focus),textarea:focus{background:transparent;border:0;box-shadow:none}
 .composer-actions{display:flex;align-items:center;gap:8px;min-width:0;padding:4px 5px 5px 5px}
-.composer-actions span{flex:1;min-width:0;margin-left:auto;font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}
-.composer-actions .secondary-action{border-color:transparent;background-color:var(--fill-4);background-image:none;box-shadow:none;padding:7px 13px;font-weight:550}
+.composer-actions .clear-conversation{flex:0 0 36px;width:36px;padding:0;border-radius:50%;font-size:12px}
+.composer-actions .secondary-action{border-color:transparent;background-color:var(--fill-4);background-image:none;box-shadow:none;font-weight:550}
 .composer-actions .secondary-action::before{content:none}
 .composer-actions .secondary-action:hover:not(:disabled){background-color:var(--fill-2);border-color:transparent}
 /* 发送是一枚着色玻璃胶囊：主色染透材质，前景固定为 accent-on。 */
@@ -185,6 +250,31 @@ textarea:hover:not(:focus),textarea:focus{background:transparent;border:0;box-sh
 .send-button.stop{background-color:color-mix(in srgb,var(--danger) 16%,var(--glass-2));border-color:color-mix(in srgb,var(--danger) 30%,transparent);color:var(--control-ink);box-shadow:none}
 .send-button.stop:hover:not(:disabled){background-color:color-mix(in srgb,var(--danger) 24%,var(--glass-2));color:var(--control-ink)}
 button:disabled{opacity:.42;cursor:default}
+/* 模型与思考强度：发送键旁的一枚胶囊，展开为向上弹出的实底菜单。菜单独占合成层：否则输入框的滚动层会被画在菜单之上。 */
+.model-picker-host{position:relative;flex:1 1 auto;min-width:0;display:flex;justify-content:flex-end}
+.model-picker{display:flex;align-items:center;gap:6px;max-width:100%;min-width:0;height:36px;padding:0 10px 0 12px;border:0;border-radius:var(--r-full);background:var(--fill-4);box-shadow:none;font-size:12px;color:var(--control-ink);transition:background-color var(--dur-1) var(--ease-soft)}
+.model-picker:hover:not(:disabled),.model-picker[aria-expanded='true']{background:var(--fill-2)}
+.picker-model{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.picker-effort{flex:0 0 auto;padding:1px 7px;border-radius:var(--r-full);background:color-mix(in srgb,var(--accent) 13%,transparent);color:var(--accent);font-size:10.5px;font-weight:650}
+.picker-chevron{flex:0 0 auto;opacity:.55;transition:transform var(--dur-bounce) var(--spring-snappy)}
+.model-picker[aria-expanded='true'] .picker-chevron{transform:rotate(180deg)}
+.model-menu{position:absolute;right:-6px;bottom:calc(100% + 12px);z-index:20;width:min(256px,calc(100vw - 32px));max-height:min(380px,60vh);overflow:auto;padding:8px;border:1px solid var(--glass-outline);border-radius:var(--r-lg);background-color:var(--surface);background-image:var(--popup-sheen);box-shadow:var(--shadow-3),var(--glass-edge);color:var(--surface-ink);transform-origin:85% 100%;scrollbar-width:thin;will-change:transform}
+.menu-label{margin:4px 8px 6px;font-size:10.5px;font-weight:600;letter-spacing:.4px;color:var(--surface-muted)}
+.menu-models{display:grid;gap:1px;margin-bottom:8px}
+.menu-models button{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;min-height:34px;padding:6px 10px;border:0;border-radius:10px;background:transparent;box-shadow:none;font-size:12.5px;text-align:left;color:var(--surface-ink)}
+.menu-models button span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.menu-models button:hover{background:var(--fill-3)}
+.menu-models button[aria-pressed='true']{background:color-mix(in srgb,var(--accent) 12%,transparent);font-weight:600}
+.menu-models button svg{color:var(--accent)}
+.menu-efforts{display:flex;flex-wrap:wrap;gap:5px;padding:0 4px 8px}
+.menu-efforts button{height:30px;padding:0 11px;border:1px solid var(--glass-outline);border-radius:var(--r-full);background:var(--fill-4);box-shadow:none;font-size:12px;color:var(--surface-ink)}
+.menu-efforts button:hover{background:var(--fill-3)}
+.menu-efforts button[aria-pressed='true']{background:var(--accent-glass);border-color:transparent;color:var(--accent-on);font-weight:600}
+.menu-more{display:block;width:100%;margin-top:2px;padding:8px 10px;border:0;border-top:1px solid var(--separator);border-radius:0 0 10px 10px;background:transparent;box-shadow:none;text-align:left;font-size:12px;color:var(--accent)}
+.menu-more:hover{background:var(--fill-4)}
+.picker-enter-active{transition:opacity var(--dur-2) var(--ease-out),transform var(--dur-bounce) var(--spring-snappy)}
+.picker-leave-active{transition:opacity var(--dur-1) var(--ease-out),transform var(--dur-1) var(--ease-out)}
+.picker-enter-from,.picker-leave-to{opacity:0;transform:translateY(8px) scale(.9)}
 .ai-status{font-size:11px;line-height:1.6;color:var(--muted);margin:10px 2px 0;overflow-wrap:anywhere}
 .ai-status.error{color:var(--danger)}
 .ai-selection-context{--ink:var(--surface-ink);--control-ink:var(--surface-ink);--secondary:var(--surface-secondary);--muted:var(--surface-muted);--control-hover:color-mix(in srgb,var(--surface-ink) 7%,var(--surface-2));--glass-label-shadow:none;padding:9px 10px 10px 12px;background:var(--surface-2);color:var(--surface-ink);text-shadow:none;border:1px solid var(--line-soft);border-radius:var(--r-md);margin-bottom:10px;box-shadow:inset 0 1px 0 rgb(255 255 255 / .3)}

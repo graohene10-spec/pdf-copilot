@@ -103,9 +103,9 @@ async function draft(index, value) {
 }
 async function crop(offset = 0, expectsQuick = true) {
   await readyPdf();
-  const scale = await page.locator('.pdf-reader:visible .reader-zoom button[title="适应宽度"]').innerText();
+  const scale = await page.locator('.pdf-reader:visible .reader-zoom button[data-tip="适应宽度"]').innerText();
   const before = expectsQuick ? await page.screenshot({ animations: 'disabled' }) : null;
-  await page.getByTitle('框选公式或图表作为 AI 上下文', { exact: true }).click();
+  await page.locator('[data-tip="框选公式或图表作为 AI 上下文"]').click();
   await activeSurface().locator('xpath=self::*[contains(@class,"capture-mode")]').waitFor();
   const bounds = await activeSurface().boundingBox(); assert.ok(bounds);
   const rectangle = { x: bounds.x + 35 + offset * 11, y: bounds.y + 45 + offset * 15, width: 152 + offset * 9, height: 88 + offset * 5 };
@@ -173,7 +173,7 @@ try {
   await dialog().getByRole('button', { name: '取消', exact: true }).click(); await dialog().waitFor({ state: 'detached' });
   assert.equal((await preferences())?.pdf?.quickAskOnCapture ?? false, false);
   await crop(0, false); assert.equal(await quick().count(), 0);
-  await pane().getByTitle('清除选区', { exact: true }).click(); await closeAssistant();
+  await pane().locator('[data-tip="清除选区"]').click(); await closeAssistant();
   checks.push('The optional mode defaults off; cancelling its settings preserves the existing auto-open capture flow.');
 
   await configure('capture-quick-local-key');
@@ -188,7 +188,7 @@ try {
   await draft(0, '保留的截图草稿 A');
   const first = await crop();
   assert.equal(await pane().count(), 0, 'Capture choices do not open the assistant.');
-  assert.equal(await page.locator('.pdf-reader:visible .reader-zoom button[title="适应宽度"]').innerText(), first.scale, 'No sidebar resize occurs at crop completion.');
+  assert.equal(await page.locator('.pdf-reader:visible .reader-zoom button[data-tip="适应宽度"]').innerText(), first.scale, 'No sidebar resize occurs at crop completion.');
   assert.deepEqual((await quick().locator('.capture-quick-buttons button').allTextContents()).map(value => value.trim()), labels);
   assert.equal(await quick().getByRole('button', { name: '继续到阅读助手', exact: true }).isVisible(), true);
   const hole = await page.locator('.capture-quick-hole').boundingBox(); assert.ok(hole);
@@ -259,7 +259,7 @@ try {
   await openAssistant(); await preview().waitFor(); assert.equal(await preview().getAttribute('src'), otherImage);
   await closeAssistant(); await select(0); await openAssistant(); await preview().waitFor();
   assert.notEqual(await preview().getAttribute('src'), otherImage);
-  await pane().getByTitle('清除选区', { exact: true }).click(); await closeAssistant();
+  await pane().locator('[data-tip="清除选区"]').click(); await closeAssistant();
   checks.push('Resizing closes only the floating layer and keeps its crop available; switching tabs while preparing cancels the pending send and preserves the other file’s independent screenshot.');
 
   await draft(0, '队列草稿 A'); await crop(0); await quick().getByRole('button', { name: labels[0], exact: true }).click();

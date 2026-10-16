@@ -38,7 +38,7 @@ async function drag(indices, { leave = false, textOnly = false } = {}) {
   }, { indices, leave, textOnly });
 }
 const pdf = () => page.locator('.pdf-scroll:visible');
-const zoom = () => page.locator('.reader-tools:visible .reader-zoom [title="适应宽度"]').innerText();
+const zoom = () => page.locator('.reader-tools:visible .reader-zoom [data-tip="适应宽度"]').innerText();
 async function readyPdf() {
   await page.locator('.pdf-scroll:visible .page-slot.page-ready').first().waitFor();
   await page.waitForFunction(() => {

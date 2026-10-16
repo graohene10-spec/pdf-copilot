@@ -230,6 +230,70 @@
   box-shadow: none;
 }
 
+/* ---- 悬停提示 -------------------------------------------------------- */
+
+/* 停留片刻后出现的玻璃提示：控件名称 + 当前快捷键。不接收指针，不遮挡点击。 */
+.glass-tooltip {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(340px, calc(100vw - 16px));
+  padding: 5px 9px 5px 11px;
+  border: 1px solid var(--glass-outline);
+  border-radius: 10px;
+  background-color: var(--popup-glass);
+  background-image: var(--popup-sheen);
+  -webkit-backdrop-filter: blur(var(--popup-blur)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--popup-blur)) saturate(var(--glass-sat));
+  box-shadow: var(--shadow-2), var(--glass-control-edge);
+  color: var(--surface-ink);
+  font: 500 12px/1.45 var(--font);
+  text-shadow: none;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-4px) scale(.96);
+  transform-origin: 50% 0;
+  transition: opacity var(--dur-1) var(--ease-out), transform var(--dur-spring) var(--spring-snappy);
+}
+
+.glass-tooltip[hidden] {
+  display: none;
+}
+
+.glass-tooltip[data-placement='above'] {
+  transform: translateY(4px) scale(.96);
+  transform-origin: 50% 100%;
+}
+
+.glass-tooltip.visible {
+  opacity: 1;
+  transform: none;
+}
+
+.glass-tooltip kbd {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  border-radius: 6px;
+  background: var(--fill-3);
+  color: var(--surface-muted);
+  font: 600 11px/1.5 var(--font);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glass-tooltip { transition: none; transform: none; }
+}
+
+@media (forced-colors: active) {
+  .glass-tooltip { background: Canvas; color: CanvasText; border-color: CanvasText; }
+}
+
 /* ---- 设置窗：从中心弹出，关闭时收缩 ------------------------------------ */
 
 .settings-pop-enter-active {
