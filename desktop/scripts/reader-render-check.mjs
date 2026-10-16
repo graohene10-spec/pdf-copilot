@@ -185,7 +185,7 @@ try {
     await (await chooser).setFiles({ name: timingSample ? 'sample.pdf' : '渲染连续性验证.pdf', mimeType: 'application/pdf', buffer: timingSample ? await readFile('public/samples/sample.pdf') : fixture() });
   }
   await waitReady();
-  await page.getByTitle('适应宽度', { exact: true }).click(); await waitReady();
+  await page.locator('[data-tip="适应宽度"]').click(); await waitReady();
   // Delay real render continuations so a blank-frame gap cannot hide between snapshots.
   await page.evaluate(async slow => {
     // Use the existing reader reference in both development and production;
@@ -239,9 +239,9 @@ try {
     const ai = await monitor(() => page.getByRole('button', { name: '阅读助手', exact: true }).click(), 1700);
     assertAtomicFit(ai, 'AI first open'); checks.push({ test: 'AI first open', ...ai }); await waitReady();
     await page.getByRole('button', { name: '关闭阅读助手', exact: true }).click(); await waitReady();
-    const outlineOpen = await monitor(() => page.getByTitle('文档目录', { exact: true }).click(), 1400);
+    const outlineOpen = await monitor(() => page.locator('[data-tip="文档目录"]').click(), 1400);
     assertAtomicFit(outlineOpen, 'document outline open'); checks.push({ test: 'document outline open preserves screen bounds until fitted frame', ...outlineOpen }); await waitReady();
-    const outlineClose = await monitor(() => page.getByTitle('文档目录', { exact: true }).click(), 1400);
+    const outlineClose = await monitor(() => page.locator('[data-tip="文档目录"]').click(), 1400);
     assertAtomicFit(outlineClose, 'document outline close'); checks.push({ test: 'document outline close preserves screen bounds until fitted frame', ...outlineClose }); await waitReady();
     const rapid = await monitor(async () => {
       for (let count = 0; count < 8; count++) { await page.getByRole('button', { name: '切换侧栏', exact: true }).click(); await page.waitForTimeout(165); }
@@ -251,13 +251,13 @@ try {
       const toggle = async () => page.evaluate(() => {
         document.querySelector('.sidebar-toggle').click();
         document.querySelector('.ai-toggle').click();
-        document.querySelector('[title="文档详情与标签"]').click();
+        document.querySelector('[data-tip="文档详情与标签"]').click();
       });
       await toggle(); await page.waitForTimeout(90);
       await toggle(); await page.waitForTimeout(90);
       await page.evaluate(() => {
         document.querySelector('.ai-toggle').click();
-        document.querySelector('[title="文档详情与标签"]').click();
+        document.querySelector('[data-tip="文档详情与标签"]').click();
       });
     }, 1800);
     assertContinuous(overlap, 'overlapping and interrupted panels');
@@ -269,30 +269,30 @@ try {
         Math.abs(slot.getBoundingClientRect().width - (view.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight))) < 1;
     });
     checks.push({ test: 'overlapping panel animations and cancellation release resize hold and fit final width', ...overlap });
-    await page.getByTitle('关闭文档详情', { exact: true }).click();
+    await page.locator('[data-tip="关闭文档详情"]').click();
     await page.getByRole('button', { name: '关闭阅读助手', exact: true }).click();
     await waitReady();
     if (!native) {
       await settingsZoom(400);
-      const high = await monitor(() => page.getByTitle('缩小', { exact: true }).click(), 1500);
+      const high = await monitor(() => page.locator('[data-tip="缩小"]').click(), 1500);
       assertContinuous(high, 'high DPI budget'); checks.push({ test: '4x zoom at 2x DPI respects buffer budget', ...high }); await waitReady();
       await settingsZoom(100);
     }
-    await page.getByTitle('缩小', { exact: true }).click(); await waitReady();
+    await page.locator('[data-tip="缩小"]').click(); await waitReady();
     const failed = await monitor(async () => {
       await page.evaluate(async () => {
         const pdf = window.__renderPdf();
         const prototype = Object.getPrototypeOf(await pdf.getPage(1)), original = prototype.render;
         prototype.render = function(options) { prototype.render = original; throw new Error('合成重绘失败验证'); };
       });
-      await page.getByTitle('适应宽度', { exact: true }).click();
+      await page.locator('[data-tip="适应宽度"]').click();
     }, 600);
     assertContinuous(failed, 'render failure');
     await page.locator('.toast-message').filter({ hasText: '合成重绘失败验证' }).waitFor();
-    await page.getByTitle('适应宽度', { exact: true }).click(); await waitReady();
+    await page.locator('[data-tip="适应宽度"]').click(); await waitReady();
     await page.waitForFunction(() => !document.querySelector('.pdf-preview'));
     const count = await page.evaluate(() => window.__pdfRenderCount);
-    await page.getByTitle('适应宽度', { exact: true }).click(); await page.waitForTimeout(500);
+    await page.locator('[data-tip="适应宽度"]').click(); await page.waitForTimeout(500);
     assert.equal(await page.evaluate(() => window.__pdfRenderCount), count, 'An unchanged fit must not start a new raster render');
     checks.push({ test: 'failed redraw retains content, same-scale retry succeeds, unchanged fit skips raster work', ...failed });
     // Text and annotation geometry must be rebuilt at the new scale.
@@ -300,20 +300,20 @@ try {
     await text.waitFor();
     await text.evaluate(element => { const range = document.createRange(); range.selectNodeContents(element); const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range); element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true })); });
     await page.getByRole('button', { name: '用所选文字向 AI 提问', exact: true }).click();
-    await page.getByTitle('清除选区', { exact: true }).click();
+    await page.locator('[data-tip="清除选区"]').click();
     const internal = page.locator('#link-layer button').first();
     await internal.click();
     await page.waitForFunction(() => document.querySelector('[aria-label="页码"]').value === '2');
     await waitReady();
-    await page.getByTitle('框选公式或图表作为 AI 上下文', { exact: true }).click();
+    await page.locator('[data-tip="框选公式或图表作为 AI 上下文"]').click();
     const bounds = await page.locator('#page-surface').boundingBox();
     await page.mouse.move(bounds.x + 25, bounds.y + 35); await page.mouse.down();
     await page.mouse.move(bounds.x + 160, bounds.y + 100); await page.mouse.up();
     await page.locator('.ai-selection-context img').waitFor();
     assert.ok((await page.locator('.ai-selection-context').textContent()).includes('第 2 页'));
     checks.push({ test: 'text selection, internal link and correctly anchored AI crop', passed: true });
-    await page.getByTitle('清除选区', { exact: true }).click();
-    await page.getByTitle('放大', { exact: true }).click(); await page.waitForTimeout(50);
+    await page.locator('[data-tip="清除选区"]').click();
+    await page.locator('[data-tip="放大"]').click(); await page.waitForTimeout(50);
     await page.getByRole('button', { name: '文档库', exact: true }).click();
     await page.getByRole('button', { name: native ? '打开 render-synthetic-native.pdf' : '打开 渲染连续性验证.pdf', exact: true }).click();
     await waitReady(); await page.waitForFunction(() => !document.querySelector('.pdf-preview'));
@@ -322,17 +322,17 @@ try {
     // A manual zoom issued while an automatic fit is still painting wins.
     const first = page.getByLabel('页码', { exact: true });
     await first.fill('1'); await first.press('Enter'); await waitReady();
-    await page.getByTitle('适应宽度', { exact: true }).click(); await waitReady();
+    await page.locator('[data-tip="适应宽度"]').click(); await waitReady();
     await page.getByRole('button', { name: '切换侧栏', exact: true }).click();
     await page.waitForFunction(() => document.querySelector('#page-surface')?.classList.contains('pdf-preview'));
-    await page.getByTitle('缩小', { exact: true }).click();
+    await page.locator('[data-tip="缩小"]').click();
     const manualScale = await page.locator('#page-surface').evaluate(element => Number(element.style.getPropertyValue('--scale-factor')));
     await waitReady(); await page.waitForTimeout(600);
     assert.equal(await page.locator('#page-surface').evaluate(element => Number(element.style.getPropertyValue('--scale-factor'))), manualScale);
     checks.push({ test: 'manual zoom cancels a staged automatic fit without a late size change', passed: true });
     // Navigating outside the five-page window releases the staged page.
     // The final available width must still be applied to the new active page.
-    await page.getByTitle('适应宽度', { exact: true }).click(); await waitReady();
+    await page.locator('[data-tip="适应宽度"]').click(); await waitReady();
     await page.getByRole('button', { name: '切换侧栏', exact: true }).click();
     await page.waitForFunction(() => document.querySelector('#page-surface')?.classList.contains('pdf-preview'));
     await first.fill('7'); await first.press('Enter');

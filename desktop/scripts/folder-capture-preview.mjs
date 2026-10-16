@@ -37,9 +37,9 @@ try {
   await page.locator('.toast-message').waitFor({ state: 'hidden' });
   assert.equal(await page.getByRole('tab').count(), 3);
   for (const theme of ['light', 'dark']) {
-    if (theme === 'dark') await page.getByTitle('切换深色主题', { exact: true }).click();
+    if (theme === 'dark') await page.locator('[data-tip="切换深色主题"]').click();
     await page.waitForFunction(theme => document.documentElement.dataset.theme === theme, theme);
-    await page.getByTitle('框选公式或图表作为 AI 上下文', { exact: true }).click();
+    await page.locator('[data-tip="框选公式或图表作为 AI 上下文"]').click();
     const bounds = await page.locator('#page-surface').boundingBox();
     const start = { x: bounds.x + bounds.width * .065, y: bounds.y + bounds.width * .09 };
     const end = { x: bounds.x + bounds.width * .83, y: bounds.y + bounds.width * .34 };
@@ -72,7 +72,7 @@ try {
     await page.evaluate(() => document.getElementById('preview-cursor')?.remove());
     await page.mouse.up();
     await page.locator('.ai-selection-context img').waitFor();
-    await page.getByTitle('清除选区', { exact: true }).click();
+    await page.locator('[data-tip="清除选区"]').click();
     await page.getByRole('button', { name: '关闭阅读助手', exact: true }).click();
     await ready(); await page.waitForTimeout(300);
     checks.push(`${theme}: cursor asset / 16px hotspot, dual outline capture, real PDF filter, capture context`);

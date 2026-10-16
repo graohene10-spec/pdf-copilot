@@ -45,8 +45,8 @@ const clear = () => pane().getByRole('button', { name: '清空对话', exact: tr
 const prompt = () => pane().getByRole('textbox', { name: '向 AI 提问', exact: true });
 const geometry = () => pane().evaluate(element => {
   const bounds = node => { const rect = node.getBoundingClientRect(); return { x: rect.x, y: rect.y, width: rect.width, height: rect.height, right: rect.right, bottom: rect.bottom }; };
-  const modelText = element.querySelector('.model-summary'), shortcut = element.querySelector('.composer-actions > span'), summary = element.querySelector('.task-summary');
-  return { pane: bounds(element), modelBar: bounds(element.querySelector('.model-bar')), headingCount: element.querySelectorAll('.ai-heading,h2,.heading-actions').length, composer: bounds(element.querySelector('.composer-actions')), change: bounds(element.querySelector('.model-change')), close: bounds(element.querySelector('.close-assistant')), summary: summary ? bounds(summary) : null, summaryText: summary?.textContent || '', clear: bounds(element.querySelector('.clear-conversation')), send: bounds(element.querySelector('.send-button')), shortcut: bounds(shortcut), shortcutText: shortcut.textContent, model: bounds(modelText), modelEllipsis: getComputedStyle(modelText).textOverflow, modelOverflow: modelText.scrollWidth > modelText.clientWidth, changeFont: getComputedStyle(element.querySelector('.model-change')).fontSize, clearFont: getComputedStyle(element.querySelector('.clear-conversation')).fontSize, bodyOverflow: document.documentElement.scrollWidth > innerWidth };
+  const modelText = element.querySelector('.model-summary'), picker = element.querySelector('.model-picker'), summary = element.querySelector('.task-summary');
+  return { pane: bounds(element), modelBar: bounds(element.querySelector('.model-bar')), headingCount: element.querySelectorAll('.ai-heading,h2,.heading-actions').length, composer: bounds(element.querySelector('.composer-actions')), change: bounds(element.querySelector('.model-change')), close: bounds(element.querySelector('.close-assistant')), summary: summary ? bounds(summary) : null, summaryText: summary?.textContent || '', clear: bounds(element.querySelector('.clear-conversation')), send: bounds(element.querySelector('.send-button')), picker: bounds(picker), pickerText: picker.textContent, shortcutHints: element.querySelectorAll('.composer-actions > span').length, model: bounds(modelText), modelEllipsis: getComputedStyle(modelText).textOverflow, modelOverflow: modelText.scrollWidth > modelText.clientWidth, changeFont: getComputedStyle(element.querySelector('.model-change')).fontSize, clearFont: getComputedStyle(element.querySelector('.clear-conversation')).fontSize, bodyOverflow: document.documentElement.scrollWidth > innerWidth };
 });
 async function assertLayout(label) {
   await page.mouse.move(5, 5); await page.waitForTimeout(200);
@@ -59,7 +59,9 @@ async function assertLayout(label) {
   if (value.summary) assert.ok(value.summary.right <= value.change.x + 1 && value.summary.bottom <= value.modelBar.bottom);
   assert.ok(value.model.width > 60, 'Long model retains readable leading text at the minimum width.');
   assert.ok(parseFloat(value.changeFont) >= 12 && parseFloat(value.clearFont) >= 12);
-  assert.ok(value.clear.right <= value.shortcut.x + 1 && value.shortcut.right <= value.send.x + 1, 'Clear, shortcut and send occupy separate hit areas.');
+  assert.ok(value.clear.right <= value.picker.x + 1 && value.picker.right <= value.send.x + 1, 'Clear, model picker and send occupy separate hit areas.');
+  assert.ok(value.picker.width >= 60 && value.picker.height >= 32, 'The model picker keeps a usable hit area beside Send.');
+  assert.equal(value.shortcutHints, 0, 'The Ctrl + Enter hint is not repeated beside Send; it lives in the tooltip.');
   assert.ok(value.send.right <= value.composer.right + 1 && value.send.bottom <= innerHeightOf(value), 'Send remains inside the visible composer.');
   assert.equal(value.modelEllipsis, 'ellipsis'); assert.equal(value.modelOverflow, true);
   assert.equal(value.bodyOverflow, false);
@@ -118,12 +120,30 @@ try {
   await dialog.waitFor({ state: 'detached' });
   await assertLayout('1000×680, long model name, empty chat');
   assert.equal(await clear().isDisabled(), true);
+  // Quick picker beside Send: changes only model / effort, closes with Esc and keeps the pane.
+  const picker = pane().getByRole('button', { name: '选择模型与思考强度', exact: true });
+  const stored = () => page.evaluate(() => JSON.parse(localStorage.getItem('paperdesk.ai.settings.v1') || '{}'));
+  const beforePick = await stored();
+  await picker.click();
+  const menu = pane().getByRole('dialog', { name: '模型与思考强度', exact: true });
+  await menu.waitFor();
+  await menu.getByRole('button', { name: '低', exact: true }).click();
+  const afterPick = await stored();
+  assert.equal(afterPick.effort, 'low');
+  assert.deepEqual({ ...afterPick, effort: beforePick.effort }, beforePick, 'Only the effort changed in stored AI settings.');
+  assert.equal(await menu.getByRole('button', { name: '低', exact: true }).getAttribute('aria-pressed'), 'true');
+  assert.match(await picker.innerText(), /低/);
+  await page.keyboard.press('Escape');
+  await menu.waitFor({ state: 'detached' });
+  assert.equal(await pane().count(), 1, 'Esc closes only the picker.');
+  assert.equal(await picker.evaluate(element => document.activeElement === element), true, 'Focus returns to the picker.');
+  checks.push({ label: 'Model picker beside Send stores only model / effort and closes with Esc', afterPick });
   await page.locator('.markdown-paper p').first().evaluate(element => {
     const range = document.createRange(); range.selectNodeContents(element);
     const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range);
     element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
   });
-  const selectionClose = pane().getByTitle('清除选区', { exact: true }); await selectionClose.waitFor();
+  const selectionClose = pane().locator('[data-tip="清除选区"]'); await selectionClose.waitFor();
   const selectionBounds = await selectionClose.boundingBox();
   assert.ok(selectionBounds.width < 24 && selectionBounds.height < 24, 'Selection × keeps its compact hit area.');
   await selectionClose.click();
@@ -144,7 +164,7 @@ try {
   await until(() => change().isEnabled()); assert.equal(await clear().isEnabled(), true);
   await assertLayout('Completed A while B runs: both actions usable for A');
   await page.screenshot({ path: resolve(artifacts, 'ai-pane-actions-minimum-light.png'), animations: 'disabled' });
-  await page.getByTitle('切换深色主题', { exact: true }).click();
+  await page.locator('[data-tip="切换深色主题"]').click();
   await page.screenshot({ path: resolve(artifacts, 'ai-pane-actions-minimum-dark.png'), animations: 'disabled' });
   await clear().click();
   assert.equal(await pane().locator('.ai-message').count(), 0); assert.equal(await clear().isDisabled(), true);

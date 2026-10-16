@@ -21,6 +21,7 @@ const props = withDefaults(defineProps<{
   zoomStep?: number
   fitRequest?: number
   findShortcut?: string
+  shortcuts?: Record<string, string>
   initialView?: { page: number; fraction: number; scale: number | null; outlineOpen: boolean; search?: { query: string; current: number } }
 }>(), { initialPage: 1, sidebarFitEnabled: true, initialZoom: 'fit', zoomStep: .1, fitRequest: 0 })
 const emit = defineEmits<{
@@ -616,10 +617,10 @@ defineExpose({ goToPage, getPage: () => page.value, getPdf: () => pdf, clearSele
 <template>
   <div class="pdf-reader reader-engine">
     <div class="reader-tools">
-      <button class="quiet-button" :class="{ active: outlineOpen }" @click="toggleOutline" title="文档目录"><AppIcon name="list" :size="17" />目录</button>
-      <div class="reader-page-control"><button @click="previousPage" :disabled="page <= 1" title="上一页">‹</button><input aria-label="页码" v-model.number="pageInput" type="number" min="1" :max="total" @change="goToPage(pageInput)" @keydown.enter="goToPage(pageInput)" /><span>/ {{ total || '—' }}</span><button @click="nextPage" :disabled="page >= total" title="下一页">›</button></div>
-      <div class="reader-zoom"><button title="缩小" @click="zoomOut">−</button><button @click="fitWidth" title="适应宽度">{{ scale >= .01 ? Math.round(scale * 100) : Math.round(scale * 1000) / 10 }}%</button><button title="放大" @click="zoomIn">＋</button></div>
-      <button class="quiet-button crop-toggle" :class="{ active: capture }" @click="toggleCapture" title="框选公式或图表作为 AI 上下文"><AppIcon name="crop" :size="17" />{{ capture ? '拖动框选' : '框选' }}</button>
+      <button class="quiet-button" :class="{ active: outlineOpen }" @click="toggleOutline" data-tip="文档目录" :data-tip-key="shortcuts?.outline"><AppIcon name="list" :size="17" />目录</button>
+      <div class="reader-page-control"><button @click="previousPage" :disabled="page <= 1" data-tip="上一页" aria-label="上一页" :data-tip-key="shortcuts?.previousPage">‹</button><input aria-label="页码" v-model.number="pageInput" type="number" min="1" :max="total" @change="goToPage(pageInput)" @keydown.enter="goToPage(pageInput)" /><span>/ {{ total || '—' }}</span><button @click="nextPage" :disabled="page >= total" data-tip="下一页" aria-label="下一页" :data-tip-key="shortcuts?.nextPage">›</button></div>
+      <div class="reader-zoom"><button data-tip="缩小" aria-label="缩小" :data-tip-key="shortcuts?.zoomOut" @click="zoomOut">−</button><button @click="fitWidth" data-tip="适应宽度" :data-tip-key="shortcuts?.fitWidth">{{ scale >= .01 ? Math.round(scale * 100) : Math.round(scale * 1000) / 10 }}%</button><button data-tip="放大" aria-label="放大" :data-tip-key="shortcuts?.zoomIn" @click="zoomIn">＋</button></div>
+      <button class="quiet-button crop-toggle" :class="{ active: capture }" @click="toggleCapture" data-tip="框选公式或图表作为 AI 上下文" :data-tip-key="shortcuts?.capture"><AppIcon name="crop" :size="17" />{{ capture ? '拖动框选' : '框选' }}</button>
       <ReaderSearch ref="searchControl" v-model="searchQuery" :busy="searchBusy" :current="searchCount" :total="searchMatches.length" :status="searchStatus" :shortcut="findShortcut" @next="nextSearch" @previous="previousSearch" @clear="clearSearch" />
     </div>
     <div class="reader-engine-body">

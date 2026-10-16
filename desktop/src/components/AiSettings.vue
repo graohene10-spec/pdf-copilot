@@ -115,26 +115,30 @@ defineExpose({ save, hasChanges: () => edited.value })
 </template>
 
 <style scoped>
-.ai-settings.embedded{padding:0;height:auto}
+.ai-settings.embedded{position:relative;padding:14px 16px 16px;height:auto;border-radius:var(--r-lg);background-color:color-mix(in srgb,var(--glass-2) 60%,var(--fill-4));background-image:var(--glass-sheen);box-shadow:var(--glass-control-edge)}
 .ai-settings{padding:20px;display:flex;flex-direction:column;gap:14px;overflow:auto;height:100%;box-sizing:border-box}
-label{font-size:12px;font-weight:500;display:flex;flex-direction:column;gap:7px;color:var(--secondary)}
-input,select{font:inherit;font-size:13px;color:var(--control-ink);background-color:var(--glass-2);background-image:var(--glass-sheen);border:1px solid var(--line);border-radius:var(--r-sm);padding:10px;min-width:0;transition:border-color var(--dur-1) var(--ease-soft),box-shadow var(--dur-1) var(--ease-soft)}
-input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-ring)}
+label{font-size:12px;font-weight:550;display:flex;flex-direction:column;gap:7px;color:var(--secondary)}
+input:not([type='checkbox']),select{font:inherit;font-size:13px;color:var(--control-ink);height:38px;padding:7px 14px;min-width:0}
+select{padding-right:34px}
 button{font:inherit;cursor:pointer;color:var(--control-ink)}
-.check{flex-direction:row;align-items:center;font-size:12px}
-.check input{margin:0;accent-color:var(--accent)}
-.settings-note{font-size:12px;line-height:1.7;color:var(--muted);margin:0}
-.text-button{border:0;background:none;color:var(--control-ink);padding:4px;border-radius:var(--r-xs)}
-.text-button:hover:not(:disabled){background:var(--control-hover);color:var(--control-ink)}
-.primary-button,.secondary-button{border:1px solid var(--glass-outline);border-radius:var(--r-sm);padding:10px;background-color:var(--glass-2);background-image:var(--glass-sheen);color:var(--control-ink);transition:background-color var(--dur-1) var(--ease-soft)}
+.check{flex-direction:row-reverse;justify-content:space-between;align-items:center;font-size:12.5px;cursor:pointer}
+.check input{margin:0}
+.settings-note{font-size:11.5px;line-height:1.7;color:var(--muted);margin:0}
+.text-button{border:0;background:none;box-shadow:none;color:var(--accent);padding:4px 10px}
+.text-button:hover:not(:disabled){background:color-mix(in srgb,var(--accent) 10%,transparent);color:var(--accent)}
+.primary-button,.secondary-button{height:38px;border:1px solid var(--glass-outline);border-radius:var(--r-full);padding:8px 16px;background-color:var(--glass-2);background-image:var(--glass-sheen);box-shadow:var(--glass-control-shadow);color:var(--control-ink);font-weight:600}
+.secondary-button{align-self:flex-start}
 .secondary-button:hover:not(:disabled){background-color:var(--control-hover);color:var(--control-ink)}
-.primary-button{background-color:var(--control-selected);font-weight:550;box-shadow:var(--glass-control-shadow)}
-.primary-button:hover:not(:disabled){background-color:var(--control-selected-hover);color:var(--control-ink)}
+.primary-button{background-color:var(--accent-glass);background-image:var(--glass-tint-sheen);border-color:transparent;color:var(--accent-on)}
+.primary-button:hover:not(:disabled){background-color:var(--accent-glass-hover);color:var(--accent-on)}
 .settings-status{font-size:12px;line-height:1.6;margin:0;color:var(--muted);overflow-wrap:anywhere}
 .error{color:var(--danger)}
-.limit-settings{font-size:12px;color:var(--secondary)}
-.limit-settings summary{cursor:pointer;padding:8px 0;color:var(--control-ink);transition:background-color var(--dur-1) var(--ease-soft)}
+.limit-settings{font-size:12.5px;color:var(--secondary);border-top:1px solid var(--separator);padding-top:4px}
+.limit-settings summary{cursor:pointer;display:flex;align-items:center;justify-content:space-between;min-height:40px;padding:6px 4px;border-radius:var(--r-sm);color:var(--control-ink);font-weight:550;list-style:none;transition:background-color var(--dur-1) var(--ease-soft)}
+.limit-settings summary::-webkit-details-marker{display:none}
+.limit-settings summary::after{content:'›';font-size:17px;line-height:1;color:var(--muted);transition:transform var(--dur-bounce) var(--spring-snappy)}
+.limit-settings[open] summary::after{transform:rotate(90deg)}
 .limit-settings summary:hover{background-color:var(--control-hover);color:var(--control-ink)}
-.limit-settings label{margin:12px 0}
+.limit-settings label{margin:10px 0}
 button:disabled{opacity:.5;cursor:wait}
 </style>

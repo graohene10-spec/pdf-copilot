@@ -9,7 +9,7 @@ import { markdownTextIndex, markdownSearchRanges, markdownSearchHighlighter } fr
 import AppIcon from './AppIcon.vue'
 import ReaderSearch from './ReaderSearch.vue'
 
-const props = withDefaults(defineProps<{ data: Uint8Array; documentId: string; initialProgress?: number; fontSize?: number; contentWidth?: number; findShortcut?: string; initialView?: { progress: number; raw: boolean; outlineOpen: boolean; fontSize: number; search?: { query: string; current: number } } }>(), { initialProgress: 0, fontSize: 17, contentWidth: 820, findShortcut: 'Ctrl + F' })
+const props = withDefaults(defineProps<{ data: Uint8Array; documentId: string; initialProgress?: number; fontSize?: number; contentWidth?: number; findShortcut?: string; shortcuts?: Record<string, string>; initialView?: { progress: number; raw: boolean; outlineOpen: boolean; fontSize: number; search?: { query: string; current: number } } }>(), { initialProgress: 0, fontSize: 17, contentWidth: 820, findShortcut: 'Ctrl + F' })
 const emit = defineEmits<{
   ready: [value: { text: string; headings: { title: string; id: string; level: number }[] }]
   progress: [value: { page: number; pageCount: number; progress: number }]
@@ -264,9 +264,9 @@ defineExpose({ goToPage, goToHeading, zoomIn, zoomOut, toggleOutline, nextPage, 
 <template>
   <div class="markdown-reader reader-engine">
     <div class="reader-tools">
-      <button class="quiet-button" :class="{ active: outlineOpen }" @click="toggleOutline"><AppIcon name="list" :size="17" />目录</button>
+      <button class="quiet-button" :class="{ active: outlineOpen }" data-tip="文档目录" :data-tip-key="shortcuts?.outline" @click="toggleOutline"><AppIcon name="list" :size="17" />目录</button>
       <span class="reader-format-label">Markdown</span>
-      <div class="reader-zoom"><button @click="zoomOut" title="缩小字号">A−</button><span>{{ displayFontSize }}</span><button @click="zoomIn" title="放大字号">A＋</button></div>
+      <div class="reader-zoom"><button @click="zoomOut" data-tip="缩小字号" aria-label="缩小字号" :data-tip-key="shortcuts?.zoomOut">A−</button><span>{{ displayFontSize }}</span><button @click="zoomIn" data-tip="放大字号" aria-label="放大字号" :data-tip-key="shortcuts?.zoomIn">A＋</button></div>
       <button class="quiet-button" :class="{ active: raw }" @click="raw = !raw">{{ raw ? '阅读视图' : '查看源码' }}</button>
       <ReaderSearch ref="searchControl" v-model="searchQuery" :busy="searchBusy" :current="searchCurrent" :total="searchTotal" :status="searchStatus" :shortcut="props.findShortcut" @next="moveSearch(1)" @previous="moveSearch(-1)" @clear="clearSearch" />
     </div>

@@ -65,7 +65,7 @@ async function assistant() {
 }
 async function ask(job) { await assistant(); await page.getByRole('textbox',{name:'向 AI 提问'}).fill(job); await page.getByRole('button',{name:'发送 ↑',exact:true}).click(); }
 async function capture() {
-  const toggle = page.getByTitle('框选公式或图表作为 AI 上下文', { exact: true });
+  const toggle = page.locator('[data-tip="框选公式或图表作为 AI 上下文"]');
   if (!(await toggle.getAttribute('class'))?.split(' ').includes('active')) await toggle.click();
   const paper = await page.locator('#page-surface').boundingBox(), scroll = await page.locator('.pdf-scroll').boundingBox();
   const x = Math.max(paper.x, scroll.x) + 35, y = Math.max(paper.y, scroll.y) + 55;
@@ -115,7 +115,7 @@ try {
   }
   page.on('pageerror', error=>errors.push(error.message));
   await readyPdf(1); assert.equal(await page.getByRole('tab').count(),3);
-  await page.getByTitle('适应宽度',{exact:true}).click(); await readyPdf(1);
+  await page.locator('[data-tip="适应宽度"]').click(); await readyPdf(1);
   if (native && oldPreferences && JSON.parse(oldPreferences).pdf?.openAssistantOnCapture === false) {
     await page.getByRole('button',{name:'打开设置',exact:true}).click();
     await page.getByRole('dialog').getByRole('button',{name:'阅读',exact:true}).click();
@@ -134,15 +134,15 @@ try {
   await page.getByRole('button',{name:'用所选文字向 AI 提问',exact:true}).click();
   await page.getByRole('textbox',{name:'向 AI 提问'}).waitFor();
   await page.waitForFunction(()=>document.activeElement?.getAttribute('aria-label')==='向 AI 提问');
-  await page.getByTitle('清除选区',{exact:true}).click();
+  await page.locator('[data-tip="清除选区"]').click();
   await page.getByRole('button',{name:'关闭阅读助手',exact:true}).click();
-  await page.getByTitle('框选公式或图表作为 AI 上下文',{exact:true}).click();
+  await page.locator('[data-tip="框选公式或图表作为 AI 上下文"]').click();
   const bounds = await page.locator('#page-surface').boundingBox();
   await page.mouse.move(bounds.x+30,bounds.y+40); await page.mouse.down(); await page.mouse.move(bounds.x+160,bounds.y+100); await page.mouse.up();
   await page.locator('.ai-selection-context img').waitFor();
   await page.waitForFunction(()=>document.activeElement?.getAttribute('aria-label')==='向 AI 提问');
   assert.equal(calls.length,0);
-  await page.getByTitle('清除选区',{exact:true}).click();
+  await page.locator('[data-tip="清除选区"]').click();
   report.push('Text selection never auto-opens; one click carries text and focuses composer; PDF capture auto-opens with no automatic model request');
 
   await page.getByRole('button',{name:'更改',exact:true}).click();
@@ -155,7 +155,7 @@ try {
   await page.getByLabel('最多等待的提问',{exact:true}).fill('1');
   await page.getByRole('dialog').getByRole('button',{name:'保存',exact:true}).click();
 
-  await go(2); await page.getByTitle('放大',{exact:true}).click(); await readyPdf(2);
+  await go(2); await page.locator('[data-tip="放大"]').click(); await readyPdf(2);
   const aScale = await page.locator('.reader-zoom').innerText();
   await page.locator('.pdf-scroll').evaluate(el=>el.scrollTop+=110); await page.waitForTimeout(100);
   const aFraction = await page.locator('.pdf-scroll').evaluate(el=>{const slot=document.querySelector('#page-surface');return (el.scrollTop-slot.offsetTop)/slot.offsetHeight;});

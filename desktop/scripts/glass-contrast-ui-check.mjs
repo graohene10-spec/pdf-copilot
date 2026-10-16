@@ -82,16 +82,16 @@ async function localTextContrast(selector, side) {
     metrics.localLabelsChecked = (metrics.localLabelsChecked || 0) + 1;
   }
 }
-async function themeText(selector) {
-  const colors = await page.locator(selector).first().evaluate(element => {
+async function themeText(selector, token = '--surface-ink') {
+  const colors = await page.locator(selector).first().evaluate((element, token) => {
     const probe = document.createElement('span');
-    probe.style.color = 'var(--surface-ink)';
+    probe.style.color = `var(${token})`;
     document.documentElement.append(probe);
     const expected = getComputedStyle(probe).color;
     probe.remove();
     return { actual: getComputedStyle(element).color, expected };
-  });
-  assert.equal(colors.actual, colors.expected, `${selector} must retain its opaque surface theme text.`);
+  }, token);
+  assert.equal(colors.actual, colors.expected, `${selector} must retain its theme text (${token}), not a wallpaper-adapted ink.`);
 }
 async function noAdaptation() {
   await page.waitForFunction(() => !document.querySelector('[data-glass-ink]'));
@@ -279,7 +279,8 @@ try {
   await localTextContrast('.reading-status > span:last-child', 'white');
   await openSettings();
   assert.equal(await dialog().getAttribute('data-glass-ink'), null, 'Tea/frosted popups are excluded from photo foreground adaptation.');
-  await themeText('.settings-footer .settings-save');
+  // Save is the dialog's tinted primary action: fixed accent foreground, never wallpaper-adapted.
+  await themeText('.settings-footer .settings-save', '--accent-on');
   await dialog().getByRole('button', { name: '取消', exact: true }).click();
   await dialog().waitFor({ state: 'detached' });
   await shot('开智-玻璃文字对比度-阅读-深色.png');

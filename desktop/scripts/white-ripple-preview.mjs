@@ -38,7 +38,7 @@ try {
   });
   await page.goto(origin);
   await page.getByRole('button', { name: '打开 阅读工作台指南.md', exact: true }).waitFor();
-  await page.getByTitle('列表视图', { exact: true }).click();
+  await page.locator('[data-tip="列表视图"]').click();
   await screenshot('library-light');
   const lightMaterial = await page.locator('.app-shell').evaluate(element => ({
     background: getComputedStyle(element).backgroundImage,
@@ -73,7 +73,7 @@ try {
   checks.push('1000px light window: no horizontal overflow; assistant composer stays usable.');
   await page.setViewportSize({ width: 1440, height: 940 }); await ready();
   await page.getByRole('button', { name: '文档库', exact: true }).click(); await settled();
-  await page.getByTitle('切换深色主题', { exact: true }).first().click();
+  await page.locator('[data-tip="切换深色主题"]').first().click();
   await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark');
   await screenshot('library-dark');
   const darkMaterial = await page.locator('.app-shell').evaluate(element => ({
@@ -83,7 +83,7 @@ try {
   assert.notEqual(darkMaterial.background, lightMaterial.background);
   assert.notEqual(darkMaterial.texture, lightMaterial.texture);
   checks.push('Dark library retains its separate graphite cloud and mineral-vein material.');
-  await page.getByTitle('切换浅色主题', { exact: true }).first().click();
+  await page.locator('[data-tip="切换浅色主题"]').first().click();
   await page.waitForFunction(() => document.documentElement.dataset.theme === 'light');
   await page.evaluate(() => { document.documentElement.dataset.contrast = 'high'; });
   const highContrastTexture = await page.locator('.app-shell').evaluate(element => getComputedStyle(element, '::before').opacity);

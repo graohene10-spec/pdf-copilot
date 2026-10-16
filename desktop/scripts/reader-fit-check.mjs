@@ -124,7 +124,7 @@ const panels = {
   sidebar: async () => togglePanel(page.getByRole('button', { name: '切换侧栏', exact: true }), '.app-sidebar'),
   ai: async () => togglePanel(page.getByRole('button', { name: '阅读助手', exact: true }), '.ai-pane'),
   outline: async () => togglePanel(page.locator('.pdf-reader .reader-tools').getByRole('button', { name: '目录', exact: true }), '.pdf-reader .document-outline'),
-  details: async () => togglePanel(page.getByTitle('文档详情与标签', { exact: true }), '.document-details'),
+  details: async () => togglePanel(page.locator('[data-tip="文档详情与标签"]'), '.document-details'),
 };
 
 try {
@@ -206,7 +206,7 @@ try {
   assertScale((await settled()).scale, beforeResize.scale, 'restoring window size keeps manual zoom');
   checks.push({ test: 'manual window resize', before: beforeResize, smaller });
 
-  await page.getByTitle('适应宽度', { exact: true }).click();
+  await page.locator('[data-tip="适应宽度"]').click();
   const fitted = await settled();
   assert.ok(Math.abs(fitted.width - fitted.available) < 2);
   await page.setViewportSize({ width: 1180, height: 1000 });

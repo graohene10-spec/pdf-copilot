@@ -2,6 +2,8 @@
  * Glass responds only where the pointer or keyboard focus is resting. Event
  * delegation also covers async panels; a single RAF batches bounded reads and
  * writes without making pointer coordinates part of the Vue render tree.
+ * Besides the local highlight, the specular rim turns toward the pointer: the
+ * angle is inherited, so controls on a lit panel catch light from one source.
  */
 const CONTROL = [
   '[data-glass-interactive]:not([data-glass-interactive="panel"])',
@@ -13,8 +15,10 @@ const PANEL = [
   '.reader-tools', '.library-toolbar', '.ai-pane', '.document-details',
   '.settings-dialog', '.confirm-dialog',
 ].join(',')
-const PROPERTIES = ['--glass-x', '--glass-y', '--glass-active']
+const PROPERTIES = ['--glass-x', '--glass-y', '--glass-active', '--rim-angle']
 const PAPER = '.pdf-scroll, .markdown-paper'
+// Matches the CSS fade-out of the ring and light before their layers are removed.
+const RELEASE_MS = 420
 
 export function installLiquidGlass(root: HTMLElement): () => void {
   const owner = root.ownerDocument
@@ -29,6 +33,7 @@ export function installLiquidGlass(root: HTMLElement): () => void {
   let frame = 0
   let disposed = false
   let active = new Set<HTMLElement>()
+  const releasing = new Map<HTMLElement, ReturnType<typeof setTimeout>>()
 
   function enabled() {
     return supported && !transparency.matches && !contrast.matches &&
@@ -48,7 +53,7 @@ export function installLiquidGlass(root: HTMLElement): () => void {
   }
   function paint() {
     frame = 0
-    const next = new Map<HTMLElement, { kind: 'control' | 'panel'; x: number; y: number; strength: number }>()
+    const next = new Map<HTMLElement, { kind: 'control' | 'panel'; x: number; y: number; strength: number; angle?: number }>()
     if (enabled()) {
       // Keyboard gets the same reflection, anchored to the upper centre.
       for (const { element, kind } of targets(focus)) next.set(element, { kind, x: 50, y: 20, strength: .85 })
@@ -59,19 +64,34 @@ export function installLiquidGlass(root: HTMLElement): () => void {
           if (!rect.width || !rect.height) continue
           const x = Math.max(0, Math.min(100, (pointer.x - rect.left) / rect.width * 100))
           const y = Math.max(0, Math.min(100, (pointer.y - rect.top) / rect.height * 100))
-          next.set(element, { kind, x, y, strength: 1 })
+          // The bright end of the rim gradient faces the pointer.
+          const dx = rect.left + rect.width / 2 - pointer.x, dy = rect.top + rect.height / 2 - pointer.y
+          const angle = Math.atan2(dx, -dy) * 180 / Math.PI
+          next.set(element, { kind, x, y, strength: 1, angle })
         }
       }
     }
     // All geometry reads above finish before any material writes below.
-    for (const element of active) if (!next.has(element)) element.style.setProperty('--glass-active', '0')
+    for (const element of active) if (!next.has(element)) {
+      element.style.setProperty('--glass-active', '0'); element.style.removeProperty('--rim-angle')
+      // After the fade, drop the attribute so idle glass keeps no masked layers.
+      releasing.set(element, setTimeout(() => { releasing.delete(element); release(element) }, RELEASE_MS))
+    }
     for (const [element, state] of next) {
+      const pending = releasing.get(element)
+      if (pending) { clearTimeout(pending); releasing.delete(element) }
       element.dataset.glassLive = state.kind
       element.style.setProperty('--glass-x', `${state.x.toFixed(1)}%`)
       element.style.setProperty('--glass-y', `${state.y.toFixed(1)}%`)
       element.style.setProperty('--glass-active', String(state.strength))
+      if (state.angle === undefined) element.style.removeProperty('--rim-angle')
+      else element.style.setProperty('--rim-angle', `${state.angle.toFixed(1)}deg`)
     }
     active = new Set(next.keys())
+  }
+  function release(element: HTMLElement) {
+    element.removeAttribute('data-glass-live')
+    for (const property of PROPERTIES) element.style.removeProperty(property)
   }
   function move(event: PointerEvent) {
     if (event.pointerType === 'touch' || !enabled() || motion.matches) return
@@ -129,10 +149,9 @@ export function installLiquidGlass(root: HTMLElement): () => void {
     owner.removeEventListener('visibilitychange', visibility)
     win.removeEventListener('blur', blur)
     for (const query of [motion, transparency, contrast]) query.removeEventListener('change', preferences)
-    for (const element of root.querySelectorAll<HTMLElement>('[data-glass-live]')) {
-      element.removeAttribute('data-glass-live')
-      for (const property of PROPERTIES) element.style.removeProperty(property)
-    }
+    for (const timer of releasing.values()) clearTimeout(timer)
+    releasing.clear()
+    for (const element of root.querySelectorAll<HTMLElement>('[data-glass-live]')) release(element)
     active.clear(); pointer = null; focus = null
   }
 }

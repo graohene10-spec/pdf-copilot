@@ -2,7 +2,8 @@
  * 动效基元。
  *
  * 时长与缓动全部取自 tokens.css，因此 prefers-reduced-motion 只需一处规则
- * 即可关闭所有动画。风格克制：入场 180–380ms，退场略快，不弹跳过头。
+ * 即可关闭所有动画。入场使用 linear() 弹簧，从触发它的按钮方向长出；
+ * 退场更快且不回弹，像液体收回原处。
  */
 
 @keyframes zg-fade-in {
@@ -21,7 +22,7 @@
 }
 
 @keyframes zg-pop-in {
-  from { opacity: 0; transform: scale(.965); }
+  from { opacity: 0; transform: scale(.86); }
   to { opacity: 1; transform: none; }
 }
 
@@ -44,9 +45,9 @@
 /* 始终使用最终占位宽度。阅读器保留旧视口直到新画面就绪，玻璃表面
    通过 transform 显现，因此弹出期间不让文字与 PDF 逐帧重新排版。 */
 .pane-enter-active {
-  transition: opacity var(--dur-3) var(--ease-out),
-              transform var(--dur-3) var(--ease-out);
-  transform-origin: 100% 6%;
+  transition: opacity var(--dur-2) var(--ease-out),
+              transform var(--dur-panel) var(--spring-snappy);
+  transform-origin: 100% 0;
   will-change: opacity, transform;
 }
 
@@ -60,7 +61,7 @@
 .pane-enter-from,
 .pane-leave-to {
   opacity: 0;
-  transform: translate(12px, -5px) scale(.94);
+  transform: translate(14px, -8px) scale(.9);
 }
 
 .pane-enter-to,
@@ -74,10 +75,16 @@
   min-width: 0;
 }
 
+/* 动画期间的玻璃只做轻扩散，落定后恢复完整材质。 */
+:is(.pane-enter-active, .pane-leave-active, .sidebar-enter-active, .sidebar-leave-active) {
+  -webkit-backdrop-filter: var(--glass-filter-motion) !important;
+  backdrop-filter: var(--glass-filter-motion) !important;
+}
+
 /* ---- 视图切换：文档库 ↔ 阅读 ---------------------------------------- */
 
 .view-enter-active {
-  transition: opacity var(--dur-3) var(--ease-out), transform var(--dur-3) var(--ease-out);
+  transition: opacity var(--dur-3) var(--ease-out), transform var(--dur-smooth) var(--spring-smooth);
 }
 
 .view-leave-active {
@@ -88,12 +95,12 @@
 
 .view-enter-from {
   opacity: 0;
-  transform: scale(.994);
+  transform: scale(.985);
 }
 
 .view-leave-to {
   opacity: 0;
-  transform: scale(.996);
+  transform: scale(1.01);
 }
 
 /* ---- 通用入场 -------------------------------------------------------- */
@@ -122,9 +129,12 @@
   transition: opacity var(--dur-3) var(--ease-out);
 }
 
-.dialog-enter-active > *,
+.dialog-enter-active > * {
+  transition: opacity var(--dur-2) var(--ease-out), transform var(--dur-bounce) var(--spring-bouncy);
+}
+
 .dialog-leave-active > * {
-  transition: opacity var(--dur-3) var(--ease-out), transform var(--dur-3) var(--ease-spring);
+  transition: opacity var(--dur-2) var(--ease-out), transform var(--dur-2) var(--ease-out);
 }
 
 .dialog-enter-from,
@@ -135,14 +145,14 @@
 .dialog-enter-from > *,
 .dialog-leave-to > * {
   opacity: 0;
-  transform: translateY(10px) scale(.978);
+  transform: translateY(12px) scale(.88);
 }
 
 /* 遮罩的模糊从 0 渐入，而不是突然出现。 */
 .dialog-backdrop,
 .settings-backdrop {
-  -webkit-backdrop-filter: blur(6px) saturate(120%);
-  backdrop-filter: blur(6px) saturate(120%);
+  -webkit-backdrop-filter: blur(8px) saturate(130%);
+  backdrop-filter: blur(8px) saturate(130%);
 }
 
 .dialog-enter-active.dialog-backdrop,
@@ -165,9 +175,9 @@
 
 .sidebar-enter-active {
   overflow: hidden;
-  transition: opacity var(--dur-3) var(--ease-out),
-              transform var(--dur-3) var(--ease-out);
-  transform-origin: 0 4%;
+  transition: opacity var(--dur-2) var(--ease-out),
+              transform var(--dur-panel) var(--spring-snappy);
+  transform-origin: 0 0;
   will-change: opacity, transform;
 }
 
@@ -182,7 +192,7 @@
 .sidebar-enter-from,
 .sidebar-leave-to {
   opacity: 0;
-  transform: translate(-10px, -5px) scale(.94);
+  transform: translate(-12px, -8px) scale(.9);
 }
 
 /* 文字按最终宽度排版，避免折叠时挤成一列。 */
@@ -192,12 +202,11 @@
   white-space: nowrap;
 }
 
-/* ---- 焦点环：玻璃感的柔和光晕，但仍清晰可见 ------------------------- */
+/* ---- 焦点环：沿元素自身圆角绘制，胶囊仍是胶囊 ----------------------- */
 
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-  border-radius: var(--r-sm);
 }
 
 /* ---- 降低动效 -------------------------------------------------------- */

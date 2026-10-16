@@ -249,10 +249,10 @@ try {
   await find().focus(); await find().press('Escape');
   assert.equal(await find().inputValue(), '');
   assert.equal(await fullscreenState(), true, 'Escape in search clears the query without simultaneously leaving fullscreen');
-  await page.getByTitle('框选公式或图表作为 AI 上下文', { exact: true }).click();
+  await page.locator('[data-tip="框选公式或图表作为 AI 上下文"]').click();
   await page.keyboard.press('Escape');
   assert.equal(await fullscreenState(), true, 'Escape ends screenshot capture before fullscreen');
-  assert.equal(await page.getByTitle('框选公式或图表作为 AI 上下文', { exact: true }).evaluate(button => button.classList.contains('active')), false);
+  assert.equal(await page.locator('[data-tip="框选公式或图表作为 AI 上下文"]').evaluate(button => button.classList.contains('active')), false);
   await page.locator('.pdf-scroll').focus(); await page.keyboard.press('Escape'); await fullscreenExpected(false);
   checks.push('Escape clears a focused search or cancels screenshot capture before the next Escape exits fullscreen');
 

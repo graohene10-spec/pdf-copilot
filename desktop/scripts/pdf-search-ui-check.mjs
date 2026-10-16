@@ -50,7 +50,7 @@ try {
   await page.getByRole('tab', { name: names[0], exact: true }).click(); await ready(1);
   await find().fill('TARGET'); await matches(3, 1); await ready(1);
   const initial = await geometry(); report.push({ check: 'Word overlay aligns with the unchanged original PDF text layer', geometry: initial });
-  await page.getByTitle('放大', { exact: true }).click(); await page.waitForTimeout(400); await ready(1);
+  await page.locator('[data-tip="放大"]').click(); await page.waitForTimeout(400); await ready(1);
   const zoomed = await geometry();
   assert.equal(zoomed.original, initial.original); assert.equal(zoomed.nodes, initial.nodes); assert.ok(zoomed.source.width > initial.source.width);
   report.push({ check: 'Atomic zoom redraw restores accurate highlights without replacing PDF text', geometry: zoomed });
