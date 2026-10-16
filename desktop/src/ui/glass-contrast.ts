@@ -200,8 +200,7 @@ export function installGlassContrast(root: HTMLElement): { setBackground(dataUrl
       const layers: HTMLElement[] = []
       for (let node: HTMLElement | null = element; node && node !== shell; node = node.parentElement) layers.unshift(node)
       for (const layer of layers) {
-        const folder = layer.matches('.file-tab') ? layer.querySelector<SVGElement>('.folder-fill') : null
-        const material = materialColor(folder ? win.getComputedStyle(folder).fill : win.getComputedStyle(layer).backgroundColor)
+        const material = materialColor(win.getComputedStyle(layer).backgroundColor)
         const alpha = Math.max(0, Math.min(1, material.alpha))
         if (alpha) background = background.map((channel, index) => channel * (1 - alpha) + material.rgb[index]! * alpha) as unknown as RGB
       }

@@ -83,19 +83,22 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .capture-quick-overlay{position:fixed;inset:0;z-index:70;overflow:hidden;isolation:isolate;cursor:default;touch-action:none}
-.capture-quick-hole{position:absolute;box-sizing:border-box;pointer-events:none;border:1px solid #fff;outline:1px solid rgb(0 0 0 / .7);box-shadow:0 0 0 100vmax rgb(0 0 0 / .58);z-index:0}
-.capture-quick-actions{--ink:var(--surface-ink);--control-ink:var(--surface-ink);--glass-label-shadow:none;position:absolute;z-index:1;box-sizing:border-box;width:264px;max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);overflow:auto;padding:12px;border:1px solid var(--glass-outline);border-radius:0;background-color:var(--popup-glass);background-image:var(--popup-sheen);-webkit-backdrop-filter:blur(var(--popup-blur)) saturate(var(--glass-sat));backdrop-filter:blur(var(--popup-blur)) saturate(var(--glass-sat));box-shadow:0 12px 36px rgb(0 0 0 / .28),var(--glass-edge);color:var(--control-ink)}
-.capture-quick-buttons{display:grid;gap:7px}
-button{display:flex;align-items:center;gap:8px;box-sizing:border-box;min-height:36px;font:inherit;font-size:13px;font-weight:550;line-height:20px;color:var(--control-ink);text-shadow:var(--glass-label-shadow);border:1px solid var(--glass-outline);border-radius:0;background-color:var(--glass-1);background-image:var(--glass-sheen);box-shadow:var(--glass-control-shadow);padding:7px 10px;cursor:pointer;transition:background-color var(--dur-1) var(--ease-soft),box-shadow var(--dur-1) var(--ease-soft)}
+.capture-quick-hole{position:absolute;box-sizing:border-box;pointer-events:none;border:1.5px solid #fff;border-radius:6px;box-shadow:0 0 0 1px rgb(0 0 0 / .45),0 0 0 100vmax rgb(0 0 0 / .52);z-index:0;animation:zg-fade-in var(--dur-2) var(--ease-out) both}
+/* 选区旁的一张厚玻璃卡片：从选区方向弹出，快捷问题是一列胶囊。 */
+.capture-quick-actions{--ink:var(--surface-ink);--control-ink:var(--surface-ink);--glass-label-shadow:none;position:absolute;z-index:1;box-sizing:border-box;width:264px;max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);overflow:auto;padding:10px;border:1px solid var(--glass-outline);border-radius:var(--r-xl);background-color:var(--popup-glass);background-image:var(--popup-sheen);-webkit-backdrop-filter:blur(var(--popup-blur)) saturate(var(--glass-sat));backdrop-filter:blur(var(--popup-blur)) saturate(var(--glass-sat));box-shadow:0 18px 48px -12px rgb(0 0 0 / .4),var(--glass-edge);color:var(--control-ink);animation:zg-pop-in var(--dur-bounce) var(--spring-bouncy) both;transform-origin:85% 0}
+.capture-quick-buttons{display:grid;gap:6px}
+button{display:flex;align-items:center;gap:8px;box-sizing:border-box;min-height:38px;font:inherit;font-size:13px;font-weight:550;line-height:20px;color:var(--control-ink);text-shadow:var(--glass-label-shadow);border:1px solid var(--glass-outline);border-radius:var(--r-full);background-color:var(--glass-2);background-image:var(--glass-sheen);box-shadow:var(--glass-control-shadow);padding:7px 14px 7px 12px;cursor:pointer}
+.capture-quick-buttons button svg{color:var(--accent)}
 button:hover:not(:disabled){background-color:var(--control-hover)}
 button:active:not(:disabled){box-shadow:var(--glass-pressed-shadow)}
 button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 button:disabled{opacity:.5;cursor:default}
 button span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .capture-quick-footer{display:flex;gap:8px;margin-top:10px}
-.capture-continue{flex:1;justify-content:space-between;background-color:var(--control-selected)}
-.capture-cancel{flex:0 0 36px;justify-content:center;padding:7px}
+.capture-continue{flex:1;justify-content:space-between;padding-left:16px;background-color:var(--accent-glass);background-image:var(--glass-tint-sheen);border-color:transparent;color:var(--accent-on);text-shadow:none;font-weight:650}
+.capture-continue:hover:not(:disabled){background-color:var(--accent-glass-hover)}
+.capture-cancel{flex:0 0 38px;width:38px;justify-content:center;padding:0}
 .continue-arrow{transform:rotate(180deg)}
-.capture-quick-status{margin:10px 0 0;font-size:12px;line-height:1.6;color:var(--control-ink);overflow-wrap:anywhere}
-@media(prefers-reduced-motion:reduce){button{transition:none}}
+.capture-quick-status{margin:10px 4px 2px;font-size:12px;line-height:1.6;color:var(--control-ink);overflow-wrap:anywhere}
+@media(prefers-reduced-motion:reduce){button{transition:none}.capture-quick-actions,.capture-quick-hole{animation:none}}
 </style>

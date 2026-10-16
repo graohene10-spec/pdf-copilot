@@ -12,6 +12,7 @@ import { retainReaderEntries } from './reader/cache-policy.mjs'
 import { installGlassContrast } from './ui/glass-contrast'
 import { floatLeavingPanel, restoreLeavingPanel } from './ui/panel-transition'
 import { useFullscreen } from './ui/fullscreen'
+import { vLiquidSelection } from './ui/liquid-selection'
 const PdfReader = defineAsyncComponent(() => import('./components/PdfReader.vue'))
 const MarkdownReader = defineAsyncComponent(() => import('./components/MarkdownReader.vue'))
 const AiPane = defineAsyncComponent(() => import('./components/AiPane.vue'))
@@ -608,13 +609,13 @@ onBeforeUnmount(() => { disposed = true; ++openEpoch; dismissCaptureQuick(); sto
     <aside class="app-sidebar" v-if="sidebarOpen" data-glass-interactive="panel">
       <button class="brand" @click="chooseCategory('all')" aria-label="返回文档库"><span class="brand-symbol"><AppIcon name="book" :size="22" /></span><span>开智</span></button>
       <button class="import-button" @click="importDocuments" :disabled="importing" aria-label="加入文档"><AppIcon name="plus" :size="18" />{{ importing ? '正在导入…' : '加入文档' }}<kbd v-if="preferences.shortcuts.import">{{ shortcut('import') }}</kbd></button>
-      <nav class="workspace-nav" aria-label="文档分类">
+      <nav v-liquid-selection class="workspace-nav" aria-label="文档分类">
         <button :class="{ selected: category === 'all' && !tagFilter }" @click="chooseCategory('all')"><AppIcon name="library" :size="18" />全部文档<span>{{ documents.length }}</span></button>
         <button :class="{ selected: category === 'recent' }" @click="chooseCategory('recent')"><AppIcon name="clock" :size="18" />最近阅读</button>
         <button :class="{ selected: category === 'starred' }" @click="chooseCategory('starred')"><AppIcon name="star" :size="18" />我的收藏<span>{{ starredCount }}</span></button>
       </nav>
       <div class="tag-heading"><p class="sidebar-label">标签</p><AppIcon name="tag" :size="14" /></div>
-      <nav class="tag-nav" aria-label="文档标签"><button v-for="tag in tags" :key="tag" :class="{ selected: tagFilter === tag }" @click="chooseTag(tag)"><span class="tag-dot"></span>{{ tag }}<span>{{ documents.filter(doc => doc.tags.includes(tag)).length }}</span></button><p v-if="!tags.length" class="tag-empty">可在文档详情中添加标签。</p></nav>
+      <nav v-liquid-selection class="tag-nav" aria-label="文档标签"><button v-for="tag in tags" :key="tag" :class="{ selected: tagFilter === tag }" @click="chooseTag(tag)"><span class="tag-dot"></span>{{ tag }}<span>{{ documents.filter(doc => doc.tags.includes(tag)).length }}</span></button><p v-if="!tags.length" class="tag-empty">可在文档详情中添加标签。</p></nav>
       <div class="sidebar-spacer"></div>
       <div class="sidebar-bottom"><button @click="openSettings()" aria-label="设置"><AppIcon name="settings" :size="17" /><span>设置</span></button><button class="icon-button" @click="toggleTheme" :title="theme === 'dark' ? '切换浅色主题' : '切换深色主题'"><AppIcon :name="theme === 'dark' ? 'sun' : 'moon'" :size="17" /></button></div>
     </aside>
@@ -635,10 +636,15 @@ onBeforeUnmount(() => { disposed = true; ++openEpoch; dismissCaptureQuick(); sto
 
       <Transition name="view" mode="out-in">
       <div v-if="!active" class="library-view" key="library">
-        <div class="library-search"><AppIcon name="search" :size="17" /><input ref="search" v-model="query" @input="searchDocuments" placeholder="搜索标题、标签或已索引内容" aria-label="搜索文档" /><button v-if="query" @click="query = ''; refresh()" title="清空搜索"><AppIcon name="close" :size="14" /></button><kbd v-else-if="preferences.shortcuts.search">{{ shortcut('search') }}</kbd></div>
-        <div class="library-heading"><h1>{{ currentTitle }}<span class="heading-count">{{ visibleDocuments.length }}</span></h1></div>
-        <div class="library-summary"><div><AppIcon name="book" :size="18" /><strong>{{ documents.length }}</strong><span>份文档</span></div><span class="summary-divider"></span><div><AppIcon name="star" :size="17" /><strong>{{ starredCount }}</strong><span>份收藏</span></div><span class="summary-divider"></span><div><strong>{{ totalPages }}</strong><span>页已打开文档</span></div><span v-if="!isDesktop" class="summary-note">浏览器预览</span></div>
-        <div class="library-list-heading"><span>{{ query ? `搜索「${query}」` : category === 'recent' ? '按最近阅读排列' : '' }}</span><div class="view-switch"><button :class="{ selected: display === 'grid' }" @click="setDisplay('grid')" title="卡片视图"><AppIcon name="grid" :size="16" /></button><button :class="{ selected: display === 'list' }" @click="setDisplay('list')" title="列表视图"><AppIcon name="list" :size="17" /></button></div></div>
+        <header class="library-header">
+          <div class="library-heading"><h1>{{ currentTitle }}<span class="heading-count">{{ visibleDocuments.length }}</span></h1></div>
+          <div class="library-tools">
+            <div class="library-search"><AppIcon name="search" :size="17" /><input ref="search" v-model="query" @input="searchDocuments" placeholder="搜索标题、标签或已索引内容" aria-label="搜索文档" /><button v-if="query" @click="query = ''; refresh()" title="清空搜索"><AppIcon name="close" :size="14" /></button><kbd v-else-if="preferences.shortcuts.search">{{ shortcut('search') }}</kbd></div>
+            <div v-liquid-selection class="view-switch"><button :class="{ selected: display === 'grid' }" @click="setDisplay('grid')" title="卡片视图"><AppIcon name="grid" :size="16" /></button><button :class="{ selected: display === 'list' }" @click="setDisplay('list')" title="列表视图"><AppIcon name="list" :size="17" /></button></div>
+          </div>
+        </header>
+        <div class="library-summary"><div><AppIcon name="book" :size="15" /><strong>{{ documents.length }}</strong><span>份文档</span></div><span class="summary-divider"></span><div><AppIcon name="star" :size="15" /><strong>{{ starredCount }}</strong><span>份收藏</span></div><span class="summary-divider"></span><div><AppIcon name="file" :size="15" /><strong>{{ totalPages }}</strong><span>页已打开文档</span></div><span v-if="!isDesktop" class="summary-note">浏览器预览</span></div>
+        <div v-if="query || category === 'recent'" class="library-list-heading"><span>{{ query ? `搜索「${query}」` : '按最近阅读排列' }}</span></div>
         <div v-if="loading" class="library-empty"><span class="spinner"></span><p>正在读取文档库…</p></div>
         <div v-else-if="!visibleDocuments.length" class="library-empty"><div class="empty-art"><AppIcon name="book" :size="42" /></div><h2>{{ query ? '没有匹配的文档' : category === 'starred' ? '暂无收藏' : tagFilter ? '此标签下暂无文档' : '暂无文档' }}</h2><p>{{ query ? '可搜索标题、标签和已读取的文档内容。' : '点击“加入文档”添加 PDF 或 Markdown，可一次选择多个文件。' }}</p><button v-if="query" @click="query = ''; refresh()">查看全部文档</button><small>导入不会移动或修改原文件</small></div>
         <div v-else class="document-collection" :class="display">
@@ -659,7 +665,7 @@ onBeforeUnmount(() => { disposed = true; ++openEpoch; dismissCaptureQuick(); sto
             </KeepAlive>
           </template>
           <div v-if="selection && !captureQuick && !aiOpen && selection.image" class="selection-context"><AppIcon name="crop" :size="16" /><span>{{ selection.image ? `已框选第 ${selection.page} 页的图表或公式` : `已选择 ${selection.text.length} 个字符` }}</span><button @click="openAssistant(true)"><AppIcon name="sparkle" :size="15" />向 AI 提问</button><button class="icon-button" @click="clearSelection" title="清除选区"><AppIcon name="close" :size="14" /></button></div>
-          <footer class="reading-status"><span><span class="status-dot"></span>阅读位置自动保存</span><span>{{ active.kind === 'pdf' ? `第 ${active.page || 1} / ${active.pageCount || '—'} 页` : 'Markdown 文档' }}<span class="status-divider">·</span>{{ progressPercent(active) }}%</span></footer>
+          <footer class="reading-status"><i class="reading-progress" aria-hidden="true" :style="{ '--progress': progressPercent(active) / 100 }"></i><span><span class="status-dot"></span>阅读位置自动保存</span><span>{{ active.kind === 'pdf' ? `第 ${active.page || 1} / ${active.pageCount || '—'} 页` : 'Markdown 文档' }}<span class="status-divider">·</span>{{ progressPercent(active) }}%</span></footer>
         </section>
         <Transition name="pane" @before-enter="paneResizeStart($event, true)" @before-leave="paneResizeStart($event, false)" @after-enter="paneResizeEnd" @after-leave="paneResizeEnd" @enter-cancelled="paneResizeEnd($event, true)" @leave-cancelled="paneResizeEnd($event, true)">
           <AiPane v-if="aiOpen && aiDocument" ref="assistant" class="pane-shell" data-glass-interactive="panel" :document="aiDocument" :context="aiContext" :send-shortcut="preferences.shortcuts.aiSend ? shortcut('aiSend') : ''" :consume-capture="consumeSelection" @settings="openSettings('ai')" @close="aiOpen = false" @jump="jump" @clear-selection="clearSelection" />

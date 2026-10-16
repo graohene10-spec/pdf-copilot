@@ -1,4 +1,89 @@
-/* Light moves through the material; labels and document canvases stay sharp. */
+/*
+ * Liquid Glass 材质与交互。
+ *
+ * 每块玻璃由四层组成：背后内容的扩散（backdrop-filter）、很淡的底色与天光、
+ * 一圈更暗的外缘细线（border），以及内侧的镜面高光（tokens 中的内阴影，
+ * 左上亮、右下回光）。光标或键盘焦点所在的那块玻璃再额外点亮一圈镜面环：
+ * 环转向光标，光标附近最亮；按下时整块材质亮起并以弹簧回弹。
+ *
+ * 遮罩环只画在当前点亮的控件与其所在面板上，同屏最多两层，熄灭后由
+ * liquid-glass.ts 移除，静止页面不保留额外的合成层。文字始终画在材质之上，
+ * 不参与任何扭曲；PDF 与 Markdown 正文不接收这些效果。
+ */
+
+/* 不继承：子控件不会沿用父面板的点亮状态；伪元素用 inherit 读取宿主的值。 */
+@property --glass-active {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0;
+}
+
+/* 镜面环的受光方向：静止时来自左上，光标在玻璃上时转向光标。 */
+@property --rim-angle {
+  syntax: '<angle>';
+  inherits: true;
+  initial-value: 155deg;
+}
+
+/* ---- 点亮的镜面环 ---------------------------------------------------- */
+
+[data-glass-live]:not(.file-tab)::before {
+  --glass-active: inherit;
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  background:
+    radial-gradient(circle var(--rim-spot, 46px) at var(--glass-x, 50%) var(--glass-y, 0%),
+      rgb(255 255 255 / var(--rim-spot-alpha, .95)), transparent),
+    linear-gradient(var(--rim-angle), var(--rim-stops));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  opacity: calc(var(--glass-active) * var(--glass-reflection, 1));
+  transition: opacity var(--dur-3) var(--ease-out), --rim-angle var(--dur-4) var(--ease-out);
+}
+
+/* 新点亮的玻璃从透明淡入，而不是突然出现。 */
+@starting-style {
+  [data-glass-live]:not(.file-tab)::before,
+  [data-glass-live]::after {
+    opacity: 0;
+  }
+}
+
+/* 宽面板的光斑更大、更淡，像光源掠过玻璃边缘。 */
+[data-glass-live='panel'] {
+  --rim-spot: 170px;
+  --rim-spot-alpha: .8;
+}
+
+:root[data-theme='dark'] {
+  --rim-spot-alpha: .42;
+}
+
+:root[data-theme='dark'] [data-glass-live='panel'] {
+  --rim-spot-alpha: .3;
+}
+
+/* 光与镜面环需要定位上下文；预先给常用玻璃定位，悬停时不改变布局。 */
+:where(
+  .app-topbar, .reading-status, .library-search, .library-summary > div, .view-switch,
+  .file-drop-target, .settings-group, .icon-button, .quiet-button,
+  .ai-toggle, .import-button, .primary-button, .tab-library, .reader-zoom, .brand-symbol,
+  .sidebar-bottom button, .send-button, .secondary-action, .close-assistant,
+  .suggestions button, .settings-close, .settings-footer button, .background-heading button,
+  .quick-prompt-heading button, .danger-button, .dialog-actions button, .add-tag button,
+  .composer-field, .source-list button, .secondary-button, .confirm-dialog, .selection-context,
+  .reader-tools, .ai-pane
+) {
+  position: relative;
+}
+
+/* ---- 光标与焦点的光 -------------------------------------------------- */
+
 :where([data-glass-live]) {
   position: relative;
 }
@@ -8,15 +93,16 @@
 }
 
 [data-glass-live]::after {
+  --glass-active: inherit;
   content: '';
   position: absolute;
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
   background:
-    radial-gradient(ellipse at var(--glass-x, 50%) var(--glass-y, 20%), var(--glass-light, rgb(255 255 255 / .38)), transparent 54%),
+    radial-gradient(circle at var(--glass-x, 50%) var(--glass-y, 20%), var(--glass-light, rgb(255 255 255 / .5)), transparent 62%),
     radial-gradient(ellipse at calc(100% - var(--glass-x, 50%)) calc(100% - var(--glass-y, 20%)), var(--glass-light-soft, rgb(240 250 255 / .1)), transparent 68%);
-  opacity: calc(var(--glass-active, 0) * var(--glass-reflection, 1) * .4);
+  opacity: calc(var(--glass-active, 0) * var(--glass-reflection, 1) * .42);
   transition: opacity var(--dur-2) var(--ease-soft);
   z-index: 0;
 }
@@ -27,43 +113,127 @@
 }
 
 [data-glass-live='panel']::after {
-  background: radial-gradient(ellipse 220px 140px at var(--glass-x, 50%) var(--glass-y, 20%), var(--glass-light), transparent 76%);
+  background: radial-gradient(ellipse 260px 170px at var(--glass-x, 50%) var(--glass-y, 20%), var(--glass-light), transparent 76%);
   z-index: 5;
-  opacity: calc(var(--glass-active, 0) * var(--glass-reflection, 1) * .2);
+  opacity: calc(var(--glass-active, 0) * var(--glass-reflection, 1) * .16);
 }
 
-/* Keep the reflection restrained on selected and primary glass controls. */
-[data-glass-live='control']:is(.selected, .settings-save, .send-button, .primary-button, .ai-toggle.active)::after {
-  opacity: calc(var(--glass-active, 0) * var(--glass-reflection, 1) * .24);
+/* 着色主操作的光更克制，避免把主色冲淡。 */
+[data-glass-live='control']:is(.selected, .settings-save, .send-button, .primary-button, .ai-toggle.active, .capture-continue)::after {
+  opacity: calc(var(--glass-active, 0) * var(--glass-reflection, 1) * .26);
 }
 
-/* The rim follows the folder shoulder without changing its hit area. */
-.file-tab[data-glass-live]::after {
-  clip-path: polygon(0 100%, 0 19%, .8% 7%, 3.6% 1.5%, 86% 1.5%, 89% 4%, 91% 18%, 94% 70%, 97% 96%, 100% 100%);
-  z-index: 0;
+/* 按下：光从指尖处亮起，整块玻璃轻微收缩，松开后以弹簧回弹。 */
+[data-glass-live='control']:active:not(:disabled)::after {
+  opacity: calc(var(--glass-active, 0) * var(--glass-reflection, 1) * .85);
+  transition-duration: 60ms;
 }
 
-[data-glass-live='control']:is(button):not(.close-tab):not([role='tab']) {
-  transition-property: background-color, border-color, color, box-shadow, translate, scale;
-  transition-duration: var(--dur-1);
-  transition-timing-function: var(--ease-soft);
+/* ---- 弹簧形变 -------------------------------------------------------- */
+
+:is(
+  .icon-button, .quiet-button, .ai-toggle, .import-button, .primary-button, .tab-library,
+  .sidebar-bottom button, .selection-ask, .send-button, .secondary-action, .close-assistant,
+  .suggestions button, .settings-close, .settings-footer button:not(.text-action),
+  .background-heading button, .quick-prompt-heading button, .capture-quick-actions button,
+  .danger-button, .dialog-actions button, .add-tag button, .source-list button, .secondary-button,
+  .card-star, .reader-zoom button, .reader-page-control button, .reader-search button
+):not(:disabled) {
+  transition-property: background-color, border-color, color, box-shadow, scale, translate;
+  transition-duration: var(--dur-1), var(--dur-1), var(--dur-1), var(--dur-2), var(--dur-bounce), var(--dur-bounce);
+  transition-timing-function: var(--ease-soft), var(--ease-soft), var(--ease-soft), var(--ease-soft), var(--spring-bouncy), var(--spring-bouncy);
 }
 
-[data-glass-live='control']:is(button):not(.close-tab):not([role='tab']):hover:not(:disabled) {
-  translate: 0 -1px;
-  scale: 1.02;
+:is(
+  .icon-button, .quiet-button, .ai-toggle, .import-button, .primary-button, .tab-library,
+  .sidebar-bottom button, .send-button, .secondary-action, .close-assistant,
+  .settings-close, .settings-footer button:not(.text-action), .background-heading button,
+  .quick-prompt-heading button, .danger-button, .dialog-actions button, .add-tag button,
+  .secondary-button, .card-star
+):hover:not(:disabled) {
+  scale: 1.035;
   box-shadow: var(--glass-hover-shadow);
 }
 
-[data-glass-live='control']:is(button):not(.close-tab):not([role='tab']):active:not(:disabled) {
-  translate: 0 0;
-  scale: .96;
-  box-shadow: var(--glass-pressed-shadow);
+/* 长条按钮放大比例更小，避免宽度变化显得夸张。 */
+:is(.suggestions button, .capture-quick-actions button, .source-list button, .selection-ask):hover:not(:disabled) {
+  scale: 1.015;
 }
 
-/* Settings lifts as one floating sheet, then contracts on dismissal. */
+:is(
+  .icon-button, .quiet-button, .ai-toggle, .import-button, .primary-button, .tab-library,
+  .sidebar-bottom button, .selection-ask, .send-button, .secondary-action, .close-assistant,
+  .suggestions button, .settings-close, .settings-footer button:not(.text-action),
+  .background-heading button, .quick-prompt-heading button, .capture-quick-actions button,
+  .danger-button, .dialog-actions button, .add-tag button, .source-list button, .secondary-button,
+  .card-star, .reader-zoom button, .reader-page-control button, .reader-search button
+):active:not(:disabled) {
+  scale: .955;
+  box-shadow: var(--glass-pressed-shadow);
+  transition-duration: var(--dur-1), var(--dur-1), var(--dur-1), 90ms, 90ms, 90ms;
+  transition-timing-function: var(--ease-out);
+}
+
+/* 列表行与标签：按下只压暗底色，不缩放整行。 */
+:is(.workspace-nav button, .tag-nav button, .settings-tabs button, .view-switch button, .document-outline button):active:not(:disabled) {
+  background-color: var(--control-selected-hover);
+}
+
+/* ---- 滑动选择指示器 --------------------------------------------------- */
+
+/* 选中项下方的一滴玻璃：切换时以弹簧滑到新位置，并沿运动方向短暂拉伸。 */
+.liquid-group {
+  position: relative;
+}
+
+.liquid-group > :not(.liquid-indicator) {
+  position: relative;
+  z-index: 1;
+}
+
+.liquid-indicator {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  z-index: 0;
+  border-radius: var(--indicator-radius, var(--r-full));
+  pointer-events: none;
+  background-color: var(--control-selected);
+  background-image: var(--glass-sheen);
+  box-shadow: var(--glass-control-shadow);
+  opacity: 0;
+  transform-origin: center;
+  transition:
+    translate var(--dur-bounce) var(--spring-snappy),
+    width var(--dur-bounce) var(--spring-snappy),
+    height var(--dur-bounce) var(--spring-snappy),
+    opacity var(--dur-2) var(--ease-out),
+    background-color var(--dur-2) var(--ease-soft);
+}
+
+.liquid-indicator.visible {
+  opacity: 1;
+}
+
+/* 首次定位与窗口尺寸变化不播放滑动。 */
+.liquid-indicator.instant {
+  transition: none;
+}
+
+/* 指示器就位后，选中项自身的底色交给指示器呈现。 */
+.liquid-group.has-indicator > :is(.selected, [aria-selected='true'], [aria-current='page']),
+.liquid-group.has-indicator > .file-tab.selected {
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
+}
+
+/* ---- 设置窗：从中心弹出，关闭时收缩 ------------------------------------ */
+
 .settings-pop-enter-active {
-  transition: opacity var(--dur-4) var(--ease-out);
+  transition: opacity var(--dur-3) var(--ease-out);
 }
 
 .settings-pop-leave-active {
@@ -72,7 +242,7 @@
 }
 
 .settings-pop-enter-active .settings-dialog {
-  transition: transform var(--dur-4) var(--ease-spring), opacity var(--dur-3) var(--ease-out);
+  transition: transform var(--dur-bounce) var(--spring-bouncy), opacity var(--dur-2) var(--ease-out);
 }
 
 .settings-pop-leave-active .settings-dialog {
@@ -86,33 +256,43 @@
 
 .settings-pop-enter-from .settings-dialog {
   opacity: 0;
-  transform: translateY(20px) scale(.93);
+  transform: translateY(18px) scale(.9);
 }
 
 .settings-pop-leave-to .settings-dialog {
   opacity: 0;
-  transform: translateY(12px) scale(.95);
+  transform: translateY(10px) scale(.94);
 }
 
+/* ---- 回退 ------------------------------------------------------------ */
+
+:root:is([data-glass='solid'], [data-contrast='high']) [data-glass-live]::before,
 :root:is([data-glass='solid'], [data-contrast='high']) [data-glass-live]::after {
   content: none;
 }
 
-:root:is([data-glass='solid'], [data-contrast='high']) [data-glass-live='control']:is(button) {
+:root:is([data-glass='solid'], [data-contrast='high']) :is(button, .liquid-indicator) {
   translate: none !important;
   scale: none !important;
 }
 
 @media (prefers-reduced-transparency: reduce), (forced-colors: active), (prefers-contrast: more) {
+  [data-glass-live]:not(.file-tab)::before,
   [data-glass-live]::after { content: none; }
-  [data-glass-live='control']:is(button):hover:not(:disabled),
-  [data-glass-live='control']:is(button):active:not(:disabled) { translate: none !important; scale: none !important; }
+  button:hover:not(:disabled),
+  button:active:not(:disabled) { translate: none !important; scale: none !important; }
+}
+
+@media (forced-colors: active) {
+  .liquid-indicator { background: Highlight; opacity: .35; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-glass-live]::after { transition: none; }
-  [data-glass-live='control']:is(button):hover:not(:disabled),
-  [data-glass-live='control']:is(button):active:not(:disabled) { translate: none !important; scale: none !important; }
+  [data-glass-live]::after,
+  [data-glass-live]::before { transition: none; }
+  button:hover:not(:disabled),
+  button:active:not(:disabled) { translate: none !important; scale: none !important; }
+  .liquid-indicator { transition: none; }
   .settings-pop-enter-active,
   .settings-pop-leave-active,
   .settings-pop-enter-active .settings-dialog,
@@ -122,5 +302,6 @@
 }
 
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  [data-glass-live]:not(.file-tab)::before,
   [data-glass-live]::after { content: none; }
 }
