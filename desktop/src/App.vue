@@ -1185,7 +1185,7 @@ onBeforeUnmount(() => { stopAutoCheck(); for (const timer of pillTimers.values()
     <Transition name="capture-focus"><CaptureQuickPrompt v-if="captureQuick && !settingsOpen" :frame="captureQuick.frame" :prompts="preferences.assistant.captureQuestions" :busy="captureQuickBusy" :status="captureQuickStatus" @ask="askCaptureQuick" @continue="continueCaptureQuick" @cancel="dismissCaptureQuick(true)" /></Transition>
     <div v-if="draggingFiles" class="file-drop-overlay" aria-live="polite"><div class="file-drop-target"><AppIcon name="plus" :size="32" /><strong>加入文档库</strong><span>松开以加入 PDF / Markdown 文档</span></div></div>
     <button v-if="selectionAction && selection?.text && !aiOpen && active" class="selection-ask" :style="{ left: selectionAction.left + 'px', top: selectionAction.top + 'px' }" @mousedown.prevent @click="openAssistant(true)" aria-label="用所选文字向 AI 提问"><AppIcon name="sparkle" :size="14" />问 AI</button>
-    <UpdateCard />
+    <UpdateCard v-if="!settingsOpen" />
     <TransitionGroup tag="div" name="notice" class="notice-stack" aria-live="polite">
       <div v-for="notice in notices" :key="notice.id" class="answer-notice" role="status" @pointerenter="holdNotice(notice.id, true)" @pointerleave="holdNotice(notice.id, false)">
         <span class="notice-mark" aria-hidden="true"><AppIcon name="check" :size="13" /></span>
