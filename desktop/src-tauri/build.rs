@@ -4,6 +4,7 @@ fn main() {
         "remove_document", "read_asset", "index_document", "get_setting", "set_setting",
         "get_credential", "set_credential", "native_connect", "native_send", "native_disconnect",
         "http_start", "http_cancel",
+        "update_status", "update_check", "update_download", "update_cancel", "update_install", "update_open_page",
     ];
     tauri_build::try_build(
         tauri_build::Attributes::new()

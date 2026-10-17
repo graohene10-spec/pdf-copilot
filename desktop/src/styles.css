@@ -2887,11 +2887,11 @@ kbd {
 
 /* ---- Toast ----------------------------------------------------------- */
 
-/* 后台对话答完的提示：右下角的小玻璃卡，进场时从略大收拢到原位，离场时缩小淡出、下面的卡平滑补位。 */
+/* 后台对话答完的提示：右上角、顶栏下方的小玻璃卡，进场时从略大收拢到原位，离场时缩小淡出、其余卡平滑补位。 */
 .notice-stack {
   position: fixed;
   right: 22px;
-  bottom: 22px;
+  top: 76px;
   z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
@@ -2975,7 +2975,7 @@ kbd {
 .notice-enter-active { transition: opacity var(--dur-3) var(--ease-out), transform var(--dur-smooth) var(--spring-smooth), filter var(--dur-3) var(--ease-out); }
 .notice-leave-active { position: absolute; right: 0; transition: opacity var(--dur-2) var(--ease-out), transform var(--dur-3) var(--ease-out); }
 .notice-move { transition: transform var(--dur-smooth) var(--spring-smooth); }
-.notice-enter-from { opacity: 0; transform: translateY(14px) scale(1.06); filter: blur(4px); }
+.notice-enter-from { opacity: 0; transform: translateY(-12px) scale(1.06); filter: blur(4px); }
 .notice-leave-to { opacity: 0; transform: scale(.88); }
 
 @media (prefers-reduced-motion: reduce) {

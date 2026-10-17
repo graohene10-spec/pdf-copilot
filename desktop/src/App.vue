@@ -14,11 +14,13 @@ import { floatLeavingPanel, restoreLeavingPanel } from './ui/panel-transition'
 import { useFullscreen } from './ui/fullscreen'
 import { vLiquidSelection } from './ui/liquid-selection'
 import { useReorder } from './ui/reorder'
+import { startAutoCheck, stopAutoCheck } from './ui/updater'
 const PdfReader = defineAsyncComponent(() => import('./components/PdfReader.vue'))
 const MarkdownReader = defineAsyncComponent(() => import('./components/MarkdownReader.vue'))
 const AiPane = defineAsyncComponent(() => import('./components/AiPane.vue'))
 const SettingsDialog = defineAsyncComponent(() => import('./components/SettingsDialog.vue'))
 const SplitPicker = defineAsyncComponent(() => import('./components/SplitPicker.vue'))
+const UpdateCard = defineAsyncComponent(() => import('./components/UpdateCard.vue'))
 const ContextMenu = defineAsyncComponent(() => import('./components/ContextMenu.vue'))
 const { preferences, effectiveAppearance, load: loadPreferences, save: savePreferences } = useSettings()
 
@@ -113,7 +115,7 @@ const captureQuickBusy = computed(() => Boolean(captureQuick.value && (captureQu
 const captureQuickStatus = computed(() => captureQuick.value?.status || (captureQuick.value && chatState(captureQuick.value.documentId).request ? '这份文档已有问题正在处理，可点继续查看。' : ''))
 const reader = ref<any>()
 const settingsOpen = ref(false)
-const settingsTab = ref<'appearance' | 'reading' | 'shortcuts' | 'ai'>('appearance')
+const settingsTab = ref<'appearance' | 'reading' | 'shortcuts' | 'ai' | 'updates'>('appearance')
 const fitRequest = ref(0)
 const query = ref('')
 const category = ref('all')
@@ -933,6 +935,8 @@ function shortcut(action: keyof typeof preferences.value.shortcuts) { return sho
 // Bound shortcuts only, for the hover tooltips (data-tip-key); disabled ones show no key.
 const tipKeys = computed<Record<string, string>>(() => Object.fromEntries(Object.entries(preferences.value.shortcuts).filter(([, value]) => value).map(([action, value]) => [action, shortcutLabel(value)])))
 function tipKey(action: keyof typeof preferences.value.shortcuts) { return tipKeys.value[action] || undefined }
+// 发布到 GitHub Releases 的新版本：启动后与每隔几小时检查一次，可在设置里关闭或改收测试版。
+watch(() => `${preferences.value.updates.autoCheck}|${preferences.value.updates.prerelease}`, () => startAutoCheck({ enabled: isDesktop && preferences.value.updates.autoCheck, includePrerelease: preferences.value.updates.prerelease }), { immediate: true })
 watch(effectiveAppearance, () => { applyTheme(); display.value = effectiveAppearance.value.libraryView }, { immediate: true })
 // A tab may mount its reader while several panels are still transitioning.
 watch(reader, value => {
@@ -1087,7 +1091,7 @@ onMounted(async () => {
   await loadLibraryOrder()
   await refresh()
 })
-onBeforeUnmount(() => { for (const timer of pillTimers.values()) clearTimeout(timer); clearTimeout(enteringTimer); disposed = true; ++openEpoch; dismissCaptureQuick(); stopDropListening?.(); clearWheelZoom(); readerInstances.clear(); glassContrast?.dispose(); document.removeEventListener('keydown', keydown); document.removeEventListener('contextmenu', appContextMenu); document.removeEventListener('wheel', wheel, true); document.removeEventListener('dragenter', dragEnter); document.removeEventListener('dragover', dragOver); document.removeEventListener('dragleave', dragLeave); document.removeEventListener('drop', fileDrop); document.removeEventListener('selectionchange', selectionChanged); document.removeEventListener('scroll', dismissSelectionAction, true); document.removeEventListener('scroll', captureViewportChanged, true); window.removeEventListener('resize', dismissSelectionAction); window.removeEventListener('resize', captureViewportChanged); closeAllChats(); forgetAllPasswords(); systemTheme.removeEventListener('change', applyTheme); flushProgress(); for (const timer of indexTimers.values()) clearTimeout(timer); clearTimeout(queryTimer); clearTimeout(toastTimer) })
+onBeforeUnmount(() => { stopAutoCheck(); for (const timer of pillTimers.values()) clearTimeout(timer); clearTimeout(enteringTimer); disposed = true; ++openEpoch; dismissCaptureQuick(); stopDropListening?.(); clearWheelZoom(); readerInstances.clear(); glassContrast?.dispose(); document.removeEventListener('keydown', keydown); document.removeEventListener('contextmenu', appContextMenu); document.removeEventListener('wheel', wheel, true); document.removeEventListener('dragenter', dragEnter); document.removeEventListener('dragover', dragOver); document.removeEventListener('dragleave', dragLeave); document.removeEventListener('drop', fileDrop); document.removeEventListener('selectionchange', selectionChanged); document.removeEventListener('scroll', dismissSelectionAction, true); document.removeEventListener('scroll', captureViewportChanged, true); window.removeEventListener('resize', dismissSelectionAction); window.removeEventListener('resize', captureViewportChanged); closeAllChats(); forgetAllPasswords(); systemTheme.removeEventListener('change', applyTheme); flushProgress(); for (const timer of indexTimers.values()) clearTimeout(timer); clearTimeout(queryTimer); clearTimeout(toastTimer) })
 </script>
 
 <template>
@@ -1181,6 +1185,7 @@ onBeforeUnmount(() => { for (const timer of pillTimers.values()) clearTimeout(ti
     <Transition name="capture-focus"><CaptureQuickPrompt v-if="captureQuick && !settingsOpen" :frame="captureQuick.frame" :prompts="preferences.assistant.captureQuestions" :busy="captureQuickBusy" :status="captureQuickStatus" @ask="askCaptureQuick" @continue="continueCaptureQuick" @cancel="dismissCaptureQuick(true)" /></Transition>
     <div v-if="draggingFiles" class="file-drop-overlay" aria-live="polite"><div class="file-drop-target"><AppIcon name="plus" :size="32" /><strong>加入文档库</strong><span>松开以加入 PDF / Markdown 文档</span></div></div>
     <button v-if="selectionAction && selection?.text && !aiOpen && active" class="selection-ask" :style="{ left: selectionAction.left + 'px', top: selectionAction.top + 'px' }" @mousedown.prevent @click="openAssistant(true)" aria-label="用所选文字向 AI 提问"><AppIcon name="sparkle" :size="14" />问 AI</button>
+    <UpdateCard />
     <TransitionGroup tag="div" name="notice" class="notice-stack" aria-live="polite">
       <div v-for="notice in notices" :key="notice.id" class="answer-notice" role="status" @pointerenter="holdNotice(notice.id, true)" @pointerleave="holdNotice(notice.id, false)">
         <span class="notice-mark" aria-hidden="true"><AppIcon name="check" :size="13" /></span>

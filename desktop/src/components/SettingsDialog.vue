@@ -4,10 +4,11 @@ import AppIcon from './AppIcon.vue'
 import { vLiquidSelection } from '../ui/liquid-selection'
 import { useSettings, defaultPreferences, normalizePreferences, preferenceErrors, importBackgroundImage, defaultQuickPrompts, defaultCaptureQuestions, newCaptureQuestion, quickPromptLabelLength, limitQuickPromptLabel, QUICK_PROMPT_LABEL_LIMIT, QUICK_PROMPT_QUESTION_LIMIT, CAPTURE_QUESTION_MIN, CAPTURE_QUESTION_MAX, BACKDROPS, UI_FONTS, READING_FONTS, MAX_GALLERY, SHORTCUTS, DEFAULT_SHORTCUTS, shortcutLabel, shortcutFromEvent, shortcutFromWheelEvent, type AppPreferences, type BackdropPreset, type BackgroundImage, type ShortcutAction } from '../settings'
 
-type Tab = 'appearance' | 'reading' | 'shortcuts' | 'ai'
+type Tab = 'appearance' | 'reading' | 'shortcuts' | 'ai' | 'updates'
 const props = withDefaults(defineProps<{ initialTab?: Tab }>(), { initialTab: 'appearance' })
 const emit = defineEmits<{ close: []; saved: [value: AppPreferences]; 'ai-saved': [value: any] }>()
 const AiSettings = defineAsyncComponent(() => import('./AiSettings.vue'))
+const UpdateSettings = defineAsyncComponent(() => import('./UpdateSettings.vue'))
 const shared = useSettings()
 const draft = ref<AppPreferences>(normalizePreferences(shared.preferences.value))
 let baseline = JSON.stringify(draft.value)
@@ -33,6 +34,7 @@ const zoomMode = computed({ get: () => draft.value.pdf.initialZoom === 'fit-widt
 const tabs: { id: Tab; label: string; icon: string }[] = [
   { id: 'appearance', label: '外观', icon: 'sun' }, { id: 'reading', label: '阅读', icon: 'book' },
   { id: 'shortcuts', label: '快捷键', icon: 'settings' }, { id: 'ai', label: 'AI', icon: 'sparkle' },
+  { id: 'updates', label: '更新', icon: 'import' },
 ]
 onMounted(async () => {
   await nextTick(); dialog.value?.focus()
@@ -199,6 +201,7 @@ function resetTab() {
   if (tab.value === 'appearance') { restoreBackground(); draft.value.appearance = defaults.appearance }
   if (tab.value === 'reading') { draft.value.pdf = defaults.pdf; draft.value.markdown = defaults.markdown }
   if (tab.value === 'shortcuts') restoreAll()
+  if (tab.value === 'updates') draft.value.updates = defaults.updates
   status.value = ''
 }
 async function save() {
@@ -303,6 +306,7 @@ function dialogKeydown(event: KeyboardEvent) {
             </div>
             <p v-if="captureError" class="settings-error" role="status">{{ captureError }}</p>
           </template>
+          <UpdateSettings v-if="ready && tab === 'updates'" v-model:auto-check="draft.updates.autoCheck" v-model:prerelease="draft.updates.prerelease" :disabled="saving" />
           <AiSettings v-if="ready && aiVisited" v-show="tab === 'ai'" ref="aiSettings" embedded />
           <section v-if="ready && tab === 'ai'" class="quick-prompts-section" aria-label="快捷提问设置">
             <div class="quick-prompts-heading"><h3>快捷提问</h3><button type="button" class="text-action" :disabled="saving" @click="restoreQuickPrompts" aria-label="恢复全部快捷提问默认">恢复默认</button></div>

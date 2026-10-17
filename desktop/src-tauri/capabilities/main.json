@@ -4,6 +4,6 @@
   "description": "Only the trusted bundled reading workspace can access local documents and AI providers.",
   "windows": ["main"],
   "permissions": [
-    "core:default", "core:window:allow-set-fullscreen", "dialog:allow-open", "reading-workspace"
+    "core:default", "core:window:allow-set-fullscreen", "dialog:allow-open", "reading-workspace", "app-updates"
   ]
 }
