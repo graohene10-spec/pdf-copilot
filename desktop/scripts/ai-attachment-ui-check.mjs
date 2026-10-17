@@ -117,7 +117,7 @@ async function preparationRace(replaceCrop) {
   assert.equal(calls.some(call => call.job === job), false);
   let newer;
   if (replaceCrop) { newer = await crop(2); assert.notEqual(newer, original); }
-  else { await page.locator('[data-tip="文档库"]').click(); await page.locator('.ai-pane').waitFor({ state: 'detached' }); }
+  else { await page.locator('[data-tip="文档库"]').click(); /* The workspace stays mounted but hidden while the library shows. */ await page.locator('.ai-pane').waitFor({ state: 'hidden' }); }
   releasePendingModule(); releasePendingModule = undefined;
   await until(() => calls.some(call => call.job === job));
   if (!replaceCrop) await select(0);

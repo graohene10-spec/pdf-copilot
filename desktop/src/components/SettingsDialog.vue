@@ -4,10 +4,11 @@ import AppIcon from './AppIcon.vue'
 import { vLiquidSelection } from '../ui/liquid-selection'
 import { useSettings, defaultPreferences, normalizePreferences, preferenceErrors, importBackgroundImage, defaultQuickPrompts, defaultCaptureQuestions, newCaptureQuestion, quickPromptLabelLength, limitQuickPromptLabel, QUICK_PROMPT_LABEL_LIMIT, QUICK_PROMPT_QUESTION_LIMIT, CAPTURE_QUESTION_MIN, CAPTURE_QUESTION_MAX, BACKDROPS, UI_FONTS, READING_FONTS, MAX_GALLERY, SHORTCUTS, DEFAULT_SHORTCUTS, shortcutLabel, shortcutFromEvent, shortcutFromWheelEvent, type AppPreferences, type BackdropPreset, type BackgroundImage, type ShortcutAction } from '../settings'
 
-type Tab = 'appearance' | 'reading' | 'shortcuts' | 'ai'
+type Tab = 'appearance' | 'reading' | 'shortcuts' | 'ai' | 'updates'
 const props = withDefaults(defineProps<{ initialTab?: Tab }>(), { initialTab: 'appearance' })
 const emit = defineEmits<{ close: []; saved: [value: AppPreferences]; 'ai-saved': [value: any] }>()
 const AiSettings = defineAsyncComponent(() => import('./AiSettings.vue'))
+const UpdateSettings = defineAsyncComponent(() => import('./UpdateSettings.vue'))
 const shared = useSettings()
 const draft = ref<AppPreferences>(normalizePreferences(shared.preferences.value))
 let baseline = JSON.stringify(draft.value)
@@ -33,6 +34,7 @@ const zoomMode = computed({ get: () => draft.value.pdf.initialZoom === 'fit-widt
 const tabs: { id: Tab; label: string; icon: string }[] = [
   { id: 'appearance', label: '外观', icon: 'sun' }, { id: 'reading', label: '阅读', icon: 'book' },
   { id: 'shortcuts', label: '快捷键', icon: 'settings' }, { id: 'ai', label: 'AI', icon: 'sparkle' },
+  { id: 'updates', label: '更新', icon: 'import' },
 ]
 onMounted(async () => {
   await nextTick(); dialog.value?.focus()
@@ -199,6 +201,7 @@ function resetTab() {
   if (tab.value === 'appearance') { restoreBackground(); draft.value.appearance = defaults.appearance }
   if (tab.value === 'reading') { draft.value.pdf = defaults.pdf; draft.value.markdown = defaults.markdown }
   if (tab.value === 'shortcuts') restoreAll()
+  if (tab.value === 'updates') draft.value.updates = defaults.updates
   status.value = ''
 }
 async function save() {
@@ -249,6 +252,7 @@ function dialogKeydown(event: KeyboardEvent) {
             <label class="setting-row"><span>主题</span><select v-model="draft.appearance.theme" :disabled="saving" aria-label="主题"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></label>
             <label class="setting-row"><span>默认文档视图</span><select v-model="draft.appearance.libraryView" :disabled="saving" aria-label="默认文档视图"><option value="grid">卡片</option><option value="list">列表</option></select></label>
             <div class="setting-row transparency-row"><label for="glass-transparency">玻璃透明度</label><div class="transparency-control"><input id="glass-transparency" v-model.number="draft.appearance.glassTransparency" :style="{ '--value': draft.appearance.glassTransparency }" :disabled="saving" type="range" min="0" max="100" step="1" aria-label="玻璃透明度" :aria-valuetext="`${draft.appearance.glassTransparency}%`" /><output for="glass-transparency">{{ draft.appearance.glassTransparency }}%</output><span class="slider-endpoints" aria-hidden="true"><span>实色</span><span>清透</span></span></div></div>
+            <div class="setting-row transparency-row"><label for="glass-blur">模糊程度</label><div class="transparency-control"><input id="glass-blur" v-model.number="draft.appearance.glassBlur" :style="{ '--value': draft.appearance.glassBlur }" :disabled="saving || draft.appearance.glassTransparency === 0" type="range" min="0" max="100" step="1" aria-label="模糊程度" :aria-valuetext="`${draft.appearance.glassBlur}%`" /><output for="glass-blur">{{ draft.appearance.glassBlur }}%</output><span class="slider-endpoints" aria-hidden="true"><span>清晰</span><span>朦胧</span></span></div></div>
             </div>
             <h3 class="section-heading">底板</h3>
             <div class="settings-group background-setting">
@@ -302,6 +306,7 @@ function dialogKeydown(event: KeyboardEvent) {
             </div>
             <p v-if="captureError" class="settings-error" role="status">{{ captureError }}</p>
           </template>
+          <UpdateSettings v-if="ready && tab === 'updates'" v-model:auto-check="draft.updates.autoCheck" v-model:prerelease="draft.updates.prerelease" :disabled="saving" />
           <AiSettings v-if="ready && aiVisited" v-show="tab === 'ai'" ref="aiSettings" embedded />
           <section v-if="ready && tab === 'ai'" class="quick-prompts-section" aria-label="快捷提问设置">
             <div class="quick-prompts-heading"><h3>快捷提问</h3><button type="button" class="text-action" :disabled="saving" @click="restoreQuickPrompts" aria-label="恢复全部快捷提问默认">恢复默认</button></div>
@@ -352,7 +357,7 @@ button{color:var(--control-ink)}
 .settings-body{display:flex;flex:1;min-height:0}
 /* 分类：一列胶囊，选中的一滴玻璃上下滑动。 */
 .settings-tabs{flex:0 0 156px;padding:10px 0 10px 14px;display:flex;flex-direction:column;gap:3px}
-.settings-tabs button{height:40px;font-size:13px;justify-content:flex-start;gap:10px;background:none;border:0;box-shadow:none;padding:9px 14px;color:var(--control-ink);border-radius:var(--r-full);transition:background-color var(--dur-1) var(--ease-soft)}
+.settings-tabs button{height:40px;font-size:13px;justify-content:flex-start;gap:10px;background:none;border:0;box-shadow:none;padding:9px 14px;color:var(--control-ink);border-radius:var(--r-control);transition:background-color var(--dur-1) var(--ease-soft)}
 .settings-tabs button:hover:not(:disabled){background-color:var(--control-hover);color:var(--control-ink)}
 /* 选中的分类页仅调整灰度底色，保持统一文字颜色。 */
 .settings-tabs button.selected{background-color:var(--control-selected);background-image:var(--glass-sheen);color:var(--control-ink);font-weight:600;box-shadow:var(--glass-control-shadow)}
@@ -433,7 +438,7 @@ button{color:var(--control-ink)}
 .font-preview p+p{font-size:15px}
 .background-heading>span{flex:1}
 .background-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--secondary);font-size:12px}
-.background-heading button{min-height:34px;padding:6px 15px;font-size:12px;font-weight:600;background-color:var(--glass-2);background-image:var(--glass-sheen);border:1px solid var(--glass-outline);border-radius:var(--r-full);box-shadow:var(--glass-control-shadow);color:var(--control-ink)}
+.background-heading button{min-height:34px;padding:6px 15px;font-size:12px;font-weight:600;background-color:var(--glass-2);background-image:var(--glass-sheen);border:1px solid var(--glass-outline);border-radius:var(--r-control);box-shadow:var(--glass-control-shadow);color:var(--control-ink)}
 .background-heading button:hover:not(:disabled){background-color:var(--control-hover);color:var(--control-ink)}
 .background-file{display:none}
 .background-setting .settings-help{margin:12px 0 0}
@@ -443,7 +448,7 @@ button{color:var(--control-ink)}
 .quick-prompt-editor{padding:14px 16px 16px;margin:0 0 12px;min-width:0}
 .quick-prompt-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
 .quick-prompt-heading h4{font-size:13px;font-weight:650;margin:0;color:var(--control-ink)}
-.quick-prompt-heading button{height:30px;padding:4px 13px;font-size:11.5px;font-weight:600;border:1px solid var(--glass-outline);border-radius:var(--r-full);background-color:var(--glass-2);color:var(--control-ink);box-shadow:var(--glass-control-shadow)}
+.quick-prompt-heading button{height:30px;padding:4px 13px;font-size:11.5px;font-weight:600;border:1px solid var(--glass-outline);border-radius:var(--r-control);background-color:var(--glass-2);color:var(--control-ink);box-shadow:var(--glass-control-shadow)}
 .quick-prompt-heading button:hover:not(:disabled){background-color:var(--control-hover)}
 .quick-prompt-editor>label{display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--secondary);font-size:11.5px;margin-bottom:6px}
 .quick-prompt-counter{color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -465,7 +470,7 @@ button{color:var(--control-ink)}
 .settings-error{font-size:11.5px;line-height:1.8;color:var(--danger);margin:14px 14px 0;white-space:pre-line}
 .settings-footer{padding:12px 16px 16px 22px;display:flex;align-items:center;gap:10px;border-top:1px solid var(--separator)}
 .footer-space{flex:1}
-.settings-footer button{min-width:86px;height:40px;font-size:13px;font-weight:600;padding:8px 20px;border-color:var(--glass-outline);border-radius:var(--r-full);background-color:var(--glass-2);background-image:var(--glass-sheen);color:var(--control-ink);box-shadow:var(--glass-control-shadow)}
+.settings-footer button{min-width:86px;height:40px;font-size:13px;font-weight:600;padding:8px 20px;border-color:var(--glass-outline);border-radius:var(--r-control);background-color:var(--glass-2);background-image:var(--glass-sheen);color:var(--control-ink);box-shadow:var(--glass-control-shadow)}
 .settings-footer button:hover:not(:disabled){background-color:var(--control-hover);border-color:var(--glass-outline);color:var(--control-ink)}
 .settings-footer .text-action{min-width:0;height:34px;padding:5px 12px;font-size:12px;background:none;border:0;box-shadow:none;color:var(--accent)}
 .settings-footer .text-action:hover:not(:disabled){background-color:color-mix(in srgb,var(--accent) 10%,transparent);color:var(--accent)}

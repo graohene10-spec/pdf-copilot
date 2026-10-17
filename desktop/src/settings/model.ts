@@ -2,6 +2,7 @@ import { normalizeBackground, backgroundErrors, type BackgroundImage } from './b
 import { defaultQuickPrompts, normalizeQuickPrompts, quickPromptErrors, defaultCaptureQuestions, normalizeCaptureQuestions, captureQuestionErrors, type QuickPrompt, type QuickPrompts } from './quick-prompts.ts'
 
 export type ShortcutAction = 'import' | 'search' | 'find' | 'fullscreen' | 'settings' | 'sidebar' | 'ai' | 'outline' | 'capture' | 'fitWidth' | 'zoomOut' | 'zoomIn' | 'previousPage' | 'nextPage' | 'aiSend' | 'aiStop' | 'nextTab' | 'previousTab' | 'closeTab' | 'split'
+export type UpdatePreferences = { autoCheck: boolean; prerelease: boolean }
 export type ThemePreference = 'system' | 'light' | 'dark'
 export type BackdropPreset = 'mist' | 'dawn' | 'mint' | 'lavender' | 'graphite' | 'paper'
 /* 字体：只列常见的中文字体。选中却未安装时，按顺序退回系统字体。 */
@@ -18,6 +19,8 @@ export const UI_FONTS: FontChoice[] = [
 ]
 const SERIF = "'Times New Roman', serif"
 export const READING_FONTS: FontChoice[] = [
+  // 西文用 Anthropic Serif（未安装时用随应用附带的 Source Serif 4），中文仍走系统黑体，读起来与 Claude 一致。
+  { id: 'anthropic', label: 'Anthropic Serif（西文衬线，中文黑体）', families: [], stack: `'Anthropic Serif', 'Tiempos Text', 'Source Serif 4 Variable', Georgia, ${SYSTEM_SANS}` },
   { id: 'ui', label: '跟随界面字体', families: [], stack: '' },
   font('source-han-serif', '思源宋体', ['Source Han Serif SC', 'Noto Serif CJK SC', 'Noto Serif SC', '思源宋体'], SERIF),
   font('wenkai', '霞鹜文楷', ['LXGW WenKai', 'LXGW WenKai Screen', '霞鹜文楷'], SYSTEM_SANS),
@@ -33,10 +36,11 @@ export const BACKDROPS: { id: BackdropPreset; label: string }[] = [
 ]
 export interface AppPreferences {
   version: 3
-  appearance: { theme: ThemePreference; libraryView: 'grid' | 'list'; glassTransparency: number; backdrop: BackdropPreset; background: BackgroundImage | null; gallery: BackgroundImage[]; uiFont: string; readingFont: string }
+  appearance: { theme: ThemePreference; libraryView: 'grid' | 'list'; glassTransparency: number; glassBlur: number; backdrop: BackdropPreset; background: BackgroundImage | null; gallery: BackgroundImage[]; uiFont: string; readingFont: string }
   pdf: { initialZoom: 'fit-width' | number; zoomStep: number; fitOnPanelOverflow: boolean; openAssistantOnCapture: boolean; quickAskOnCapture: boolean }
   markdown: { fontSize: number; contentWidth: number }
   assistant: { quickPrompts: QuickPrompts; captureQuestions: QuickPrompt[] }
+  updates: UpdatePreferences
   shortcuts: Record<ShortcutAction, string>
 }
 export type AppearancePreferences = AppPreferences['appearance']
@@ -66,9 +70,9 @@ export const DEFAULT_SHORTCUTS: Readonly<Record<ShortcutAction, string>> = Objec
 const LEGACY_GLASS: Record<string, number> = { clear: 85, balanced: 70, rich: 30, solid: 0 }
 export const MAX_GALLERY = 6
 export function defaultPreferences(): AppPreferences {
-  return { version: 3, appearance: { theme: 'system', libraryView: 'grid', glassTransparency: 70, backdrop: 'mist', background: null, gallery: [], uiFont: 'system', readingFont: 'ui' },
+  return { version: 3, appearance: { theme: 'system', libraryView: 'grid', glassTransparency: 70, glassBlur: 50, backdrop: 'mist', background: null, gallery: [], uiFont: 'system', readingFont: 'anthropic' },
     pdf: { initialZoom: 'fit-width', zoomStep: 15, fitOnPanelOverflow: true, openAssistantOnCapture: true, quickAskOnCapture: true },
-    markdown: { fontSize: 17, contentWidth: 840 }, assistant: { quickPrompts: defaultQuickPrompts(), captureQuestions: defaultCaptureQuestions() }, shortcuts: { ...DEFAULT_SHORTCUTS } }
+    markdown: { fontSize: 17, contentWidth: 840 }, assistant: { quickPrompts: defaultQuickPrompts(), captureQuestions: defaultCaptureQuestions() }, updates: { autoCheck: true, prerelease: false }, shortcuts: { ...DEFAULT_SHORTCUTS } }
 }
 const modifierOrder = ['Ctrl', 'Alt', 'Shift', 'Meta']
 const aliases: Record<string, string> = { control: 'Ctrl', ctrl: 'Ctrl', alt: 'Alt', option: 'Alt', shift: 'Shift', meta: 'Meta', cmd: 'Meta', command: 'Meta' }
@@ -122,11 +126,15 @@ export function normalizePreferences(value: unknown, legacyTheme?: string | null
   const appearance = record(input.appearance), pdf = record(input.pdf), markdown = record(input.markdown), shortcuts = record(input.shortcuts)
   defaults.assistant.quickPrompts = normalizeQuickPrompts(record(input.assistant).quickPrompts)
   defaults.assistant.captureQuestions = normalizeCaptureQuestions(record(input.assistant).captureQuestions)
+  const updates = record(input.updates)
+  defaults.updates.autoCheck = typeof updates.autoCheck === 'boolean' ? updates.autoCheck : true
+  defaults.updates.prerelease = updates.prerelease === true
   const theme = appearance.theme || legacyTheme
   defaults.appearance.theme = ['system', 'light', 'dark'].includes(theme) ? theme : defaults.appearance.theme
   defaults.appearance.libraryView = ['grid', 'list'].includes(appearance.libraryView) ? appearance.libraryView : defaults.appearance.libraryView
   const legacyGlass = typeof appearance.glass === 'string' && Object.hasOwn(LEGACY_GLASS, appearance.glass) ? LEGACY_GLASS[appearance.glass] : defaults.appearance.glassTransparency
   defaults.appearance.glassTransparency = range(appearance.glassTransparency, 0, 100, legacyGlass)
+  defaults.appearance.glassBlur = range(appearance.glassBlur, 0, 100, 50)
   defaults.appearance.backdrop = BACKDROPS.some(item => item.id === appearance.backdrop) ? appearance.backdrop : defaults.appearance.backdrop
   defaults.appearance.background = normalizeBackground(appearance.background)
   // Uploaded images stay in a small gallery; the selected one is always part of it.
@@ -137,7 +145,7 @@ export function normalizePreferences(value: unknown, legacyTheme?: string | null
   }
   defaults.appearance.gallery = gallery
   defaults.appearance.uiFont = UI_FONTS.some(item => item.id === appearance.uiFont) ? appearance.uiFont : 'system'
-  defaults.appearance.readingFont = READING_FONTS.some(item => item.id === appearance.readingFont) ? appearance.readingFont : 'ui'
+  defaults.appearance.readingFont = READING_FONTS.some(item => item.id === appearance.readingFont) ? appearance.readingFont : 'anthropic'
   defaults.pdf.initialZoom = pdf.initialZoom === 'fit-width' || pdf.initialZoom === undefined ? 'fit-width' : range(pdf.initialZoom, 25, 400, 100)
   defaults.pdf.zoomStep = range(pdf.zoomStep, 5, 50, defaults.pdf.zoomStep)
   defaults.pdf.fitOnPanelOverflow = typeof pdf.fitOnPanelOverflow === 'boolean' ? pdf.fitOnPanelOverflow : defaults.pdf.fitOnPanelOverflow
@@ -168,6 +176,7 @@ export function preferenceErrors(value: AppPreferences): string[] {
   if (!READING_FONTS.some(item => item.id === value.appearance.readingFont)) errors.push('请选择有效阅读字体。')
   const check = (name: string, number: number, min: number, max: number) => { if (!Number.isFinite(number) || !Number.isInteger(number) || number < min || number > max) errors.push(`${name}须为 ${min}–${max} 的整数。`) }
   check('玻璃透明度', value.appearance.glassTransparency, 0, 100)
+  check('模糊程度', value.appearance.glassBlur, 0, 100)
   errors.push(...backgroundErrors(value.appearance.background))
   errors.push(...quickPromptErrors(value.assistant?.quickPrompts))
   errors.push(...captureQuestionErrors(value.assistant?.captureQuestions))

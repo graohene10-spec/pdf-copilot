@@ -1,5 +1,6 @@
 import { createApp } from 'vue';
 import App from './App.vue';
+import '@fontsource-variable/source-serif-4/opsz.css';
 import './styles.css';
 import './styles/liquid-glass.css';
 import './styles/select.css';

@@ -336,7 +336,7 @@ test('background gallery keeps custom images when a preset is chosen and always 
   const preferences = defaultPreferences()
   assert.deepEqual(preferences.appearance.gallery, [])
   assert.equal(preferences.appearance.uiFont, 'system')
-  assert.equal(preferences.appearance.readingFont, 'ui')
+  assert.equal(preferences.appearance.readingFont, 'anthropic')
   const a = image('a.png', 1), b = image('b.png', 2)
   const chosen = normalizePreferences({ appearance: { background: b, gallery: [a] } })
   assert.deepEqual(chosen.appearance.gallery.map(item => item.name), ['a.png', 'b.png'])

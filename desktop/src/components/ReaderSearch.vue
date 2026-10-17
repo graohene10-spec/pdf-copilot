@@ -29,7 +29,7 @@ defineExpose({ focus })
 
 <style scoped>
 /* 工具条里的搜索框是一段灰色填充胶囊，不再叠一层玻璃。 */
-.reader-search { display: flex; align-items: center; gap: 4px; height: 36px; flex: 0 1 320px; width: clamp(170px, 25vw, 320px); min-width: 170px; margin-left: auto; padding: 0 4px 0 12px; border: 1px solid transparent; border-radius: var(--r-full); background-color: var(--fill-3); color: var(--control-ink); transition: background-color var(--dur-1) var(--ease-soft), border-color var(--dur-1) var(--ease-soft), box-shadow var(--dur-2) var(--ease-soft); }
+.reader-search { display: flex; align-items: center; gap: 4px; height: 36px; flex: 0 1 320px; width: clamp(170px, 25vw, 320px); min-width: 170px; margin-left: auto; padding: 0 4px 0 12px; border: 1px solid transparent; border-radius: var(--r-control); background-color: var(--fill-3); color: var(--control-ink); transition: background-color var(--dur-1) var(--ease-soft), border-color var(--dur-1) var(--ease-soft), box-shadow var(--dur-2) var(--ease-soft); }
 .reader-search:hover:not(:focus-within) { background-color: var(--fill-2); }
 .reader-search:focus-within { border-color: color-mix(in srgb, var(--accent) 55%, transparent); background-color: var(--fill-4); box-shadow: 0 0 0 4px var(--accent-ring); }
 .reader-search > svg { flex: 0 0 auto; opacity: .62; }

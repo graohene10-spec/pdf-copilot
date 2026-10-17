@@ -43,9 +43,9 @@ onBeforeUnmount(() => { document.removeEventListener('pointerdown', outside, tru
 
 <style scoped>
 /* 右键菜单：实底小卡片，从光标处弹出。 */
-.context-menu{position:fixed;z-index:90;min-width:220px;max-width:300px;padding:6px;border-radius:14px;background:var(--surface);border:1px solid var(--line);box-shadow:0 16px 40px -12px rgb(0 0 0 / .32),0 2px 6px rgb(0 0 0 / .06);color:var(--surface-ink);font-family:var(--font-ui);transform-origin:0 0;animation:zg-pop-in var(--dur-3) var(--spring-snappy) both}
-button{display:flex;align-items:center;gap:10px;width:100%;height:34px;padding:0 10px;border:0;border-radius:9px;background:none;box-shadow:none;font:inherit;font-size:12.5px;color:inherit;text-align:left;cursor:pointer}
-button:hover:not(:disabled),button:focus-visible{background:var(--fill-3);outline:none}
+.context-menu{position:fixed;z-index:90;min-width:220px;max-width:300px;padding:5px;border-radius:var(--r-lg);background-color:var(--popup-glass);background-image:var(--popup-sheen);-webkit-backdrop-filter:blur(var(--popup-blur)) saturate(var(--glass-sat));backdrop-filter:blur(var(--popup-blur)) saturate(var(--glass-sat));border:1px solid var(--glass-outline);box-shadow:0 16px 40px -14px rgb(0 0 0 / .3),var(--glass-edge);color:var(--surface-ink);font-family:var(--font-ui);transform-origin:0 0;animation:zg-pop-in var(--dur-3) var(--spring-snappy) both}
+button{display:flex;align-items:center;gap:10px;width:100%;height:32px;padding:0 10px;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;font:inherit;font-size:12.5px;color:inherit;text-align:left;cursor:pointer}
+button:hover:not(:disabled),button:focus-visible{background:color-mix(in srgb,var(--surface-ink) 8%,transparent);outline:none}
 button svg{flex-shrink:0;color:var(--surface-muted)}
 .icon-space{flex:0 0 15px}
 button span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

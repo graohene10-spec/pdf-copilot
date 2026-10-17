@@ -76,8 +76,9 @@ try {
   await page.getByRole('button', { name: `打开 ${names[0]}`, exact: true }).click();
   await ready(2); await matches(3, 1); await page.waitForTimeout(200);
   assert.equal(await find().inputValue(), 'TARGET'); assert.equal(await pageInput.inputValue(), '2');
-  assert.ok(await page.evaluate(() => window.__pdfSearchWorkers) > beforeColdWorkers, 'Cold restoration creates a new worker after the reader is unmounted');
-  report.push({ check: 'Cold restore retains search results without overriding a later saved reading position' });
+  // The reading workspace stays alive while the library is shown, so returning is warm: same worker, same results.
+  assert.equal(await page.evaluate(() => window.__pdfSearchWorkers), beforeColdWorkers, 'Returning from the library reuses the live reader and its worker');
+  report.push({ check: 'A library round trip keeps the reader, its search results and the reading position' });
   assert.deepEqual(errors, []); passed = true;
   await page.screenshot({ path: resolve(artifacts, 'pdf-search-ui.png') });
 } finally {

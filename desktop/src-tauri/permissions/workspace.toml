@@ -2,3 +2,8 @@
 identifier = "reading-workspace"
 description = "Read imported documents, manage library metadata, and use configured AI providers."
 commands.allow = ["list_documents", "import_documents", "read_document", "update_document", "remove_document", "read_asset", "index_document", "get_setting", "set_setting", "get_credential", "set_credential", "native_connect", "native_send", "native_disconnect", "http_start", "http_cancel"]
+
+[[permission]]
+identifier = "app-updates"
+description = "Check GitHub Releases for new desktop versions, download and verify the installer, run it, and open the release page."
+commands.allow = ["update_status", "update_check", "update_download", "update_cancel", "update_install", "update_open_page"]

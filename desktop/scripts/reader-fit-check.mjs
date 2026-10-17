@@ -119,6 +119,8 @@ async function togglePanel(button, selector) {
   const wasOpen = await panel.count() > 0;
   await button.click();
   await panel.waitFor({ state: wasOpen ? 'detached' : 'visible' });
+  // Panels slide in and out; measure once their transition has ended, not mid-animation.
+  await page.waitForFunction(() => !document.querySelector('[class*="-enter-active"],[class*="-leave-active"]'), null, { timeout: 15000 });
 }
 const panels = {
   sidebar: async () => togglePanel(page.getByRole('button', { name: '切换侧栏', exact: true }), '.app-sidebar'),

@@ -11,7 +11,7 @@ const names = ['并排验证-A.pdf', '并排验证-B.pdf', '并排验证-C.pdf']
 const port = 1466, origin = `http://127.0.0.1:${port}`;
 let server, browser, page;
 const shot = name => page.screenshot({ path: resolve(artifacts, name), animations: 'disabled' });
-const panes = () => page.evaluate(() => [...document.querySelectorAll('.reader-pane')].filter(pane => pane.offsetParent).sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left).map(pane => ({ name: pane.querySelector('.pill-name')?.textContent || '', width: Math.round(pane.getBoundingClientRect().width), focused: pane.classList.contains('focused') })));
+const panes = () => page.evaluate(() => [...document.querySelectorAll('.reader-pane')].filter(pane => pane.offsetParent).sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left).map(pane => ({ name: (pane.querySelector('.reading-pill')?.dataset.tip || '').replace(/\.(pdf|md|markdown)$/i, ''), width: Math.round(pane.getBoundingClientRect().width), focused: pane.classList.contains('focused') })));
 async function settled() {
   await page.waitForFunction(() => {
     const visible = [...document.querySelectorAll('.reader-pane')].filter(pane => pane.offsetParent);

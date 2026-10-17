@@ -1,0 +1,120 @@
+# Builds the Windows desktop app (开智) for a `desktop-vX.Y.Z` tag and publishes the
+# GitHub Release that the in-app updater reads. Tags with a pre-release suffix
+# (desktop-v0.3.0-beta.1) become GitHub pre-releases, offered only to testers.
+# Extension tags (vX.Y.Z) do not match and are never built here.
+name: Desktop release
+
+on:
+  push:
+    tags: ['desktop-v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 已推送的标签，例如 desktop-v0.3.0 或 desktop-v0.3.0-beta.1
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            desktop/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> target
+
+      - name: Check tag and versions
+        run: |
+          $version = (Get-Content desktop/package.json -Raw | ConvertFrom-Json).version
+          $tauri = (Get-Content desktop/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $cargo = [regex]::Match((Get-Content desktop/src-tauri/Cargo.toml -Raw), '(?ms)^\[package\].*?^version\s*=\s*"([^"]+)"').Groups[1].Value
+          if ($env:RELEASE_TAG -cne "desktop-v$version") { throw "标签 $env:RELEASE_TAG 与 desktop/package.json 的版本 $version 不一致" }
+          if ($tauri -cne $version -or $cargo -cne $version) { throw "package.json ($version)、tauri.conf.json ($tauri) 与 Cargo.toml ($cargo) 的版本必须一致" }
+          "DESKTOP_VERSION=$version" >> $env:GITHUB_ENV
+          "DESKTOP_PRERELEASE=$($version.Contains('-'))" >> $env:GITHUB_ENV
+
+      - name: Build Windows Codex helper
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { throw 'npm ci failed' }
+          npm run build:host
+          if ($LASTEXITCODE -ne 0) { throw 'Helper build failed' }
+
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { throw 'npm ci failed' }
+          # Copies the helper into src-tauri/resources, which the Rust build script requires.
+          node scripts/prepare-assets.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Preparing assets failed' }
+
+      - name: Test
+        working-directory: desktop
+        run: |
+          npm test
+          if ($LASTEXITCODE -ne 0) { throw 'JavaScript tests failed' }
+          cargo test --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Rust tests failed' }
+
+      - name: Build installer
+        working-directory: desktop
+        run: npm run desktop:build
+
+      - name: Package release assets
+        working-directory: desktop
+        run: |
+          npm run package:desktop
+          if ($LASTEXITCODE -ne 0) { throw 'Packaging failed' }
+          node scripts/release-assets.mjs --tag $env:RELEASE_TAG
+          if ($LASTEXITCODE -ne 0) { throw 'Release assets failed' }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kaizhi-${{ env.DESKTOP_VERSION }}
+          path: desktop/release/github/
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $assets = @(Get-ChildItem desktop/release/github -File | ForEach-Object FullName)
+          gh release view $env:RELEASE_TAG *> $null
+          if ($LASTEXITCODE -eq 0) {
+            # Re-running the workflow replaces the assets; title and notes stay as edited.
+            gh release upload $env:RELEASE_TAG @assets --clobber
+          } else {
+            $title = "开智 $env:DESKTOP_VERSION · Windows 桌面版"
+            $notes = "desktop/RELEASE_NOTES_$env:DESKTOP_VERSION.md"
+            $arguments = @('release', 'create', $env:RELEASE_TAG) + $assets + @('--verify-tag', '--title', $title)
+            if (Test-Path -LiteralPath $notes) { $arguments += @('--notes-file', $notes) } else { $arguments += '--generate-notes' }
+            if ($env:DESKTOP_PRERELEASE -eq 'True') { $arguments += '--prerelease' } else { $arguments += '--latest' }
+            gh @arguments
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'Publishing the release failed' }

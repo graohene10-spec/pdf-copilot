@@ -22,7 +22,7 @@ export class RequestScheduler {
   }
   acquire({ owner, provider, signal, onState }) {
     signal.throwIfAborted();
-    if ([...this.jobs.values()].some(job => job.owner === owner)) throw new Error('这份文档已有提问正在运行或等待。');
+    if ([...this.jobs.values()].some(job => job.owner === owner)) throw new Error('这段对话已有提问正在运行或等待。');
     const id = crypto.randomUUID();
     let resolve, reject;
     const started = new Promise((done, fail) => { resolve = done; reject = fail; });

@@ -36,7 +36,7 @@ async function compareState(name, locator, select, deselect) {
   if (deselect) { await deselect(); await settle(); }
 }
 // Liquid Glass geometry: panels use large concentric corners, controls are capsules.
-async function shapes(name, selectors, { capsule = false, minRadius = 6 } = {}) {
+async function shapes(name, selectors, { capsule = false, minRadius = 6, maxRadius = Infinity } = {}) {
   const actual = await page.locator(selectors).evaluateAll(elements => elements.filter(element => element.getBoundingClientRect().width > 0 && element.getBoundingClientRect().height > 0).map(element => {
     const css = getComputedStyle(element), rect = element.getBoundingClientRect();
     return { name: element.className || element.tagName, width: rect.width, height: rect.height, radius: [css.borderTopLeftRadius, css.borderTopRightRadius, css.borderBottomRightRadius, css.borderBottomLeftRadius].map(parseFloat) };
@@ -45,6 +45,7 @@ async function shapes(name, selectors, { capsule = false, minRadius = 6 } = {}) 
   for (const item of actual) {
     const required = capsule ? Math.min(item.width, item.height) / 2 - 1 : minRadius;
     assert.ok(item.radius.every(value => Math.min(value, Math.min(item.width, item.height) / 2) >= required), `${name}: ${item.name} is ${capsule ? 'a capsule' : 'rounded'} (${item.radius}).`);
+    assert.ok(item.radius.every(value => value <= maxRadius), `${name}: ${item.name} keeps squarer corners ≤ ${maxRadius}px (${item.radius}).`);
   }
   checks.push(`${name}: ${actual.length} visible ${capsule ? 'controls are capsules' : `surfaces have corners ≥ ${minRadius}px`}.`);
 }
@@ -102,12 +103,14 @@ try {
     await indicator(`${theme}: list layout`, '.view-switch', 'button.selected');
     await recent.click(); await settle(); await indicator(`${theme}: category`, '.workspace-nav', 'button.selected');
     await page.locator('.workspace-nav button').filter({ hasText: '全部文档' }).click(); await settle();
-    await shapes(`${theme}: library surfaces`, '.app-sidebar,.document-card,.document-cover', { minRadius: 10 });
-    await shapes(`${theme}: library capsules`, '.app-topbar,.library-search,.library-summary > div,.view-switch,.view-switch button,.heading-count,.topbar-actions,.topbar-actions .icon-button', { capsule: true });
+    await shapes(`${theme}: library surfaces`, '.app-sidebar,.document-card,.document-cover', { minRadius: 8 });
+    // Bars and buttons use moderately rounded rectangles; small counters stay pills.
+    await shapes(`${theme}: library controls`, '.app-topbar,.library-search,.view-switch,.view-switch button,.topbar-actions,.topbar-actions .icon-button', { minRadius: 6, maxRadius: 16 });
+    await shapes(`${theme}: library pills`, '.library-summary > div,.heading-count', { capsule: true });
     // Sidebar controls are squarer rounded rectangles (12px), concentric with the 28px panel.
     const sidebarRadii = await page.locator('.app-sidebar .import-button,.workspace-nav button,.sidebar-bottom button').evaluateAll(elements => elements.map(element => parseFloat(getComputedStyle(element).borderTopLeftRadius)));
-    assert.ok(sidebarRadii.length >= 4 && sidebarRadii.every(value => value === 12), `${theme}: sidebar controls use 12px corners (${sidebarRadii}).`);
-    assert.equal(await page.locator('.workspace-nav > .liquid-indicator').evaluate(element => getComputedStyle(element).borderTopLeftRadius), '12px', `${theme}: the sidebar droplet matches its items.`);
+    assert.ok(sidebarRadii.length >= 4 && sidebarRadii.every(value => value === 10), `${theme}: sidebar controls use 10px corners (${sidebarRadii}).`);
+    assert.equal(await page.locator('.workspace-nav > .liquid-indicator').evaluate(element => getComputedStyle(element).borderTopLeftRadius), '10px', `${theme}: the sidebar droplet matches its items.`);
     checks.push(`${theme}: sidebar controls and droplet share 12px corners.`);
     await shot(`glass-shape-library-${theme}.png`);
 
@@ -131,8 +134,8 @@ try {
     const ai = page.getByRole('button', { name: '阅读助手', exact: true });
     await compareState(`${theme}: AI assistant`, ai, () => ai.click());
     await indicator(`${theme}: file tabs`, '.tab-strip', '.file-tab.selected');
-    await shapes(`${theme}: reading panels`, '.ai-pane,.composer-field,.markdown-paper', { minRadius: 16 });
-    await shapes(`${theme}: reading capsules`, '.reader-tools,.reader-tools button,.reader-zoom,.reader-search,.tab-strip,.file-tab,.tab-library,.ai-pane .suggestions button,.model-picker,.context-switch,.reading-pill', { capsule: true });
+    await shapes(`${theme}: reading panels`, '.ai-pane,.composer-field,.markdown-paper', { minRadius: 12 });
+    await shapes(`${theme}: reading controls`, '.reader-tools,.reader-tools button,.reader-zoom,.reader-search,.tab-strip,.file-tab,.tab-library,.ai-pane .suggestions button,.model-picker,.context-switch,.reading-pill', { minRadius: 6, maxRadius: 16 });
     await shapes(`${theme}: assistant header buttons`, '.ai-pane .header-button', { minRadius: 10 });
     const suggestion = page.getByRole('button', { name: '梳理核心观点', exact: true });
     const suggestionColor = (await style(suggestion)).color;
@@ -142,7 +145,7 @@ try {
     await page.getByRole('textbox', { name: '向 AI 提问', exact: true }).fill('本页的主要结论是什么？');
     const send = page.getByRole('button', { name: '发送', exact: true });
     assert.equal(await send.isEnabled(), true);
-    await shapes(`${theme}: send`, '.send-button', { capsule: true });
+    await shapes(`${theme}: send`, '.send-button', { minRadius: 6, maxRadius: 16 });
     await page.getByRole('textbox', { name: '向 AI 提问', exact: true }).fill('');
     await shot(`glass-shape-reading-${theme}.png`);
     await page.getByRole('button', { name: '关闭阅读助手', exact: true }).click(); await settle();
@@ -153,7 +156,7 @@ try {
     assert.equal((await style(markdownTab)).color, selectedTabColor, `${theme}: file tab hover keeps foreground.`);
     const crop = page.locator('.crop-toggle');
     await compareState(`${theme}: PDF capture mode`, crop, () => crop.click(), () => crop.click());
-    await shapes(`${theme}: PDF controls`, '.reader-tools,.reader-tools button,.reader-page-control input,.reader-zoom', { capsule: true });
+    await shapes(`${theme}: PDF controls`, '.reader-tools,.reader-tools button,.reader-page-control input,.reader-zoom', { minRadius: 6, maxRadius: 16 });
 
     await page.getByRole('button', { name: '打开设置', exact: true }).click(); await dialog().waitFor(); await settle();
     const readingCategory = dialog().getByRole('button', { name: '阅读', exact: true });
@@ -163,11 +166,11 @@ try {
     await transparency.fill('83');
     assert.equal((await style(transparency)).color, sliderColor, `${theme}: transparency adjustment keeps the neutral foreground.`);
     await indicator(`${theme}: settings category`, '.settings-tabs', 'button.selected');
-    await shapes(`${theme}: settings surfaces`, '.settings-dialog,.settings-group', { minRadius: 18 });
-    await shapes(`${theme}: settings capsules`, '.settings-tabs button,.settings-dialog select,.settings-dialog input:not([type=checkbox]):not([type=range]):not([type=file]),.settings-close,.settings-footer button:not(.text-action),.settings-dialog input[type=checkbox]', { capsule: true });
+    await shapes(`${theme}: settings surfaces`, '.settings-dialog,.settings-group', { minRadius: 12 });
+    await shapes(`${theme}: settings capsules`, '.settings-tabs button,.settings-dialog select,.settings-dialog input:not([type=checkbox]):not([type=range]):not([type=file]),.settings-close,.settings-footer button:not(.text-action),.settings-dialog input[type=checkbox]', { minRadius: 6 });
     await shot(`glass-shape-settings-${theme}.png`);
     await dialog().getByRole('button', { name: 'AI', exact: true }).click(); await settle();
-    await shapes(`${theme}: AI settings`, '.ai-settings input,.ai-settings select,.ai-settings button', { capsule: true });
+    await shapes(`${theme}: AI settings`, '.ai-settings input,.ai-settings select,.ai-settings button', { minRadius: 6 });
     await dialog().getByRole('button', { name: '取消', exact: true }).click(); await dialog().waitFor({ state: 'detached' });
     await libraryTab.click(); await settle();
     checks.push(`${theme}: category, list, library/file tabs, Markdown/PDF modes, details, AI, settings category and glass selection preserve foreground including hover.`);

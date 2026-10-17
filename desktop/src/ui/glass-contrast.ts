@@ -10,8 +10,9 @@ const LIGHT: RGB = [242, 244, 247]
 const COLORS: Record<Ink, string> = { dark: '#161a20', light: '#f2f4f7' }
 const VARIABLES = ['--ink', '--control-ink', '--secondary', '--muted', '--glass-label-shadow']
 const TEXT_REGIONS = '.breadcrumb,.library-search>kbd,.library-summary>div,.library-summary>.summary-note,.library-list-heading>span,.library-empty>h2,.library-empty>p,.library-empty>small,.document-card-title h3,.document-meta,.document-progress>span'
-const TARGETS = '.app-sidebar,.app-topbar,.library-heading,.library-search,.library-summary,.library-toolbar,.library-list-heading,.library-empty,.document-card,.reader-tools,.document-details,.file-tab,' + TEXT_REGIONS
-const EXCLUDED = '.document-collection.list,.settings-backdrop,.dialog-backdrop,.settings-dialog,.confirm-dialog,.markdown-paper,.pdf-scroll,.message-content,.document-cover,.user-question,.ai-selection-context,.message-code,.message-math,.source-pill'
+// Tabs take the top bar's ink rather than their own: per-tab sampling could leave one tab dark on a dark bar.
+const TARGETS = '.ai-pane,.app-sidebar,.app-topbar,.library-heading,.library-search,.library-summary,.library-toolbar,.library-list-heading,.library-empty,.document-card,.reader-tools,.document-details,' + TEXT_REGIONS
+const EXCLUDED = '.answer-code-block,.answer-diagram,.history-menu,.rail-preview,.model-card,.question-editor,.document-collection.list,.settings-backdrop,.dialog-backdrop,.settings-dialog,.confirm-dialog,.markdown-paper,.pdf-scroll,.message-content,.document-cover,.user-question,.ai-selection-context,.message-code,.message-math,.source-pill'
 
 function luminance(rgb: RGB): number {
   const channels = rgb.map(value => {

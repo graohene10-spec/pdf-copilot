@@ -160,9 +160,12 @@ try {
   report.push({ test: 'closing a cached tab frees its canvas and removes cache ownership', passed: true });
 
   await page.getByRole('button', { name: '文档库', exact: true }).click();
-  await page.waitForTimeout(350); assert.equal((await stats()).length, 0);
+  // The workspace stays alive behind the library: readers are kept but suspended, each holding at most one small page.
+  await page.waitForTimeout(350);
+  const libraryCache = await stats();
+  assert.ok(libraryCache.length > 0 && libraryCache.every(entry => !entry.active && entry.suspended && entry.pages <= 1 && entry.pixels <= 4_000_000), JSON.stringify(libraryCache));
   await page.getByRole('button', { name: `打开 ${names[0]}`, exact: true }).click(); await ready(5);
-  report.push({ test: 'library view releases all warm buffers; reading state survives reopening', passed: true });
+  report.push({ test: 'library view suspends warm readers down to one page; reading state survives reopening', passed: true });
 
   // Hold the real worker request before parsing malformed local bytes, so
   // its error arrives while another tab is active rather than racing UI clicks.

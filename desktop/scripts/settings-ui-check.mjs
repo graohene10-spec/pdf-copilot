@@ -108,7 +108,7 @@ try {
   assert.equal(await page.locator('html').getAttribute('data-theme'), 'dark');
   await page.locator('.document-collection.list').waitFor();
   const initial = await storedPreferences();
-  assert.deepEqual(initial.appearance, { theme: 'dark', libraryView: 'list', glassTransparency: 70, backdrop: 'mist', background: null, gallery: [], uiFont: 'system', readingFont: 'ui' });
+  assert.deepEqual(initial.appearance, { theme: 'dark', libraryView: 'list', glassTransparency: 70, glassBlur: 50, backdrop: 'mist', background: null, gallery: [], uiFont: 'system', readingFont: 'anthropic' });
   assert.equal(initial.pdf.initialZoom, 125);
   assert.equal(initial.pdf.zoomStep, 10);
   report.push('Theme, default list view and PDF numeric preferences save through the real browser adapter.');

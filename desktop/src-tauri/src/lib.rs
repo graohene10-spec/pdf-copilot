@@ -3,6 +3,7 @@ mod db;
 mod files;
 mod http_stream;
 mod native_bridge;
+mod updater;
 
 use db::{Document,DocumentPatch,Library,Result};
 use std::{path::{Path,PathBuf},sync::{Arc,Mutex}};
@@ -163,7 +164,8 @@ pub fn run() {
                 window.state::<AppState>().http.cancel_all();
             }
         })
-        .invoke_handler(tauri::generate_handler![list_documents,import_documents,read_document,update_document,remove_document,read_asset,index_document,get_setting,set_setting,get_credential,set_credential,native_connect,native_send,native_disconnect,http_start,http_cancel])
+        .invoke_handler(tauri::generate_handler![list_documents,import_documents,read_document,update_document,remove_document,read_asset,index_document,get_setting,set_setting,get_credential,set_credential,native_connect,native_send,native_disconnect,http_start,http_cancel,
+            updater::update_status,updater::update_check,updater::update_download,updater::update_cancel,updater::update_install,updater::update_open_page])
         .run(tauri::generate_context!())
         .expect("开智启动失败");
 }

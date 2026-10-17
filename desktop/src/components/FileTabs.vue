@@ -120,13 +120,13 @@ onBeforeUnmount(() => { resizeObserver?.disconnect(); window.removeEventListener
 
 <style scoped>
 .file-tabs{display:flex;align-items:center;min-width:0;flex:1;gap:8px;height:100%}
-.tab-library{height:40px;border:1px solid var(--glass-outline);background-color:var(--glass-2);background-image:var(--glass-sheen);box-shadow:var(--glass-control-shadow);color:var(--control-ink);font-size:12px;font-weight:550;padding:6px 14px 6px 11px;flex-shrink:0;gap:7px;border-radius:var(--r-full);transition:background-color var(--dur-1) var(--ease-soft)}
+.tab-library{height:40px;border:1px solid var(--glass-outline);background-color:var(--glass-2);background-image:var(--glass-sheen);box-shadow:var(--glass-control-shadow);color:var(--control-ink);font-size:12px;font-weight:550;padding:6px 14px 6px 11px;flex-shrink:0;gap:7px;border-radius:var(--r-control);transition:background-color var(--dur-1) var(--ease-soft)}
 .tab-library:hover:not(:disabled){background-color:var(--control-hover);color:var(--control-ink)}
 .tab-library.selected{background-color:var(--control-selected);background-image:var(--glass-sheen);color:var(--control-ink);font-weight:600;box-shadow:var(--glass-control-shadow)}
 .tab-library.selected:hover:not(:disabled){background-color:var(--control-selected-hover);color:var(--control-ink)}
-.tab-strip{position:relative;display:flex;gap:2px;overflow-x:auto;overflow-y:hidden;min-width:0;height:40px;align-items:center;padding:2px;border-radius:var(--r-full);background:var(--fill-4);scrollbar-width:none}
+.tab-strip{position:relative;display:flex;gap:2px;overflow-x:auto;overflow-y:hidden;min-width:0;height:40px;align-items:center;padding:2px;border-radius:var(--r-control);background:var(--fill-4);scrollbar-width:none}
 .tab-strip::-webkit-scrollbar{display:none}
-.file-tab{position:relative;z-index:1;display:flex;align-items:center;flex:0 0 172px;min-width:0;height:36px;padding-inline:2px 4px;border-radius:var(--r-full);color:var(--control-ink);transition:background-color var(--dur-1) var(--ease-soft);touch-action:none}
+.file-tab{position:relative;z-index:1;display:flex;align-items:center;flex:0 0 172px;min-width:0;height:36px;padding-inline:2px 4px;border-radius:var(--r-control);color:var(--control-ink);transition:background-color var(--dur-1) var(--ease-soft);touch-action:none}
 .file-tab:hover{background-color:var(--control-hover);color:var(--control-ink)}
 .file-tab.selected{background-color:var(--control-selected);background-image:var(--glass-sheen);box-shadow:var(--glass-control-shadow);color:var(--control-ink);font-weight:600}
 .file-tab.selected:hover{background-color:var(--control-selected-hover)}
@@ -139,8 +139,8 @@ onBeforeUnmount(() => { resizeObserver?.disconnect(); window.removeEventListener
 .file-tab.dragging{z-index:5;background-color:var(--surface);box-shadow:0 8px 20px -6px rgb(0 0 0 / .3);transition:none;cursor:grabbing}
 /* 并排组的外框。 */
 /* 选择器加长，压过 .liquid-group > * 的 position: relative；否则边框成了占位的 flex 项。 */
-.tab-strip>.group-frame{position:absolute;top:1px;bottom:1px;z-index:0;border-radius:var(--r-full);border:1.5px solid color-mix(in srgb,var(--accent) 55%,transparent);background:color-mix(in srgb,var(--accent) 8%,transparent);pointer-events:none;transition:left var(--dur-smooth) var(--spring-smooth),width var(--dur-smooth) var(--spring-smooth)}
-.file-tab>[role=tab]{min-width:0;flex:1;height:32px;border:0;background:transparent;box-shadow:none;border-radius:var(--r-full);justify-content:flex-start;gap:7px;font-size:12px;font-weight:inherit;color:var(--control-ink);padding:6px 4px 6px 11px}
+.tab-strip>.group-frame{position:absolute;top:1px;bottom:1px;z-index:0;border-radius:var(--r-control);border:1.5px solid color-mix(in srgb,var(--accent) 55%,transparent);background:color-mix(in srgb,var(--accent) 8%,transparent);pointer-events:none;transition:left var(--dur-smooth) var(--spring-smooth),width var(--dur-smooth) var(--spring-smooth)}
+.file-tab>[role=tab]{min-width:0;flex:1;height:32px;border:0;background:transparent;box-shadow:none;border-radius:var(--r-control);justify-content:flex-start;gap:7px;font-size:12px;font-weight:inherit;color:var(--control-ink);padding:6px 4px 6px 11px}
 .file-tab>[role=tab]:hover:not(:disabled){background:transparent}
 .file-tab>[role=tab]>span{white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
 .file-tab svg{flex-shrink:0}

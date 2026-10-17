@@ -5,7 +5,7 @@ import type { Doc } from './sdk/types'
 import AppIcon from './components/AppIcon.vue'
 import FileTabs from './components/FileTabs.vue'
 import CaptureQuickPrompt from './components/CaptureQuickPrompt.vue'
-import { chatPhase, chatState, sendChat, closeChat, closeAllChats, configureRequests, stopChat } from './ai/workspace'
+import { chatPhase, chatState, sendChat, closeChat, closeAllChats, configureRequests, stopChat, notices, dismissNotice, selectConversation, type Notice } from './ai/workspace'
 import { forgetPassword, forgetAllPasswords } from './document/passwords.mjs'
 import { useSettings, matchShortcut, matchWheelShortcut, shortcutFromEvent, shortcutLabel, UI_FONTS, READING_FONTS } from './settings'
 import { retainReaderEntries } from './reader/cache-policy.mjs'
@@ -14,11 +14,13 @@ import { floatLeavingPanel, restoreLeavingPanel } from './ui/panel-transition'
 import { useFullscreen } from './ui/fullscreen'
 import { vLiquidSelection } from './ui/liquid-selection'
 import { useReorder } from './ui/reorder'
+import { startAutoCheck, stopAutoCheck } from './ui/updater'
 const PdfReader = defineAsyncComponent(() => import('./components/PdfReader.vue'))
 const MarkdownReader = defineAsyncComponent(() => import('./components/MarkdownReader.vue'))
 const AiPane = defineAsyncComponent(() => import('./components/AiPane.vue'))
 const SettingsDialog = defineAsyncComponent(() => import('./components/SettingsDialog.vue'))
 const SplitPicker = defineAsyncComponent(() => import('./components/SplitPicker.vue'))
+const UpdateCard = defineAsyncComponent(() => import('./components/UpdateCard.vue'))
 const ContextMenu = defineAsyncComponent(() => import('./components/ContextMenu.vue'))
 const { preferences, effectiveAppearance, load: loadPreferences, save: savePreferences } = useSettings()
 
@@ -48,10 +50,17 @@ function paneVisible(id: string) { return paneIds.value.includes(id) }
 function visibleReaders() { return paneIds.value.map(id => readerInstances.get(id)).filter(Boolean) }
 function pdfOnScreen() { return paneIds.value.some(id => tabs.value.find(tab => tab.doc.id === id)?.doc.kind === 'pdf') }
 const visibleAi = computed(() => !active.value ? [] : aiPanels.value.filter(panel => !panel.doc || paneVisible(panel.doc)))
+// 去文档库时阅读工作区只是藏起来：文档栏与阅读助手原样留着，回来时不必重新加载。
+const lastActive = ref<Doc | null>(null)
+watch(active, value => { if (value) lastActive.value = value })
+watch(() => tabs.value.map(tab => tab.doc.id).join(), () => { if (lastActive.value && !tabs.value.some(tab => tab.doc.id === lastActive.value!.id)) lastActive.value = tabs.value.at(-1)?.doc || null })
+const stageDoc = computed(() => active.value || lastActive.value)
+const stagePaneIds = computed(() => !stageDoc.value ? [] : inGroup(stageDoc.value.id) ? group.value : [stageDoc.value.id])
+const stageAi = computed(() => active.value ? visibleAi.value : aiPanels.value.filter(panel => !panel.doc || stagePaneIds.value.includes(panel.doc)))
 const aiOpen = computed(() => visibleAi.value.length > 0)
-function aiDocument(panel: AiPanel) { const doc = tabDoc(panel.doc || active.value?.id || ''); return doc ? { id: doc.id, title: doc.name, kind: doc.kind } : null }
+function aiDocument(panel: AiPanel) { const doc = tabDoc(panel.doc || stageDoc.value?.id || ''); return doc ? { id: doc.id, title: doc.name, kind: doc.kind } : null }
 function aiContext(panel: AiPanel) {
-  const id = panel.doc || active.value?.id
+  const id = panel.doc || stageDoc.value?.id
   const tab = tabs.value.find(tab => tab.doc.id === id)
   return { page: tab?.doc.page || 1, selection: id === active.value?.id ? selection.value : tab?.selection }
 }
@@ -84,13 +93,11 @@ watch(group, value => {
 }, { flush: 'sync' })
 /* 阅读位置胶囊：翻页或保存后展开约两秒，随后收成一颗进度环。 */
 const pillAwake = reactive<Record<string, boolean>>({})
-const pillSaved = reactive<Record<string, boolean>>({})
 const pillTimers = new Map<string, ReturnType<typeof setTimeout>>()
-function wakePill(id: string, saved = false) {
+function wakePill(id: string) {
   pillAwake[id] = true
-  if (saved) pillSaved[id] = true
   clearTimeout(pillTimers.get(id))
-  pillTimers.set(id, setTimeout(() => { pillAwake[id] = false; pillSaved[id] = false; pillTimers.delete(id) }, saved ? 1600 : 2200))
+  pillTimers.set(id, setTimeout(() => { pillAwake[id] = false; pillTimers.delete(id) }, 2200))
 }
 function tabDoc(id: string) { return tabs.value.find(tab => tab.doc.id === id)?.doc }
 type ReaderEntry = { id: string; doc: Doc; size: number; bytes: Uint8Array; view?: any; events: Record<string, (...args: any[]) => void> }
@@ -108,7 +115,7 @@ const captureQuickBusy = computed(() => Boolean(captureQuick.value && (captureQu
 const captureQuickStatus = computed(() => captureQuick.value?.status || (captureQuick.value && chatState(captureQuick.value.documentId).request ? '这份文档已有问题正在处理，可点继续查看。' : ''))
 const reader = ref<any>()
 const settingsOpen = ref(false)
-const settingsTab = ref<'appearance' | 'reading' | 'shortcuts' | 'ai'>('appearance')
+const settingsTab = ref<'appearance' | 'reading' | 'shortcuts' | 'ai' | 'updates'>('appearance')
 const fitRequest = ref(0)
 const query = ref('')
 const category = ref('all')
@@ -246,7 +253,7 @@ async function flushProgress() {
 }
 function writeReadingUpdate(id: string, patch: Partial<Doc>, message: string) {
   const write = (progressWrites.get(id) || Promise.resolve()).then(async () => {
-    try { updateLocal(await library.update(id, patch)); if ('page' in patch && paneVisible(id)) wakePill(id, true) }
+    try { updateLocal(await library.update(id, patch)); if ('page' in patch && paneVisible(id)) wakePill(id) }
     catch (error) { notify(`${message}：${reason(error)}`) }
   })
   progressWrites.set(id, write)
@@ -359,7 +366,13 @@ async function loadGroupReaders(epoch: number) {
     } catch (error) { notify(`无法打开 ${tab.doc.name}：${reason(error)}`); removeFromGroup(id) }
   }
 }
-function closeReader() { suspendLeaving([]); pauseReader(); ++openEpoch; void flushProgress(); splitPicker.value = undefined; active.value = null; readerCache.value = []; readerInstances.clear(); opening.value = false; selection.value = undefined; detailsOpen.value = false; void refresh() }
+function closeReader() {
+  suspendLeaving([]); pauseReader(); ++openEpoch; void flushProgress(); splitPicker.value = undefined; active.value = null; opening.value = false; selection.value = undefined; detailsOpen.value = false
+  // 没有打开的文件时才真正清空工作区；否则读者与助手留在原处，回来即用。
+  if (!tabs.value.length) clearWorkspace()
+  void refresh()
+}
+function clearWorkspace() { lastActive.value = null; readerCache.value = []; readerInstances.clear() }
 function focusPane(id: string) {
   if (active.value?.id === id || !paneVisible(id)) return
   const tab = tabs.value.find(tab => tab.doc.id === id)
@@ -520,6 +533,13 @@ function startPanelDrag(event: PointerEvent, key: string) {
   window.addEventListener('pointerup', endPanelDrag)
   window.addEventListener('pointercancel', endPanelDrag)
 }
+// 文档栏与助手窗口一样可拖：按住工具条空白处（不是按钮、输入框）即可拖动换位。
+function paneToolbarGrab(event: PointerEvent, id: string) {
+  const target = event.target as Element
+  if (!multiPanel.value || !target.closest('.reader-tools') || target.closest('button,input,select,textarea,a,label,[role=slider],[contenteditable]')) return
+  event.preventDefault()
+  startPanelDrag(event, `doc:${id}`)
+}
 function panelElements() { return panels.value.map(key => document.querySelector<HTMLElement>(`[data-panel-key="${CSS.escape(key)}"]`)).filter(Boolean) as HTMLElement[] }
 function movePanelDrag(event: PointerEvent) {
   const drag = panelDrag
@@ -576,6 +596,54 @@ function endPanelDrag() {
 // ---- Tab context menu -------------------------------------------------------
 type MenuItem = { label: string; icon?: string; action: () => void; danger?: boolean; disabled?: boolean; separator?: boolean; hint?: string }
 const contextMenu = ref<{ x: number; y: number; items: MenuItem[] }>()
+// 整个应用不出现 WebView 自带的右键菜单（返回、刷新、另存为……），按点到的位置给出自己的玻璃菜单。
+// 没在看的对话答完时，右下角浮出一张小玻璃卡，几秒后自己收拢消失。
+const noticeTimers = new Map<string, ReturnType<typeof setTimeout>>()
+watch(() => notices.map(item => item.id).join(), () => {
+  for (const notice of notices) if (!noticeTimers.has(notice.id)) noticeTimers.set(notice.id, setTimeout(() => { noticeTimers.delete(notice.id); dismissNotice(notice.id) }, 9000))
+})
+function holdNotice(id: string, hold: boolean) {
+  clearTimeout(noticeTimers.get(id)); noticeTimers.delete(id)
+  if (!hold) noticeTimers.set(id, setTimeout(() => { noticeTimers.delete(id); dismissNotice(id) }, 4000))
+}
+async function openNotice(notice: Notice) {
+  dismissNotice(notice.id)
+  const doc = tabs.value.find(tab => tab.doc.id === notice.documentId)?.doc || documents.value.find(item => item.id === notice.documentId)
+  if (!doc) return
+  selectConversation(notice.documentId, notice.conversationId)
+  if (active.value?.id !== doc.id) await openDocument(doc)
+  const panel = aiPanels.value.find(item => item.doc === doc.id) || aiPanels.value.find(item => !item.doc)
+  if (panel) { if (!panel.doc) panel.conversation = undefined } else openAssistant(true)
+}
+function appContextMenu(event: MouseEvent) {
+  if (event.defaultPrevented) return
+  event.preventDefault()
+  const target = event.target as HTMLElement
+  const items: MenuItem[] = []
+  const field = target.closest<HTMLInputElement | HTMLTextAreaElement>('textarea, input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file])')
+  const text = window.getSelection()?.toString() || ''
+  if (field) {
+    const editable = !field.readOnly && !field.disabled, selected = (field.selectionEnd ?? 0) > (field.selectionStart ?? 0)
+    field.focus()
+    items.push({ label: '剪切', icon: 'crop', hint: 'Ctrl+X', disabled: !editable || !selected, action: () => { field.focus(); document.execCommand('cut') } })
+    items.push({ label: '复制', icon: 'copy', hint: 'Ctrl+C', disabled: !selected, action: () => { field.focus(); document.execCommand('copy') } })
+    items.push({ label: '粘贴', icon: 'doc', hint: 'Ctrl+V', disabled: !editable, action: () => { void navigator.clipboard.readText().then(value => { field.focus(); document.execCommand('insertText', false, value) }).catch(() => notify('无法读取剪贴板，请用 Ctrl+V 粘贴。')) } })
+    items.push({ label: '全选', icon: 'check', hint: 'Ctrl+A', separator: true, action: () => { field.focus(); field.select() } })
+  } else if (text.trim()) {
+    items.push({ label: '复制', icon: 'copy', hint: 'Ctrl+C', action: () => { void navigator.clipboard.writeText(text).catch(() => document.execCommand('copy')) } })
+    if (active.value && target.closest('.reader-pane')) items.push({ label: '问阅读助手', icon: 'sparkle', action: () => openAssistant(true) })
+  } else if (active.value) {
+    if (!aiOpen.value) items.push({ label: '打开阅读助手', icon: 'sparkle', hint: shortcut('ai'), action: () => openAssistant(true) })
+    items.push({ label: '并排阅读…', icon: 'split', hint: shortcut('split'), action: () => toggleSplitPicker() })
+    items.push({ label: fullscreen.value ? '退出全屏' : '进入全屏', icon: fullscreen.value ? 'exit-fullscreen' : 'fullscreen', hint: shortcut('fullscreen'), separator: true, action: () => { void toggleFullscreen() } })
+    items.push({ label: '设置', icon: 'settings', hint: shortcut('settings'), action: () => openSettings() })
+  } else {
+    items.push({ label: '加入文档', icon: 'plus', hint: shortcut('import'), action: () => { void importDocuments() } })
+    items.push({ label: theme.value === 'dark' ? '切换浅色主题' : '切换深色主题', icon: theme.value === 'dark' ? 'sun' : 'moon', action: () => { void toggleTheme() } })
+    items.push({ label: '设置', icon: 'settings', hint: shortcut('settings'), separator: true, action: () => openSettings() })
+  }
+  contextMenu.value = { x: event.clientX, y: event.clientY, items }
+}
 function tabMenu(payload: { id: string; x: number; y: number }) {
   const tab = tabs.value.find(item => item.doc.id === payload.id)
   if (!tab) return
@@ -782,6 +850,8 @@ function applyTheme() {
   root.dataset.theme = theme.value
   root.dataset.glass = appearance.glassTransparency === 0 ? 'solid' : 'custom'
   root.style.setProperty('--glass-transparency', String(appearance.glassTransparency / 100))
+  // 模糊程度 50% 是默认强度；0 不模糊，100% 为两倍。
+  root.style.setProperty('--glass-blur-scale', String(appearance.glassBlur / 50))
   root.dataset.background = appearance.background ? 'custom' : 'default'
   root.dataset.backdrop = appearance.backdrop
   // Fonts: the interface font replaces the base stack; the reading font defaults to it.
@@ -865,6 +935,8 @@ function shortcut(action: keyof typeof preferences.value.shortcuts) { return sho
 // Bound shortcuts only, for the hover tooltips (data-tip-key); disabled ones show no key.
 const tipKeys = computed<Record<string, string>>(() => Object.fromEntries(Object.entries(preferences.value.shortcuts).filter(([, value]) => value).map(([action, value]) => [action, shortcutLabel(value)])))
 function tipKey(action: keyof typeof preferences.value.shortcuts) { return tipKeys.value[action] || undefined }
+// 发布到 GitHub Releases 的新版本：启动后与每隔几小时检查一次，可在设置里关闭或改收测试版。
+watch(() => `${preferences.value.updates.autoCheck}|${preferences.value.updates.prerelease}`, () => startAutoCheck({ enabled: isDesktop && preferences.value.updates.autoCheck, includePrerelease: preferences.value.updates.prerelease }), { immediate: true })
 watch(effectiveAppearance, () => { applyTheme(); display.value = effectiveAppearance.value.libraryView }, { immediate: true })
 // A tab may mount its reader while several panels are still transitioning.
 watch(reader, value => {
@@ -1002,6 +1074,7 @@ onMounted(async () => {
   glassContrast = installGlassContrast(document.getElementById('app')!)
   glassContrast.setBackground(appliedBackground ?? null)
   document.addEventListener('keydown', keydown)
+  document.addEventListener('contextmenu', appContextMenu)
   document.addEventListener('wheel', wheel, { capture: true, passive: false })
   document.addEventListener('dragenter', dragEnter)
   document.addEventListener('dragover', dragOver)
@@ -1018,7 +1091,7 @@ onMounted(async () => {
   await loadLibraryOrder()
   await refresh()
 })
-onBeforeUnmount(() => { for (const timer of pillTimers.values()) clearTimeout(timer); clearTimeout(enteringTimer); disposed = true; ++openEpoch; dismissCaptureQuick(); stopDropListening?.(); clearWheelZoom(); readerInstances.clear(); glassContrast?.dispose(); document.removeEventListener('keydown', keydown); document.removeEventListener('wheel', wheel, true); document.removeEventListener('dragenter', dragEnter); document.removeEventListener('dragover', dragOver); document.removeEventListener('dragleave', dragLeave); document.removeEventListener('drop', fileDrop); document.removeEventListener('selectionchange', selectionChanged); document.removeEventListener('scroll', dismissSelectionAction, true); document.removeEventListener('scroll', captureViewportChanged, true); window.removeEventListener('resize', dismissSelectionAction); window.removeEventListener('resize', captureViewportChanged); closeAllChats(); forgetAllPasswords(); systemTheme.removeEventListener('change', applyTheme); flushProgress(); for (const timer of indexTimers.values()) clearTimeout(timer); clearTimeout(queryTimer); clearTimeout(toastTimer) })
+onBeforeUnmount(() => { stopAutoCheck(); for (const timer of pillTimers.values()) clearTimeout(timer); clearTimeout(enteringTimer); disposed = true; ++openEpoch; dismissCaptureQuick(); stopDropListening?.(); clearWheelZoom(); readerInstances.clear(); glassContrast?.dispose(); document.removeEventListener('keydown', keydown); document.removeEventListener('contextmenu', appContextMenu); document.removeEventListener('wheel', wheel, true); document.removeEventListener('dragenter', dragEnter); document.removeEventListener('dragover', dragOver); document.removeEventListener('dragleave', dragLeave); document.removeEventListener('drop', fileDrop); document.removeEventListener('selectionchange', selectionChanged); document.removeEventListener('scroll', dismissSelectionAction, true); document.removeEventListener('scroll', captureViewportChanged, true); window.removeEventListener('resize', dismissSelectionAction); window.removeEventListener('resize', captureViewportChanged); closeAllChats(); forgetAllPasswords(); systemTheme.removeEventListener('change', applyTheme); flushProgress(); for (const timer of indexTimers.values()) clearTimeout(timer); clearTimeout(queryTimer); clearTimeout(toastTimer) })
 </script>
 
 <template>
@@ -1027,13 +1100,13 @@ onBeforeUnmount(() => { for (const timer of pillTimers.values()) clearTimeout(ti
     <aside class="app-sidebar" v-if="sidebarOpen" data-glass-interactive="panel">
       <button class="brand" @click="chooseCategory('all')" aria-label="返回文档库"><span class="brand-symbol"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 6.2c2.9-1 5.6-.6 7.7 1.1v11.4c-2.2-1.5-4.8-1.9-7.7-1.1z" fill="currentColor" /><path d="M20.5 6.2c-2.9-1-5.6-.6-7.7 1.1v11.4c2.2-1.5 4.8-1.9 7.7-1.1z" fill="currentColor" opacity=".7" /></svg></span><span>开智</span></button>
       <button class="import-button" data-tip="加入 PDF / Markdown 文档" :data-tip-key="tipKey('import')" @click="importDocuments" :disabled="importing" aria-label="加入文档"><AppIcon name="plus" :size="18" />{{ importing ? '正在导入…' : '加入文档' }}<kbd v-if="preferences.shortcuts.import">{{ shortcut('import') }}</kbd></button>
-      <nav v-liquid-selection="{ radius: '12px' }" class="workspace-nav" aria-label="文档分类">
+      <nav v-liquid-selection="{ radius: 'var(--r-control)' }" class="workspace-nav" aria-label="文档分类">
         <button :class="{ selected: category === 'all' && !tagFilter }" @click="chooseCategory('all')"><AppIcon name="library" :size="18" />全部文档<span>{{ documents.length }}</span></button>
         <button :class="{ selected: category === 'recent' }" @click="chooseCategory('recent')"><AppIcon name="clock" :size="18" />最近阅读</button>
         <button :class="{ selected: category === 'starred' }" @click="chooseCategory('starred')"><AppIcon name="star" :size="18" />我的收藏<span>{{ starredCount }}</span></button>
       </nav>
       <div class="tag-heading"><p class="sidebar-label">标签</p><AppIcon name="tag" :size="14" /></div>
-      <nav v-liquid-selection="{ radius: '12px' }" class="tag-nav" aria-label="文档标签"><button v-for="tag in tags" :key="tag" :class="{ selected: tagFilter === tag }" @click="chooseTag(tag)"><span class="tag-dot"></span>{{ tag }}<span>{{ documents.filter(doc => doc.tags.includes(tag)).length }}</span></button><p v-if="!tags.length" class="tag-empty">可在文档详情中添加标签。</p></nav>
+      <nav v-liquid-selection="{ radius: 'var(--r-control)' }" class="tag-nav" aria-label="文档标签"><button v-for="tag in tags" :key="tag" :class="{ selected: tagFilter === tag }" @click="chooseTag(tag)"><span class="tag-dot"></span>{{ tag }}<span>{{ documents.filter(doc => doc.tags.includes(tag)).length }}</span></button><p v-if="!tags.length" class="tag-empty">可在文档详情中添加标签。</p></nav>
       <div class="sidebar-spacer"></div>
       <div class="sidebar-bottom"><button @click="openSettings()" aria-label="设置"><AppIcon name="settings" :size="17" /><span>设置</span></button><button class="icon-button" @click="toggleTheme($event)" :data-tip="theme === 'dark' ? '切换浅色主题' : '切换深色主题'" :aria-label="theme === 'dark' ? '切换浅色主题' : '切换深色主题'"><AppIcon :name="theme === 'dark' ? 'sun' : 'moon'" :size="17" /></button></div>
     </aside>
@@ -1052,7 +1125,7 @@ onBeforeUnmount(() => { for (const timer of pillTimers.values()) clearTimeout(ti
         </div>
       </header>
 
-      <Transition name="view" mode="out-in">
+      <Transition name="view">
       <div v-if="!active" class="library-view" key="library" data-reorder-scroll>
         <header class="library-header">
           <div class="library-heading"><h1>{{ currentTitle }}<span class="heading-count">{{ visibleDocuments.length }}</span></h1></div>
@@ -1074,23 +1147,25 @@ onBeforeUnmount(() => { for (const timer of pillTimers.values()) clearTimeout(ti
         </div>
       </div>
 
-      <div v-else class="reading-workspace">
+      </Transition>
+      <Transition name="view">
+      <div v-if="stageDoc" v-show="active" class="reading-workspace">
         <section class="reading-main">
-          <div v-if="opening && !multiPanel" class="reader-overlay"><span class="spinner"></span><p>正在打开 {{ active.name }}…</p></div>
+          <div v-if="opening && !multiPanel" class="reader-overlay"><span class="spinner"></span><p>正在打开 {{ stageDoc!.name }}…</p></div>
           <TransitionGroup tag="div" name="pane" class="reader-panes" :class="{ split: splitView, multi: multiPanel, dragging: draggingPanel }" @before-enter="panelResizeStart($event, true)" @before-leave="panelResizeStart($event, false)" @after-enter="panelResizeEnd($event)" @after-leave="panelResizeEnd($event)" @enter-cancelled="panelResizeEnd($event, true)" @leave-cancelled="panelResizeEnd($event, true)">
-            <section v-for="entry in readerCache" v-show="paneVisible(entry.id)" :key="entry.id" class="reader-pane" :class="{ focused: splitView && active.id === entry.id, entering: enteringPane === entry.id, lifted: draggingPanel === `doc:${entry.id}` }" :style="{ order: panelOrder(`doc:${entry.id}`) }" :data-pane-id="entry.id" :data-panel-key="`doc:${entry.id}`" :aria-label="splitView ? `并排阅读：${entry.doc.name}` : undefined" @pointerdown.capture="pointerFocusPane($event, entry.id)" @focusin="focusPane(entry.id)">
+            <section v-for="entry in readerCache" v-show="paneVisible(entry.id)" :key="entry.id" class="reader-pane" :class="{ focused: splitView && stageDoc!.id === entry.id, entering: enteringPane === entry.id, lifted: draggingPanel === `doc:${entry.id}` }" :style="{ order: panelOrder(`doc:${entry.id}`) }" :data-pane-id="entry.id" :data-panel-key="`doc:${entry.id}`" :aria-label="splitView ? `并排阅读：${entry.doc.name}` : undefined" @pointerdown.capture="pointerFocusPane($event, entry.id)" @pointerdown="paneToolbarGrab($event, entry.id)" @focusin="focusPane(entry.id)">
               <button v-if="multiPanel" class="panel-handle" :aria-label="`拖动调整 ${entry.doc.name} 的位置`" data-tip="拖动调整位置" @pointerdown.stop.prevent="startPanelDrag($event, `doc:${entry.id}`)"><i /><i /><i /></button>
               <KeepAlive>
                 <component v-if="paneVisible(entry.id)" :is="entry.doc.kind === 'pdf' ? PdfReader : MarkdownReader" :ref="value => bindReader(entry.id, value)" :key="entry.id" :data="entry.bytes" :document-id="entry.id" :initial-page="entry.doc.page || 1" :initial-progress="entry.doc.progress || 0" :sidebar-fit-enabled="preferences.pdf.fitOnPanelOverflow" :initial-zoom="preferences.pdf.initialZoom === 'fit-width' ? 'fit' : preferences.pdf.initialZoom / 100" :zoom-step="preferences.pdf.zoomStep / 100" :fit-request="fitRequest" :font-size="preferences.markdown.fontSize" :content-width="preferences.markdown.contentWidth" :find-shortcut="preferences.shortcuts.find ? shortcut('find') : ''" :shortcuts="tipKeys" :initial-view="entry.view" v-on="entry.events" />
               </KeepAlive>
-              <div v-if="tabDoc(entry.id)" class="reading-pill" :class="{ awake: pillAwake[entry.id] || splitView, saved: pillSaved[entry.id] }" role="status" :aria-label="`阅读位置自动保存 · ${tabDoc(entry.id)!.kind === 'pdf' ? `第 ${tabDoc(entry.id)!.page || 1} / ${tabDoc(entry.id)!.pageCount || '—'} 页 · ` : ''}已读 ${progressPercent(tabDoc(entry.id)!)}%`">
+              <div v-if="tabDoc(entry.id)" class="reading-pill" :class="{ awake: pillAwake[entry.id] || splitView }" :data-tip="splitView ? entry.doc.name : undefined" role="status" :aria-label="`阅读位置自动保存 · ${tabDoc(entry.id)!.kind === 'pdf' ? `第 ${tabDoc(entry.id)!.page || 1} / ${tabDoc(entry.id)!.pageCount || '—'} 页 · ` : ''}已读 ${progressPercent(tabDoc(entry.id)!)}%`">
                 <svg class="pill-ring" viewBox="0 0 24 24" aria-hidden="true"><circle class="pill-ring-track" cx="12" cy="12" r="9" /><circle class="pill-ring-value" cx="12" cy="12" r="9" pathLength="100" :style="{ strokeDashoffset: 100 - progressPercent(tabDoc(entry.id)!) }" /></svg>
-                <span class="pill-text" aria-hidden="true"><span v-if="splitView" class="pill-name">{{ entry.doc.name.replace(/\.(pdf|md|markdown)$/i, '') }}</span><span v-if="tabDoc(entry.id)!.kind === 'pdf'" class="pill-page"><b :key="tabDoc(entry.id)!.page || 1">{{ tabDoc(entry.id)!.page || 1 }}</b><i>/</i>{{ tabDoc(entry.id)!.pageCount || '—' }}</span><span v-else class="pill-page"><b :key="progressPercent(tabDoc(entry.id)!)">{{ progressPercent(tabDoc(entry.id)!) }}</b><i>%</i></span><span class="pill-saved"><AppIcon name="check" :size="11" />已保存</span></span>
+                <span class="pill-text" aria-hidden="true"><span v-if="tabDoc(entry.id)!.kind === 'pdf'" class="pill-page"><b :key="tabDoc(entry.id)!.page || 1">{{ tabDoc(entry.id)!.page || 1 }}</b><i>/</i>{{ tabDoc(entry.id)!.pageCount || '—' }}</span><span v-else class="pill-page"><b :key="progressPercent(tabDoc(entry.id)!)">{{ progressPercent(tabDoc(entry.id)!) }}</b><i>%</i></span></span>
                 <button v-if="splitView" class="pill-close" :data-tip="`移出并排`" :aria-label="`关闭并排的 ${entry.doc.name}`" @click.stop="closePane(entry.id)"><AppIcon name="close" :size="11" /></button>
               </div>
             </section>
             <section v-for="id in (multiPanel ? paneIds.filter(id => !readerCache.some(entry => entry.id === id)) : [])" :key="`pending:${id}`" class="reader-pane pending" :style="{ order: panelOrder(`doc:${id}`) }"><div class="reader-overlay"><span class="spinner"></span><p>正在打开 {{ tabDoc(id)?.name }}…</p></div></section>
-            <section v-for="panel in visibleAi" :key="panel.key" class="ai-panel" :class="{ lifted: draggingPanel === panel.key }" :style="{ order: panelOrder(panel.key), width: `${panel.width}px` }" :data-panel-key="panel.key">
+            <section v-for="panel in stageAi" :key="panel.key" class="ai-panel" :class="{ lifted: draggingPanel === panel.key }" :style="{ order: panelOrder(panel.key), width: `${panel.width}px` }" :data-panel-key="panel.key">
               <div class="panel-resizer" :data-edge="panelOrder(panel.key) === 0 && multiPanel ? 'right' : 'left'" role="separator" aria-orientation="vertical" aria-label="拖动调整阅读助手宽度" data-tip="拖动调整宽度，双击恢复" @pointerdown.stop="startWidthDrag($event, panel.key)" @pointermove="moveWidthDrag" @pointerup="endWidthDrag" @pointercancel="endWidthDrag" @dblclick="panel.width = 380" />
               <AiPane v-if="aiDocument(panel)" :ref="value => bindAi(panel.key, value)" data-glass-interactive="panel" :document="aiDocument(panel)!" :context="aiContext(panel)" :conversation-id="panel.conversation" :draggable="multiPanel" :send-shortcut="preferences.shortcuts.aiSend ? shortcut('aiSend') : ''" :consume-capture="consumeSelection" @settings="openSettings('ai')" @close="closeAiPanel(panel.key)" @jump="jump" @clear-selection="clearSelection" @conversation="id => setPanelConversation(panel.key, id)" @grab="startPanelDrag($event, panel.key)" />
             </section>
@@ -1098,7 +1173,7 @@ onBeforeUnmount(() => { for (const timer of pillTimers.values()) clearTimeout(ti
           <div v-if="selection && !captureQuick && !aiOpen && selection.image" class="selection-context"><AppIcon name="crop" :size="16" /><span>{{ selection.image ? `已框选第 ${selection.page} 页的图表或公式` : `已选择 ${selection.text.length} 个字符` }}</span><button @click="openAssistant(true)"><AppIcon name="sparkle" :size="15" />向 AI 提问</button><button class="icon-button" @click="clearSelection" data-tip="清除选区" aria-label="清除选区"><AppIcon name="close" :size="14" /></button></div>
         </section>
         <Transition name="pane" @before-enter="paneResizeStart($event, true)" @before-leave="paneResizeStart($event, false)" @after-enter="paneResizeEnd" @after-leave="paneResizeEnd" @enter-cancelled="paneResizeEnd($event, true)" @leave-cancelled="paneResizeEnd($event, true)">
-          <aside v-if="detailsOpen" class="document-details pane-shell"><div class="details-heading"><h3>文档详情</h3><button class="icon-button" @click="detailsOpen = false" data-tip="关闭文档详情" aria-label="关闭文档详情"><AppIcon name="close" :size="17" /></button></div><div class="detail-icon"><AppIcon :name="active.kind === 'pdf' ? 'file' : 'markdown'" :size="30" /></div><h4>{{ active.name }}</h4><dl><dt>格式</dt><dd>{{ active.kind === 'pdf' ? 'PDF' : 'Markdown' }}</dd><dt>文件大小</dt><dd>{{ size(active.size) }}</dd><dt>加入时间</dt><dd>{{ date(active.addedAt) }}</dd><dt>文件位置</dt><dd class="detail-path">{{ active.path }}</dd></dl><p class="eyebrow">标签</p><div class="editable-tags"><span v-for="tag in active.tags" :key="tag">{{ tag }}<button @click="removeTag(tag)" :data-tip="`移除标签 ${tag}`" :aria-label="`移除标签 ${tag}`"><AppIcon name="close" :size="12" /></button></span></div><form class="add-tag" @submit.prevent="addTag"><input v-model="tagInput" placeholder="添加标签" maxlength="40" /><button :disabled="!tagInput.trim()" data-tip="添加标签" aria-label="添加标签"><AppIcon name="plus" :size="16" /></button></form><button class="remove-document" @click="removeTarget = active"><AppIcon name="trash" :size="16" />从文档库移除</button></aside>
+          <aside v-if="detailsOpen && active" class="document-details pane-shell"><div class="details-heading"><h3>文档详情</h3><button class="icon-button" @click="detailsOpen = false" data-tip="关闭文档详情" aria-label="关闭文档详情"><AppIcon name="close" :size="17" /></button></div><div class="detail-icon"><AppIcon :name="active.kind === 'pdf' ? 'file' : 'markdown'" :size="30" /></div><h4>{{ stageDoc!.name }}</h4><dl><dt>格式</dt><dd>{{ active.kind === 'pdf' ? 'PDF' : 'Markdown' }}</dd><dt>文件大小</dt><dd>{{ size(active.size) }}</dd><dt>加入时间</dt><dd>{{ date(active.addedAt) }}</dd><dt>文件位置</dt><dd class="detail-path">{{ active.path }}</dd></dl><p class="eyebrow">标签</p><div class="editable-tags"><span v-for="tag in active.tags" :key="tag">{{ tag }}<button @click="removeTag(tag)" :data-tip="`移除标签 ${tag}`" :aria-label="`移除标签 ${tag}`"><AppIcon name="close" :size="12" /></button></span></div><form class="add-tag" @submit.prevent="addTag"><input v-model="tagInput" placeholder="添加标签" maxlength="40" /><button :disabled="!tagInput.trim()" data-tip="添加标签" aria-label="添加标签"><AppIcon name="plus" :size="16" /></button></form><button class="remove-document" @click="removeTarget = active"><AppIcon name="trash" :size="16" />从文档库移除</button></aside>
         </Transition>
       </div>
       </Transition>
@@ -1110,6 +1185,14 @@ onBeforeUnmount(() => { for (const timer of pillTimers.values()) clearTimeout(ti
     <Transition name="capture-focus"><CaptureQuickPrompt v-if="captureQuick && !settingsOpen" :frame="captureQuick.frame" :prompts="preferences.assistant.captureQuestions" :busy="captureQuickBusy" :status="captureQuickStatus" @ask="askCaptureQuick" @continue="continueCaptureQuick" @cancel="dismissCaptureQuick(true)" /></Transition>
     <div v-if="draggingFiles" class="file-drop-overlay" aria-live="polite"><div class="file-drop-target"><AppIcon name="plus" :size="32" /><strong>加入文档库</strong><span>松开以加入 PDF / Markdown 文档</span></div></div>
     <button v-if="selectionAction && selection?.text && !aiOpen && active" class="selection-ask" :style="{ left: selectionAction.left + 'px', top: selectionAction.top + 'px' }" @mousedown.prevent @click="openAssistant(true)" aria-label="用所选文字向 AI 提问"><AppIcon name="sparkle" :size="14" />问 AI</button>
+    <UpdateCard v-if="!settingsOpen" />
+    <TransitionGroup tag="div" name="notice" class="notice-stack" aria-live="polite">
+      <div v-for="notice in notices" :key="notice.id" class="answer-notice" role="status" @pointerenter="holdNotice(notice.id, true)" @pointerleave="holdNotice(notice.id, false)">
+        <span class="notice-mark" aria-hidden="true"><AppIcon name="check" :size="13" /></span>
+        <button class="notice-body" @click="openNotice(notice)"><strong>{{ notice.title }}</strong><small>已回答完 · {{ notice.documentTitle.replace(/\.(pdf|md|markdown)$/i, '') }}</small></button>
+        <button class="notice-close" aria-label="关闭提示" @click="dismissNotice(notice.id)"><AppIcon name="close" :size="12" /></button>
+      </div>
+    </TransitionGroup>
     <Transition name="toast"><div v-if="toast" class="toast-message" role="status"><span>{{ toast }}</span><button @click="toast = ''" data-tip="关闭提示" aria-label="关闭提示"><AppIcon name="close" :size="15" /></button></div></Transition>
     <Transition name="dialog">
       <div v-if="removeTarget" class="dialog-backdrop" @click.self="removeTarget = null"><section class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="remove-title"><div class="dialog-icon"><AppIcon name="trash" :size="24" /></div><h2 id="remove-title">从文档库移除？</h2><p>「{{ removeTarget.name }}」的阅读记录与标签会被移除，原文件仍保留在电脑上。</p><div class="dialog-actions"><button @click="removeTarget = null">取消</button><button class="danger-button" @click="removeDocument">移除文档</button></div></section></div>
