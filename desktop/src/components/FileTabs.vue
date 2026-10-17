@@ -138,7 +138,8 @@ onBeforeUnmount(() => { resizeObserver?.disconnect(); window.removeEventListener
 /* 拖动中的标签浮起，其余标签让位。 */
 .file-tab.dragging{z-index:5;background-color:var(--surface);box-shadow:0 8px 20px -6px rgb(0 0 0 / .3);transition:none;cursor:grabbing}
 /* 并排组的外框。 */
-.group-frame{position:absolute;top:1px;bottom:1px;z-index:0;border-radius:var(--r-full);border:1.5px solid color-mix(in srgb,var(--accent) 55%,transparent);background:color-mix(in srgb,var(--accent) 8%,transparent);pointer-events:none;transition:left var(--dur-smooth) var(--spring-smooth),width var(--dur-smooth) var(--spring-smooth)}
+/* 选择器加长，压过 .liquid-group > * 的 position: relative；否则边框成了占位的 flex 项。 */
+.tab-strip>.group-frame{position:absolute;top:1px;bottom:1px;z-index:0;border-radius:var(--r-full);border:1.5px solid color-mix(in srgb,var(--accent) 55%,transparent);background:color-mix(in srgb,var(--accent) 8%,transparent);pointer-events:none;transition:left var(--dur-smooth) var(--spring-smooth),width var(--dur-smooth) var(--spring-smooth)}
 .file-tab>[role=tab]{min-width:0;flex:1;height:32px;border:0;background:transparent;box-shadow:none;border-radius:var(--r-full);justify-content:flex-start;gap:7px;font-size:12px;font-weight:inherit;color:var(--control-ink);padding:6px 4px 6px 11px}
 .file-tab>[role=tab]:hover:not(:disabled){background:transparent}
 .file-tab>[role=tab]>span{white-space:nowrap;text-overflow:ellipsis;overflow:hidden}

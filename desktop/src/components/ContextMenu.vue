@@ -36,7 +36,7 @@ onBeforeUnmount(() => { document.removeEventListener('pointerdown', outside, tru
   <div ref="menu" class="context-menu" role="menu" :style="style" @keydown="keydown" @contextmenu.prevent>
     <template v-for="(item, index) in items" :key="index">
       <hr v-if="item.separator" />
-      <button type="button" role="menuitem" :class="{ danger: item.danger }" :disabled="item.disabled" @click="run(item)"><AppIcon v-if="item.icon" :name="item.icon" :size="15" /><span>{{ item.label }}</span><small v-if="item.hint">{{ item.hint }}</small></button>
+      <button type="button" role="menuitem" :class="{ danger: item.danger }" :disabled="item.disabled" @click="run(item)"><AppIcon v-if="item.icon" :name="item.icon" :size="15" /><i v-else class="icon-space" aria-hidden="true" /><span>{{ item.label }}</span><small v-if="item.hint">{{ item.hint }}</small></button>
     </template>
   </div>
 </template>
@@ -47,6 +47,7 @@ onBeforeUnmount(() => { document.removeEventListener('pointerdown', outside, tru
 button{display:flex;align-items:center;gap:10px;width:100%;height:34px;padding:0 10px;border:0;border-radius:9px;background:none;box-shadow:none;font:inherit;font-size:12.5px;color:inherit;text-align:left;cursor:pointer}
 button:hover:not(:disabled),button:focus-visible{background:var(--fill-3);outline:none}
 button svg{flex-shrink:0;color:var(--surface-muted)}
+.icon-space{flex:0 0 15px}
 button span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 button small{font-size:11px;color:var(--surface-muted)}
 button.danger{color:var(--danger)}
