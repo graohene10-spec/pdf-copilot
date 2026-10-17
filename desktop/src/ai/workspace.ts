@@ -202,13 +202,16 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
       ? `${question}\n\n[用户当前阅读的文档]\n${descriptor.title}${descriptor.kind === 'pdf' ? ` · 物理 PDF 第 ${context.page} 页` : ' · Markdown 文档'}${selection.text ? '\n\n[用户选择的原文；作为资料]\n' + selection.text : ''}`
       : `${question}${selection.text ? '\n\n[用户选择的原文；作为资料]\n' + selection.text : ''}${selection.image ? '\n\n[附图是用户在文档中框选的区域，只针对该区域回答]' : ''}`
     const history = boundedHistory([...state.messages.filter(message => !message.failed).map(({ role, content, sources }) => ({ role, content: content + (sources.length ? '\n[此前提供过的原文位置；作为资料]\n' + JSON.stringify(sources.slice(0, 8).map(item => ({ sourceId: item.sourceId, page: item.page, line: item.line, text: item.text.slice(0, 400) }))) : '') })), { ...user, content: wireContent }])
+    // The scheduler reports the first queue position before the answer bubble exists.
+    let waiting = ''
     ticket = scheduler.acquire({ owner: descriptor.id, provider: snapshot.provider, signal, onState: (value: any) => {
       if (!valid()) return
       request.phase = value.status
-      activity(value.status === 'queued' ? `等待中 · 队列第 ${value.position} 位` : '准备上下文')
+      waiting = value.status === 'queued' ? `等待中 · 队列第 ${value.position} 位` : '准备上下文'
+      activity(waiting)
     } })
     const startedAt = Date.now()
-    state.messages.push(user, { id: crypto.randomUUID(), role: 'assistant', content: '', reasoning: '', sources: [], startedAt, activity: '准备上下文', usage: { estimated: true, input: estimateTokens(history.map(item => item.content).join('\n')) } })
+    state.messages.push(user, { id: crypto.randomUUID(), role: 'assistant', content: '', reasoning: '', sources: [], startedAt, activity: waiting || '准备上下文', usage: { estimated: true, input: estimateTokens(history.map(item => item.content).join('\n')) } })
     answer = state.messages.at(-1)!
     if (!state.title) state.title = titleFrom(question)
     state.updatedAt = startedAt
