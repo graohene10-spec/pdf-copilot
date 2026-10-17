@@ -95,14 +95,14 @@ try {
   await page.waitForFunction(() => document.documentElement.dataset.background === 'custom');
   await page.locator('[data-tip="列表视图"]').click();
   await shot('开智-清透玻璃-自定义底板-浅色.png');
-  await page.locator('[data-tip="切换深色主题"]').first().click();
+  await page.locator('[data-tip="切换深色主题"]').first().click(); await page.waitForFunction(() => !document.documentElement.dataset.themeTransition);
   await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark');
   await page.waitForFunction(() => document.querySelector('.app-sidebar')?.dataset.glassInk === 'dark');
-  assert.equal(await page.locator('.app-sidebar').evaluate(element => getComputedStyle(element).getPropertyValue('--control-ink').trim()), '#151918', 'Bright custom images use dark text even in a dark theme.');
+  assert.equal(await page.locator('.app-sidebar').evaluate(element => getComputedStyle(element).getPropertyValue('--control-ink').trim()), '#161a20', 'Bright custom images use dark text even in a dark theme.');
   assert.equal(await page.locator('html').evaluate(element => element.style.getPropertyValue('--photo-dark-alpha')), '', 'Text adaptation does not apply a material tint compensation.');
   assert.equal(await page.locator('html').getAttribute('data-background'), 'custom');
   await shot('开智-清透玻璃-自定义底板-深色.png');
-  await page.locator('[data-tip="切换浅色主题"]').first().click();
+  await page.locator('[data-tip="切换浅色主题"]').first().click(); await page.waitForFunction(() => !document.documentElement.dataset.themeTransition);
   checks.push('Save and reload preserve image pixels and percentage; bright custom backgrounds use dark foregrounds, without changing glass tint or making external requests.');
 
   await openSettings();

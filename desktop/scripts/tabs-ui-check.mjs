@@ -1,5 +1,6 @@
 // Real local streaming service, synthetic files, isolated preview / fixed native executable.
 import { chromium } from 'playwright';
+import { useClassicCapture } from './classic-capture.mjs';
 import { createServer as viteServer } from 'vite';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
@@ -109,7 +110,7 @@ try {
   } else {
     server = await viteServer({cacheDir:resolve(artifacts,'vite-tabs-ui'),server:{host:'127.0.0.1',port:1461,strictPort:true,watch:{ignored:['**/src-tauri/**','**/artifacts/**']}}}); await server.listen();
     browser = await chromium.launch({channel:'msedge',headless:true}); context = await browser.newContext({viewport:{width:1400,height:900}}); page = await context.newPage();
-    await page.goto('http://127.0.0.1:1461');
+    await page.goto('http://127.0.0.1:1461'); await useClassicCapture(page);
     const chooser = page.waitForEvent('filechooser'); await page.getByRole('button',{name:'加入文档',exact:true}).click();
     await (await chooser).setFiles(names.map((name,index)=>({name,mimeType:index<2?'application/pdf':'text/markdown',buffer:files[index]})));
   }
@@ -136,6 +137,8 @@ try {
   await page.waitForFunction(()=>document.activeElement?.getAttribute('aria-label')==='向 AI 提问');
   await page.locator('[data-tip="清除选区"]').click();
   await page.getByRole('button',{name:'关闭阅读助手',exact:true}).click();
+  // Crop only after the closing panel has handed its width back to the page.
+  await page.waitForFunction(()=>!document.querySelector('.pane-leave-active') && !document.querySelector('.pdf-scroll')?.style.width && !document.querySelector('#page-surface')?.classList.contains('pdf-preview'));
   await page.locator('[data-tip="框选公式或图表作为 AI 上下文"]').click();
   const bounds = await page.locator('#page-surface').boundingBox();
   await page.mouse.move(bounds.x+30,bounds.y+40); await page.mouse.down(); await page.mouse.move(bounds.x+160,bounds.y+100); await page.mouse.up();

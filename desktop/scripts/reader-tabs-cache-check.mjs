@@ -115,7 +115,7 @@ try {
   }, reader);
   await go(5); await select(1, 2); await page.waitForTimeout(750);
   assert.equal(await page.getByLabel('页码', { exact: true }).inputValue(), '2');
-  assert.ok((await page.locator('.reading-status').textContent()).includes('第 2 / 9 页'));
+  assert.ok((await page.locator('.reader-pane:visible .reading-pill').getAttribute('aria-label')).includes('第 2 / 9 页'));
   assert.equal((await verifySnapshot('B')).now.page, 2);
   await page.evaluate(() => window.__restoreCacheText());
   report.push({ test: 'delayed background text/progress cannot pollute the active document', passed: true });

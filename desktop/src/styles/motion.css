@@ -40,6 +40,37 @@
   50% { opacity: 1; }
 }
 
+/* 徽记里的星光偶尔闪一下：轻轻放大并转一个小角度。 */
+@keyframes zg-twinkle {
+  0%, 82%, 100% { transform: none; }
+  88% { transform: scale(1.14) rotate(10deg); }
+  94% { transform: scale(.96) rotate(-3deg); }
+}
+
+/* 思考气泡尾部的小圆点交替呼吸。 */
+@keyframes zg-dot-pulse {
+  0%, 100% { opacity: .55; scale: .86; }
+  50% { opacity: 1; scale: 1; }
+}
+
+/* 「思考中」的流光：一道斜向高光扫过气泡边缘。 */
+@keyframes zg-shimmer {
+  from { background-position: 180% 0; }
+  to { background-position: -80% 0; }
+}
+
+/* 从下方带一点模糊升起，用于卡片、列表等成组出现的元素。 */
+@keyframes zg-settle-in {
+  from { opacity: 0; transform: translateY(12px) scale(.98); filter: blur(4px); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+
+/* 数字翻动：页码变化时新数字从下方滚入。 */
+@keyframes zg-roll-in {
+  from { opacity: 0; transform: translateY(60%); }
+  to { opacity: 1; transform: none; }
+}
+
 /* ---- 面板：固定宽度的玻璃弹出 / 收缩 -------------------------------- */
 
 /* 始终使用最终占位宽度。阅读器保留旧视口直到新画面就绪，玻璃表面
@@ -209,6 +240,86 @@
   outline-offset: 2px;
 }
 
+/* ---- 主题切换：圆形扩散揭示新主题 -------------------------------------- */
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+::view-transition-new(root) {
+  animation: zg-theme-reveal 440ms var(--ease-out) both;
+}
+
+@keyframes zg-theme-reveal {
+  from { clip-path: circle(0 at var(--reveal-x, 100%) var(--reveal-y, 0)); }
+  to { clip-path: circle(var(--reveal-r, 150vmax) at var(--reveal-x, 100%) var(--reveal-y, 0)); }
+}
+
+/* ---- 微交互：图标在状态切换时轻轻弹一下 ------------------------------ */
+
+@keyframes zg-icon-pop {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.22) rotate(-6deg); }
+  70% { transform: scale(.94); }
+  100% { transform: none; }
+}
+
+.workspace-nav button.selected > svg,
+.tag-nav button.selected > .tag-dot,
+.is-starred svg,
+.quiet-button.active > svg,
+.ai-toggle.active > svg,
+.view-switch button.selected > svg,
+.settings-tabs button.selected > svg {
+  animation: zg-icon-pop var(--dur-bounce) var(--spring-bouncy);
+}
+
+/* 侧栏出现时，导航按钮依次落位。 */
+.app-sidebar :is(.workspace-nav, .tag-nav) > button {
+  animation: zg-rise-in var(--dur-3) var(--ease-out) both;
+}
+
+.app-sidebar :is(.workspace-nav, .tag-nav) > button:nth-child(2) { animation-delay: 30ms; }
+.app-sidebar :is(.workspace-nav, .tag-nav) > button:nth-child(3) { animation-delay: 60ms; }
+.app-sidebar :is(.workspace-nav, .tag-nav) > button:nth-child(n + 4) { animation-delay: 90ms; }
+
+/* 设置切换分类时，新一页的分组依次浮起。 */
+.settings-content > :is(h3, .settings-group, .settings-help, .shortcuts-heading, .quick-prompts-section) {
+  animation: zg-rise-in var(--dur-3) var(--ease-out) both;
+}
+
+.settings-content > :nth-child(2) { animation-delay: 25ms; }
+.settings-content > :nth-child(3) { animation-delay: 50ms; }
+.settings-content > :nth-child(n + 4) { animation-delay: 75ms; }
+
+/* 文件标签：打开时从中心长出，关闭时收拢。 */
+.tab-enter-active {
+  transition: opacity var(--dur-2) var(--ease-out), transform var(--dur-bounce) var(--spring-bouncy), flex-basis var(--dur-smooth) var(--spring-smooth);
+}
+
+.tab-leave-active {
+  transition: opacity var(--dur-2) var(--ease-out), transform var(--dur-2) var(--ease-out), flex-basis var(--dur-3) var(--ease-out), padding var(--dur-3) var(--ease-out);
+  overflow: hidden;
+}
+
+.tab-enter-from {
+  opacity: 0;
+  transform: scale(.7);
+}
+
+.tab-leave-to {
+  opacity: 0;
+  transform: scale(.85);
+  flex-basis: 0 !important;
+  padding-inline: 0 !important;
+}
+
+.tab-move {
+  transition: transform var(--dur-smooth) var(--spring-smooth);
+}
+
 /* ---- 降低动效 -------------------------------------------------------- */
 
 @media (prefers-reduced-motion: reduce) {
@@ -227,8 +338,21 @@
 
   .rise-in,
   .enter-stagger > *,
-  .fade-in {
+  .fade-in,
+  .app-sidebar :is(.workspace-nav, .tag-nav) > button,
+  .settings-content > *,
+  [class] > svg {
     animation: none !important;
+  }
+
+  ::view-transition-new(root) {
+    animation: none;
+  }
+
+  .tab-enter-active,
+  .tab-leave-active,
+  .tab-move {
+    transition: none !important;
   }
 
   /* 位移全部去掉，但保留极短的透明度切换，避免生硬跳变。 */
@@ -238,4 +362,13 @@
   .sidebar-leave-to {
     transform: none;
   }
+}
+
+/* ---- 框选聚焦：退出时虚化与气泡一起淡出 ------------------------------ */
+.capture-focus-leave-active {
+  transition: opacity var(--dur-2) var(--ease-out);
+}
+
+.capture-focus-leave-to {
+  opacity: 0;
 }

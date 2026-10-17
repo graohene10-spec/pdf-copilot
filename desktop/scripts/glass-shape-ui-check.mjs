@@ -92,6 +92,7 @@ try {
 
   for (const theme of ['light', 'dark']) {
     if (await page.locator('html').getAttribute('data-theme') !== theme) await page.locator(`[data-tip="${theme === 'light' ? '切换浅色主题' : '切换深色主题'}"]`).first().click();
+    await page.waitForFunction(() => !document.documentElement.dataset.themeTransition);
     await page.waitForFunction(theme => document.documentElement.dataset.theme === theme, theme); await settle();
     const recent = page.locator('.workspace-nav button').filter({ hasText: '最近阅读' });
     await compareState(`${theme}: category`, recent, () => recent.click(), () => page.locator('.workspace-nav button').filter({ hasText: '全部文档' }).click());
@@ -131,7 +132,7 @@ try {
     await compareState(`${theme}: AI assistant`, ai, () => ai.click());
     await indicator(`${theme}: file tabs`, '.tab-strip', '.file-tab.selected');
     await shapes(`${theme}: reading panels`, '.ai-pane,.composer-field,.markdown-paper', { minRadius: 16 });
-    await shapes(`${theme}: reading capsules`, '.reader-tools,.reader-tools button,.reader-zoom,.reader-search,.tab-strip,.file-tab,.tab-library,.ai-pane .suggestions button,.model-change,.close-assistant,.reading-status', { capsule: true });
+    await shapes(`${theme}: reading capsules`, '.reader-tools,.reader-tools button,.reader-zoom,.reader-search,.tab-strip,.file-tab,.tab-library,.ai-pane .suggestions button,.model-change,.close-assistant,.reading-pill', { capsule: true });
     const suggestion = page.getByRole('button', { name: '梳理核心观点', exact: true });
     const suggestionColor = (await style(suggestion)).color;
     await suggestion.hover(); await page.waitForTimeout(240);

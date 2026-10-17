@@ -247,7 +247,8 @@ button{font:inherit;cursor:pointer;color:var(--control-ink)}
   -webkit-mask-image:linear-gradient(180deg,transparent 0,#000 18px,#000 calc(100% - 18px),transparent 100%);mask-image:linear-gradient(180deg,transparent 0,#000 18px,#000 calc(100% - 18px),transparent 100%)}
 .ai-welcome{display:flex;flex-direction:column;align-items:center;text-align:center;padding:9vh 6px 8px;animation:zg-rise-in var(--dur-bounce) var(--spring-snappy) both}
 /* 空对话：一枚着色玻璃徽记，下面是一句引导和三枚快捷问题胶囊。 */
-.ai-welcome-mark{display:grid;place-items:center;width:58px;height:58px;margin-bottom:16px;border-radius:19px;color:var(--accent-on);background-color:var(--accent-glass);background-image:radial-gradient(circle at 30% 18%,rgb(255 255 255 / .45),transparent 58%),var(--glass-tint-sheen);box-shadow:0 14px 30px -12px color-mix(in srgb,var(--accent) 75%,transparent),inset 0 1px 0 rgb(255 255 255 / .35),inset 0 -2px 6px rgb(0 0 0 / .12)}
+.ai-welcome-mark{display:grid;place-items:center;width:58px;height:58px;margin-bottom:16px;border-radius:19px;color:var(--brand-ink);background-color:var(--brand-a);background-image:radial-gradient(circle at 28% 16%,rgb(255 255 255 / .5),transparent 56%),var(--brand-gradient);box-shadow:0 14px 30px -12px color-mix(in srgb,var(--brand-b) 75%,transparent),inset 0 1px 0 rgb(255 255 255 / .42),inset 0 -2px 6px rgb(0 0 0 / .1);animation:zg-pop-in var(--dur-bounce) var(--spring-bouncy) both}
+.ai-welcome-mark svg{animation:zg-twinkle 1.6s var(--ease-soft) .5s 1 both}
 .ai-welcome .ai-welcome-lead{font-family:var(--font-display);font-size:16px;font-weight:650;color:var(--ink);margin:0 0 6px}
 .ai-welcome p{font-size:12.5px;line-height:1.8;color:var(--muted);margin:0}
 .suggestions{display:flex;flex-direction:column;align-items:center;gap:8px;margin-top:22px;width:100%}

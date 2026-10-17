@@ -10,6 +10,7 @@
  */
 
 @import './styles/tokens.css';
+@import './styles/backdrops.css';
 @import './styles/motion.css';
 
 :root {
@@ -266,7 +267,7 @@ kbd {
 }
 
 /* 图片保持原有光色；只在文字边缘加很薄的对比度，而不蒙住整个底板。 */
-:root[data-background='custom'] :is(.app-sidebar, .app-topbar, .library-heading, .library-toolbar, .library-search, .library-summary, .document-card, .reader-tools, .document-outline, .reading-status, .document-details, .ai-pane, .settings-dialog) {
+:root[data-background='custom'] :is(.app-sidebar, .app-topbar, .library-heading, .library-toolbar, .library-search, .library-summary, .document-card, .reader-tools, .document-outline, .reading-pill, .document-details, .ai-pane, .settings-dialog) {
   text-shadow: var(--glass-label-shadow);
 }
 
@@ -348,13 +349,19 @@ kbd {
   justify-content: center;
   width: 38px;
   height: 38px;
-  /* 应用徽记：一块着色玻璃，像主屏上的图标。 */
-  background-color: var(--accent-glass);
-  background-image: radial-gradient(circle at 30% 16%, rgb(255 255 255 / .42), transparent 58%), var(--glass-tint-sheen);
+  /* 应用徽记：底板预设两端色的一块着色玻璃，像主屏上的图标。 */
+  background-color: var(--brand-a);
+  background-image: radial-gradient(circle at 28% 14%, rgb(255 255 255 / .5), transparent 56%), var(--brand-gradient);
   border: 1px solid transparent;
   border-radius: 12px;
-  color: var(--accent-on);
-  box-shadow: 0 8px 18px -8px color-mix(in srgb, var(--accent) 70%, transparent), inset 0 1px 0 rgb(255 255 255 / .3), inset 0 -2px 5px rgb(0 0 0 / .12);
+  color: var(--brand-ink);
+  box-shadow: 0 8px 18px -8px color-mix(in srgb, var(--brand-b) 75%, transparent), inset 0 1px 0 rgb(255 255 255 / .42), inset 0 -2px 5px rgb(0 0 0 / .1);
+  transition: background-color var(--dur-3) var(--ease-out), box-shadow var(--dur-3) var(--ease-out), scale var(--dur-bounce) var(--spring-bouncy), rotate var(--dur-bounce) var(--spring-bouncy);
+}
+
+.brand:hover .brand-symbol {
+  scale: 1.06;
+  rotate: -4deg;
 }
 
 .brand small {
@@ -499,8 +506,8 @@ kbd {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--green-400);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--green-400) 18%, transparent);
+  background: var(--accent-muted);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 14%, transparent);
   margin: 0 3px;
   flex-shrink: 0;
 }
@@ -523,7 +530,7 @@ kbd {
   width: 5px;
   height: 5px;
   flex-shrink: 0;
-  background: var(--green-400);
+  background: var(--accent-muted);
   border-radius: 50%;
   margin-top: 5px;
 }
@@ -1055,7 +1062,7 @@ kbd {
   height: 144px;
   margin: 9px 9px 0;
   border-radius: calc(var(--r-xl) - 9px);
-  background: radial-gradient(ellipse at 15% 5%, rgb(246 255 226 / .7), transparent 65%), radial-gradient(ellipse at 92% 82%, rgb(80 132 107 / .25), transparent 68%), linear-gradient(150deg, #b6d0bc, #deedde);
+  background: radial-gradient(ellipse at 15% 5%, rgb(255 255 255 / .75), transparent 62%), radial-gradient(ellipse at 92% 86%, color-mix(in srgb, var(--brand-b) 26%, transparent), transparent 68%), linear-gradient(150deg, color-mix(in srgb, var(--brand-a) 30%, #fff), color-mix(in srgb, var(--brand-b) 16%, #fff));
   position: relative;
   overflow: hidden;
   display: flex;
@@ -1063,7 +1070,7 @@ kbd {
   align-items: center;
   justify-content: center;
   gap: 13px;
-  color: var(--green-500);
+  color: var(--accent);
   box-shadow: inset 0 0 0 .5px rgb(0 0 0 / .05), inset 0 1px 0 rgb(255 255 255 / .45);
 }
 
@@ -1081,7 +1088,7 @@ kbd {
   background: rgb(255 255 255 / 58%);
   border: 1px solid rgb(255 255 255 / 75%);
   border-radius: 14px;
-  box-shadow: 0 8px 20px -8px rgb(20 40 30 / .3), inset 0 1px 0 rgb(255 255 255 / .9);
+  box-shadow: 0 8px 20px -8px rgb(20 30 50 / .28), inset 0 1px 0 rgb(255 255 255 / .9);
   position: relative;
   z-index: 1;
 }
@@ -1211,7 +1218,7 @@ kbd {
 
 .document-progress i {
   display: block;
-  background: linear-gradient(90deg, var(--green-400), var(--accent));
+  background: linear-gradient(90deg, var(--accent-muted), var(--accent));
   height: 100%;
   border-radius: var(--r-full);
 }
@@ -1371,7 +1378,7 @@ kbd {
   align-items: center;
   justify-content: center;
   background-color: var(--glass-2);
-  background-image: radial-gradient(circle at 30% 20%, rgb(255 255 255 / .6), transparent 60%), linear-gradient(155deg, color-mix(in srgb, var(--accent-soft) 70%, transparent), transparent);
+  background-image: radial-gradient(circle at 30% 20%, rgb(255 255 255 / .6), transparent 60%), linear-gradient(155deg, color-mix(in srgb, var(--brand-a) 22%, transparent), color-mix(in srgb, var(--brand-b) 10%, transparent));
   color: var(--accent);
   border-radius: 26px;
   margin-bottom: 24px;
@@ -1857,56 +1864,207 @@ kbd {
   animation: zg-spin .8s linear infinite;
 }
 
-.reading-status {
-  height: 30px;
-  min-height: 30px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0 15px;
-  background-color: var(--glass-1);
-  background-image: var(--glass-sheen);
-  -webkit-backdrop-filter: var(--glass-filter-1);
-  backdrop-filter: var(--glass-filter-1);
-  border: 1px solid var(--glass-outline);
-  border-radius: var(--r-full);
-  margin-top: 10px;
-  box-shadow: var(--shadow-1), var(--glass-edge);
-  font-size: 10px;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
+/* ---- 并排阅读 ------------------------------------------------------ */
 
-.reading-status > span {
+.reader-panes {
+  flex: 1;
+  min-height: 0;
   display: flex;
-  align-items: center;
-  gap: 6px;
+  gap: 10px;
   position: relative;
 }
 
-/* 阅读进度：沿胶囊底边的一道细光。 */
-.reading-progress {
+.reader-pane {
+  container: reading-pane / inline-size;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* 新加入的一栏从右侧滑入；只在并排时出现，单栏切换文件不做位移。 */
+.reader-pane.entering {
+  animation: zg-pane-in var(--dur-smooth) var(--spring-snappy) both;
+}
+
+@keyframes zg-pane-in {
+  from { opacity: 0; transform: translateX(24px) scale(.985); }
+  to { opacity: 1; transform: none; }
+}
+
+.reader-pane.pending {
+  border-radius: var(--r-xl);
+  background: var(--fill-4);
+  animation: zg-pane-in var(--dur-smooth) var(--spring-snappy) both;
+}
+
+/* 焦点所在的一栏：工具条带一圈主色细光；其余栏的工具条略淡，正文不变。 */
+.reader-panes.split > .reader-pane .reader-tools {
+  transition: opacity var(--dur-2) var(--ease-out), box-shadow var(--dur-2) var(--ease-out);
+}
+
+.reader-panes.split > .reader-pane:not(.focused) .reader-tools {
+  opacity: .72;
+}
+
+.reader-panes.split > .reader-pane.focused .reader-tools {
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent) 45%, transparent), var(--shadow-2), var(--glass-edge);
+}
+
+.reader-panes.split > .reader-pane:not(.focused):hover .reader-tools {
+  opacity: .9;
+}
+
+/* ---- 阅读位置：悬浮在阅读区右下角的一颗进度环 ------------------------
+   平时只露出一枚小环，翻页、保存或悬停时像灵动岛一样展开显示页码。 */
+.reading-pill {
   position: absolute;
-  left: 14px;
-  bottom: 3px;
-  width: calc((100% - 28px) * var(--progress, 0));
-  height: 2px;
+  right: 18px;
+  bottom: 14px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 4px;
+  border: 1px solid var(--glass-outline);
   border-radius: var(--r-full);
-  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 30%, transparent), var(--accent));
-  opacity: .55;
-  pointer-events: none;
-  transition: width var(--dur-smooth) var(--spring-smooth);
+  background-color: var(--glass-2);
+  background-image: var(--glass-sheen);
+  -webkit-backdrop-filter: var(--glass-filter-2);
+  backdrop-filter: var(--glass-filter-2);
+  box-shadow: var(--shadow-2), var(--glass-edge);
+  color: var(--control-ink);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  opacity: .66;
+  transition: opacity var(--dur-3) var(--ease-out), box-shadow var(--dur-2) var(--ease-out);
 }
 
-.reading-status .status-dot {
-  margin-top: 0;
-  width: 5px;
-  height: 5px;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--green-400) 22%, transparent);
+.reading-pill.awake,
+.reading-pill:hover,
+.reading-pill:focus-within {
+  opacity: 1;
 }
 
-.status-divider {
-  margin: 0 4px;
+.pill-ring {
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+  rotate: -90deg;
+}
+
+.pill-ring-track,
+.pill-ring-value {
+  fill: none;
+  stroke-width: 2.6;
+}
+
+.pill-ring-track {
+  stroke: var(--fill-1);
+}
+
+.pill-ring-value {
+  stroke: var(--accent);
+  stroke-linecap: round;
+  stroke-dasharray: 100;
+  transition: stroke-dashoffset var(--dur-smooth) var(--spring-smooth);
+}
+
+.pill-text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  opacity: 0;
+  transition: max-width var(--dur-smooth) var(--spring-smooth), opacity var(--dur-2) var(--ease-out), padding var(--dur-smooth) var(--spring-smooth);
+}
+
+.reading-pill.awake .pill-text,
+.reading-pill:hover .pill-text,
+.reading-pill:focus-within .pill-text {
+  max-width: 340px;
+  padding: 0 8px 0 6px;
+  opacity: 1;
+}
+
+.pill-name {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+
+.pill-page {
+  display: inline-flex;
+  align-items: baseline;
+}
+
+.pill-page b {
+  display: inline-block;
+  font-weight: 650;
+  animation: zg-roll-in var(--dur-3) var(--spring-snappy) both;
+}
+
+.pill-page i {
+  font-style: normal;
+  color: var(--muted);
+  margin: 0 2px;
+}
+
+.pill-saved {
+  display: none;
+  align-items: center;
+  gap: 3px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.reading-pill.saved .pill-saved {
+  display: inline-flex;
+  animation: zg-rise-in var(--dur-3) var(--spring-snappy) both;
+}
+
+.pill-close {
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  border-radius: 50%;
+  color: var(--control-ink);
+  opacity: .6;
+}
+
+.pill-close:hover:not(:disabled) {
+  background: var(--fill-2);
+  border: 0;
+  opacity: 1;
+}
+
+.split-toggle {
+  position: relative;
+}
+
+.split-count {
+  position: absolute;
+  top: 3px;
+  right: 2px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: var(--accent);
+  color: var(--accent-on);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 14px;
+  animation: zg-pop-in var(--dur-bounce) var(--spring-bouncy) both;
 }
 
 .selection-context {
@@ -2015,7 +2173,7 @@ kbd {
 
 .markdown-paper blockquote {
   margin: 1.5em 0;
-  border-left: 3px solid var(--green-300);
+  border-left: 3px solid var(--accent-muted);
   padding: 8px 20px;
   background: var(--surface-2);
   color: var(--secondary);
@@ -2174,7 +2332,7 @@ kbd {
   align-items: center;
   justify-content: center;
   margin-bottom: 17px;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / .4), 0 8px 18px -8px rgb(20 60 40 / .3);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / .4), 0 8px 18px -8px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 .document-details h4 {
@@ -2475,13 +2633,13 @@ kbd {
 /* ---- 深色微调 -------------------------------------------------------- */
 
 :root[data-theme=dark] .document-cover {
-  background: radial-gradient(ellipse at 14% 9%, rgb(204 226 213 / .13), transparent 65%), radial-gradient(ellipse at 94% 80%, rgb(19 34 24 / .28), transparent 65%), linear-gradient(150deg, #3d5147, #26352e);
-  color: var(--green-300);
+  background: radial-gradient(ellipse at 14% 9%, rgb(255 255 255 / .1), transparent 65%), radial-gradient(ellipse at 94% 80%, rgb(0 0 0 / .26), transparent 65%), linear-gradient(150deg, color-mix(in srgb, var(--brand-a) 42%, #23272e), color-mix(in srgb, var(--brand-b) 26%, #1c1f25));
+  color: var(--accent);
   box-shadow: inset 0 0 0 .5px rgb(255 255 255 / .06), inset 0 1px 0 rgb(255 255 255 / .06);
 }
 
 :root[data-theme=dark] .markdown .document-cover {
-  background: linear-gradient(150deg, #262d2b, #1b2120);
+  background: linear-gradient(150deg, #282c33, #1d2026);
   color: var(--n-400);
 }
 
@@ -2771,11 +2929,6 @@ kbd {
 
   .list .document-card-title h3 {
     font-size: 12px;
-  }
-
-  .reading-status {
-    padding: 0 10px;
-    font-size: 9px;
   }
 
   .selection-context > span {

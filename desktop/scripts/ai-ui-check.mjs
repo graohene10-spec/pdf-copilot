@@ -100,7 +100,7 @@ try {
   assert.deepEqual(errors, []);
   const folder = resolve('artifacts'); await mkdir(folder, { recursive: true });
   await page.screenshot({ path: resolve(folder, 'ai-ui-pdf.png'), fullPage: true, animations: 'disabled' });
-  await page.locator('[data-tip="切换深色主题"]').first().click();
+  await page.locator('[data-tip="切换深色主题"]').first().click(); await page.waitForFunction(() => !document.documentElement.dataset.themeTransition);
   await page.screenshot({ path: resolve(folder, 'ai-ui-dark.png'), fullPage: true, animations: 'disabled' });
   await writeFile(resolve(folder, 'ai-ui-check.json'), JSON.stringify({ report, requests: requests.length, pageErrors: errors }, null, 2));
   console.log(JSON.stringify({ report, requests: requests.length, pageErrors: errors }, null, 2));

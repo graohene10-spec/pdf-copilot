@@ -258,7 +258,7 @@ async function resume() {
 }
 onActivated(resume)
 onDeactivated(suspend)
-defineExpose({ goToPage, goToHeading, zoomIn, zoomOut, toggleOutline, nextPage, previousPage, focusSearch, clearSearch, getPage: () => currentLine, getFontSize: () => displayFontSize.value, getViewState, suspend, resume, getCacheStats: () => ({ suspended: !active, pages: 0, pixels: 0 }) })
+defineExpose({ goToPage, goToHeading, isSuspended: () => !active, zoomIn, zoomOut, toggleOutline, nextPage, previousPage, focusSearch, clearSearch, getPage: () => currentLine, getFontSize: () => displayFontSize.value, getViewState, suspend, resume, getCacheStats: () => ({ suspended: !active, pages: 0, pixels: 0 }) })
 </script>
 
 <template>

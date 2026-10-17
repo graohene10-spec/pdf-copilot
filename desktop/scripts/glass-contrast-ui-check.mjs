@@ -50,7 +50,7 @@ async function selectedInk() {
   assert.equal(colors.selected, colors.plain, 'Selected and ordinary controls must share the locally compensated text color.');
 }
 async function localTextContrast(selector, side) {
-  const expected = side === 'black' ? 'rgb(242, 245, 243)' : 'rgb(21, 25, 24)';
+  const expected = side === 'black' ? 'rgb(242, 244, 247)' : 'rgb(22, 26, 32)';
   await page.waitForFunction(({ selector, expected }) => [...document.querySelectorAll(selector)].length > 0 && [...document.querySelectorAll(selector)].every(element => getComputedStyle(element).color === expected), { selector, expected });
   const samples = await page.locator(selector).evaluateAll((elements, side) => {
     const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
@@ -95,7 +95,7 @@ async function themeText(selector, token = '--surface-ink') {
 }
 async function noAdaptation() {
   await page.waitForFunction(() => !document.querySelector('[data-glass-ink]'));
-  const leaked = await page.evaluate(() => [...document.querySelectorAll('.app-sidebar,.app-topbar,.library-heading,.library-search,.library-summary,.document-card,.reader-tools,.document-outline,.reading-status,.document-details,.ai-pane')].filter(element => ['--ink','--control-ink','--secondary','--muted','--glass-label-shadow'].some(name => element.style.getPropertyValue(name))).map(element => element.className));
+  const leaked = await page.evaluate(() => [...document.querySelectorAll('.app-sidebar,.app-topbar,.library-heading,.library-search,.library-summary,.document-card,.reader-tools,.document-outline,.reading-pill,.document-details,.ai-pane')].filter(element => ['--ink','--control-ink','--secondary','--muted','--glass-label-shadow'].some(name => element.style.getPropertyValue(name))).map(element => element.className));
   assert.deepEqual(leaked, [], 'Foreground compensation must restore the original inline styles.');
 }
 async function shot(name) {
@@ -276,7 +276,7 @@ try {
   await themeText('.ai-pane .user-question');
   await themeText('.ai-pane .message-code');
   await themeText('.markdown-paper');
-  await localTextContrast('.reading-status > span:last-child', 'white');
+  await localTextContrast('.reader-pane:not([style*="display: none"]) .reading-pill .pill-page', 'white');
   await openSettings();
   assert.equal(await dialog().getAttribute('data-glass-ink'), null, 'Tea/frosted popups are excluded from photo foreground adaptation.');
   // Save is the dialog's tinted primary action: fixed accent foreground, never wallpaper-adapted.
@@ -290,9 +290,9 @@ try {
   for (const theme of ['light', 'dark']) {
     await appearance({ theme, glassTransparency: 0 });
     await noAdaptation();
-    await page.waitForFunction(color => getComputedStyle(document.querySelector('.app-sidebar .brand')).color === color, theme === 'light' ? 'rgb(21, 25, 24)' : 'rgb(242, 245, 243)');
+    await page.waitForFunction(color => getComputedStyle(document.querySelector('.app-sidebar .brand')).color === color, theme === 'light' ? 'rgb(22, 26, 32)' : 'rgb(242, 244, 247)');
     const color = await page.locator('.app-sidebar .brand').evaluate(element => getComputedStyle(element).color);
-    assert.equal(color, theme === 'light' ? 'rgb(21, 25, 24)' : 'rgb(242, 245, 243)', 'Opaque glass follows the theme, regardless of image colors.');
+    assert.equal(color, theme === 'light' ? 'rgb(22, 26, 32)' : 'rgb(242, 244, 247)', 'Opaque glass follows the theme, regardless of image colors.');
     await appearance({ glassTransparency: 83 });
     await ink('.app-sidebar', 'light'); await ink('.ai-pane', 'dark');
   }

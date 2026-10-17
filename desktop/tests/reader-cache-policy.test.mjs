@@ -18,3 +18,11 @@ test('large documents reduce retained readers and byte budget always preserves t
   assert.ok(huge.size > READER_CACHE_BYTES);
   assert.deepEqual(retainReaderEntries([a, b, huge], 'huge'), [huge]);
 });
+
+test('side-by-side panes stay cached while off-screen files are evicted first', () => {
+  const [a, b, c, d] = ['a', 'b', 'c', 'd'].map(id => entry(id));
+  assert.deepEqual(retainReaderEntries([a, b, c, d], 'd', ['a']), [a, c, d]);
+  const big = entry('big', 60), other = entry('other', 50), side = entry('side', 50);
+  // Both visible files exceed the byte budget together; neither is evicted.
+  assert.deepEqual(retainReaderEntries([other, side, big], 'big', ['side']), [side, big]);
+});

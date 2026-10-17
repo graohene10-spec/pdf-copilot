@@ -86,18 +86,47 @@ test('preferences preserve legacy theme and explicit new setting wins', () => {
   assert.equal(normalizePreferences({ appearance: { theme: 'system', libraryView: 'list' } }, 'dark').appearance.theme, 'system')
   assert.equal(normalizePreferences([], 'light').appearance.theme, 'light')
 })
-test('capture quick ask stays opt-in for legacy and damaged preferences without changing existing capture behavior', () => {
-  assert.equal(defaultPreferences().pdf.quickAskOnCapture, false)
+test('capture focus with quick questions is on by default; older stored defaults upgrade, damaged values fall back', () => {
+  assert.equal(defaultPreferences().pdf.quickAskOnCapture, true)
   for (const version of [undefined, 1, 2]) {
-    for (const quickAskOnCapture of [undefined, null, 'true', 'false', 0, 1, {}, []]) {
+    for (const quickAskOnCapture of [undefined, null, 'true', 'false', 0, 1, {}, [], false]) {
       const restored = normalizePreferences({ version, pdf: { quickAskOnCapture, openAssistantOnCapture: false, zoomStep: 24 } })
-      assert.equal(restored.pdf.quickAskOnCapture, false)
+      assert.equal(restored.pdf.quickAskOnCapture, true)
       assert.equal(restored.pdf.openAssistantOnCapture, false)
       assert.equal(restored.pdf.zoomStep, 24)
-      assert.equal(restored.version, 2)
+      assert.equal(restored.version, 3)
       assert.equal(preferenceErrors(restored).length, 0)
     }
   }
+  // A choice saved by this version is kept.
+  assert.equal(normalizePreferences({ version: 3, pdf: { quickAskOnCapture: false } }).pdf.quickAskOnCapture, false)
+  assert.equal(normalizePreferences({ version: 3, pdf: { quickAskOnCapture: 'false' } }).pdf.quickAskOnCapture, true)
+})
+test('capture questions: short summary plus full prompt, one to six entries, corrupt entries dropped', () => {
+  const defaults = defaultPreferences().assistant.captureQuestions
+  assert.deepEqual(defaults.map(item => item.label), ['为什么？', '详细展开', '通俗解释', '举个例子'])
+  assert.ok(defaults.every(item => item.question.length > item.label.length))
+  const custom = [{ label: '  反例  ', question: '给出一个反例。' }, { label: '', question: '缺少概括' }, 'junk', { label: '推导', question: '  逐步推导框选公式。 ' }]
+  assert.deepEqual(normalizePreferences({ assistant: { captureQuestions: custom } }).assistant.captureQuestions, [{ label: '反例', question: '给出一个反例。' }, { label: '推导', question: '逐步推导框选公式。' }])
+  assert.deepEqual(normalizePreferences({ assistant: { captureQuestions: [] } }).assistant.captureQuestions, defaults)
+  assert.equal(normalizePreferences({ assistant: { captureQuestions: Array.from({ length: 9 }, (_, i) => ({ label: `问${i}`, question: `内容${i}` })) } }).assistant.captureQuestions.length, 6)
+  const preferences = defaultPreferences()
+  preferences.assistant.captureQuestions = []
+  assert.ok(preferenceErrors(preferences).some(error => /框选提问须有 1–6 个/.test(error)))
+  preferences.assistant.captureQuestions = [{ label: '', question: '有内容' }]
+  assert.ok(preferenceErrors(preferences).some(error => /请填写提问概括/.test(error)))
+  preferences.assistant.captureQuestions = [{ label: '概括', question: '  ' }]
+  assert.ok(preferenceErrors(preferences).some(error => /请填写提问内容/.test(error)))
+  // The assistant pane keeps its own three suggestions.
+  assert.deepEqual(normalizePreferences({ assistant: { captureQuestions: custom } }).assistant.quickPrompts, defaultQuickPrompts())
+})
+test('backdrop presets: default mist, unknown values fall back, custom image keeps the preset accent', () => {
+  assert.equal(defaultPreferences().appearance.backdrop, 'mist')
+  for (const backdrop of ['dawn', 'mint', 'lavender', 'graphite', 'paper']) assert.equal(normalizePreferences({ appearance: { backdrop } }).appearance.backdrop, backdrop)
+  assert.equal(normalizePreferences({ appearance: { backdrop: 'neon' } }).appearance.backdrop, 'mist')
+  const preferences = defaultPreferences()
+  preferences.appearance.backdrop = 'neon'
+  assert.ok(preferenceErrors(preferences).some(error => /请选择有效底板/.test(error)))
 })
 test('capture quick ask survives saving and reloading independently from automatic assistant opening', () => {
   for (const quickAskOnCapture of [false, true]) {
@@ -118,7 +147,7 @@ test('capture quick ask survives saving and reloading independently from automat
 })
 test('stored out-of-range values are bounded; new edits reject invalid numbers', () => {
   const fixed = normalizePreferences({ pdf: { initialZoom: 900, zoomStep: 1, fitOnPanelOverflow: false }, markdown: { fontSize: 99, contentWidth: 500 } })
-  assert.deepEqual(fixed.pdf, { initialZoom: 400, zoomStep: 5, fitOnPanelOverflow: false, openAssistantOnCapture: true, quickAskOnCapture: false })
+  assert.deepEqual(fixed.pdf, { initialZoom: 400, zoomStep: 5, fitOnPanelOverflow: false, openAssistantOnCapture: true, quickAskOnCapture: true })
   assert.deepEqual(fixed.markdown, { fontSize: 28, contentWidth: 600 })
   fixed.pdf.zoomStep = Number.NaN
   fixed.markdown.fontSize = 13.2
@@ -271,9 +300,10 @@ test('the old unchanged keyboard zoom pair migrates while customized and disable
   assert.equal(normalizePreferences({}).shortcuts.zoomIn, 'Ctrl+WheelUp')
 })
 
-test('version two deliberate keyboard zoom choices survive saving and reloading', () => {
+test('version two and later deliberate keyboard zoom choices survive saving and reloading', () => {
   const preferences = defaultPreferences()
-  assert.equal(preferences.version, 2)
+  assert.equal(preferences.version, 3)
+  assert.equal(normalizePreferences({ version: 2, shortcuts: { zoomIn: 'Ctrl+Equal', zoomOut: 'Ctrl+Minus' } }).shortcuts.zoomIn, 'Ctrl+Equal')
   preferences.shortcuts.zoomIn = 'Ctrl+Equal'; preferences.shortcuts.zoomOut = 'Ctrl+Minus'
   assert.equal(preferenceErrors(preferences).length, 0)
   const saved = normalizePreferences(preferences), restored = normalizePreferences(JSON.parse(JSON.stringify(saved)))
@@ -284,7 +314,7 @@ test('version two deliberate keyboard zoom choices survive saving and reloading'
   assert.equal(matchWheelShortcut(wheel(120, { ctrlKey: true }), restored), null)
   for (const version of [undefined, 1]) {
     const old = normalizePreferences({ version, shortcuts: { zoomIn: 'Ctrl+Equal', zoomOut: 'Ctrl+Minus' } })
-    assert.equal(old.version, 2); assert.equal(old.shortcuts.zoomIn, 'Ctrl+WheelUp'); assert.equal(old.shortcuts.zoomOut, 'Ctrl+WheelDown')
+    assert.equal(old.version, 3); assert.equal(old.shortcuts.zoomIn, 'Ctrl+WheelUp'); assert.equal(old.shortcuts.zoomOut, 'Ctrl+WheelDown')
   }
 })
 

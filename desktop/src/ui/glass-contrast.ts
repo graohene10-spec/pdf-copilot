@@ -5,12 +5,12 @@ type RGB = readonly [number, number, number]
 type PixelGrid = { width: number; height: number; pixels: Uint8ClampedArray }
 type Original = { variables: Map<string, { value: string; priority: string }>; attribute: string | null; ink: Ink; key: string }
 const SIZE = 64
-const DARK: RGB = [21, 25, 24]
-const LIGHT: RGB = [242, 245, 243]
-const COLORS: Record<Ink, string> = { dark: '#151918', light: '#f2f5f3' }
+const DARK: RGB = [22, 26, 32]
+const LIGHT: RGB = [242, 244, 247]
+const COLORS: Record<Ink, string> = { dark: '#161a20', light: '#f2f4f7' }
 const VARIABLES = ['--ink', '--control-ink', '--secondary', '--muted', '--glass-label-shadow']
-const TEXT_REGIONS = '.breadcrumb,.library-search>kbd,.library-summary>div,.library-summary>.summary-note,.library-list-heading>span,.library-empty>h2,.library-empty>p,.library-empty>small,.document-card-title h3,.document-meta,.document-progress>span,.reading-status>span'
-const TARGETS = '.app-sidebar,.app-topbar,.library-heading,.library-search,.library-summary,.library-toolbar,.library-list-heading,.library-empty,.document-card,.reader-tools,.document-outline,.reading-status,.document-details,.ai-pane,.file-tab,' + TEXT_REGIONS
+const TEXT_REGIONS = '.breadcrumb,.library-search>kbd,.library-summary>div,.library-summary>.summary-note,.library-list-heading>span,.library-empty>h2,.library-empty>p,.library-empty>small,.document-card-title h3,.document-meta,.document-progress>span,.reading-pill'
+const TARGETS = '.app-sidebar,.app-topbar,.library-heading,.library-search,.library-summary,.library-toolbar,.library-list-heading,.library-empty,.document-card,.reader-tools,.document-outline,.reading-pill,.document-details,.ai-pane,.file-tab,' + TEXT_REGIONS
 const EXCLUDED = '.settings-backdrop,.dialog-backdrop,.settings-dialog,.confirm-dialog,.markdown-paper,.pdf-scroll,.message-content,.document-cover,.user-question,.ai-selection-context,.message-code,.message-math,.source-pill'
 
 function luminance(rgb: RGB): number {

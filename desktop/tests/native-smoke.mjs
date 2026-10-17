@@ -155,7 +155,7 @@ try {
   await page.evaluate(() => document.fonts.ready);
   await page.screenshot({ path: resolve(artifactDir, `${prefix}-markdown.png`), fullPage: true });
   await page.locator('.markdown-scroll').evaluate(element => { element.scrollTop = element.scrollHeight; });
-  await page.waitForFunction(() => document.querySelector('.reading-status')?.textContent?.includes('100%'));
+  await page.waitForFunction(() => [...document.querySelectorAll('.reading-pill')].some(pill => pill.offsetParent && pill.getAttribute('aria-label')?.includes('100%')));
   await eventually(async () => {
     const doc = (await invoke('list_documents', { query: 'Native-Markdown-smoke' })).find(doc => doc.id === md.id);
     assert.ok(doc.progress >= 0.9); report.checks.autoSavedScrollProgress = doc.progress; return doc;

@@ -1,0 +1,113 @@
+/*
+ * 底板预设：每套预设是一组柔和的光斑渐变，并带一套与之协调的主色和徽记渐变。
+ *
+ * --bd-<预设> 始终定义（设置里的色板直接引用它预览），选中的预设再映射到
+ * --workspace-background / --accent / --brand-a/b。选择器包在 :where() 里，
+ * 特异性为 0：上传图片、高对比度与「减少透明度」的兜底总能覆盖底板。
+ */
+
+:root {
+  --bd-mist:
+    radial-gradient(ellipse 60% 64% at 4% 2%, rgb(204 222 255 / .85), transparent 70%),
+    radial-gradient(ellipse 52% 58% at 98% 98%, rgb(222 210 252 / .8), transparent 72%),
+    radial-gradient(ellipse 40% 46% at 82% 4%, rgb(255 228 214 / .7), transparent 70%),
+    radial-gradient(ellipse 46% 50% at 26% 104%, rgb(208 240 236 / .6), transparent 70%),
+    linear-gradient(135deg, #f3f6fd, #eff2fb 52%, #f4f2fb);
+  --bd-dawn:
+    radial-gradient(ellipse 58% 62% at 6% 4%, rgb(255 214 196 / .85), transparent 70%),
+    radial-gradient(ellipse 54% 58% at 98% 96%, rgb(252 206 222 / .78), transparent 72%),
+    radial-gradient(ellipse 40% 44% at 84% 6%, rgb(255 236 200 / .72), transparent 70%),
+    radial-gradient(ellipse 46% 50% at 28% 104%, rgb(232 216 246 / .55), transparent 70%),
+    linear-gradient(135deg, #fdf6f2, #fbf1f1 52%, #f8f1f6);
+  --bd-mint:
+    radial-gradient(ellipse 58% 62% at 6% 4%, rgb(200 238 222 / .85), transparent 70%),
+    radial-gradient(ellipse 52% 58% at 98% 96%, rgb(204 228 246 / .78), transparent 72%),
+    radial-gradient(ellipse 40% 44% at 82% 6%, rgb(236 246 212 / .62), transparent 70%),
+    radial-gradient(ellipse 46% 50% at 28% 104%, rgb(212 236 238 / .6), transparent 70%),
+    linear-gradient(135deg, #f2f8f6, #eef6f4 52%, #f1f6f8);
+  --bd-lavender:
+    radial-gradient(ellipse 58% 62% at 6% 4%, rgb(226 214 255 / .85), transparent 70%),
+    radial-gradient(ellipse 52% 58% at 98% 96%, rgb(252 214 238 / .72), transparent 72%),
+    radial-gradient(ellipse 40% 44% at 82% 6%, rgb(210 224 255 / .7), transparent 70%),
+    radial-gradient(ellipse 46% 50% at 28% 104%, rgb(242 230 255 / .62), transparent 70%),
+    linear-gradient(135deg, #f6f4fd, #f3f0fb 52%, #f8f2fa);
+  --bd-graphite:
+    radial-gradient(ellipse 60% 64% at 6% 4%, rgb(220 225 234 / .9), transparent 70%),
+    radial-gradient(ellipse 52% 58% at 98% 96%, rgb(226 229 236 / .85), transparent 72%),
+    radial-gradient(ellipse 40% 44% at 82% 6%, rgb(236 238 242 / .8), transparent 70%),
+    linear-gradient(135deg, #f2f3f5, #eceef1 52%, #f1f2f4);
+  --bd-paper: linear-gradient(135deg, #fcfcfd, #f6f7f9);
+
+  --bd-mist-brand: linear-gradient(145deg, #6fa2ff, #8b7cf6);
+  --bd-dawn-brand: linear-gradient(145deg, #ff9f87, #f0789b);
+  --bd-mint-brand: linear-gradient(145deg, #5fcfae, #4aa6d6);
+  --bd-lavender-brand: linear-gradient(145deg, #a68cff, #e58ad0);
+  --bd-graphite-brand: linear-gradient(145deg, #8796ae, #4f5d75);
+  --bd-paper-brand: linear-gradient(145deg, #7aa8ff, #6c86ee);
+}
+
+:root[data-theme='dark'] {
+  --bd-mist:
+    radial-gradient(ellipse 44% 70% at 90% 12%, rgb(70 100 190 / .42), transparent 74%),
+    radial-gradient(ellipse 58% 34% at 34% 68%, rgb(150 165 200 / .14), transparent 75%),
+    radial-gradient(ellipse 26% 64% at 56% 18%, rgb(0 3 10 / .5), transparent 77%),
+    radial-gradient(ellipse 48% 52% at 4% 26%, rgb(120 90 180 / .26), transparent 76%),
+    radial-gradient(ellipse 32% 60% at 12% 98%, rgb(60 120 140 / .24), transparent 78%),
+    linear-gradient(128deg, #13161e, #1b1f2b 40%, #1d2130 72%, #181b25);
+  --bd-dawn:
+    radial-gradient(ellipse 44% 70% at 90% 12%, rgb(160 72 88 / .42), transparent 74%),
+    radial-gradient(ellipse 58% 34% at 34% 68%, rgb(200 160 160 / .12), transparent 75%),
+    radial-gradient(ellipse 26% 64% at 56% 18%, rgb(8 2 4 / .5), transparent 77%),
+    radial-gradient(ellipse 48% 52% at 4% 26%, rgb(170 104 62 / .26), transparent 76%),
+    radial-gradient(ellipse 32% 60% at 12% 98%, rgb(112 60 124 / .28), transparent 78%),
+    linear-gradient(128deg, #1a1416, #231a1e 40%, #261c21 72%, #1d1619);
+  --bd-mint:
+    radial-gradient(ellipse 44% 70% at 90% 12%, rgb(48 122 102 / .42), transparent 74%),
+    radial-gradient(ellipse 58% 34% at 34% 68%, rgb(150 190 180 / .12), transparent 75%),
+    radial-gradient(ellipse 26% 64% at 56% 18%, rgb(0 6 6 / .5), transparent 77%),
+    radial-gradient(ellipse 48% 52% at 4% 26%, rgb(40 92 124 / .3), transparent 76%),
+    radial-gradient(ellipse 32% 60% at 12% 98%, rgb(88 120 70 / .22), transparent 78%),
+    linear-gradient(128deg, #111919, #172120 40%, #19251f 72%, #131b1b);
+  --bd-lavender:
+    radial-gradient(ellipse 44% 70% at 90% 12%, rgb(112 80 182 / .42), transparent 74%),
+    radial-gradient(ellipse 58% 34% at 34% 68%, rgb(176 160 210 / .12), transparent 75%),
+    radial-gradient(ellipse 26% 64% at 56% 18%, rgb(6 2 12 / .5), transparent 77%),
+    radial-gradient(ellipse 48% 52% at 4% 26%, rgb(160 72 140 / .28), transparent 76%),
+    radial-gradient(ellipse 32% 60% at 12% 98%, rgb(70 90 172 / .28), transparent 78%),
+    linear-gradient(128deg, #15131d, #1e1b28 40%, #211d2c 72%, #181621);
+  --bd-graphite:
+    radial-gradient(ellipse 44% 70% at 90% 12%, rgb(92 102 122 / .32), transparent 74%),
+    radial-gradient(ellipse 26% 64% at 56% 18%, rgb(0 0 0 / .45), transparent 77%),
+    radial-gradient(ellipse 48% 52% at 4% 26%, rgb(70 76 90 / .36), transparent 76%),
+    linear-gradient(128deg, #15171a, #1c1e22 40%, #202327 72%, #17191c);
+  --bd-paper: linear-gradient(135deg, #1d2024, #181a1e);
+
+  --bd-mist-brand: linear-gradient(145deg, #4f7fe0, #7a64e0);
+  --bd-dawn-brand: linear-gradient(145deg, #e98c74, #d0628a);
+  --bd-mint-brand: linear-gradient(145deg, #3fae8d, #3986b5);
+  --bd-lavender-brand: linear-gradient(145deg, #8c6ff0, #c860b5);
+  --bd-graphite-brand: linear-gradient(145deg, #6e7c94, #3d4759);
+  --bd-paper-brand: linear-gradient(145deg, #5e8ff0, #5a6fd8);
+}
+
+/* ---- 预设 → 底板 ---------------------------------------------------- */
+
+/* 浅色预设只靠光斑；深色底板叠一层很淡的烟雾纹理（素白另有涟漪）。同为零特异性，靠先后顺序覆盖。 */
+:where(:root) { --workspace-texture: none; --workspace-texture-size: cover; --workspace-texture-opacity: 0; }
+:where(:root[data-theme='dark']) { --workspace-texture: url('../assets/smoky-veins.svg'); --workspace-texture-size: 100% 100%; --workspace-texture-opacity: .14; }
+
+:where(:root:not([data-backdrop]), :root[data-backdrop='mist']) { --workspace-background: var(--bd-mist); --brand-a: #6fa2ff; --brand-b: #8b7cf6; --accent: #3466d4; --accent-hover: #2a56b8; --accent-soft: #e3ebfb; --accent-on: #ffffff; }
+:where(:root[data-backdrop='dawn']) { --workspace-background: var(--bd-dawn); --brand-a: #ff9f87; --brand-b: #f0789b; --accent: #b9465f; --accent-hover: #a03a52; --accent-soft: #f9e3e8; --accent-on: #ffffff; }
+:where(:root[data-backdrop='mint']) { --workspace-background: var(--bd-mint); --brand-a: #5fcfae; --brand-b: #4aa6d6; --accent: #2c7a66; --accent-hover: #22624f; --accent-soft: #dcefe8; --accent-on: #ffffff; }
+:where(:root[data-backdrop='lavender']) { --workspace-background: var(--bd-lavender); --brand-a: #a68cff; --brand-b: #e58ad0; --accent: #6650c8; --accent-hover: #5440ad; --accent-soft: #e9e4fa; --accent-on: #ffffff; }
+:where(:root[data-backdrop='graphite']) { --workspace-background: var(--bd-graphite); --brand-a: #8796ae; --brand-b: #4f5d75; --accent: #3e4c63; --accent-hover: #2f3a4d; --accent-soft: #e3e7ee; --accent-on: #ffffff; }
+:where(:root:not([data-theme='dark'])[data-backdrop='paper']) { --workspace-texture: url('../assets/white-ripples.svg'); --workspace-texture-size: cover; --workspace-texture-opacity: .78; }
+:where(:root[data-backdrop='paper']) { --workspace-background: var(--bd-paper); --brand-a: #7aa8ff; --brand-b: #6c86ee; --accent: #3466d4; --accent-hover: #2a56b8; --accent-soft: #e3ebfb; --accent-on: #ffffff; }
+
+:where(:root[data-theme='dark']:not([data-backdrop]), :root[data-theme='dark'][data-backdrop='mist']) { --brand-a: #4f7fe0; --brand-b: #7a64e0; --accent: #8db2ff; --accent-hover: #aec8ff; --accent-soft: #2b3653; --accent-on: #0d1426; }
+:where(:root[data-theme='dark'][data-backdrop='dawn']) { --brand-a: #e98c74; --brand-b: #d0628a; --accent: #f2a2b0; --accent-hover: #f7c0ca; --accent-soft: #4a2c33; --accent-on: #2a0d14; }
+:where(:root[data-theme='dark'][data-backdrop='mint']) { --brand-a: #3fae8d; --brand-b: #3986b5; --accent: #8fd6bd; --accent-hover: #b2e6d4; --accent-soft: #24423a; --accent-on: #07201a; }
+:where(:root[data-theme='dark'][data-backdrop='lavender']) { --brand-a: #8c6ff0; --brand-b: #c860b5; --accent: #bcaaff; --accent-hover: #d3c7ff; --accent-soft: #372f55; --accent-on: #170f33; }
+:where(:root[data-theme='dark'][data-backdrop='graphite']) { --brand-a: #6e7c94; --brand-b: #3d4759; --accent: #c9d3e3; --accent-hover: #e0e6ef; --accent-soft: #353b46; --accent-on: #12161d; }
+:where(:root[data-theme='dark'][data-backdrop='paper']) { --brand-a: #5e8ff0; --brand-b: #5a6fd8; --accent: #8db2ff; --accent-hover: #aec8ff; --accent-soft: #2b3653; --accent-on: #0d1426; }
+

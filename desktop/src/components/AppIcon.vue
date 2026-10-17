@@ -29,6 +29,8 @@ const paths: Record<string, string> = {
   external: 'M14 3h7v7 M21 3 11 13 M10 3H3v18h18v-7',
   fullscreen: 'M8 3H3v5 M16 3h5v5 M21 16v5h-5 M8 21H3v-5',
   'exit-fullscreen': 'M3 8h5V3 M21 8h-5V3 M16 21v-5h5 M8 21v-5H3',
+  split: 'M4 4h16a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z M12 4v16',
+  'split-add': 'M4 4h7v16H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z M15 4h5a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-5 M18 9v6 M15 12h6',
 }
 </script>
 

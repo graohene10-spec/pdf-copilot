@@ -34,7 +34,7 @@ try {
   await page.locator('.ai-pane').waitFor(); await ready(); await page.waitForTimeout(200);
   const control = page.getByRole('button', { name: '阅读助手', exact: true });
   for (const theme of ['light', 'dark']) {
-    if (theme === 'dark') await page.locator('[data-tip="切换深色主题"]').click();
+    if (theme === 'dark') { await page.locator('[data-tip="切换深色主题"]').click(); await page.waitForFunction(() => !document.documentElement.dataset.themeTransition); }
     await page.waitForFunction(theme => document.documentElement.dataset.theme === theme, theme);
     const paperBefore = await page.locator('#page-surface').boundingBox();
     const internalLink = page.locator('#page-surface .pdf-link').first();

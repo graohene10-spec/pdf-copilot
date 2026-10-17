@@ -2,7 +2,7 @@
 import { computed, ref, watch, onMounted, onBeforeUnmount, nextTick, defineAsyncComponent } from 'vue'
 import AppIcon from './AppIcon.vue'
 import { vLiquidSelection } from '../ui/liquid-selection'
-import { useSettings, defaultPreferences, normalizePreferences, preferenceErrors, importBackgroundImage, defaultQuickPrompts, quickPromptLabelLength, limitQuickPromptLabel, QUICK_PROMPT_LABEL_LIMIT, QUICK_PROMPT_QUESTION_LIMIT, SHORTCUTS, DEFAULT_SHORTCUTS, shortcutLabel, shortcutFromEvent, shortcutFromWheelEvent, type AppPreferences, type ShortcutAction } from '../settings'
+import { useSettings, defaultPreferences, normalizePreferences, preferenceErrors, importBackgroundImage, defaultQuickPrompts, defaultCaptureQuestions, newCaptureQuestion, quickPromptLabelLength, limitQuickPromptLabel, QUICK_PROMPT_LABEL_LIMIT, QUICK_PROMPT_QUESTION_LIMIT, CAPTURE_QUESTION_MIN, CAPTURE_QUESTION_MAX, BACKDROPS, SHORTCUTS, DEFAULT_SHORTCUTS, shortcutLabel, shortcutFromEvent, shortcutFromWheelEvent, type AppPreferences, type BackdropPreset, type ShortcutAction } from '../settings'
 
 type Tab = 'appearance' | 'reading' | 'shortcuts' | 'ai'
 const props = withDefaults(defineProps<{ initialTab?: Tab }>(), { initialTab: 'appearance' })
@@ -24,7 +24,7 @@ let imageRequest = 0
 const status = ref('')
 const recording = ref<ShortcutAction | null>(null)
 const captureError = ref('')
-const composingLabel = ref<number | null>(null)
+const composingLabel = ref<string | null>(null)
 const aiSettings = ref<any>()
 const dialog = ref<HTMLElement>()
 const previousFocus = document.activeElement as HTMLElement | null
@@ -40,6 +40,7 @@ onMounted(async () => {
     await shared.load()
     if (disposed || closing) return
     draft.value = normalizePreferences(shared.preferences.value)
+    captureKeys.value = draft.value.assistant.captureQuestions.map(() => ++captureKeySeed)
     baseline = JSON.stringify(draft.value)
     ready.value = true
     shared.previewAppearance(draft.value.appearance)
@@ -79,23 +80,58 @@ function restoreBackground() {
   imageRequest++; importingImage.value = false; imageError.value = ''
   draft.value.appearance.background = null
 }
+function chooseBackdrop(id: BackdropPreset) {
+  if (saving.value) return
+  restoreBackground()
+  draft.value.appearance.backdrop = id
+}
 function switchTab(value: Tab) { tab.value = value; if (value === 'ai') aiVisited.value = true; recording.value = null; captureError.value = ''; composingLabel.value = null; status.value = '' }
-function editQuickPromptLabel(event: Event, index: number) {
+type PromptList = 'quickPrompts' | 'captureQuestions'
+function editQuickPromptLabel(event: Event, index: number, list: PromptList = 'quickPrompts') {
   if (saving.value) return
   const input = event.target as HTMLInputElement
+  const item = draft.value.assistant[list][index]
+  if (!item) return
   // Keep the controlled value synchronized during IME composition. Deferring
   // the draft update would let any other reactive change overwrite candidates.
-  if ((event as InputEvent).isComposing || composingLabel.value === index) {
-    draft.value.assistant.quickPrompts[index].label = input.value
+  if ((event as InputEvent).isComposing || composingLabel.value === `${list}:${index}`) {
+    item.label = input.value
     return
   }
   const label = limitQuickPromptLabel(input.value)
   if (input.value !== label) input.value = label
-  draft.value.assistant.quickPrompts[index].label = label
+  item.label = label
 }
-function finishQuickPromptLabel(event: CompositionEvent, index: number) {
+function finishQuickPromptLabel(event: CompositionEvent, index: number, list: PromptList = 'quickPrompts') {
   composingLabel.value = null
-  editQuickPromptLabel(event, index)
+  editQuickPromptLabel(event, index, list)
+}
+// 框选提问：每一项一个稳定键，删除中间项时编辑框不会串位。
+let captureKeySeed = 0
+const captureKeys = ref<number[]>(draft.value.assistant.captureQuestions.map(() => ++captureKeySeed))
+watch(() => draft.value.assistant.captureQuestions.length, length => {
+  while (captureKeys.value.length < length) captureKeys.value.push(++captureKeySeed)
+  if (captureKeys.value.length > length) captureKeys.value = captureKeys.value.slice(0, length)
+})
+function addCaptureQuestion() {
+  if (saving.value || draft.value.assistant.captureQuestions.length >= CAPTURE_QUESTION_MAX) return
+  captureKeys.value.push(++captureKeySeed)
+  draft.value.assistant.captureQuestions.push(newCaptureQuestion())
+  status.value = ''
+  void nextTick(() => dialog.value?.querySelector<HTMLInputElement>(`#capture-question-label-${draft.value.assistant.captureQuestions.length - 1}`)?.select())
+}
+// A removed editor stays only for its exit animation; take it out of focus order and the accessibility tree.
+function retireEditor(element: Element) { element.setAttribute('aria-hidden', 'true'); (element as HTMLElement).inert = true }
+function removeCaptureQuestion(index: number) {
+  if (saving.value || draft.value.assistant.captureQuestions.length <= CAPTURE_QUESTION_MIN) return
+  captureKeys.value.splice(index, 1)
+  draft.value.assistant.captureQuestions.splice(index, 1)
+  composingLabel.value = null; status.value = ''
+}
+function restoreCaptureQuestions() {
+  draft.value.assistant.captureQuestions = defaultCaptureQuestions()
+  captureKeys.value = draft.value.assistant.captureQuestions.map(() => ++captureKeySeed)
+  composingLabel.value = null; status.value = ''
 }
 function restoreQuickPrompt(index: number) {
   draft.value.assistant.quickPrompts[index] = defaultQuickPrompts()[index]
@@ -183,7 +219,17 @@ function dialogKeydown(event: KeyboardEvent) {
             <label class="setting-row"><span>默认文档视图</span><select v-model="draft.appearance.libraryView" :disabled="saving" aria-label="默认文档视图"><option value="grid">卡片</option><option value="list">列表</option></select></label>
             <div class="setting-row transparency-row"><label for="glass-transparency">玻璃透明度</label><div class="transparency-control"><input id="glass-transparency" v-model.number="draft.appearance.glassTransparency" :style="{ '--value': draft.appearance.glassTransparency }" :disabled="saving" type="range" min="0" max="100" step="1" aria-label="玻璃透明度" :aria-valuetext="`${draft.appearance.glassTransparency}%`" /><output for="glass-transparency">{{ draft.appearance.glassTransparency }}%</output><span class="slider-endpoints" aria-hidden="true"><span>实色</span><span>清透</span></span></div></div>
             </div>
-            <div class="settings-group background-setting"><div class="background-heading"><span>底板图片</span><button type="button" :disabled="saving || importingImage" @click="imageInput?.click()">{{ importingImage ? '正在处理…' : draft.appearance.background ? '替换图片' : '选择图片' }}</button><button v-if="draft.appearance.background" type="button" :disabled="saving || importingImage" @click="restoreBackground" aria-label="恢复默认底板">恢复默认</button></div><input ref="imageInput" class="background-file" type="file" accept="image/png,image/jpeg,image/webp" tabindex="-1" aria-label="底板图片文件" @change="chooseBackground" /><div v-if="draft.appearance.background" class="background-preview"><img :src="draft.appearance.background.dataUrl" alt="底板图片预览" /><span :data-tip="draft.appearance.background.name">{{ draft.appearance.background.name }}</span></div><p v-else class="settings-help background-default">使用默认底板</p><p v-if="imageError" class="settings-error" role="status">{{ imageError }}</p><p class="settings-help">支持 PNG、JPEG、WebP；图片保存在本机，自动适应窗口。调节后可预览，点击保存生效。</p></div>
+            <h3 class="section-heading">底板</h3>
+            <div class="settings-group background-setting">
+              <div class="backdrop-grid" role="radiogroup" aria-label="底板">
+                <button v-for="(item, index) in BACKDROPS" :key="item.id" type="button" role="radio" class="backdrop-swatch" :style="{ '--swatch': `var(--bd-${item.id})`, '--swatch-brand': `var(--bd-${item.id}-brand)`, '--i': index }" :aria-checked="!draft.appearance.background && draft.appearance.backdrop === item.id" :aria-label="`${item.label}底板`" :disabled="saving" @click="chooseBackdrop(item.id)"><span class="swatch-art" :class="{ ripples: item.id === 'paper' }"><i class="swatch-bar"></i><i class="swatch-dot"></i><span class="swatch-check"><AppIcon name="check" :size="12" /></span></span><span class="swatch-label">{{ item.label }}</span></button>
+                <button type="button" role="radio" class="backdrop-swatch custom-swatch" :style="{ '--i': BACKDROPS.length }" :aria-checked="!!draft.appearance.background" aria-label="自定义图片底板" :disabled="saving || importingImage" @click="imageInput?.click()"><span class="swatch-art"><img v-if="draft.appearance.background" :src="draft.appearance.background.dataUrl" alt="底板图片预览" /><AppIcon v-else name="plus" :size="20" /><span class="swatch-check"><AppIcon name="check" :size="12" /></span></span><span class="swatch-label">{{ importingImage ? '处理中…' : '自定义图片' }}</span></button>
+              </div>
+              <div class="background-heading"><span class="background-name" :data-tip="draft.appearance.background?.name">{{ draft.appearance.background ? draft.appearance.background.name : '也可以使用本机图片作为底板' }}</span><button type="button" :disabled="saving || importingImage" @click="imageInput?.click()">{{ importingImage ? '正在处理…' : draft.appearance.background ? '替换图片' : '选择图片' }}</button><button v-if="draft.appearance.background" type="button" :disabled="saving || importingImage" @click="restoreBackground" aria-label="恢复默认底板">移除图片</button></div>
+              <input ref="imageInput" class="background-file" type="file" accept="image/png,image/jpeg,image/webp" tabindex="-1" aria-label="底板图片文件" @change="chooseBackground" />
+              <p v-if="imageError" class="settings-error" role="status">{{ imageError }}</p>
+              <p class="settings-help">每套底板带一套协调的主色与徽记颜色；自定义图片沿用当前预设的主色。支持 PNG、JPEG、WebP，图片保存在本机。调节后可预览，点击保存生效。</p>
+            </div>
             <p class="settings-help">透明度仅影响侧栏、工具栏与面板，正文保持实色。系统开启「减少透明度」时自动使用实色。</p>
           </template>
           <template v-else-if="tab === 'reading'">
@@ -214,15 +260,28 @@ function dialogKeydown(event: KeyboardEvent) {
           <section v-if="ready && tab === 'ai'" class="quick-prompts-section" aria-label="快捷提问设置">
             <div class="quick-prompts-heading"><h3>快捷提问</h3><button type="button" class="text-action" :disabled="saving" @click="restoreQuickPrompts" aria-label="恢复全部快捷提问默认">恢复默认</button></div>
             <p class="settings-help">点击侧栏按钮即可发送对应提示词。按钮介绍最多 {{ QUICK_PROMPT_LABEL_LIMIT }} 字，提示词最多 {{ QUICK_PROMPT_QUESTION_LIMIT }} 个字符；保存后生效。</p>
-            <div class="settings-group"><label class="setting-check"><input v-model="draft.pdf.quickAskOnCapture" type="checkbox" :disabled="saving" aria-label="PDF 框选后显示快捷提问" aria-describedby="capture-quick-ask-help" /><span>PDF 框选后显示快捷提问</span></label></div>
-            <p id="capture-quick-ask-help" class="settings-help">框选后先显示选区旁的快捷问题，点击继续再打开助手。</p>
             <section v-for="(item, index) in draft.assistant.quickPrompts" :key="index" class="quick-prompt-editor settings-group" :aria-labelledby="`quick-prompt-heading-${index}`">
               <div class="quick-prompt-heading"><h4 :id="`quick-prompt-heading-${index}`">按钮 {{ index + 1 }}</h4><button type="button" :disabled="saving" @click="restoreQuickPrompt(index)" :aria-label="`恢复快捷提问 ${index + 1} 默认`">恢复默认</button></div>
               <label :for="`quick-prompt-label-${index}`">按钮介绍 <span class="quick-prompt-counter" :id="`quick-prompt-count-${index}`">{{ quickPromptLabelLength(item.label) }} / {{ QUICK_PROMPT_LABEL_LIMIT }}</span></label>
-              <input :id="`quick-prompt-label-${index}`" :value="item.label" :disabled="saving" type="text" :aria-label="`快捷提问 ${index + 1} 按钮介绍`" :aria-describedby="`quick-prompt-count-${index}`" @input="editQuickPromptLabel($event, index)" @compositionstart="composingLabel = index" @compositionend="finishQuickPromptLabel($event, index)" />
+              <input :id="`quick-prompt-label-${index}`" :value="item.label" :disabled="saving" type="text" :aria-label="`快捷提问 ${index + 1} 按钮介绍`" :aria-describedby="`quick-prompt-count-${index}`" @input="editQuickPromptLabel($event, index)" @compositionstart="composingLabel = `quickPrompts:${index}`" @compositionend="finishQuickPromptLabel($event, index)" />
               <label :for="`quick-prompt-question-${index}`">提示词</label>
               <textarea :id="`quick-prompt-question-${index}`" v-model="item.question" :disabled="saving" :maxlength="QUICK_PROMPT_QUESTION_LIMIT" rows="3" :aria-label="`快捷提问 ${index + 1} 提示词`" />
             </section>
+          </section>
+          <section v-if="ready && tab === 'ai'" class="quick-prompts-section capture-questions-section" aria-label="框选快捷提问设置">
+            <div class="quick-prompts-heading"><h3>框选快捷提问</h3><button type="button" class="text-action" :disabled="saving" @click="restoreCaptureQuestions" aria-label="恢复框选提问默认">恢复默认</button></div>
+            <div class="settings-group"><label class="setting-check"><input v-model="draft.pdf.quickAskOnCapture" type="checkbox" :disabled="saving" aria-label="PDF 框选后显示快捷提问" aria-describedby="capture-quick-ask-help" /><span>PDF 框选后聚焦选区并弹出快捷提问</span></label></div>
+            <p id="capture-quick-ask-help" class="settings-help">框选后选区以外的画面会虚化，选区旁弹出思考气泡；按气泡旁的数字键即可发送。「提问概括」显示在气泡上，「提问内容」是实际发送给 AI 的提示词。</p>
+            <TransitionGroup name="editor-list" tag="div" class="capture-question-list" @before-leave="retireEditor">
+              <section v-for="(item, index) in draft.assistant.captureQuestions" :key="captureKeys[index]" class="quick-prompt-editor capture-question-editor settings-group" :aria-labelledby="`capture-question-heading-${index}`">
+                <div class="quick-prompt-heading"><h4 :id="`capture-question-heading-${index}`"><kbd class="capture-key">{{ index + 1 }}</kbd>提问 {{ index + 1 }}</h4><button type="button" :disabled="saving || draft.assistant.captureQuestions.length <= CAPTURE_QUESTION_MIN" @click="removeCaptureQuestion(index)" :aria-label="`删除框选提问 ${index + 1}`">删除</button></div>
+                <label :for="`capture-question-label-${index}`">提问概括 <span class="quick-prompt-counter" :id="`capture-question-count-${index}`">{{ quickPromptLabelLength(item.label) }} / {{ QUICK_PROMPT_LABEL_LIMIT }}</span></label>
+                <input :id="`capture-question-label-${index}`" :value="item.label" :disabled="saving" type="text" placeholder="如：为什么？" :aria-label="`框选提问 ${index + 1} 提问概括`" :aria-describedby="`capture-question-count-${index}`" @input="editQuickPromptLabel($event, index, 'captureQuestions')" @compositionstart="composingLabel = `captureQuestions:${index}`" @compositionend="finishQuickPromptLabel($event, index, 'captureQuestions')" />
+                <label :for="`capture-question-text-${index}`">提问内容</label>
+                <textarea :id="`capture-question-text-${index}`" v-model="item.question" :disabled="saving" :maxlength="QUICK_PROMPT_QUESTION_LIMIT" rows="3" :aria-label="`框选提问 ${index + 1} 提问内容`" />
+              </section>
+            </TransitionGroup>
+            <button type="button" class="add-capture-question" :disabled="saving || draft.assistant.captureQuestions.length >= CAPTURE_QUESTION_MAX" @click="addCaptureQuestion"><AppIcon name="plus" :size="15" />添加提问<span>{{ draft.assistant.captureQuestions.length }} / {{ CAPTURE_QUESTION_MAX }}</span></button>
           </section>
           <p v-if="ready && errors.length" class="settings-error" role="status">{{ errors[0] }}</p>
           <p v-if="ready && status" class="settings-error" role="status">{{ status }}</p>
@@ -291,16 +350,35 @@ button{color:var(--control-ink)}
 .transparency-control output{font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums;text-align:right;color:var(--control-ink)}
 .slider-endpoints{display:flex;justify-content:space-between;grid-column:1;font-size:10.5px;color:var(--muted)}
 .background-setting{padding:14px 16px;font-size:13px;color:var(--secondary)}
-.background-heading{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+/* 底板色板：一排圆角缩略图，选中的一张带主色描边与对勾。 */
+.backdrop-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px 14px}
+.backdrop-swatch{display:flex;flex-direction:column;align-items:stretch;gap:7px;height:auto;padding:0;border:0;background:none;box-shadow:none;border-radius:var(--r-md);font-size:12px;font-weight:550;color:var(--secondary);animation:zg-settle-in var(--dur-smooth) var(--spring-smooth) both;animation-delay:calc(var(--i, 0) * 35ms)}
+.backdrop-swatch:hover:not(:disabled){background:none;border:0}
+.swatch-art{position:relative;display:grid;place-items:center;height:64px;border-radius:var(--r-md);background:var(--swatch, var(--fill-3));border:1px solid var(--glass-outline);box-shadow:var(--shadow-1),inset 0 1px 0 rgb(255 255 255 / .5);overflow:hidden;color:var(--muted);transition:transform var(--dur-press) var(--spring-press),box-shadow var(--dur-2) var(--ease-out)}
+.swatch-art.ripples::after{content:'';position:absolute;inset:0;background:url('../assets/white-ripples.svg') center/cover;opacity:.8}
+:global(:root[data-theme='dark']) .swatch-art.ripples::after{opacity:.1}
+.swatch-art img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.backdrop-swatch:hover:not(:disabled) .swatch-art{transform:translateY(-2px);box-shadow:var(--shadow-2),inset 0 1px 0 rgb(255 255 255 / .5)}
+.backdrop-swatch:active:not(:disabled) .swatch-art{transform:scale(.96)}
+/* 色板内一条玻璃小条与一颗主色圆点，示意这套底板上的界面。 */
+.swatch-bar{position:absolute;left:9px;right:30px;top:9px;height:9px;border-radius:999px;background:rgb(255 255 255 / .62);box-shadow:inset 0 0 0 .5px rgb(0 0 0 / .06);z-index:1}
+.swatch-dot{position:absolute;left:9px;bottom:9px;width:16px;height:16px;border-radius:6px;background:var(--swatch-brand);box-shadow:0 3px 6px -2px rgb(0 0 0 / .25),inset 0 1px 0 rgb(255 255 255 / .4);z-index:1}
+.swatch-check{position:absolute;right:7px;bottom:7px;display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--accent);color:var(--accent-on);box-shadow:0 2px 6px rgb(0 0 0 / .2);opacity:0;scale:.4;transition:opacity var(--dur-2) var(--ease-out),scale var(--dur-bounce) var(--spring-bouncy);z-index:2}
+.backdrop-swatch[aria-checked='true'] .swatch-art{box-shadow:0 0 0 2px var(--surface),0 0 0 4px var(--accent),var(--shadow-1)}
+.backdrop-swatch[aria-checked='true'] .swatch-check{opacity:1;scale:1}
+.backdrop-swatch[aria-checked='true'] .swatch-label{color:var(--control-ink);font-weight:650}
+.backdrop-swatch:focus-visible{outline:none}
+.backdrop-swatch:focus-visible .swatch-art{outline:2px solid var(--accent);outline-offset:3px}
+.custom-swatch .swatch-art{background:var(--fill-3);border-style:dashed}
+.custom-swatch[aria-checked='true'] .swatch-art{border-style:solid}
+:global(:root[data-theme='dark']) .swatch-bar{background:rgb(255 255 255 / .14)}
+.background-heading{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:14px}
 .background-heading>span{flex:1}
+.background-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--secondary);font-size:12px}
 .background-heading button{min-height:34px;padding:6px 15px;font-size:12px;font-weight:600;background-color:var(--glass-2);background-image:var(--glass-sheen);border:1px solid var(--glass-outline);border-radius:var(--r-full);box-shadow:var(--glass-control-shadow);color:var(--control-ink)}
 .background-heading button:hover:not(:disabled){background-color:var(--control-hover);color:var(--control-ink)}
 .background-file{display:none}
-.background-preview{margin-top:12px;display:flex;align-items:center;gap:13px;min-width:0}
-.background-preview img{width:120px;height:68px;object-fit:cover;flex-shrink:0;border-radius:var(--r-sm);border:1px solid var(--glass-outline);box-shadow:var(--shadow-1)}
-.background-preview>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--control-ink);font-size:12px}
-.background-setting .settings-help{margin:10px 0 0}
-.background-default{margin-bottom:0}
+.background-setting .settings-help{margin:12px 0 0}
 .quick-prompts-section{margin-top:24px;padding-top:20px;border-top:1px solid var(--separator)}
 .quick-prompts-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:4px}
 .quick-prompts-heading h3{margin:0 0 0 14px}
@@ -314,6 +392,18 @@ button{color:var(--control-ink)}
 .quick-prompt-editor>input,.quick-prompt-editor>textarea{box-sizing:border-box;display:block;width:100%;min-width:0;font:inherit;font-size:12.5px;line-height:1.7;padding:7px 13px;color:var(--control-ink);text-shadow:none}
 .quick-prompt-editor>input{height:36px;margin-bottom:12px}
 .quick-prompt-editor>textarea{resize:vertical;min-height:84px;max-height:240px;border-radius:var(--r-md);padding:9px 13px}
+.capture-questions-section .settings-group:first-of-type{margin-top:4px}
+.capture-question-list{position:relative}
+.capture-question-editor .quick-prompt-heading h4{display:flex;align-items:center;gap:8px}
+.capture-key{display:inline-grid;place-items:center;min-width:22px;height:22px;padding:0 6px;border-radius:7px;font:600 11.5px var(--font-mono);color:var(--control-ink);background:var(--fill-3);box-shadow:inset 0 -1px 0 var(--separator),0 0 0 .5px var(--separator)}
+.add-capture-question{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:42px;font-size:12.5px;font-weight:600;border:1px dashed color-mix(in srgb,var(--control-ink) 22%,transparent);background:var(--fill-4);box-shadow:none;border-radius:var(--r-lg);color:var(--control-ink)}
+.add-capture-question:hover:not(:disabled){background:var(--fill-3);border-color:color-mix(in srgb,var(--accent) 45%,transparent)}
+.add-capture-question>span{color:var(--muted);font-weight:500;font-variant-numeric:tabular-nums}
+.editor-list-enter-active{transition:opacity var(--dur-3) var(--ease-out),transform var(--dur-bounce) var(--spring-bouncy)}
+.editor-list-leave-active{transition:opacity var(--dur-2) var(--ease-out),transform var(--dur-2) var(--ease-out);position:absolute;left:0;right:0}
+.editor-list-enter-from{opacity:0;transform:translateY(-8px) scale(.97)}
+.editor-list-leave-to{opacity:0;transform:scale(.96)}
+.editor-list-move{transition:transform var(--dur-smooth) var(--spring-smooth)}
 .settings-error{font-size:11.5px;line-height:1.8;color:var(--danger);margin:14px 14px 0;white-space:pre-line}
 .settings-footer{padding:12px 16px 16px 22px;display:flex;align-items:center;gap:10px;border-top:1px solid var(--separator)}
 .footer-space{flex:1}
@@ -324,6 +414,6 @@ button{color:var(--control-ink)}
 /* 保存：着色玻璃主操作。 */
 .settings-footer .settings-save{background-color:var(--accent-glass);background-image:var(--glass-tint-sheen);border-color:transparent;color:var(--accent-on);font-weight:650;box-shadow:0 8px 20px -10px color-mix(in srgb,var(--accent) 80%,transparent),inset 0 1px 0 rgb(255 255 255 / .25)}
 .settings-footer .settings-save:hover:not(:disabled){background-color:var(--accent-glass-hover);border-color:transparent;color:var(--accent-on)}
-@media(max-width:670px){.settings-backdrop{padding:12px}.settings-tabs{flex-basis:112px;padding:10px 0 10px 8px}.settings-tabs button{padding:9px 10px;gap:6px}.settings-content{padding:12px 14px 22px}.shortcut-row{flex-wrap:wrap}.shortcut-row>label{flex-basis:100%;margin-bottom:3px}.shortcut-row input{flex:1;max-width:200px}.setting-row select,.number-control{width:130px}.settings-dialog{max-height:94vh}.transparency-control{grid-template-columns:minmax(80px,1fr) 36px;width:175px}.transparency-row{gap:9px}.background-heading>span{flex-basis:100%}.background-preview img{width:86px;height:52px}}
+@media(max-width:670px){.settings-backdrop{padding:12px}.settings-tabs{flex-basis:112px;padding:10px 0 10px 8px}.settings-tabs button{padding:9px 10px;gap:6px}.settings-content{padding:12px 14px 22px}.shortcut-row{flex-wrap:wrap}.shortcut-row>label{flex-basis:100%;margin-bottom:3px}.shortcut-row input{flex:1;max-width:200px}.setting-row select,.number-control{width:130px}.settings-dialog{max-height:94vh}.transparency-control{grid-template-columns:minmax(80px,1fr) 36px;width:175px}.transparency-row{gap:9px}.background-heading>span{flex-basis:100%}.backdrop-grid{grid-template-columns:repeat(3,1fr)}}
 @media(prefers-reduced-transparency:reduce),(prefers-contrast:more){.settings-content{-webkit-mask-image:none;mask-image:none}}
 </style>
