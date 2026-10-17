@@ -12,32 +12,20 @@
 :root {
   color-scheme: light;
 
-  /* ---- 冷灰中性色阶 ---- */
+  /* ---- 冷灰中性色阶：不带色相，任何底板配色都能落在上面 ---- */
   --n-0: #ffffff;
-  --n-25: #fbfcfb;
-  --n-50: #f6f8f7;
-  --n-100: #eef1ef;
-  --n-200: #e2e6e3;
-  --n-300: #cfd5d1;
-  --n-400: #a8b0ab;
-  --n-500: #7c857f;
-  --n-600: #5d665f;
-  --n-700: #444c46;
-  --n-800: #2c332e;
-  --n-900: #1b201c;
-  --n-950: #101512;
-
-  /* ---- 墨绿主色 ---- */
-  --green-50: #eef4f1;
-  --green-100: #dce8e3;
-  --green-200: #bcd3ca;
-  --green-300: #92b6a8;
-  --green-400: #5f8d7b;
-  --green-500: #356152;
-  --green-600: #14503c;
-  --green-700: #0f3e2e;
-  --green-800: #0a2c20;
-  --green-900: #061c15;
+  --n-25: #fbfcfd;
+  --n-50: #f6f7f9;
+  --n-100: #eef0f3;
+  --n-200: #e2e5ea;
+  --n-300: #cfd4dc;
+  --n-400: #a9b0bb;
+  --n-500: #7d8592;
+  --n-600: #5e6673;
+  --n-700: #454c58;
+  --n-800: #2d323b;
+  --n-900: #1b1f26;
+  --n-950: #101318;
 
   /* ---- 语义层 ---- */
   --canvas: #f6f8f8;
@@ -47,40 +35,32 @@
   --surface-3: var(--n-100);
   --reader: #f8fafb;
   --sidebar: #ffffff;
-  --workspace-texture: url('../assets/white-ripples.svg');
-  --workspace-texture-size: cover;
-  --workspace-texture-opacity: .78;
-  /* 液态玻璃需要一点背后的光色才看得出扩散；色块很淡，保持安静的阅读底。 */
-  --workspace-background:
-    radial-gradient(ellipse 58% 62% at 6% 4%, rgb(212 236 224 / .78), transparent 70%),
-    radial-gradient(ellipse 52% 58% at 98% 96%, rgb(207 223 243 / .72), transparent 72%),
-    radial-gradient(ellipse 38% 44% at 80% 6%, rgb(248 236 220 / .6), transparent 70%),
-    radial-gradient(ellipse 46% 50% at 30% 102%, rgb(230 225 245 / .5), transparent 70%),
-    linear-gradient(135deg, #f8faf9, #f2f6f7 52%, #f6f7fa);
+  /* 底板（渐变、纹理）与主色由 backdrops.css 按所选预设提供。 */
 
   --ink: var(--n-900);
-  --secondary: #455e51;
-  --muted: #597367;
+  --secondary: #4a5361;
+  --muted: #5f6877;
   --surface-ink: var(--n-900);
-  --surface-secondary: #455e51;
-  --surface-muted: #597367;
-  --line: rgb(67 101 81 / .14);
+  --surface-secondary: #4a5361;
+  --surface-muted: #5f6877;
+  --line: rgb(60 72 92 / .14);
   --line-strong: var(--n-300);
-  --line-soft: rgb(67 101 81 / .08);
+  --line-soft: rgb(60 72 92 / .08);
   /* 旧名保留为别名：组件样式迁移期间仍可正常解析。 */
   --subsurface: var(--surface-2);
 
-  --accent: var(--green-600);
-  --accent-hover: var(--green-700);
-  --accent-soft: #deeee3;
-  --accent-ring: #14503c33;
-  --accent-on: #ffffff;
+  /* 主色与徽记渐变由底板预设决定（backdrops.css），此处只派生共用层次。 */
+  --accent-ring: color-mix(in srgb, var(--accent) 22%, transparent);
+  --accent-muted: color-mix(in srgb, var(--accent) 55%, var(--surface));
+  /* 徽记：同一预设的两端色做成一块着色玻璃，前景固定白色。 */
+  --brand-gradient: linear-gradient(145deg, var(--brand-a), var(--brand-b));
+  --brand-ink: #ffffff;
   /* 着色玻璃：主操作（发送、保存）以主色染透玻璃，前景固定为 accent-on。 */
   --accent-glass: color-mix(in srgb, var(--accent) 86%, transparent);
   --accent-glass-hover: color-mix(in srgb, var(--accent) 94%, transparent);
 
   /* 控件前景不随选中态反色；中性灰度只调节玻璃底色。 */
-  --control-ink: #151918;
+  --control-ink: #161a20;
   --control-hover: color-mix(in srgb, #202020 5%, var(--glass-2));
   --control-selected: color-mix(in srgb, #202020 9%, var(--glass-2));
   --control-selected-hover: color-mix(in srgb, #202020 13%, var(--glass-2));
@@ -88,15 +68,15 @@
 
   --danger: #a8443c;
   --danger-soft: #fbeeed;
-  --success: #2f6b4f;
+  --success: #2f7a5b;
   --warning: #8a6410;
 
   /* 系统填充：玻璃上的输入框、分段控件与进度槽使用半透明灰，而非再叠一层玻璃。 */
-  --fill-1: rgb(120 128 124 / .2);
-  --fill-2: rgb(120 128 124 / .15);
-  --fill-3: rgb(120 128 124 / .1);
-  --fill-4: rgb(120 128 124 / .07);
-  --separator: rgb(40 56 48 / .11);
+  --fill-1: rgb(120 126 138 / .2);
+  --fill-2: rgb(120 126 138 / .15);
+  --fill-3: rgb(120 126 138 / .1);
+  --fill-4: rgb(120 126 138 / .07);
+  --separator: rgb(40 48 62 / .11);
 
   /* 连续透明度由设置写入（0 实色 → 1 清透）。越清透，越依赖扩散保持可读。 */
   --glass-transparency: .7;
@@ -150,7 +130,7 @@
   --glass-control-edge: inset 1px 1px 0 rgb(255 255 255 / .78), inset -1px -1px 0 rgb(255 255 255 / .32), inset 0 0 10px rgb(255 255 255 / .14);
   --glass-control-shadow: 0 1px 2px rgb(16 26 34 / .06), 0 4px 12px -4px rgb(16 26 34 / .16), var(--glass-control-edge);
   --glass-hover-shadow: 0 2px 4px rgb(16 26 34 / .06), 0 10px 22px -8px rgb(16 26 34 / .24), var(--glass-control-edge);
-  --glass-pressed-shadow: 0 1px 2px rgb(16 26 34 / .05), inset 0 1px 3px rgb(18 28 22 / .1), inset 0 -1px 0 var(--glass-rim-soft);
+  --glass-pressed-shadow: 0 1px 2px rgb(16 26 34 / .05), inset 0 1px 3px rgb(18 24 34 / .1), inset 0 -1px 0 var(--glass-rim-soft);
   /* 斜向高光用于可交互玻璃面的镜面反射。 */
   --glass-specular: linear-gradient(
     115deg,
@@ -225,53 +205,33 @@
   --surface-3: #343c3e;
   --reader: #2a3033;
   --sidebar: #2b3134;
-  --gem-cloud: rgb(152 165 171 / .22);
-  --gem-mist: rgb(157 175 179 / .15);
-  --gem-jade: rgb(72 104 98 / .5);
-  --gem-shadow: rgb(0 3 7 / .55);
-  --workspace-texture: url('../assets/smoky-veins.svg');
-  --workspace-texture-size: 100% 100%;
-  --workspace-texture-opacity: .17;
-  --workspace-background:
-    radial-gradient(ellipse 43% 70% at 90% 14%, var(--gem-jade), transparent 74%),
-    radial-gradient(ellipse 59% 32% at 35% 67%, var(--gem-cloud), transparent 75%),
-    radial-gradient(ellipse 24% 64% at 56% 18%, var(--gem-shadow), transparent 77%),
-    radial-gradient(ellipse 48% 52% at 5% 24%, var(--gem-mist), transparent 76%),
-    radial-gradient(ellipse 35% 36% at 96% 95%, var(--gem-cloud), transparent 76%),
-    radial-gradient(ellipse 30% 62% at 13% 98%, var(--gem-jade), transparent 78%),
-    linear-gradient(128deg, var(--canvas-deep), var(--canvas) 38%, var(--reader) 72%, var(--canvas));
+  --ink: #eceff4;
+  --secondary: #c3cad4;
+  --muted: #a3abb7;
+  --surface-ink: #eceff4;
+  --surface-secondary: #c3cad4;
+  --surface-muted: #a3abb7;
+  --line: rgb(214 222 236 / .12);
+  --line-strong: #555d6a;
+  --line-soft: rgb(214 222 236 / .07);
 
-  --ink: #eaf1ed;
-  --secondary: #c0cdc7;
-  --muted: #a2b2ab;
-  --surface-ink: #eaf1ed;
-  --surface-secondary: #c0cdc7;
-  --surface-muted: #a2b2ab;
-  --line: rgb(208 228 217 / .12);
-  --line-strong: #53625a;
-  --line-soft: rgb(208 228 217 / .07);
+  --accent-ring: color-mix(in srgb, var(--accent) 28%, transparent);
 
-  --accent: #a1d4b8;
-  --accent-hover: #c0e9d2;
-  --accent-soft: #304a40;
-  --accent-ring: #7fbfa340;
-  --accent-on: #0a1a14;
-
-  --control-ink: #f2f5f3;
+  --control-ink: #f2f4f7;
   --control-hover: color-mix(in srgb, #ffffff 7%, var(--glass-2));
   --control-selected: color-mix(in srgb, #ffffff 12%, var(--glass-2));
   --control-selected-hover: color-mix(in srgb, #ffffff 17%, var(--glass-2));
 
   --danger: #e79a92;
   --danger-soft: #3a2320;
-  --success: #6cc08f;
+  --success: #6cc49a;
   --warning: #d8b26a;
 
-  --fill-1: rgb(150 162 158 / .3);
-  --fill-2: rgb(150 162 158 / .24);
-  --fill-3: rgb(150 162 158 / .18);
-  --fill-4: rgb(150 162 158 / .12);
-  --separator: rgb(220 236 228 / .1);
+  --fill-1: rgb(152 160 174 / .3);
+  --fill-2: rgb(152 160 174 / .24);
+  --fill-3: rgb(152 160 174 / .18);
+  --fill-4: rgb(152 160 174 / .12);
+  --separator: rgb(222 230 242 / .1);
 
   --glass-sat: 160%;
   --glass-1: rgb(50 59 63 / var(--glass-a1));
@@ -284,17 +244,17 @@
   --glass-sheen:
     linear-gradient(180deg, rgb(255 255 255 / .065), rgb(255 255 255 / .01) 36%, rgb(255 255 255 / 0) 64%, rgb(0 0 0 / .07));
   --glass-tint-sheen: linear-gradient(180deg, rgb(255 255 255 / .12), rgb(255 255 255 / 0) 52%, rgb(0 0 0 / .08));
-  --glass-rim: rgb(224 243 237 / .43);
-  --glass-rim-soft: rgb(237 252 247 / .14);
+  --glass-rim: rgb(228 236 248 / .43);
+  --glass-rim-soft: rgb(238 244 252 / .14);
   --glass-outline: rgb(0 0 0 / .42);
   --rim-stops:
-    rgb(236 252 246 / .5), rgb(236 252 246 / .2) 18%, rgb(236 252 246 / .05) 42%,
-    rgb(236 252 246 / .03) 60%, rgb(236 252 246 / .14) 86%, rgb(236 252 246 / .32);
-  --glass-light: rgb(235 253 247 / .24);
-  --glass-light-soft: rgb(191 227 215 / .06);
+    rgb(238 244 252 / .5), rgb(238 244 252 / .2) 18%, rgb(238 244 252 / .05) 42%,
+    rgb(238 244 252 / .03) 60%, rgb(238 244 252 / .14) 86%, rgb(238 244 252 / .32);
+  --glass-light: rgb(238 244 252 / .24);
+  --glass-light-soft: rgb(200 214 236 / .06);
   --glass-label-shadow: 0 1px 1px rgb(0 0 0 / .2);
-  --glass-edge: inset 1px 1px 0 rgb(236 252 246 / .17), inset -1px -1px 0 rgb(236 252 246 / .06), inset 0 -2px 4px rgb(0 0 0 / .2), inset 0 0 18px rgb(255 255 255 / .03);
-  --glass-control-edge: inset 1px 1px 0 rgb(236 252 246 / .22), inset -1px -1px 0 rgb(236 252 246 / .07), inset 0 -1px 2px rgb(0 0 0 / .26);
+  --glass-edge: inset 1px 1px 0 rgb(238 244 252 / .17), inset -1px -1px 0 rgb(238 244 252 / .06), inset 0 -2px 4px rgb(0 0 0 / .2), inset 0 0 18px rgb(255 255 255 / .03);
+  --glass-control-edge: inset 1px 1px 0 rgb(238 244 252 / .22), inset -1px -1px 0 rgb(238 244 252 / .07), inset 0 -1px 2px rgb(0 0 0 / .26);
   --glass-control-shadow: 0 1px 2px rgb(0 0 0 / .26), 0 5px 14px -5px rgb(0 0 0 / .5), var(--glass-control-edge);
   --glass-hover-shadow: 0 2px 4px rgb(0 0 0 / .24), 0 12px 24px -8px rgb(0 0 0 / .56), var(--glass-control-edge);
   --glass-pressed-shadow: 0 1px 2px rgb(0 0 0 / .2), inset 0 1px 3px rgb(0 0 0 / .32), inset 0 -1px 0 var(--glass-rim-soft);

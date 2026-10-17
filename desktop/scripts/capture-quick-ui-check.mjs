@@ -90,9 +90,13 @@ async function configure(key, enable = true) {
   await dialog().getByLabel('其中 Codex 同时运行数', { exact: true }).fill('1');
   await dialog().getByLabel('最多等待的提问', { exact: true }).fill('1');
   await dialog().getByLabel('PDF 框选后显示快捷提问', { exact: true }).setChecked(enable);
+  // The assistant's three suggestions and the capture bubbles are configured alike; extra default bubbles are removed.
+  while (await dialog().getByRole('button', { name: '删除框选提问 4', exact: true }).count()) await dialog().getByRole('button', { name: '删除框选提问 4', exact: true }).click();
   for (let index = 0; index < 3; index++) {
     await dialog().getByLabel(`快捷提问 ${index + 1} 按钮介绍`, { exact: true }).fill(labels[index]);
     await dialog().getByLabel(`快捷提问 ${index + 1} 提示词`, { exact: true }).fill(questions[index]);
+    await dialog().getByLabel(`框选提问 ${index + 1} 提问概括`, { exact: true }).fill(labels[index]);
+    await dialog().getByLabel(`框选提问 ${index + 1} 提问内容`, { exact: true }).fill(questions[index]);
   }
   await saveSettings();
 }
@@ -168,13 +172,15 @@ try {
   ids = await page.evaluate(async names => { const { library } = await import('/src/sdk/index.ts'); const docs = await library.list(); return names.map(name => docs.find(doc => doc.name === name).id); }, names);
 
   await aiSettings();
-  assert.equal(await dialog().getByLabel('PDF 框选后显示快捷提问', { exact: true }).isChecked(), false);
-  await dialog().getByLabel('PDF 框选后显示快捷提问', { exact: true }).check();
+  assert.equal(await dialog().getByLabel('PDF 框选后显示快捷提问', { exact: true }).isChecked(), true);
+  assert.deepEqual(await dialog().locator('.capture-question-editor input').evaluateAll(inputs => inputs.map(input => input.value)), ['为什么？', '详细展开', '通俗解释', '举个例子']);
+  await dialog().getByLabel('PDF 框选后显示快捷提问', { exact: true }).uncheck();
   await dialog().getByRole('button', { name: '取消', exact: true }).click(); await dialog().waitFor({ state: 'detached' });
-  assert.equal((await preferences())?.pdf?.quickAskOnCapture ?? false, false);
-  await crop(0, false); assert.equal(await quick().count(), 0);
-  await pane().locator('[data-tip="清除选区"]').click(); await closeAssistant();
-  checks.push('The optional mode defaults off; cancelling its settings preserves the existing auto-open capture flow.');
+  assert.equal((await preferences())?.pdf?.quickAskOnCapture ?? true, true);
+  await crop(0); assert.deepEqual((await quick().locator('.capture-quick-buttons button').allTextContents()).map(value => value.trim()), ['为什么？', '详细展开', '通俗解释', '举个例子']);
+  assert.deepEqual(await quick().locator('.thought-key').allTextContents(), ['1', '2', '3', '4']);
+  await page.keyboard.press('Escape'); await quick().waitFor({ state: 'detached' });
+  checks.push('Capture focus is on by default with the short default questions and number keys; cancelling its settings keeps it on.');
 
   await configure('capture-quick-local-key');
   assert.equal((await preferences()).pdf.quickAskOnCapture, true);
@@ -191,15 +197,16 @@ try {
   assert.equal(await page.locator('.pdf-reader:visible .reader-zoom button[data-tip="适应宽度"]').innerText(), first.scale, 'No sidebar resize occurs at crop completion.');
   assert.deepEqual((await quick().locator('.capture-quick-buttons button').allTextContents()).map(value => value.trim()), labels);
   assert.equal(await quick().getByRole('button', { name: '继续到阅读助手', exact: true }).isVisible(), true);
+  await page.waitForTimeout(650); // focus ring settles from its entrance scale
   const hole = await page.locator('.capture-quick-hole').boundingBox(); assert.ok(hole);
   for (const key of ['x', 'y', 'width', 'height']) assert.ok(Math.abs(hole[key] - first.rectangle[key]) <= 3, `The undimmed hole follows the real mouse crop (${key}).`);
   const panel = await quick().locator('.capture-quick-actions').boundingBox();
   assert.ok(panel.x >= 0 && panel.y >= 0 && panel.x + panel.width <= 1440 && panel.y + panel.height <= 960, 'Quick actions stay inside the viewport.');
-  const samples = [{ x: first.rectangle.x + first.rectangle.width / 2, y: first.rectangle.y + first.rectangle.height / 2 }, { x: first.rectangle.x - 16, y: first.rectangle.y + first.rectangle.height / 2 }];
+  const samples = [{ x: first.rectangle.x + first.rectangle.width / 2, y: first.rectangle.y + first.rectangle.height / 2 }, { x: first.rectangle.x + first.rectangle.width / 2, y: first.rectangle.y + first.rectangle.height + 64 }];
   const beforePixels = await sampleScreenshot(first.before, samples);
   const afterPixels = await sampleScreenshot(await page.screenshot({ animations: 'disabled' }), samples);
   assert.ok(afterPixels[0].every((value, index) => Math.abs(value - beforePixels[0][index]) <= 2), 'Pixels inside the selection hole remain unchanged.');
-  assert.ok(beforePixels[1].reduce((sum, value) => sum + value, 0) / 3 - afterPixels[1].reduce((sum, value) => sum + value, 0) / 3 >= 30, 'PDF pixels outside the selection are visibly darkened.');
+  assert.ok(beforePixels[1].reduce((sum, value) => sum + value, 0) / 3 - afterPixels[1].reduce((sum, value) => sum + value, 0) / 3 >= 30, 'PDF pixels beyond the feathered edge are visibly dimmed and blurred.');
   geometry.push({ crop: first.rectangle, hole, panel, devicePixelRatio: await page.evaluate(() => devicePixelRatio), samples, beforePixels, afterPixels });
   await shot('capture-quick-light.png');
   await page.emulateMedia({ colorScheme: 'dark' }); await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark');

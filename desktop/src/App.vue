@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, shallowRef, computed, watch, onMounted, onBeforeUnmount, nextTick, defineAsyncComponent, toRaw } from 'vue'
+import { ref, shallowRef, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick, defineAsyncComponent, toRaw } from 'vue'
 import { library, isDesktop, importDroppedDocuments } from './sdk'
 import type { Doc } from './sdk/types'
 import AppIcon from './components/AppIcon.vue'
@@ -17,6 +17,7 @@ const PdfReader = defineAsyncComponent(() => import('./components/PdfReader.vue'
 const MarkdownReader = defineAsyncComponent(() => import('./components/MarkdownReader.vue'))
 const AiPane = defineAsyncComponent(() => import('./components/AiPane.vue'))
 const SettingsDialog = defineAsyncComponent(() => import('./components/SettingsDialog.vue'))
+const SplitPicker = defineAsyncComponent(() => import('./components/SplitPicker.vue'))
 const { preferences, effectiveAppearance, load: loadPreferences, save: savePreferences } = useSettings()
 
 const documents = ref<Doc[]>([])
@@ -26,7 +27,35 @@ type OpenTab = { doc: Doc; view?: any; selection?: DocumentSelection }
 const tabs = ref<OpenTab[]>([])
 const active = ref<Doc | null>(null)
 const currentTab = computed(() => tabs.value.find(tab => tab.doc.id === active.value?.id))
-const fileTabs = computed(() => tabs.value.map(tab => ({ id: tab.doc.id, name: tab.doc.name, kind: tab.doc.kind, phase: chatPhase(tab.doc.id) })))
+const fileTabs = computed(() => tabs.value.map(tab => ({ id: tab.doc.id, name: tab.doc.name, kind: tab.doc.kind, phase: chatPhase(tab.doc.id), beside: splitIds.value.length > 1 && splitIds.value.includes(tab.doc.id) })))
+/* 并排阅读：splitIds 为并排显示的文件（含当前焦点），少于两份即为单栏。焦点栏就是 active。 */
+const MAX_PANES = 3
+const splitIds = ref<string[]>([])
+const paneIds = computed(() => splitIds.value.length > 1 ? splitIds.value : active.value ? [active.value.id] : [])
+const splitView = computed(() => paneIds.value.length > 1)
+function paneVisible(id: string) { return splitIds.value.length > 1 ? splitIds.value.includes(id) : active.value?.id === id }
+function visibleReaders() { return paneIds.value.map(id => readerInstances.get(id)).filter(Boolean) }
+function pdfOnScreen() { return paneIds.value.some(id => tabs.value.find(tab => tab.doc.id === id)?.doc.kind === 'pdf') }
+const splitPicker = ref<{ left: number; top: number; right: number; bottom: number }>()
+const enteringPane = ref<string>()
+let enteringTimer: ReturnType<typeof setTimeout> | undefined
+const splitCandidates = computed(() => {
+  const shown = new Set(paneIds.value)
+  const open = tabs.value.filter(tab => !shown.has(tab.doc.id)).map(tab => ({ id: tab.doc.id, name: tab.doc.name, kind: tab.doc.kind, open: true }))
+  const library = [...documents.value].filter(doc => !shown.has(doc.id) && !tabs.value.some(tab => tab.doc.id === doc.id)).sort((a, b) => (b.lastOpenedAt || b.addedAt) - (a.lastOpenedAt || a.addedAt)).map(doc => ({ id: doc.id, name: doc.name, kind: doc.kind, open: false }))
+  return [...open, ...library]
+})
+/* 阅读位置胶囊：翻页或保存后展开约两秒，随后收成一颗进度环。 */
+const pillAwake = reactive<Record<string, boolean>>({})
+const pillSaved = reactive<Record<string, boolean>>({})
+const pillTimers = new Map<string, ReturnType<typeof setTimeout>>()
+function wakePill(id: string, saved = false) {
+  pillAwake[id] = true
+  if (saved) pillSaved[id] = true
+  clearTimeout(pillTimers.get(id))
+  pillTimers.set(id, setTimeout(() => { pillAwake[id] = false; pillSaved[id] = false; pillTimers.delete(id) }, saved ? 1600 : 2200))
+}
+function tabDoc(id: string) { return tabs.value.find(tab => tab.doc.id === id)?.doc }
 type ReaderEntry = { id: string; doc: Doc; size: number; bytes: Uint8Array; view?: any; events: Record<string, (...args: any[]) => void> }
 const readerCache = shallowRef<ReaderEntry[]>([])
 const readerInstances = new Map<string, any>()
@@ -156,7 +185,7 @@ async function flushProgress() {
 }
 function writeReadingUpdate(id: string, patch: Partial<Doc>, message: string) {
   const write = (progressWrites.get(id) || Promise.resolve()).then(async () => {
-    try { updateLocal(await library.update(id, patch)) }
+    try { updateLocal(await library.update(id, patch)); if ('page' in patch && paneVisible(id)) wakePill(id, true) }
     catch (error) { notify(`${message}：${reason(error)}`) }
   })
   progressWrites.set(id, write)
@@ -170,12 +199,14 @@ function rememberReader() {
   window.getSelection()?.removeAllRanges()
 }
 function pauseReader() { dismissCaptureQuick(); rememberReader(); reader.value?.suspend?.(); reader.value = undefined; findPendingDocument = undefined; clearWheelZoom() }
+// 焦点移到另一栏时，原阅读器仍在屏幕上，只交出键盘与 AI 的焦点，不挂起渲染。
+function leaveFocus() { dismissCaptureQuick(); rememberReader(); reader.value = undefined; findPendingDocument = undefined; clearWheelZoom() }
 function bindReader(id: string, value: any) {
   if (value) readerInstances.set(id, value)
   if (active.value?.id === id) reader.value = value || undefined
 }
 function retainReaders(entries: ReaderEntry[], id: string) {
-  const retained = retainReaderEntries(entries, id)
+  const retained = retainReaderEntries(entries, id, paneIds.value)
   for (const entry of readerCache.value) if (!retained.includes(entry)) readerInstances.delete(entry.id)
   readerCache.value = retained
 }
@@ -192,20 +223,33 @@ function readDocument(id: string) {
 function cacheReader(doc: Doc, bytes: Uint8Array, view: any) {
   const entry: ReaderEntry = { id: doc.id, doc, bytes, size: bytes.byteLength, view, events: {} }
   const present = () => readerCache.value.includes(entry) && tabs.value.some(tab => tab.doc.id === entry.id)
-  const visible = () => present() && active.value?.id === entry.id
+  const focused = () => present() && active.value?.id === entry.id
+  const shown = () => present() && paneVisible(entry.id)
   entry.events = {
-    ready: () => { if (visible()) opening.value = false },
-    progress: value => { if (visible()) readingProgress(entry.id, value) },
-    selection: value => { if (visible()) selectedContext(value) },
-    text: value => { if (visible()) indexText(entry.id, value) },
-    error: message => { if (visible()) { opening.value = false; notify(message) } },
-    'font-size-change': value => { if (visible()) setMarkdownFontSize(value) },
+    ready: () => { if (focused()) opening.value = false },
+    progress: value => { if (shown()) readingProgress(entry.id, value) },
+    selection: value => { if (focused()) selectedContext(value) },
+    text: value => { if (shown()) indexText(entry.id, value) },
+    error: message => { if (shown()) { if (focused()) opening.value = false; notify(message) } },
+    'font-size-change': value => { if (focused()) setMarkdownFontSize(value) },
   }
   return entry
 }
 async function openDocument(doc: Doc, reload = false) {
   if (active.value?.id === doc.id && !reload) return
-  pauseReader()
+  // 并排时：已在屏幕上的文件只切换焦点；其他文件替换焦点所在的一栏。
+  if (!reload && splitIds.value.length > 1) {
+    if (splitIds.value.includes(doc.id)) { focusPane(doc.id); return }
+    const previous = active.value?.id
+    splitIds.value = splitIds.value.map(id => id === previous ? doc.id : id)
+  }
+  return showDocument(doc, reload)
+}
+async function showDocument(doc: Doc, reload = false) {
+  const previous = active.value?.id
+  // 只有仍留在并排中的上一栏才保持渲染；否则先挂起，趁它还在页面上记下阅读位置。
+  if (previous && previous !== doc.id && splitIds.value.length > 1 && splitIds.value.includes(previous)) leaveFocus()
+  else pauseReader()
   const epoch = ++openEpoch
   void flushProgress()
   let tab = tabs.value.find(tab => tab.doc.id === doc.id)
@@ -223,21 +267,74 @@ async function openDocument(doc: Doc, reload = false) {
     await nextTick()
     if (epoch !== openEpoch) return
     const instance = readerInstances.get(doc.id)
-    if (instance) { reader.value = instance; void instance.resume?.() }
+    if (instance) {
+      reader.value = instance
+      // 并排时这一栏可能一直在屏幕上：没有挂起过就不会再发 ready。
+      if (instance.isSuspended?.() === false) opening.value = false
+      void instance.resume?.()
+    }
     // Reading must not wait for a database write or an older position save.
     void writeReadingUpdate(doc.id, { lastOpenedAt: Date.now() }, '阅读记录更新失败')
   } catch (error) { if (epoch === openEpoch) { notify(`无法打开文档：${reason(error)}`); closeTab(doc.id) } }
 }
-function closeReader() { pauseReader(); ++openEpoch; void flushProgress(); active.value = null; readerCache.value = []; readerInstances.clear(); opening.value = false; selection.value = undefined; detailsOpen.value = false; void refresh() }
+function closeReader() { pauseReader(); ++openEpoch; void flushProgress(); splitIds.value = []; splitPicker.value = undefined; active.value = null; readerCache.value = []; readerInstances.clear(); opening.value = false; selection.value = undefined; detailsOpen.value = false; void refresh() }
+function focusPane(id: string) {
+  if (active.value?.id === id || !paneVisible(id)) return
+  const tab = tabs.value.find(tab => tab.doc.id === id)
+  if (!tab) return
+  leaveFocus()
+  active.value = tab.doc; selection.value = tab.selection
+  const instance = readerInstances.get(id)
+  if (instance) reader.value = instance
+  opening.value = false
+}
+function pointerFocusPane(event: PointerEvent, id: string) {
+  if (event.button === 0 || event.button === 1 || event.pointerType === 'touch') focusPane(id)
+}
+async function openBeside(id: string) {
+  splitPicker.value = undefined
+  const doc = tabDoc(id) || documents.value.find(item => item.id === id)
+  if (!doc || !active.value) return
+  if (paneVisible(doc.id)) { focusPane(doc.id); return }
+  const base = paneIds.value
+  if (base.length >= MAX_PANES) { notify(`最多同时并排 ${MAX_PANES} 份文档。`); return }
+  if (!tabs.value.some(tab => tab.doc.id === doc.id)) tabs.value.push({ doc })
+  splitIds.value = [...base, doc.id]
+  enteringPane.value = doc.id; clearTimeout(enteringTimer); enteringTimer = setTimeout(() => { enteringPane.value = undefined }, 600)
+  // 新栏出现时其余阅读器的宽度变化，交给各自的 ResizeObserver 重新适应。
+  await showDocument(tabDoc(doc.id) || doc)
+}
+function closePane(id: string) {
+  if (splitIds.value.length < 2 || !splitIds.value.includes(id)) return
+  const index = splitIds.value.indexOf(id)
+  const rest = splitIds.value.filter(item => item !== id)
+  if (active.value?.id === id) focusPane(rest[Math.min(index, rest.length - 1)])
+  // 在移出页面之前挂起，阅读器才能记下这一栏的滚动位置。
+  const tab = tabs.value.find(tab => tab.doc.id === id), instance = readerInstances.get(id)
+  if (tab) tab.view = instance?.getViewState?.() || tab.view
+  instance?.suspend?.()
+  splitIds.value = rest.length > 1 ? rest : []
+}
+function toggleSplitPicker(event?: Event) {
+  if (splitPicker.value || !active.value) { splitPicker.value = undefined; return }
+  const anchor = (event?.currentTarget as HTMLElement | undefined) || document.querySelector<HTMLElement>('[data-split-anchor]')
+  const bounds = anchor?.getBoundingClientRect()
+  splitPicker.value = bounds ? { left: bounds.left, top: bounds.top, right: bounds.right, bottom: bounds.bottom } : { left: window.innerWidth - 340, top: 12, right: window.innerWidth - 12, bottom: 56 }
+}
 function selectTab(id: string) { const tab = tabs.value.find(tab => tab.doc.id === id); if (tab) void openDocument(tab.doc) }
 function closeTab(id: string) {
   const index = tabs.value.findIndex(tab => tab.doc.id === id)
   if (index < 0) return
   const selected = active.value?.id === id
+  const paneIndex = splitIds.value.length > 1 ? splitIds.value.indexOf(id) : -1
+  const rest = paneIndex >= 0 ? splitIds.value.filter(item => item !== id) : []
+  if (paneIndex >= 0) splitIds.value = rest.length > 1 ? rest : []
   if (selected) { pauseReader(); ++openEpoch; void flushProgress(); active.value = null; selection.value = undefined; detailsOpen.value = false; opening.value = false }
   evictReader(id)
   closeChat(id); forgetPassword(id); tabs.value.splice(index, 1)
-  if (selected && tabs.value.length) selectTab(tabs.value[Math.min(index, tabs.value.length - 1)].doc.id)
+  // 关闭并排中的焦点文件时，焦点落到相邻的一栏，其余栏保持不动。
+  if (selected && rest.length) selectTab(rest[Math.min(paneIndex, rest.length - 1)])
+  else if (selected && tabs.value.length) selectTab(tabs.value[Math.min(index, tabs.value.length - 1)].doc.id)
   else if (selected) closeReader()
 }
 function moveTab(direction: number) {
@@ -350,13 +447,16 @@ async function toggleStar(doc: Doc) {
   catch (error) { notify(reason(error)) }
 }
 function readingProgress(id: string, value: { page: number; pageCount: number; progress: number }) {
-  if (active.value?.id !== id || !value.pageCount) return
+  const tab = tabs.value.find(tab => tab.doc.id === id)
+  if (!tab || !value.pageCount) return
   if (captureQuick.value?.documentId === id && captureQuick.value.selection.page !== value.page) dismissCaptureQuick()
   const patch = { page: value.page, pageCount: value.pageCount, progress: value.progress }
-  active.value = { ...active.value, ...patch }
-  const local = documents.value.find(doc => doc.id === active.value!.id)
+  const moved = tab.doc.page !== value.page || tab.doc.pageCount !== value.pageCount
+  tab.doc = { ...tab.doc, ...patch }
+  if (active.value?.id === id) active.value = tab.doc
+  const local = documents.value.find(doc => doc.id === id)
   if (local) Object.assign(local, patch)
-  if (currentTab.value) currentTab.value.doc = active.value
+  if (moved) wakePill(id)
   pendingProgress.set(id, patch)
   clearTimeout(progressTimer); progressTimer = setTimeout(flushProgress, 800)
 }
@@ -400,6 +500,7 @@ function applyTheme() {
   root.dataset.glass = appearance.glassTransparency === 0 ? 'solid' : 'custom'
   root.style.setProperty('--glass-transparency', String(appearance.glassTransparency / 100))
   root.dataset.background = appearance.background ? 'custom' : 'default'
+  root.dataset.backdrop = appearance.backdrop
   const background = appearance.background?.dataUrl
   if (background !== appliedBackground) {
     // The settings model accepts only bounded, locally encoded raster data URLs.
@@ -410,9 +511,27 @@ function applyTheme() {
   }
   glassContrast?.refresh()
 }
-async function toggleTheme() {
-  try { await savePreferences({ ...preferences.value, appearance: { ...preferences.value.appearance, theme: theme.value === 'dark' ? 'light' : 'dark' } }) }
-  catch (error) { notify(reason(error)) }
+async function toggleTheme(event?: MouseEvent) {
+  const next = { ...preferences.value, appearance: { ...preferences.value.appearance, theme: theme.value === 'dark' ? 'light' as const : 'dark' as const } }
+  const save = async () => { await savePreferences(next); await nextTick() }
+  // 主题切换：新主题从按钮处以圆形扩散覆盖旧画面（视图过渡，仅快照，不重排）。
+  const start = (document as any).startViewTransition?.bind(document)
+  if (!start || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    try { await save() } catch (error) { notify(reason(error)) }
+    return
+  }
+  const target = event?.currentTarget instanceof Element ? event.currentTarget.getBoundingClientRect() : undefined
+  const x = target ? target.left + target.width / 2 : window.innerWidth - 40, y = target ? target.top + target.height / 2 : 40
+  const root = document.documentElement
+  root.style.setProperty('--reveal-x', `${x}px`); root.style.setProperty('--reveal-y', `${y}px`)
+  root.style.setProperty('--reveal-r', `${Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y))}px`)
+  let failure: unknown
+  // 过渡期间页面不可点击；标记在根元素上，便于界面与检查脚本等待它结束。
+  root.dataset.themeTransition = 'running'
+  const transition = start(async () => { try { await save() } catch (error) { failure = error } })
+  try { await transition.finished } catch { /* An interrupted transition still applied the theme. */ }
+  finally { delete root.dataset.themeTransition }
+  if (failure) notify(reason(failure))
 }
 async function setDisplay(value: 'grid' | 'list') {
   try { await savePreferences({ ...preferences.value, appearance: { ...preferences.value.appearance, libraryView: value } }) }
@@ -427,11 +546,11 @@ async function setMarkdownFontSize(value: number) {
 const resizingPanels = new Map<Element, boolean>()
 let fitAfterPanelResize = false
 watch([sidebarOpen, aiOpen, detailsOpen], () => {
-  if (active.value?.kind === 'pdf' && !window.matchMedia('(max-width: 720px)').matches) reader.value?.holdPanelResize?.(true)
+  if (pdfOnScreen() && !window.matchMedia('(max-width: 720px)').matches) for (const instance of visibleReaders()) instance.holdPanelResize?.(true)
 }, { flush: 'sync' })
 function paneResizeStart(element: Element, entering: boolean) {
   resizingPanels.set(element, entering)
-  if (active.value?.kind === 'pdf' && !window.matchMedia('(max-width: 720px)').matches) reader.value?.holdPanelResize?.(true, entering)
+  if (pdfOnScreen() && !window.matchMedia('(max-width: 720px)').matches) for (const instance of visibleReaders()) instance.holdPanelResize?.(true, entering)
   if (entering) restoreLeavingPanel(element)
   else floatLeavingPanel(element, element.classList.contains('app-sidebar') ? 'left' : 'right')
 }
@@ -440,10 +559,10 @@ function paneResizeEnd(element: Element, cancelled = false) {
   if (resizingPanels.get(element) && !cancelled) fitAfterPanelResize = true
   resizingPanels.delete(element)
   if (!resizingPanels.size) {
-    if (active.value?.kind === 'pdf') {
-      const target = reader.value
-      if (target?.holdPanelResize) target.holdPanelResize(false, fitAfterPanelResize)
-      else if (fitAfterPanelResize) fitRequest.value++
+    if (pdfOnScreen()) {
+      const targets = visibleReaders().filter(instance => instance.holdPanelResize)
+      for (const target of targets) target.holdPanelResize(false, fitAfterPanelResize)
+      if (!targets.length && fitAfterPanelResize) fitRequest.value++
     }
     fitAfterPanelResize = false
   }
@@ -458,6 +577,7 @@ watch(effectiveAppearance, () => { applyTheme(); display.value = effectiveAppear
 // A tab may mount its reader while several panels are still transitioning.
 watch(reader, value => {
   if (active.value?.kind === 'pdf' && resizingPanels.size && !window.matchMedia('(max-width: 720px)').matches) value?.holdPanelResize?.(true)
+  if (!value) splitPicker.value = undefined
   if (value && active.value?.id === findPendingDocument) { value.focusSearch?.(); findPendingDocument = undefined }
 })
 watch(search, value => {
@@ -472,6 +592,7 @@ function keydown(event: KeyboardEvent) {
   if (event.defaultPrevented || event.isComposing || event.keyCode === 229) return
   if (event.key === 'Escape') {
     if (settingsOpen.value) { settingsOpen.value = false; event.preventDefault() }
+    else if (splitPicker.value) { splitPicker.value = undefined; event.preventDefault() }
     else if (captureQuick.value) { dismissCaptureQuick(true); event.preventDefault() }
     else if (removeTarget.value) { removeTarget.value = null; event.preventDefault() }
     else if (detailsOpen.value) { detailsOpen.value = false; event.preventDefault() }
@@ -498,7 +619,7 @@ function keydown(event: KeyboardEvent) {
     return
   }
   if (event.repeat && !['zoomIn', 'zoomOut', 'previousPage', 'nextPage'].includes(action)) { event.preventDefault(); return }
-  if (['outline', 'fitWidth', 'zoomOut', 'zoomIn', 'previousPage', 'nextPage', 'capture'].includes(action) && !active.value) return
+  if (['outline', 'fitWidth', 'zoomOut', 'zoomIn', 'previousPage', 'nextPage', 'capture', 'split'].includes(action) && !active.value) return
   if (['capture', 'fitWidth'].includes(action) && active.value?.kind !== 'pdf') return
   event.preventDefault()
   switch (action) {
@@ -521,6 +642,7 @@ function keydown(event: KeyboardEvent) {
     case 'nextTab': moveTab(1); break
     case 'previousTab': moveTab(-1); break
     case 'closeTab': if (active.value) closeTab(active.value.id); break
+    case 'split': toggleSplitPicker(); break
     case 'outline': reader.value?.toggleOutline?.(); break
     case 'fitWidth': reader.value?.fitWidth?.(); break
     case 'zoomOut': reader.value?.zoomOut?.(); break
@@ -549,6 +671,8 @@ function wheel(event: WheelEvent) {
   const action = matchWheelShortcut(event, preferences.value)
   if (!action) return
   event.preventDefault()
+  const pane = event.target.closest<HTMLElement>('[data-pane-id]')?.dataset.paneId
+  if (pane && pane !== active.value.id) focusPane(pane)
   wheelAction = action
   const elapsed = performance.now() - wheelTime
   if (elapsed >= 60) { clearTimeout(wheelTimer); applyWheelZoom() }
@@ -603,7 +727,7 @@ onMounted(async () => {
   try { await loadPreferences() } catch (error) { notify(`设置加载失败：${reason(error)}`) }
   await refresh()
 })
-onBeforeUnmount(() => { disposed = true; ++openEpoch; dismissCaptureQuick(); stopDropListening?.(); clearWheelZoom(); readerInstances.clear(); glassContrast?.dispose(); document.removeEventListener('keydown', keydown); document.removeEventListener('wheel', wheel, true); document.removeEventListener('dragenter', dragEnter); document.removeEventListener('dragover', dragOver); document.removeEventListener('dragleave', dragLeave); document.removeEventListener('drop', fileDrop); document.removeEventListener('selectionchange', selectionChanged); document.removeEventListener('scroll', dismissSelectionAction, true); document.removeEventListener('scroll', captureViewportChanged, true); window.removeEventListener('resize', dismissSelectionAction); window.removeEventListener('resize', captureViewportChanged); closeAllChats(); forgetAllPasswords(); systemTheme.removeEventListener('change', applyTheme); flushProgress(); for (const timer of indexTimers.values()) clearTimeout(timer); clearTimeout(queryTimer); clearTimeout(toastTimer) })
+onBeforeUnmount(() => { for (const timer of pillTimers.values()) clearTimeout(timer); clearTimeout(enteringTimer); disposed = true; ++openEpoch; dismissCaptureQuick(); stopDropListening?.(); clearWheelZoom(); readerInstances.clear(); glassContrast?.dispose(); document.removeEventListener('keydown', keydown); document.removeEventListener('wheel', wheel, true); document.removeEventListener('dragenter', dragEnter); document.removeEventListener('dragover', dragOver); document.removeEventListener('dragleave', dragLeave); document.removeEventListener('drop', fileDrop); document.removeEventListener('selectionchange', selectionChanged); document.removeEventListener('scroll', dismissSelectionAction, true); document.removeEventListener('scroll', captureViewportChanged, true); window.removeEventListener('resize', dismissSelectionAction); window.removeEventListener('resize', captureViewportChanged); closeAllChats(); forgetAllPasswords(); systemTheme.removeEventListener('change', applyTheme); flushProgress(); for (const timer of indexTimers.values()) clearTimeout(timer); clearTimeout(queryTimer); clearTimeout(toastTimer) })
 </script>
 
 <template>
@@ -620,7 +744,7 @@ onBeforeUnmount(() => { disposed = true; ++openEpoch; dismissCaptureQuick(); sto
       <div class="tag-heading"><p class="sidebar-label">标签</p><AppIcon name="tag" :size="14" /></div>
       <nav v-liquid-selection="{ radius: '12px' }" class="tag-nav" aria-label="文档标签"><button v-for="tag in tags" :key="tag" :class="{ selected: tagFilter === tag }" @click="chooseTag(tag)"><span class="tag-dot"></span>{{ tag }}<span>{{ documents.filter(doc => doc.tags.includes(tag)).length }}</span></button><p v-if="!tags.length" class="tag-empty">可在文档详情中添加标签。</p></nav>
       <div class="sidebar-spacer"></div>
-      <div class="sidebar-bottom"><button @click="openSettings()" aria-label="设置"><AppIcon name="settings" :size="17" /><span>设置</span></button><button class="icon-button" @click="toggleTheme" :data-tip="theme === 'dark' ? '切换浅色主题' : '切换深色主题'" :aria-label="theme === 'dark' ? '切换浅色主题' : '切换深色主题'"><AppIcon :name="theme === 'dark' ? 'sun' : 'moon'" :size="17" /></button></div>
+      <div class="sidebar-bottom"><button @click="openSettings()" aria-label="设置"><AppIcon name="settings" :size="17" /><span>设置</span></button><button class="icon-button" @click="toggleTheme($event)" :data-tip="theme === 'dark' ? '切换浅色主题' : '切换深色主题'" :aria-label="theme === 'dark' ? '切换浅色主题' : '切换深色主题'"><AppIcon :name="theme === 'dark' ? 'sun' : 'moon'" :size="17" /></button></div>
     </aside>
     </Transition>
 
@@ -630,7 +754,7 @@ onBeforeUnmount(() => { disposed = true; ++openEpoch; dismissCaptureQuick(); sto
         <FileTabs v-if="tabs.length" :tabs="fileTabs" :active-id="active?.id" @select="selectTab" @close="closeTab" @library="closeReader" />
         <span v-else class="breadcrumb">{{ currentTitle }}</span>
         <div class="topbar-actions">
-          <template v-if="active"><button class="icon-button" :class="{ 'is-starred': active.starred }" @click="toggleStar(active)" data-tip="收藏文档" aria-label="收藏文档"><AppIcon name="star" :size="18" /></button><button class="icon-button" :class="{ active: detailsOpen }" @click="detailsOpen = !detailsOpen" data-tip="文档详情与标签" aria-label="文档详情与标签" :aria-expanded="detailsOpen"><AppIcon name="tag" :size="18" /></button><button class="ai-toggle" data-tip="阅读助手" :data-tip-key="tipKey('ai')" :class="{ active: aiOpen }" @click="aiOpen ? aiOpen = false : openAssistant(true)" :aria-expanded="aiOpen"><AppIcon name="sparkle" :size="17" />阅读助手</button></template>
+          <template v-if="active"><button class="icon-button" :class="{ 'is-starred': active.starred }" @click="toggleStar(active)" data-tip="收藏文档" aria-label="收藏文档"><AppIcon name="star" :size="18" /></button><button class="icon-button" :class="{ active: detailsOpen }" @click="detailsOpen = !detailsOpen" data-tip="文档详情与标签" aria-label="文档详情与标签" :aria-expanded="detailsOpen"><AppIcon name="tag" :size="18" /></button><button class="icon-button split-toggle" data-split-anchor :class="{ active: splitPicker || splitView }" @click="toggleSplitPicker($event)" data-tip="并排阅读" :data-tip-key="tipKey('split')" aria-label="并排阅读" :aria-expanded="!!splitPicker"><AppIcon name="split" :size="18" /><span v-if="splitView" class="split-count">{{ paneIds.length }}</span></button><button class="ai-toggle" data-tip="阅读助手" :data-tip-key="tipKey('ai')" :class="{ active: aiOpen }" @click="aiOpen ? aiOpen = false : openAssistant(true)" :aria-expanded="aiOpen"><AppIcon name="sparkle" :size="17" />阅读助手</button></template>
           <button v-else class="icon-button" @click="toggleTheme" :data-tip="theme === 'dark' ? '切换浅色主题' : '切换深色主题'" :aria-label="theme === 'dark' ? '切换浅色主题' : '切换深色主题'"><AppIcon :name="theme === 'dark' ? 'sun' : 'moon'" :size="18" /></button>
           <button class="icon-button" @click="toggleFullscreen" :disabled="fullscreenPending" :aria-label="fullscreen ? '退出全屏' : '进入全屏'" :aria-pressed="fullscreen" :data-tip="fullscreen ? '退出全屏' : '进入全屏'" :data-tip-key="tipKey('fullscreen')"><AppIcon :name="fullscreen ? 'exit-fullscreen' : 'fullscreen'" :size="18" /></button>
           <button class="icon-button" @click="openSettings()" data-tip="设置" :data-tip-key="tipKey('settings')" aria-label="打开设置"><AppIcon name="settings" :size="18" /></button>
@@ -661,14 +785,21 @@ onBeforeUnmount(() => { disposed = true; ++openEpoch; dismissCaptureQuick(); sto
 
       <div v-else class="reading-workspace">
         <section class="reading-main">
-          <div v-if="opening" class="reader-overlay"><span class="spinner"></span><p>正在打开 {{ active.name }}…</p></div>
-          <template v-for="entry in readerCache" :key="entry.id">
-            <KeepAlive>
-              <component v-if="active.id === entry.id" :is="entry.doc.kind === 'pdf' ? PdfReader : MarkdownReader" :ref="value => bindReader(entry.id, value)" :key="entry.id" :data="entry.bytes" :document-id="entry.id" :initial-page="entry.doc.page || 1" :initial-progress="entry.doc.progress || 0" :sidebar-fit-enabled="preferences.pdf.fitOnPanelOverflow" :initial-zoom="preferences.pdf.initialZoom === 'fit-width' ? 'fit' : preferences.pdf.initialZoom / 100" :zoom-step="preferences.pdf.zoomStep / 100" :fit-request="fitRequest" :font-size="preferences.markdown.fontSize" :content-width="preferences.markdown.contentWidth" :find-shortcut="preferences.shortcuts.find ? shortcut('find') : ''" :shortcuts="tipKeys" :initial-view="entry.view" v-on="entry.events" />
-            </KeepAlive>
-          </template>
+          <div v-if="opening && !splitView" class="reader-overlay"><span class="spinner"></span><p>正在打开 {{ active.name }}…</p></div>
+          <div class="reader-panes" :class="{ split: splitView }" :style="{ '--panes': paneIds.length }">
+            <section v-for="entry in readerCache" v-show="paneVisible(entry.id)" :key="entry.id" class="reader-pane" :class="{ focused: splitView && active.id === entry.id, entering: enteringPane === entry.id }" :style="{ order: paneIds.indexOf(entry.id) }" :data-pane-id="entry.id" :aria-label="splitView ? `并排阅读：${entry.doc.name}` : undefined" @pointerdown.capture="pointerFocusPane($event, entry.id)" @focusin="focusPane(entry.id)">
+              <KeepAlive>
+                <component v-if="paneVisible(entry.id)" :is="entry.doc.kind === 'pdf' ? PdfReader : MarkdownReader" :ref="value => bindReader(entry.id, value)" :key="entry.id" :data="entry.bytes" :document-id="entry.id" :initial-page="entry.doc.page || 1" :initial-progress="entry.doc.progress || 0" :sidebar-fit-enabled="preferences.pdf.fitOnPanelOverflow" :initial-zoom="preferences.pdf.initialZoom === 'fit-width' ? 'fit' : preferences.pdf.initialZoom / 100" :zoom-step="preferences.pdf.zoomStep / 100" :fit-request="fitRequest" :font-size="preferences.markdown.fontSize" :content-width="preferences.markdown.contentWidth" :find-shortcut="preferences.shortcuts.find ? shortcut('find') : ''" :shortcuts="tipKeys" :initial-view="entry.view" v-on="entry.events" />
+              </KeepAlive>
+              <div v-if="tabDoc(entry.id)" class="reading-pill" :class="{ awake: pillAwake[entry.id] || splitView, saved: pillSaved[entry.id] }" role="status" :aria-label="`阅读位置自动保存 · ${tabDoc(entry.id)!.kind === 'pdf' ? `第 ${tabDoc(entry.id)!.page || 1} / ${tabDoc(entry.id)!.pageCount || '—'} 页 · ` : ''}已读 ${progressPercent(tabDoc(entry.id)!)}%`">
+                <svg class="pill-ring" viewBox="0 0 24 24" aria-hidden="true"><circle class="pill-ring-track" cx="12" cy="12" r="9" /><circle class="pill-ring-value" cx="12" cy="12" r="9" pathLength="100" :style="{ strokeDashoffset: 100 - progressPercent(tabDoc(entry.id)!) }" /></svg>
+                <span class="pill-text" aria-hidden="true"><span v-if="splitView" class="pill-name">{{ entry.doc.name.replace(/\.(pdf|md|markdown)$/i, '') }}</span><span v-if="tabDoc(entry.id)!.kind === 'pdf'" class="pill-page"><b :key="tabDoc(entry.id)!.page || 1">{{ tabDoc(entry.id)!.page || 1 }}</b><i>/</i>{{ tabDoc(entry.id)!.pageCount || '—' }}</span><span v-else class="pill-page"><b :key="progressPercent(tabDoc(entry.id)!)">{{ progressPercent(tabDoc(entry.id)!) }}</b><i>%</i></span><span class="pill-saved"><AppIcon name="check" :size="11" />已保存</span></span>
+                <button v-if="splitView" class="pill-close" :data-tip="`关闭这一栏`" :aria-label="`关闭并排的 ${entry.doc.name}`" @click.stop="closePane(entry.id)"><AppIcon name="close" :size="11" /></button>
+              </div>
+            </section>
+            <section v-if="splitView && opening && !readerCache.some(entry => entry.id === active?.id)" class="reader-pane pending" :style="{ order: paneIds.indexOf(active.id) }"><div class="reader-overlay"><span class="spinner"></span><p>正在打开 {{ active.name }}…</p></div></section>
+          </div>
           <div v-if="selection && !captureQuick && !aiOpen && selection.image" class="selection-context"><AppIcon name="crop" :size="16" /><span>{{ selection.image ? `已框选第 ${selection.page} 页的图表或公式` : `已选择 ${selection.text.length} 个字符` }}</span><button @click="openAssistant(true)"><AppIcon name="sparkle" :size="15" />向 AI 提问</button><button class="icon-button" @click="clearSelection" data-tip="清除选区" aria-label="清除选区"><AppIcon name="close" :size="14" /></button></div>
-          <footer class="reading-status"><i class="reading-progress" aria-hidden="true" :style="{ '--progress': progressPercent(active) / 100 }"></i><span><span class="status-dot"></span>阅读位置自动保存</span><span>{{ active.kind === 'pdf' ? `第 ${active.page || 1} / ${active.pageCount || '—'} 页` : 'Markdown 文档' }}<span class="status-divider">·</span>{{ progressPercent(active) }}%</span></footer>
         </section>
         <Transition name="pane" @before-enter="paneResizeStart($event, true)" @before-leave="paneResizeStart($event, false)" @after-enter="paneResizeEnd" @after-leave="paneResizeEnd" @enter-cancelled="paneResizeEnd($event, true)" @leave-cancelled="paneResizeEnd($event, true)">
           <AiPane v-if="aiOpen && aiDocument" ref="assistant" class="pane-shell" data-glass-interactive="panel" :document="aiDocument" :context="aiContext" :send-shortcut="preferences.shortcuts.aiSend ? shortcut('aiSend') : ''" :consume-capture="consumeSelection" @settings="openSettings('ai')" @close="aiOpen = false" @jump="jump" @clear-selection="clearSelection" />
@@ -680,7 +811,8 @@ onBeforeUnmount(() => { disposed = true; ++openEpoch; dismissCaptureQuick(); sto
       </Transition>
     </main>
 
-    <CaptureQuickPrompt v-if="captureQuick && !settingsOpen" :frame="captureQuick.frame" :prompts="preferences.assistant.quickPrompts" :busy="captureQuickBusy" :status="captureQuickStatus" @ask="askCaptureQuick" @continue="continueCaptureQuick" @cancel="dismissCaptureQuick(true)" />
+    <SplitPicker v-if="splitPicker && active" :anchor="splitPicker" :candidates="splitCandidates" :full="paneIds.length >= MAX_PANES" :limit="MAX_PANES" @pick="openBeside" @close="splitPicker = undefined" />
+    <Transition name="capture-focus"><CaptureQuickPrompt v-if="captureQuick && !settingsOpen" :frame="captureQuick.frame" :prompts="preferences.assistant.captureQuestions" :busy="captureQuickBusy" :status="captureQuickStatus" @ask="askCaptureQuick" @continue="continueCaptureQuick" @cancel="dismissCaptureQuick(true)" /></Transition>
     <div v-if="draggingFiles" class="file-drop-overlay" aria-live="polite"><div class="file-drop-target"><AppIcon name="plus" :size="32" /><strong>加入文档库</strong><span>松开以加入 PDF / Markdown 文档</span></div></div>
     <button v-if="selectionAction && selection?.text && !aiOpen && active" class="selection-ask" :style="{ left: selectionAction.left + 'px', top: selectionAction.top + 'px' }" @mousedown.prevent @click="openAssistant(true)" aria-label="用所选文字向 AI 提问"><AppIcon name="sparkle" :size="14" />问 AI</button>
     <Transition name="toast"><div v-if="toast" class="toast-message" role="status"><span>{{ toast }}</span><button @click="toast = ''" data-tip="关闭提示" aria-label="关闭提示"><AppIcon name="close" :size="15" /></button></div></Transition>

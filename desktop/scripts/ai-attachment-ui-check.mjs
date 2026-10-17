@@ -1,5 +1,6 @@
 // Real mouse crops and a local streaming server; native data and remote AI are untouched.
 import { chromium } from 'playwright';
+import { useClassicCapture } from './classic-capture.mjs';
 import { createServer as viteServer } from 'vite';
 import { createServer } from 'node:http';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -104,6 +105,7 @@ async function preparationRace(replaceCrop) {
   // acceptance after a genuine component unmount or a newer real mouse crop.
   await page.route(/\/src\/ai\/document-chat\.mjs(?:\?|$)/, async route => { markBlocked(); await release; await route.continue(); });
   await page.goto(origin);
+  await useClassicCapture(page);
   const chooser = page.waitForEvent('filechooser'); await page.getByRole('button', { name: '加入文档', exact: true }).click();
   await (await chooser).setFiles({ name: names[0], mimeType: 'application/pdf', buffer: samplePdf(3, false, true, { lines: { 1: ['Delayed attachment acceptance'], 2: ['Page two'], 3: ['Page three'] } }) });
   await readyPdf(); const original = await crop(); await configure('attachment-synthetic-key'); await plainContext();
@@ -141,6 +143,7 @@ try {
     remoteRequests.push(route.request().url()); return route.abort();
   });
   await page.goto(origin);
+  await useClassicCapture(page);
   const chooser = page.waitForEvent('filechooser'); await page.getByRole('button', { name: '加入文档', exact: true }).click();
   await (await chooser).setFiles(names.map((name, index) => ({ name, mimeType: 'application/pdf', buffer: samplePdf(3, false, true, { lines: { 1: [`Document ${index + 1} attachment fixture`], 2: ['Page two'], 3: ['Page three'] } }) })));
   await readyPdf(); await page.waitForTimeout(200);

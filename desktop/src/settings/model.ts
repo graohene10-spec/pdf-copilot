@@ -1,14 +1,19 @@
 import { normalizeBackground, backgroundErrors, type BackgroundImage } from './background.ts'
-import { defaultQuickPrompts, normalizeQuickPrompts, quickPromptErrors, type QuickPrompts } from './quick-prompts.ts'
+import { defaultQuickPrompts, normalizeQuickPrompts, quickPromptErrors, defaultCaptureQuestions, normalizeCaptureQuestions, captureQuestionErrors, type QuickPrompt, type QuickPrompts } from './quick-prompts.ts'
 
-export type ShortcutAction = 'import' | 'search' | 'find' | 'fullscreen' | 'settings' | 'sidebar' | 'ai' | 'outline' | 'capture' | 'fitWidth' | 'zoomOut' | 'zoomIn' | 'previousPage' | 'nextPage' | 'aiSend' | 'aiStop' | 'nextTab' | 'previousTab' | 'closeTab'
+export type ShortcutAction = 'import' | 'search' | 'find' | 'fullscreen' | 'settings' | 'sidebar' | 'ai' | 'outline' | 'capture' | 'fitWidth' | 'zoomOut' | 'zoomIn' | 'previousPage' | 'nextPage' | 'aiSend' | 'aiStop' | 'nextTab' | 'previousTab' | 'closeTab' | 'split'
 export type ThemePreference = 'system' | 'light' | 'dark'
+export type BackdropPreset = 'mist' | 'dawn' | 'mint' | 'lavender' | 'graphite' | 'paper'
+export const BACKDROPS: { id: BackdropPreset; label: string }[] = [
+  { id: 'mist', label: '晨雾' }, { id: 'dawn', label: '暮光' }, { id: 'mint', label: '薄荷' },
+  { id: 'lavender', label: '薰衣草' }, { id: 'graphite', label: '石墨' }, { id: 'paper', label: '素白' },
+]
 export interface AppPreferences {
-  version: 2
-  appearance: { theme: ThemePreference; libraryView: 'grid' | 'list'; glassTransparency: number; background: BackgroundImage | null }
+  version: 3
+  appearance: { theme: ThemePreference; libraryView: 'grid' | 'list'; glassTransparency: number; backdrop: BackdropPreset; background: BackgroundImage | null }
   pdf: { initialZoom: 'fit-width' | number; zoomStep: number; fitOnPanelOverflow: boolean; openAssistantOnCapture: boolean; quickAskOnCapture: boolean }
   markdown: { fontSize: number; contentWidth: number }
-  assistant: { quickPrompts: QuickPrompts }
+  assistant: { quickPrompts: QuickPrompts; captureQuestions: QuickPrompt[] }
   shortcuts: Record<ShortcutAction, string>
 }
 export type AppearancePreferences = AppPreferences['appearance']
@@ -25,6 +30,7 @@ export const SHORTCUTS: { action: ShortcutAction; label: string }[] = [
   { action: 'nextPage', label: '下一页' }, { action: 'aiSend', label: '发送 AI 问题' },
   { action: 'aiStop', label: '停止 AI 回答' },
   { action: 'nextTab', label: '下一个文件标签' }, { action: 'previousTab', label: '上一个文件标签' }, { action: 'closeTab', label: '关闭当前文件标签' },
+  { action: 'split', label: '并排阅读' },
 ]
 export const DEFAULT_SHORTCUTS: Readonly<Record<ShortcutAction, string>> = Object.freeze({
   import: 'Ctrl+KeyO', search: 'Ctrl+KeyK', settings: 'Ctrl+Comma', sidebar: 'Ctrl+KeyB',
@@ -32,13 +38,13 @@ export const DEFAULT_SHORTCUTS: Readonly<Record<ShortcutAction, string>> = Objec
   ai: 'Ctrl+Shift+Digit7', outline: 'Ctrl+Shift+KeyO', capture: 'Alt+Shift+KeyS', fitWidth: 'Ctrl+Digit0',
   zoomOut: 'Ctrl+WheelDown', zoomIn: 'Ctrl+WheelUp', previousPage: 'Alt+ArrowUp', nextPage: 'Alt+ArrowDown',
   aiSend: 'Ctrl+Enter', aiStop: 'Ctrl+Shift+Enter',
-  nextTab: 'Ctrl+Tab', previousTab: 'Ctrl+Shift+Tab', closeTab: 'Ctrl+KeyW',
+  nextTab: 'Ctrl+Tab', previousTab: 'Ctrl+Shift+Tab', closeTab: 'Ctrl+KeyW', split: 'Ctrl+Backslash',
 })
 const LEGACY_GLASS: Record<string, number> = { clear: 85, balanced: 70, rich: 30, solid: 0 }
 export function defaultPreferences(): AppPreferences {
-  return { version: 2, appearance: { theme: 'system', libraryView: 'grid', glassTransparency: 70, background: null },
-    pdf: { initialZoom: 'fit-width', zoomStep: 15, fitOnPanelOverflow: true, openAssistantOnCapture: true, quickAskOnCapture: false },
-    markdown: { fontSize: 17, contentWidth: 840 }, assistant: { quickPrompts: defaultQuickPrompts() }, shortcuts: { ...DEFAULT_SHORTCUTS } }
+  return { version: 3, appearance: { theme: 'system', libraryView: 'grid', glassTransparency: 70, backdrop: 'mist', background: null },
+    pdf: { initialZoom: 'fit-width', zoomStep: 15, fitOnPanelOverflow: true, openAssistantOnCapture: true, quickAskOnCapture: true },
+    markdown: { fontSize: 17, contentWidth: 840 }, assistant: { quickPrompts: defaultQuickPrompts(), captureQuestions: defaultCaptureQuestions() }, shortcuts: { ...DEFAULT_SHORTCUTS } }
 }
 const modifierOrder = ['Ctrl', 'Alt', 'Shift', 'Meta']
 const aliases: Record<string, string> = { control: 'Ctrl', ctrl: 'Ctrl', alt: 'Alt', option: 'Alt', shift: 'Shift', meta: 'Meta', cmd: 'Meta', command: 'Meta' }
@@ -91,17 +97,21 @@ export function normalizePreferences(value: unknown, legacyTheme?: string | null
   const defaults = defaultPreferences(), input = record(value)
   const appearance = record(input.appearance), pdf = record(input.pdf), markdown = record(input.markdown), shortcuts = record(input.shortcuts)
   defaults.assistant.quickPrompts = normalizeQuickPrompts(record(input.assistant).quickPrompts)
+  defaults.assistant.captureQuestions = normalizeCaptureQuestions(record(input.assistant).captureQuestions)
   const theme = appearance.theme || legacyTheme
   defaults.appearance.theme = ['system', 'light', 'dark'].includes(theme) ? theme : defaults.appearance.theme
   defaults.appearance.libraryView = ['grid', 'list'].includes(appearance.libraryView) ? appearance.libraryView : defaults.appearance.libraryView
   const legacyGlass = typeof appearance.glass === 'string' && Object.hasOwn(LEGACY_GLASS, appearance.glass) ? LEGACY_GLASS[appearance.glass] : defaults.appearance.glassTransparency
   defaults.appearance.glassTransparency = range(appearance.glassTransparency, 0, 100, legacyGlass)
+  defaults.appearance.backdrop = BACKDROPS.some(item => item.id === appearance.backdrop) ? appearance.backdrop : defaults.appearance.backdrop
   defaults.appearance.background = normalizeBackground(appearance.background)
   defaults.pdf.initialZoom = pdf.initialZoom === 'fit-width' || pdf.initialZoom === undefined ? 'fit-width' : range(pdf.initialZoom, 25, 400, 100)
   defaults.pdf.zoomStep = range(pdf.zoomStep, 5, 50, defaults.pdf.zoomStep)
   defaults.pdf.fitOnPanelOverflow = typeof pdf.fitOnPanelOverflow === 'boolean' ? pdf.fitOnPanelOverflow : defaults.pdf.fitOnPanelOverflow
   defaults.pdf.openAssistantOnCapture = typeof pdf.openAssistantOnCapture === 'boolean' ? pdf.openAssistantOnCapture : true
-  defaults.pdf.quickAskOnCapture = typeof pdf.quickAskOnCapture === 'boolean' ? pdf.quickAskOnCapture : false
+  // 版本 3 起框选后默认弹出快捷提问；旧版本里的「关闭」是当时的默认值，升级时改为开启。
+  const legacyQuickAsk = input.version === undefined || input.version === 1 || input.version === 2
+  defaults.pdf.quickAskOnCapture = typeof pdf.quickAskOnCapture === 'boolean' && !legacyQuickAsk ? pdf.quickAskOnCapture : true
   defaults.markdown.fontSize = range(markdown.fontSize, 13, 28, defaults.markdown.fontSize)
   defaults.markdown.contentWidth = range(markdown.contentWidth, 600, 1400, defaults.markdown.contentWidth)
   for (const { action } of SHORTCUTS) defaults.shortcuts[action] = normalizeShortcut(shortcuts[action]) ?? defaults.shortcuts[action]
@@ -118,10 +128,12 @@ export function preferenceErrors(value: AppPreferences): string[] {
   const errors: string[] = []
   if (!['system', 'light', 'dark'].includes(value.appearance.theme)) errors.push('请选择有效外观。')
   if (!['grid', 'list'].includes(value.appearance.libraryView)) errors.push('请选择有效文档视图。')
+  if (!BACKDROPS.some(item => item.id === value.appearance.backdrop)) errors.push('请选择有效底板。')
   const check = (name: string, number: number, min: number, max: number) => { if (!Number.isFinite(number) || !Number.isInteger(number) || number < min || number > max) errors.push(`${name}须为 ${min}–${max} 的整数。`) }
   check('玻璃透明度', value.appearance.glassTransparency, 0, 100)
   errors.push(...backgroundErrors(value.appearance.background))
   errors.push(...quickPromptErrors(value.assistant?.quickPrompts))
+  errors.push(...captureQuestionErrors(value.assistant?.captureQuestions))
   if (value.pdf.initialZoom !== 'fit-width') check('PDF 初始缩放', value.pdf.initialZoom, 25, 400)
   check('缩放步长', value.pdf.zoomStep, 5, 50)
   check('Markdown 字号', value.markdown.fontSize, 13, 28)

@@ -99,7 +99,7 @@ try {
   const aiMetadataBefore = await page.evaluate(() => localStorage.getItem('paperdesk.ai.settings.v1'));
   assert.ok(oldPreferences === null || typeof oldPreferences === 'string', 'Preference value is nullable string');
   await openPrompts();
-  assert.equal(await dialog().locator('.quick-prompt-editor').count(), 3);
+  assert.equal(await dialog().locator('.quick-prompt-editor:not(.capture-question-editor)').count(), 3);
   assert.equal(await dialog().getByLabel('PDF 框选后显示快捷提问', { exact: true }).count(), 1);
   for (let index = 1; index <= 3; index++) {
     assert.equal(await label(index).count(), 1); assert.equal(await question(index).count(), 1);

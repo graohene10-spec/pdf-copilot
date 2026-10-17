@@ -12,7 +12,14 @@ const canceled = error => ['RenderingCancelledException', 'AbortException'].incl
 
 export class ContinuousPdfViewer extends PageWindow {
   constructor(options) {
+    // The shared viewer removes the document's existing #page-surface, which in
+    // the extension is a stale single-page shell. On the desktop that element
+    // may be the current page of another reader shown side by side, so it is
+    // briefly renamed while the base viewer initializes and then restored.
+    const others = [...document.querySelectorAll('#page-surface')];
+    for (const element of others) element.removeAttribute('id');
     super({ ...options, maxRenderedPages: DESKTOP_RENDERED_PAGES });
+    for (const element of others) if (!element.id) element.id = 'page-surface';
     this.paintJobs = [];
     this.suspended = false;
     this.activity = 0;

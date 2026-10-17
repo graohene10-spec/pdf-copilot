@@ -1,6 +1,7 @@
 // Observe real painted frames, including deliberately slow PDF.js redraws.
 // All files are synthetic; browser state is isolated and model calls are blocked.
 import { chromium } from 'playwright';
+import { useClassicCapture } from './classic-capture.mjs';
 import { createServer } from 'vite';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -180,6 +181,7 @@ try {
     await page.getByRole('button', { name: '打开 render-synthetic-native.pdf', exact: true }).click();
   } else {
     await page.goto('http://127.0.0.1:1459');
+    await useClassicCapture(page);
     const chooser = page.waitForEvent('filechooser');
     await page.getByRole('button', { name: '加入文档', exact: true }).click();
     await (await chooser).setFiles({ name: timingSample ? 'sample.pdf' : '渲染连续性验证.pdf', mimeType: 'application/pdf', buffer: timingSample ? await readFile('public/samples/sample.pdf') : fixture() });

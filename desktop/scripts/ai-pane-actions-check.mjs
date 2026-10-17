@@ -243,7 +243,7 @@ try {
   await until(() => change().isEnabled()); assert.equal(await clear().isEnabled(), true);
   await assertLayout('Completed A while B runs: both actions usable for A');
   await page.screenshot({ path: resolve(artifacts, 'ai-pane-actions-minimum-light.png'), animations: 'disabled' });
-  await page.locator('[data-tip="切换深色主题"]').click();
+  await page.locator('[data-tip="切换深色主题"]').click(); await page.waitForFunction(() => !document.documentElement.dataset.themeTransition);
   await page.screenshot({ path: resolve(artifacts, 'ai-pane-actions-minimum-dark.png'), animations: 'disabled' });
   await clear().click();
   assert.equal(await pane().locator('.ai-message').count(), 0); assert.equal(await clear().isDisabled(), true);

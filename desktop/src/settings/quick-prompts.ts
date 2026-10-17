@@ -37,6 +37,43 @@ export function normalizeQuickPrompts(value: unknown): QuickPrompts {
     return { label: label || fallback.label, question: question || fallback.question }
   }) as QuickPrompts
 }
+// 框选快捷提问：气泡上显示简短的「提问概括」，发送的是完整提示词。数量可在设置中增减。
+export const CAPTURE_QUESTION_MIN = 1
+export const CAPTURE_QUESTION_MAX = 6
+const DEFAULT_CAPTURE_QUESTIONS: readonly Readonly<QuickPrompt>[] = Object.freeze([
+  Object.freeze({ label: '为什么？', question: '针对框选的内容解释「为什么」：它为什么成立、为什么这样做，背后的原因、推导或依据是什么。请结合上下文并引用原文。' }),
+  Object.freeze({ label: '详细展开', question: '详细展开框选的内容：逐项解释其中的概念、符号、公式或图表要素，补充理解所需的背景，并说明它在上下文中的作用。' }),
+  Object.freeze({ label: '通俗解释', question: '用通俗易懂的语言重新解释框选的内容，可以打比方，避免堆砌术语，最后用一句话总结。' }),
+  Object.freeze({ label: '举个例子', question: '围绕框选的内容给出一到两个具体例子或数值演算，帮助我理解它如何应用。' }),
+])
+export function defaultCaptureQuestions(): QuickPrompt[] {
+  return DEFAULT_CAPTURE_QUESTIONS.map(item => ({ ...item }))
+}
+export function newCaptureQuestion(): QuickPrompt {
+  return { label: '新的提问', question: '请解释框选的内容。' }
+}
+export function normalizeCaptureQuestions(value: unknown): QuickPrompt[] {
+  if (!Array.isArray(value)) return defaultCaptureQuestions()
+  const list = value.slice(0, CAPTURE_QUESTION_MAX).flatMap(item => {
+    if (!item || typeof item !== 'object') return []
+    const label = typeof item.label === 'string' ? limitQuickPromptLabel(item.label.trim()).trim() : ''
+    const question = typeof item.question === 'string' ? limitQuestion(item.question) : ''
+    return label && question ? [{ label, question }] : []
+  })
+  return list.length >= CAPTURE_QUESTION_MIN ? list : defaultCaptureQuestions()
+}
+export function captureQuestionErrors(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length < CAPTURE_QUESTION_MIN || value.length > CAPTURE_QUESTION_MAX) return [`框选提问须有 ${CAPTURE_QUESTION_MIN}–${CAPTURE_QUESTION_MAX} 个。`]
+  const errors: string[] = []
+  value.forEach((item, index) => {
+    const name = `框选提问 ${index + 1}`
+    if (typeof item?.label !== 'string' || !item.label.trim()) errors.push(`${name}：请填写提问概括。`)
+    else if (quickPromptLabelLength(item.label) > QUICK_PROMPT_LABEL_LIMIT || /[\u0000-\u001f\u007f]/.test(item.label)) errors.push(`${name}：提问概括须为 ${QUICK_PROMPT_LABEL_LIMIT} 字以内的单行文字。`)
+    if (typeof item?.question !== 'string' || !item.question.trim()) errors.push(`${name}：请填写提问内容。`)
+    else if (item.question.length > QUICK_PROMPT_QUESTION_LIMIT) errors.push(`${name}：提问内容须在 ${QUICK_PROMPT_QUESTION_LIMIT} 个字符以内。`)
+  })
+  return errors
+}
 export function quickPromptErrors(value: unknown): string[] {
   if (!Array.isArray(value) || value.length !== DEFAULT_QUICK_PROMPTS.length) return ['快捷提问须包含三个按钮。']
   const errors: string[] = []

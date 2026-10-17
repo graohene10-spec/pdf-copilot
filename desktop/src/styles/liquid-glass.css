@@ -70,7 +70,7 @@
 
 /* 光与镜面环需要定位上下文；预先给常用玻璃定位，悬停时不改变布局。 */
 :where(
-  .app-topbar, .reading-status, .library-search, .library-summary > div, .view-switch,
+  .app-topbar, .reading-pill, .library-search, .library-summary > div, .view-switch,
   .file-drop-target, .settings-group, .icon-button, .quiet-button,
   .ai-toggle, .import-button, .primary-button, .tab-library, .reader-zoom, .brand-symbol,
   .sidebar-bottom button, .send-button, .secondary-action, .close-assistant,
