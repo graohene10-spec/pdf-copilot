@@ -236,7 +236,10 @@ try {
   finish('JOB_A_2'); await page.locator('.ai-status').filter({hasText:'回答完成'}).waitFor();
   assert.equal(calls.some(call=>call.job==='JOB_C_2'),false);
   await page.getByRole('button',{name:'文档库',exact:true}).click(); await page.getByRole('button',{name:`打开 ${names[2]}`,exact:true}).click(); await assistant();
-  assert.equal(await page.locator('.ai-message').count(),0);
+  // Conversations are kept with the document; the cancelled queued question left no running or answered request.
+  assert.equal(await page.locator('.ai-pane .thinking.live').count(),0);
+  assert.equal(await page.locator('.answer-body').filter({hasText:'JOB_C_2'}).count(),0);
+  assert.equal(await page.getByRole('button',{name:'停止',exact:true}).count(),0);
   // DOM dispatch avoids browser-owned Ctrl+W in the preview while exercising the app handler.
   if (native) await page.keyboard.press('Control+Tab');
   else await page.evaluate(()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',code:'Tab',ctrlKey:true,bubbles:true,cancelable:true})));
