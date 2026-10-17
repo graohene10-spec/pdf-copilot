@@ -215,7 +215,8 @@ try {
   await until(() => page.evaluate(value => window.__pickerDiscovery.disconnected > value, disconnectedBefore));
   await page.evaluate(() => { window.__pickerDiscovery.hold = false; for (const deliver of window.__pickerDiscovery.pending.splice(0)) deliver(); });
   await coldPicker.click(); await nativeMenu.waitFor(); await modelView();
-  await page.waitForTimeout(120);
+  // The model list slides in after the effort view leaves.
+  await nativeMenu.locator('.models-list').waitFor(); await page.waitForTimeout(120);
   assert.equal(await options().count(), 9, 'A cancelled late reply cannot replace the current inventory.');
   assert.equal(await nativeMenu.getByRole('button', { name: '重新读取本机模型', exact: true }).isEnabled(), true);
   assert.equal(await page.evaluate(() => window.__pickerDiscovery.calls.length), callsBeforeCancel + 1, 'Cancelling status lookup prevents the subsequent models lookup.');
