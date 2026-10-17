@@ -40,12 +40,14 @@ const model = createServer(async (request, response) => {
       return ids.findIndex(id => conversations(id).some(chat => chat.messages.some(message => message.role === 'user' && (message.images || []).includes(image))));
     }, { ids, image: images[0] });
     const name = names[owner]; assert.ok(name, 'Document identity is captured before asynchronous preparation.');
-    assert.equal(names.some(value => text.includes(value)), false, 'A quick capture question does not send the document title.');
+    // A capture bubble sends only its question and the region; questions typed or picked in the assistant keep the document context.
+    const selectionOnly = text.includes('[附图是用户在文档中框选的区域');
+    if (selectionOnly) assert.equal(names.some(value => text.includes(value)), false, 'A quick capture question does not send the document title.');
     const question = questions.find(value => text.startsWith(value)); assert.ok(question, 'The custom prompt is sent verbatim.');
     assert.equal(images.length, 1, 'The current crop is sent exactly once.');
     assert.match(images[0], /^data:image\/png;base64,/);
     assert.equal(payload.input.flatMap(item => Array.isArray(item.content) ? item.content : []).filter(item => item.type === 'input_image').length, 1, 'Historical screenshots are not reattached.');
-    calls.push({ name, question, images });
+    calls.push({ name, question, images, selectionOnly });
     assert.equal(held.has(name), false, 'One running request per document.');
     response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store' });
     response.write(event({ type: 'response.output_text.delta', delta: `本机截图回答 ${name}。` }));
@@ -221,7 +223,7 @@ try {
   await page.emulateMedia({ colorScheme: 'light' });
   await quick().getByRole('button', { name: labels[0], exact: true }).evaluate(button => { button.click(); button.click(); });
   await accepted(); await until(() => held.has(names[0]));
-  assert.equal(calls.length, 1); assert.equal(calls[0].question, questions[0]);
+  assert.equal(calls.length, 1); assert.equal(calls[0].question, questions[0]); assert.equal(calls[0].selectionOnly, true, 'Capture bubbles send only the question and the selected region.');
   assert.equal(await prompt().inputValue(), '保留的截图草稿 A');
   assert.deepEqual((await state(0)).images.at(-1), calls[0].images);
   finish(0); await idle();
