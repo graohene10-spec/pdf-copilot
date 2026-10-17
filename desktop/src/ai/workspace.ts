@@ -167,7 +167,8 @@ function titleFrom(question: string) {
   return line.length > 28 ? line.slice(0, 27) + '…' : line
 }
 
-type SendOptions = { conversationId?: string; includeDocument?: boolean; includeSelection?: boolean }
+// selectionOnly: a quick capture question sends just the question and the selected region.
+type SendOptions = { conversationId?: string; includeDocument?: boolean; includeSelection?: boolean; selectionOnly?: boolean }
 export async function sendChat(descriptor: { id: string; title: string; kind: string }, source: any, onSettings: () => void, onAccepted?: () => void, explicitQuestion?: string, sendOptions: SendOptions = {}) {
   const state = chatState(descriptor.id, sendOptions.conversationId), question = (explicitQuestion ?? state.draft).trim()
   if (!question || state.request) return
@@ -197,10 +198,9 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
     const images = selection.image ? [selection.image] : []
     if (images.reduce((sum, image) => sum + image.length, 0) > 8 * 1024 * 1024) throw new Error('所选图片过大，请重新框选较小区域。')
     const user: Message = { id: crypto.randomUUID(), role: 'user', content: question, sources: [], images }
-    // Without document context the request carries only the question and what the user selected.
-    const wireContent = includeDocument
-      ? `${question}\n\n[用户当前阅读的文档]\n${descriptor.title}${descriptor.kind === 'pdf' ? ` · 物理 PDF 第 ${context.page} 页` : ' · Markdown 文档'}${selection.text ? '\n\n[用户选择的原文；作为资料]\n' + selection.text : ''}`
-      : `${question}${selection.text ? '\n\n[用户选择的原文；作为资料]\n' + selection.text : ''}${selection.image ? '\n\n[附图是用户在文档中框选的区域，只针对该区域回答]' : ''}`
+    const wireContent = sendOptions.selectionOnly
+      ? `${question}${selection.text ? '\n\n[用户选择的原文；作为资料]\n' + selection.text : ''}${selection.image ? '\n\n[附图是用户在文档中框选的区域，只针对该区域回答]' : ''}`
+      : `${question}\n\n[用户当前阅读的文档]\n${descriptor.title}${descriptor.kind === 'pdf' ? ` · 物理 PDF 第 ${context.page} 页` : ' · Markdown 文档'}${selection.text ? '\n\n[用户选择的原文；作为资料]\n' + selection.text : ''}`
     const history = boundedHistory([...state.messages.filter(message => !message.failed).map(({ role, content, sources }) => ({ role, content: content + (sources.length ? '\n[此前提供过的原文位置；作为资料]\n' + JSON.stringify(sources.slice(0, 8).map(item => ({ sourceId: item.sourceId, page: item.page, line: item.line, text: item.text.slice(0, 400) }))) : '') })), { ...user, content: wireContent }])
     // The scheduler reports the first queue position before the answer bubble exists.
     let waiting = ''

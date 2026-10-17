@@ -711,7 +711,7 @@ async function askCaptureQuick(question: string) {
     }
     consumeSelection({ documentId: doc.id, selection: context.selection })
     if (active.value?.id === doc.id) openAssistant()
-  }, question, { includeSelection: true, includeDocument: false })
+  }, question, { includeSelection: true, includeDocument: false, selectionOnly: true })
   if (captureQuick.value?.documentId === current.documentId) captureQuick.value.ownedRequest = state.request
   try { await sending }
   finally {
