@@ -64,7 +64,7 @@ async function assistant() {
   if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
   await page.getByRole('textbox',{name:'向 AI 提问'}).waitFor();
 }
-async function ask(job) { await assistant(); await page.getByRole('textbox',{name:'向 AI 提问'}).fill(job); await page.getByRole('button',{name:'发送 ↑',exact:true}).click(); }
+async function ask(job) { await assistant(); await page.getByRole('textbox',{name:'向 AI 提问'}).fill(job); await page.getByRole('button',{name:'发送',exact:true}).click(); }
 async function capture() {
   const toggle = page.locator('[data-tip="框选公式或图表作为 AI 上下文"]');
   if (!(await toggle.getAttribute('class'))?.split(' ').includes('active')) await toggle.click();
@@ -79,7 +79,7 @@ async function assertCaptureConsumed() {
   assert.equal(await page.locator('.ai-message img').count(), 0, 'Sent screenshots do not occupy conversation space');
 }
 async function concurrency(value) {
-  await page.getByRole('button',{name:'更改',exact:true}).click();
+  await page.getByRole('button', { name: '选择模型与思考强度', exact: true }).click(); await page.getByRole('button', { name: '服务商、密钥与预算', exact: true }).click();
   await page.locator('summary').filter({hasText:'多文件提问'}).click();
   await page.getByLabel('同时运行的提问',{exact:true}).fill(String(value));
   await page.getByRole('dialog').getByRole('button',{name:'保存',exact:true}).click();
@@ -148,7 +148,7 @@ try {
   await page.locator('[data-tip="清除选区"]').click();
   report.push('Text selection never auto-opens; one click carries text and focuses composer; PDF capture auto-opens with no automatic model request');
 
-  await page.getByRole('button',{name:'更改',exact:true}).click();
+  await page.getByRole('button', { name: '选择模型与思考强度', exact: true }).click(); await page.getByRole('button', { name: '服务商、密钥与预算', exact: true }).click();
   await page.getByLabel('服务商',{exact:true}).selectOption('openai');
   await page.getByLabel('API 地址',{exact:true}).fill(baseUrl);
   await page.getByLabel('API Key',{exact:true}).fill('tabs-synthetic-key');
@@ -236,7 +236,10 @@ try {
   finish('JOB_A_2'); await page.locator('.ai-status').filter({hasText:'回答完成'}).waitFor();
   assert.equal(calls.some(call=>call.job==='JOB_C_2'),false);
   await page.getByRole('button',{name:'文档库',exact:true}).click(); await page.getByRole('button',{name:`打开 ${names[2]}`,exact:true}).click(); await assistant();
-  assert.equal(await page.locator('.ai-message').count(),0);
+  // Conversations are kept with the document; the cancelled queued question left no running or answered request.
+  assert.equal(await page.locator('.ai-pane .thinking.live').count(),0);
+  assert.equal(await page.locator('.answer-body').filter({hasText:'JOB_C_2'}).count(),0);
+  assert.equal(await page.getByRole('button',{name:'停止',exact:true}).count(),0);
   // DOM dispatch avoids browser-owned Ctrl+W in the preview while exercising the app handler.
   if (native) await page.keyboard.press('Control+Tab');
   else await page.evaluate(()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',code:'Tab',ctrlKey:true,bubbles:true,cancelable:true})));

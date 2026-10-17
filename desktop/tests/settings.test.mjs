@@ -329,3 +329,28 @@ test('wheel bindings are limited to zoom and conflicting zoom directions are rej
   assert.ok(preferenceErrors(preferences).some(error => /缩小.*放大/.test(error)))
   assert.deepEqual(normalizePreferences(preferences).shortcuts, DEFAULT_SHORTCUTS)
 })
+
+test('background gallery keeps custom images when a preset is chosen and always includes the selected image', () => {
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64')
+  const image = (name, byte) => ({ name, dataUrl: `data:image/png;base64,${Buffer.concat([png, Buffer.from([byte])]).toString('base64')}` })
+  const preferences = defaultPreferences()
+  assert.deepEqual(preferences.appearance.gallery, [])
+  assert.equal(preferences.appearance.uiFont, 'system')
+  assert.equal(preferences.appearance.readingFont, 'ui')
+  const a = image('a.png', 1), b = image('b.png', 2)
+  const chosen = normalizePreferences({ appearance: { background: b, gallery: [a] } })
+  assert.deepEqual(chosen.appearance.gallery.map(item => item.name), ['a.png', 'b.png'])
+  const preset = normalizePreferences({ appearance: { background: null, backdrop: 'dusk', gallery: chosen.appearance.gallery } })
+  assert.equal(preset.appearance.background, null)
+  assert.deepEqual(preset.appearance.gallery.map(item => item.name), ['a.png', 'b.png'])
+  const many = normalizePreferences({ appearance: { gallery: Array.from({ length: 9 }, (_, i) => image(`${i}.png`, i + 10)) } })
+  assert.equal(many.appearance.gallery.length, 6)
+  assert.deepEqual(preferenceErrors(many), [])
+})
+
+test('unknown font choices fall back to the system and interface fonts', () => {
+  const preferences = normalizePreferences({ appearance: { uiFont: 'comic-sans', readingFont: 'wenkai' } })
+  assert.equal(preferences.appearance.uiFont, 'system')
+  assert.equal(preferences.appearance.readingFont, 'wenkai')
+  assert.ok(preferenceErrors({ ...preferences, appearance: { ...preferences.appearance, readingFont: 'nope' } }).includes('请选择有效阅读字体。'))
+})

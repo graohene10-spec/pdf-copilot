@@ -260,7 +260,9 @@ try {
   assert.equal(await page.locator('.file-tab [role="tab"] > span').first().evaluate(element => getComputedStyle(element).color), selectedTabColor, 'Hovering a folder tab must preserve its locally compensated foreground.');
   await page.getByRole('button', { name: '阅读助手', exact: true }).click();
   await page.locator('.ai-pane').waitFor(); await settled();
-  await ink('.ai-pane', 'dark');
+  // The assistant is a near-solid panel: it keeps theme text instead of adapting to the photo.
+  assert.equal(await page.locator('.ai-pane').getAttribute('data-glass-ink'), null);
+  await themeText('.ai-pane .conversation-title .title-text');
   await page.evaluate(async () => {
     const { library } = await import('/src/sdk/index.ts');
     const { chatState } = await import('/src/ai/workspace.ts');
@@ -272,11 +274,11 @@ try {
     ];
   });
   await page.locator('.ai-pane .user-question').waitFor();
-  await page.locator('.ai-pane .message-code').waitFor();
+  await page.locator('.ai-pane .answer-code').waitFor();
   await themeText('.ai-pane .user-question');
-  await themeText('.ai-pane .message-code');
+  await themeText('.ai-pane .answer-code');
   await themeText('.markdown-paper');
-  await localTextContrast('.reader-pane:not([style*="display: none"]) .reading-pill .pill-page', 'white');
+  await themeText('.reader-pane:not([style*="display: none"]) .reading-pill .pill-page');
   await openSettings();
   assert.equal(await dialog().getAttribute('data-glass-ink'), null, 'Tea/frosted popups are excluded from photo foreground adaptation.');
   // Save is the dialog's tinted primary action: fixed accent foreground, never wallpaper-adapted.
@@ -284,7 +286,7 @@ try {
   await dialog().getByRole('button', { name: '取消', exact: true }).click();
   await dialog().waitFor({ state: 'detached' });
   await shot('开智-玻璃文字对比度-阅读-深色.png');
-  checks.push('The AI pane over the white image uses dark chrome text in a dark theme; opaque user bubbles, code, Markdown and excluded tea popups retain their own theme foregrounds.');
+  checks.push('The solid AI pane and reading pill keep theme text over the white image; opaque user bubbles, code, Markdown and excluded tea popups retain their own theme foregrounds.');
 
   const writesBefore = await page.evaluate(() => window.__backgroundWriteCount);
   for (const theme of ['light', 'dark']) {
@@ -294,7 +296,7 @@ try {
     const color = await page.locator('.app-sidebar .brand').evaluate(element => getComputedStyle(element).color);
     assert.equal(color, theme === 'light' ? 'rgb(22, 26, 32)' : 'rgb(242, 244, 247)', 'Opaque glass follows the theme, regardless of image colors.');
     await appearance({ glassTransparency: 83 });
-    await ink('.app-sidebar', 'light'); await ink('.ai-pane', 'dark');
+    await ink('.app-sidebar', 'light');
   }
   assert.equal(await page.evaluate(() => window.__backgroundWriteCount), writesBefore, 'Theme and transparency changes must not rewrite the large wallpaper CSS payload.');
   checks.push('0% returns theme-colored opaque glass; returning to 83% restores local compensation without rewriting cached image pixels.');
@@ -302,12 +304,12 @@ try {
   await page.evaluate(() => { document.documentElement.dataset.contrast = 'high'; });
   await noAdaptation();
   await page.evaluate(() => { delete document.documentElement.dataset.contrast; });
-  await ink('.app-sidebar', 'light'); await ink('.ai-pane', 'dark');
+  await ink('.app-sidebar', 'light');
   const media = await context.newCDPSession(page);
   await media.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-transparency', value: 'reduce' }] });
   await noAdaptation();
   await media.send('Emulation.setEmulatedMedia', { features: [] });
-  await ink('.app-sidebar', 'light'); await ink('.ai-pane', 'dark');
+  await ink('.app-sidebar', 'light');
   await media.detach();
   checks.push('Explicit high contrast and system reduced transparency remove injected foreground variables; compensation returns when those modes are disabled.');
 

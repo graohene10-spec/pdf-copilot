@@ -49,11 +49,14 @@ await page.route('https://api.openai.com/v1/responses', async route => {
 
 async function open(name) {
   await page.getByRole('button', { name: `打开 ${name}`, exact: true }).click();
+  // Assistant windows persist across the library; let the workspace mount before deciding to open one.
+  await page.locator('.reading-workspace').waitFor();
+  await page.waitForFunction(() => !document.querySelector('.view-enter-active,.view-leave-active,.pane-enter-active'));
   if (!(await page.locator('.ai-pane').isVisible())) await page.getByRole('button', { name: '阅读助手', exact: true }).click();
   await page.locator('.ai-pane').waitFor();
 }
 async function configure() {
-  await page.getByRole('button', { name: '更改', exact: true }).click();
+  await page.getByRole('button', { name: '选择模型与思考强度', exact: true }).click(); await page.getByRole('button', { name: '服务商、密钥与预算', exact: true }).click();
   await page.getByLabel('服务商', { exact: true }).selectOption('openai');
   await page.getByLabel('API Key', { exact: true }).fill('fake-ui-key');
   await page.getByRole('dialog').getByRole('button', { name: '保存', exact: true }).click();
@@ -62,7 +65,7 @@ async function configure() {
 async function ask() {
   iteration = 0; evidence = null; mode = 'answer';
   await page.getByRole('textbox', { name: '向 AI 提问', exact: true }).fill('请检索并解释相关内容。');
-  await page.getByRole('button', { name: '发送 ↑', exact: true }).click();
+  await page.getByRole('button', { name: '发送', exact: true }).click();
   await page.locator('.ai-status').filter({ hasText: '回答完成' }).waitFor();
   assert.equal(iteration, 3);
   assert.ok(await page.locator('.answer-body .katex').count());
@@ -76,17 +79,17 @@ try {
   await ask();
   await page.locator('.source-highlight').waitFor();
   report.push('Markdown: settings, bounded search/read loop, stream reasoning, formula, citation line jump');
-  await page.getByRole('button', { name: '清空对话', exact: true }).click();
+  await page.getByRole('button', { name: '新对话', exact: true }).click();
   mode = 'hold'; heldRoute = null;
   await page.getByRole('textbox', { name: '向 AI 提问', exact: true }).fill('这是一个取消测试。');
-  await page.getByRole('button', { name: '发送 ↑', exact: true }).click();
+  await page.getByRole('button', { name: '发送', exact: true }).click();
   const deadline = Date.now() + 10000;
   while (!heldRoute && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50));
   assert.ok(heldRoute, 'A real pending mock HTTP request should exist before cancellation');
   await page.getByRole('button', { name: '停止', exact: true }).click();
   await page.locator('.ai-status').filter({ hasText: '回答已停止' }).waitFor();
-  await page.getByRole('button', { name: '发送 ↑', exact: true }).waitFor();
-  assert.equal(await page.locator('.answer-body').last().textContent(), '');
+  await page.getByRole('button', { name: '发送', exact: true }).waitFor();
+  assert.equal(await page.locator('.ai-message.assistant').last().locator('.answer-body').count(), 0);
   report.push('Cancellation: stopped request leaves no fabricated answer and re-enables composer');
   if (heldRoute) await heldRoute.abort().catch(() => {});
   await page.getByRole('button', { name: '文档库', exact: true }).click();

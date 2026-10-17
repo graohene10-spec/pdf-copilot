@@ -42,6 +42,8 @@ export function buildPayload({ provider, model, effort, messages, tools, input, 
       : msg.content,
   })))] };
   if (tools?.length) payload.tools = tools.map(tool => ({ type: 'function', function: tool }));
+  // Ask for the final usage chunk so the assistant can show real token counts.
+  payload.stream_options = { include_usage: true };
   if (effort) {
     payload.thinking = { type: effort === 'none' ? 'disabled' : 'enabled' };
     if (effort !== 'none') payload.reasoning_effort = effort;
@@ -50,7 +52,7 @@ export function buildPayload({ provider, model, effort, messages, tools, input, 
 }
 
 export async function streamTurn(options) {
-  const { provider, apiKey, baseUrl, onDelta, onReasoning } = options;
+  const { provider, apiKey, baseUrl, onDelta, onReasoning, onUsage } = options;
   if (!['openai', 'deepseek'].includes(provider)) throw new Error('未知服务商。');
   if (!apiKey) throw new Error('请先在设置中填写 API Key。');
   apiOrigin(baseUrl);
@@ -87,9 +89,12 @@ export async function streamTurn(options) {
       if (event.type === 'response.completed') {
         if (event.response?.status && event.response.status !== 'completed') throw new Error('模型未完整完成回答。');
         complete = true;
+        const usage = event.response?.usage;
+        if (usage) onUsage?.({ input: usage.input_tokens, output: usage.output_tokens, reasoning: usage.output_tokens_details?.reasoning_tokens });
         output = event.response?.output || [...items].sort((a, b) => a[0] - b[0]).map(([, item]) => item);
       }
     } else {
+      if (event.usage) onUsage?.({ input: event.usage.prompt_tokens, output: event.usage.completion_tokens, reasoning: event.usage.completion_tokens_details?.reasoning_tokens });
       for (const choice of event.choices || []) {
         if (choice.delta?.content) { content += choice.delta.content; onDelta?.(choice.delta.content); }
         if (choice.delta?.reasoning_content) { reasoning += choice.delta.reasoning_content; onReasoning?.(choice.delta.reasoning_content); }

@@ -3,6 +3,7 @@ import { ref, watch, onMounted, onActivated, onDeactivated, onBeforeUnmount, nex
 import MarkdownIt from 'markdown-it'
 import 'katex/dist/katex.min.css'
 import { installMarkdownMath } from './markdown-math'
+import { installGithubFlavor } from './markdown-github'
 import { library } from '../sdk'
 import { clampMarkdownFontSize, clampMarkdownContentWidth, readingScrollTarget } from '../reader/layout.mjs'
 import { markdownTextIndex, markdownSearchRanges, markdownSearchHighlighter } from '../reader/markdown-search'
@@ -49,6 +50,7 @@ let searchIndex: ReturnType<typeof markdownTextIndex> | undefined
 const transientMarkers = new Set<() => void>()
 const markdown = new MarkdownIt({ html: false, linkify: true, typographer: true })
 installMarkdownMath(markdown)
+installGithubFlavor(markdown)
 function selectedText() {
   if (!active) return
   const selection = window.getSelection()
@@ -179,7 +181,7 @@ async function renderDocument() {
     for (const child of token.children || []) {
       if (child.type === 'image') {
         const src = child.attrGet('src') || ''
-        if (/^(https?:|\/\/)/i.test(src)) { child.attrSet('src', ''); child.attrSet('alt', `外部图片：${child.content || src}`); continue }
+        if (/^(https?:|\/\/)/i.test(src)) { child.attrSet('src', src.startsWith('//') ? `https:${src}` : src); child.attrSet('loading', 'lazy'); child.attrSet('referrerpolicy', 'no-referrer'); continue }
         if (/^(data:|blob:)/i.test(src)) { child.attrSet('src', ''); continue }
         try {
           const asset = await library.readAsset(props.documentId, decodeURIComponent(src.split('#')[0]))
@@ -271,7 +273,7 @@ defineExpose({ goToPage, goToHeading, isSuspended: () => !active, zoomIn, zoomOu
       <ReaderSearch ref="searchControl" v-model="searchQuery" :busy="searchBusy" :current="searchCurrent" :total="searchTotal" :status="searchStatus" :shortcut="props.findShortcut" @next="moveSearch(1)" @previous="moveSearch(-1)" @clear="clearSearch" />
     </div>
     <div class="reader-engine-body">
-      <aside v-if="outlineOpen" class="document-outline"><p class="eyebrow">文档目录</p><button v-for="item in headings" :key="item.id" :style="{ paddingLeft: `${12 + Math.max(0, item.level - 1) * 10}px` }" @click="goToHeading(item.id)">{{ item.title }}</button><p v-if="!headings.length" class="subtle">此文档没有标题。</p></aside>
+      <aside v-if="outlineOpen" class="document-outline"><p class="outline-heading">目录</p><button v-for="item in headings" :key="item.id" :class="`depth-${Math.min(3, Math.max(0, item.level - 1))}`" :style="{ '--depth': Math.max(0, item.level - 1) }" @click="goToHeading(item.id)"><span class="outline-title">{{ item.title }}</span></button><p v-if="!headings.length" class="subtle">此文档没有标题。</p></aside>
       <div ref="scroll" class="markdown-scroll" @scroll="progress"><article ref="body" class="markdown-paper" :class="{ 'source-view': raw }" :style="{ fontSize: `${displayFontSize}px`, maxWidth: `${clampMarkdownContentWidth(props.contentWidth)}px` }" @mouseup="selectedText" @keyup="selectedText" @click="linkClick"><pre v-if="raw" style="font-size: inherit">{{ content }}</pre><div v-else v-html="content"></div></article></div>
       <div v-if="error" class="reader-overlay error-state"><AppIcon name="file" :size="34" /><p>{{ error }}</p><button @click="render">重试</button></div>
     </div>

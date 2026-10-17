@@ -32,13 +32,25 @@ const model = createServer(async (request, response) => {
     const payload = JSON.parse(body);
     const user = payload.input.findLast(item => item.role === 'user');
     const text = user.content.find(item => item.type === 'input_text').text;
-    const name = names.find(value => text.includes(value)); assert.ok(name, 'Document identity is captured before asynchronous preparation.');
-    const question = questions.find(value => text.startsWith(value)); assert.ok(question, 'The custom prompt is sent verbatim.');
     const images = user.content.filter(item => item.type === 'input_image').map(item => item.image_url);
+    // Quick capture questions carry only the crop and the question, not the document title,
+    // so the owner is the document whose conversation recorded this exact crop.
+    const owner = await page.evaluate(async ({ ids, image }) => {
+      const { conversations } = await import('/src/ai/workspace.ts');
+      // The owner has a request in flight whose latest question carries this crop (crops of similar pages can be identical).
+      const asked = chat => (chat.messages.findLast(message => message.role === 'user')?.images || []).includes(image);
+      const running = ids.findIndex(id => conversations(id).some(chat => chat.request && asked(chat)));
+      return running >= 0 ? running : ids.findIndex(id => conversations(id).some(asked));
+    }, { ids, image: images[0] });
+    const name = names[owner]; assert.ok(name, 'Document identity is captured before asynchronous preparation.');
+    // A capture bubble sends only its question and the region; questions typed or picked in the assistant keep the document context.
+    const selectionOnly = text.includes('[附图是用户在文档中框选的区域');
+    if (selectionOnly) assert.equal(names.some(value => text.includes(value)), false, 'A quick capture question does not send the document title.');
+    const question = questions.find(value => text.startsWith(value)); assert.ok(question, 'The custom prompt is sent verbatim.');
     assert.equal(images.length, 1, 'The current crop is sent exactly once.');
     assert.match(images[0], /^data:image\/png;base64,/);
     assert.equal(payload.input.flatMap(item => Array.isArray(item.content) ? item.content : []).filter(item => item.type === 'input_image').length, 1, 'Historical screenshots are not reattached.');
-    calls.push({ name, question, images });
+    calls.push({ name, question, images, selectionOnly });
     assert.equal(held.has(name), false, 'One running request per document.');
     response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store' });
     response.write(event({ type: 'response.output_text.delta', delta: `本机截图回答 ${name}。` }));
@@ -214,13 +226,13 @@ try {
   await page.emulateMedia({ colorScheme: 'light' });
   await quick().getByRole('button', { name: labels[0], exact: true }).evaluate(button => { button.click(); button.click(); });
   await accepted(); await until(() => held.has(names[0]));
-  assert.equal(calls.length, 1); assert.equal(calls[0].question, questions[0]);
+  assert.equal(calls.length, 1); assert.equal(calls[0].question, questions[0]); assert.equal(calls[0].selectionOnly, true, 'Capture bubbles send only the question and the selected region.');
   assert.equal(await prompt().inputValue(), '保留的截图草稿 A');
   assert.deepEqual((await state(0)).images.at(-1), calls[0].images);
   finish(0); await idle();
   checks.push('Saved settings survive reload; a real crop keeps the sidebar closed and scale stable, preserves its undimmed rectangle, shows custom labels, and rapid double-click sends one full image prompt without erasing the draft.');
 
-  await pane().getByRole('button', { name: '清空对话', exact: true }).click(); await prompt().fill('保留的截图草稿 A');
+  await pane().getByRole('button', { name: '新对话', exact: true }).click(); await prompt().fill('保留的截图草稿 A');
   await closeAssistant(); await crop(1);
   const countBeforeContinue = calls.length;
   await quick().getByRole('button', { name: '继续到阅读助手', exact: true }).click();
@@ -288,7 +300,7 @@ try {
   for (let index = 0; index < 3; index++) { assert.equal((await state(index)).draft, `队列草稿 ${String.fromCharCode(65 + index)}`); assert.deepEqual((await state(index)).images.at(-1), calls.findLast(call => call.name === names[index]).images); }
   checks.push('Cross-file screenshot actions share the existing concurrency queue; accepted queued crops disappear immediately, queue-full rejection preserves crop/draft and permits retry, and each eventual request retains its own image and document.');
 
-  await select(0); await openAssistant(); await pane().getByRole('button', { name: '清空对话', exact: true }).click(); await prompt().fill('队列草稿 A');
+  await select(0); await openAssistant(); await pane().getByRole('button', { name: '新对话', exact: true }).click(); await prompt().fill('队列草稿 A');
   await closeAssistant(); await configure(''); await crop(2);
   const missingCount = calls.length;
   await quick().getByRole('button', { name: labels[2], exact: true }).click(); await dialog().waitFor();

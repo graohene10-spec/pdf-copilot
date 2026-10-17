@@ -70,7 +70,8 @@ async function crop(index = 0) {
   return preview().getAttribute('src');
 }
 async function configure(key) {
-  await page.locator('[data-tip="AI 设置"]').click(); await dialog().waitFor();
+  await page.getByRole('button', { name: '选择模型与思考强度', exact: true }).click();
+  await page.getByRole('button', { name: '服务商、密钥与预算', exact: true }).click(); await dialog().waitFor();
   await dialog().getByLabel('服务商', { exact: true }).selectOption('openai');
   await dialog().getByLabel('API 地址', { exact: true }).fill(`${modelOrigin}/v1`);
   await dialog().getByLabel('API Key', { exact: true }).fill(key);
@@ -81,7 +82,7 @@ async function configure(key) {
   await dialog().getByRole('button', { name: '保存', exact: true }).click();
   await dialog().waitFor({ state: 'detached' });
 }
-async function send(job) { await prompt().fill(job); await page.getByRole('button', { name: '发送 ↑', exact: true }).click(); }
+async function send(job) { await prompt().fill(job); await page.getByRole('button', { name: '发送', exact: true }).click(); }
 async function accepted() { await preview().waitFor({ state: 'detached' }); assert.equal(await prompt().inputValue(), ''); assert.equal(await page.locator('.ai-message img').count(), 0); }
 async function complete(job) { await until(() => calls.some(call => call.job === job)); await page.locator('.ai-status').filter({ hasText: '回答完成' }).waitFor(); }
 async function latestImage(index, job) {
@@ -149,15 +150,16 @@ try {
   await readyPdf(); await page.waitForTimeout(200);
   const firstCrop = await crop();
   ids = await page.evaluate(async names => { const { library } = await import('/src/sdk/index.ts'); const docs = await library.list(); return names.map(name => docs.find(doc => doc.name === name).id); }, names);
-  assert.equal(await page.locator('.ai-pane > .ai-header').count(), 0);
-  assert.equal(await page.locator('.ai-pane > :first-child').getAttribute('class'), 'model-bar');
+  assert.equal(await page.locator('.ai-pane .model-bar').count(), 0);
+  assert.match(await page.locator('.ai-pane > :first-child').getAttribute('class'), /ai-header/);
+  assert.equal(await page.locator('.ai-pane .conversation-title .title-text').textContent(), '新对话');
   await configure('');
   await send('ATTACH_MISSING'); await dialog().waitFor();
   await dialog().getByRole('button', { name: '取消', exact: true }).click(); await dialog().waitFor({ state: 'detached' });
   await page.locator('.ai-status').filter({ hasText: '请先连接 AI 服务' }).waitFor();
   assert.equal(await preview().getAttribute('src'), firstCrop);
   assert.equal(await prompt().inputValue(), 'ATTACH_MISSING'); assert.equal(calls.length, 0);
-  checks.push('Missing key preserves the unsent crop and draft; the redundant assistant header is absent.');
+  checks.push('Missing key preserves the unsent crop and draft; the header shows the conversation title instead of the provider.');
 
   await configure('attachment-synthetic-key');
   await shot('ai-attachment-before.png');
@@ -204,7 +206,7 @@ try {
   assert.equal(await preview().getAttribute('src'), rejectedCrop);
   assert.equal(await prompt().inputValue(), 'ATTACH_QUEUE_FULL');
   finish('ATTACH_B_QUEUED'); await until(async () => page.evaluate(async () => { const { taskSummary } = await import('/src/ai/workspace.ts'); return taskSummary.running === 0 && taskSummary.queued === 0; }));
-  await page.getByRole('button', { name: '发送 ↑', exact: true }).click(); await accepted(); await complete('ATTACH_QUEUE_FULL');
+  await page.getByRole('button', { name: '发送', exact: true }).click(); await accepted(); await complete('ATTACH_QUEUE_FULL');
   assert.deepEqual(calls.find(call => call.job === 'ATTACH_QUEUE_FULL').images, [rejectedCrop]);
   checks.push('Queue-full rejection preserves crop/draft and creates no message or request; later retry submits the same crop, while another document starts its original queued image.');
 
@@ -224,7 +226,7 @@ try {
   await select(1); assert.equal(await preview().getAttribute('src'), otherCrop);
   checks.push('An accepted request after an immediate tab switch clears only its origin; the other file keeps its newer crop, and the wire retains the origin image/name.');
 
-  await page.locator('.context-heading input').uncheck();
+  await page.locator('.ai-selection-context input[type="checkbox"]').uncheck({ force: true });
   await send('ATTACH_OMIT'); await complete('ATTACH_OMIT');
   assert.equal(calls.find(call => call.job === 'ATTACH_OMIT').totalImages, 0);
   assert.equal(await preview().getAttribute('src'), otherCrop);
