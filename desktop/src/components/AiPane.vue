@@ -13,7 +13,10 @@ const ModelPicker = defineAsyncComponent(() => import('./ModelPicker.vue'))
 const props = defineProps<{ document: { id: string; title: string; kind: string }; context: any; sendShortcut?: string; consumeCapture?: (value: { documentId: string; selection: any }) => void; conversationId?: string; draggable?: boolean }>()
 const emit = defineEmits<{ jump: [value: { page: number; rect?: any; line?: number }]; close: []; settings: []; error: [value: string]; clearSelection: []; conversation: [id: string]; grab: [event: PointerEvent] }>()
 const settings = ref<any>(loadAiSettings())
-const conversationId = ref(props.conversationId || activeConversationId(props.document.id))
+// A window that follows the active tab may carry a conversation id from the previous document;
+// only an id that belongs to this document is honoured.
+const ownConversation = (documentId: string, id?: string) => id && conversations(documentId).some(item => item.id === id) ? id : activeConversationId(documentId)
+const conversationId = ref(ownConversation(props.document.id, props.conversationId))
 const state = computed(() => chatState(props.document.id, conversationId.value))
 const messages = computed(() => state.value.messages)
 const prompt = computed({ get: () => state.value.draft, set: value => { state.value.draft = value } })
@@ -67,13 +70,13 @@ function relative(time: number) {
 }
 watch(() => props.document.id, id => {
   rememberScroll()
-  conversationId.value = props.conversationId || activeConversationId(id)
+  conversationId.value = ownConversation(id, props.conversationId)
   settings.value = loadAiSettings()
   historyOpen.value = false; pickerOpen.value = false
-  void loadConversations(id).then(() => { if (id === props.document.id && !props.conversationId) conversationId.value = activeConversationId(id) })
+  void loadConversations(id).then(() => { if (id === props.document.id) conversationId.value = ownConversation(id, props.conversationId) })
   void nextTick(restoreScroll)
 }, { flush: 'sync' })
-watch(() => props.conversationId, id => { if (id) conversationId.value = id })
+watch(() => props.conversationId, id => { if (id) conversationId.value = ownConversation(props.document.id, id) })
 
 // ---- Live timing and token counts -----------------------------------------
 const now = ref(Date.now())
@@ -257,7 +260,7 @@ watch(historyOpen, open => { if (open) document.addEventListener('pointerdown', 
 
 watch(() => props.context?.selection, selection => { includeSelection.value = Boolean(selection?.text || selection?.image) }, { immediate: true })
 function focusPrompt() { void nextTick(() => input.value?.focus()) }
-function stop() { stopChat(props.document.id, conversationId.value) }
+function stop() { stopChat(props.document.id, state.value.id) }
 function applySettings(value: any) { settings.value = value; configureRequests(value) }
 function keydown(event: KeyboardEvent) {
   if (event.key === 'Enter' && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey && !event.isComposing && event.keyCode !== 229 && !props.sendShortcut) { event.preventDefault(); void send() }
@@ -271,10 +274,10 @@ function send(question?: string) {
   return sendChat({ ...props.document }, { ...props.context }, () => { if (id === props.document.id) emit('settings') }, () => {
     // The request can be accepted after this pane closes or switches files.
     if (usesImage) consumeCapture?.({ documentId: id, selection })
-  }, question, { conversationId: conversationId.value })
+  }, question, { conversationId: state.value.id })
 }
 onMounted(() => {
-  void loadConversations(props.document.id).then(() => { if (!props.conversationId) conversationId.value = activeConversationId(props.document.id) })
+  void loadConversations(props.document.id).then(() => { conversationId.value = ownConversation(props.document.id, props.conversationId) })
   restoreScroll()
   observer = new ResizeObserver(() => updateRail())
   if (messageList.value) observer.observe(messageList.value)

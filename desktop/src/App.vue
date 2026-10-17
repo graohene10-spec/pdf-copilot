@@ -486,7 +486,9 @@ function toggleAssistant() {
   if (panel) closeAiPanel(panel.key)
   else openAssistant(true)
 }
-function setPanelConversation(key: string, id: string) { const panel = aiPanels.value.find(item => item.key === key); if (panel) panel.conversation = id }
+// A window pinned to one document remembers its own conversation; a window that follows the
+// active tab shows each document's current conversation instead.
+function setPanelConversation(key: string, id: string) { const panel = aiPanels.value.find(item => item.key === key); if (panel?.doc) panel.conversation = id }
 // ---- Resizing assistant windows -------------------------------------------
 let widthDrag: { key: string; x: number; width: number; side: number } | undefined
 function startWidthDrag(event: PointerEvent, key: string) {

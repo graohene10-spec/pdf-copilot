@@ -37,7 +37,10 @@ const model = createServer(async (request, response) => {
     // so the owner is the document whose conversation recorded this exact crop.
     const owner = await page.evaluate(async ({ ids, image }) => {
       const { conversations } = await import('/src/ai/workspace.ts');
-      return ids.findIndex(id => conversations(id).some(chat => chat.messages.some(message => message.role === 'user' && (message.images || []).includes(image))));
+      // The owner has a request in flight whose latest question carries this crop (crops of similar pages can be identical).
+      const asked = chat => (chat.messages.findLast(message => message.role === 'user')?.images || []).includes(image);
+      const running = ids.findIndex(id => conversations(id).some(chat => chat.request && asked(chat)));
+      return running >= 0 ? running : ids.findIndex(id => conversations(id).some(asked));
     }, { ids, image: images[0] });
     const name = names[owner]; assert.ok(name, 'Document identity is captured before asynchronous preparation.');
     // A capture bubble sends only its question and the region; questions typed or picked in the assistant keep the document context.
