@@ -139,7 +139,7 @@ try {
     assert.equal((await style(suggestion)).color, suggestionColor, `${theme}: AI suggestion hover keeps text color.`);
     // Quick prompts send immediately; type a draft to examine the enabled send capsule.
     await page.getByRole('textbox', { name: '向 AI 提问', exact: true }).fill('本页的主要结论是什么？');
-    const send = page.getByRole('button', { name: '发送 ↑', exact: true });
+    const send = page.getByRole('button', { name: '发送', exact: true });
     assert.equal(await send.isEnabled(), true);
     await shapes(`${theme}: send`, '.send-button', { capsule: true });
     await page.getByRole('textbox', { name: '向 AI 提问', exact: true }).fill('');

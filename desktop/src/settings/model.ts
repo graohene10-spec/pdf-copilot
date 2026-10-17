@@ -4,13 +4,36 @@ import { defaultQuickPrompts, normalizeQuickPrompts, quickPromptErrors, defaultC
 export type ShortcutAction = 'import' | 'search' | 'find' | 'fullscreen' | 'settings' | 'sidebar' | 'ai' | 'outline' | 'capture' | 'fitWidth' | 'zoomOut' | 'zoomIn' | 'previousPage' | 'nextPage' | 'aiSend' | 'aiStop' | 'nextTab' | 'previousTab' | 'closeTab' | 'split'
 export type ThemePreference = 'system' | 'light' | 'dark'
 export type BackdropPreset = 'mist' | 'dawn' | 'mint' | 'lavender' | 'graphite' | 'paper'
+/* 字体：只列常见的中文字体。选中却未安装时，按顺序退回系统字体。 */
+const SYSTEM_SANS = "'Segoe UI Variable Text', 'Segoe UI', -apple-system, 'PingFang SC', 'Microsoft YaHei UI', 'Microsoft YaHei', system-ui, sans-serif"
+export type FontChoice = { id: string; label: string; families: string[]; stack: string }
+const font = (id: string, label: string, families: string[], fallback = SYSTEM_SANS): FontChoice => ({ id, label, families, stack: [...families.map(name => `'${name}'`), fallback].join(', ') })
+export const UI_FONTS: FontChoice[] = [
+  { id: 'system', label: '系统默认', families: [], stack: SYSTEM_SANS },
+  font('harmony', 'HarmonyOS Sans', ['HarmonyOS Sans SC', 'HarmonyOS Sans']),
+  font('misans', 'MiSans', ['MiSans', 'MiSans VF']),
+  font('source-han-sans', '思源黑体', ['Source Han Sans SC', 'Noto Sans CJK SC', 'Noto Sans SC', '思源黑体']),
+  font('yahei', '微软雅黑', ['Microsoft YaHei UI', 'Microsoft YaHei']),
+  font('pingfang', '苹方', ['PingFang SC']),
+]
+const SERIF = "'Times New Roman', serif"
+export const READING_FONTS: FontChoice[] = [
+  { id: 'ui', label: '跟随界面字体', families: [], stack: '' },
+  font('source-han-serif', '思源宋体', ['Source Han Serif SC', 'Noto Serif CJK SC', 'Noto Serif SC', '思源宋体'], SERIF),
+  font('wenkai', '霞鹜文楷', ['LXGW WenKai', 'LXGW WenKai Screen', '霞鹜文楷'], SYSTEM_SANS),
+  font('songti', '宋体', ['Songti SC', 'SimSun', 'STSong', 'NSimSun'], SERIF),
+  font('kaiti', '楷体', ['KaiTi', 'STKaiti', 'Kaiti SC'], SERIF),
+  font('fangsong', '仿宋', ['FangSong', 'STFangsong'], SERIF),
+  font('harmony', 'HarmonyOS Sans', ['HarmonyOS Sans SC', 'HarmonyOS Sans']),
+  font('source-han-sans', '思源黑体', ['Source Han Sans SC', 'Noto Sans CJK SC', 'Noto Sans SC', '思源黑体']),
+]
 export const BACKDROPS: { id: BackdropPreset; label: string }[] = [
   { id: 'mist', label: '晨雾' }, { id: 'dawn', label: '暮光' }, { id: 'mint', label: '薄荷' },
   { id: 'lavender', label: '薰衣草' }, { id: 'graphite', label: '石墨' }, { id: 'paper', label: '素白' },
 ]
 export interface AppPreferences {
   version: 3
-  appearance: { theme: ThemePreference; libraryView: 'grid' | 'list'; glassTransparency: number; backdrop: BackdropPreset; background: BackgroundImage | null }
+  appearance: { theme: ThemePreference; libraryView: 'grid' | 'list'; glassTransparency: number; backdrop: BackdropPreset; background: BackgroundImage | null; gallery: BackgroundImage[]; uiFont: string; readingFont: string }
   pdf: { initialZoom: 'fit-width' | number; zoomStep: number; fitOnPanelOverflow: boolean; openAssistantOnCapture: boolean; quickAskOnCapture: boolean }
   markdown: { fontSize: number; contentWidth: number }
   assistant: { quickPrompts: QuickPrompts; captureQuestions: QuickPrompt[] }
@@ -41,8 +64,9 @@ export const DEFAULT_SHORTCUTS: Readonly<Record<ShortcutAction, string>> = Objec
   nextTab: 'Ctrl+Tab', previousTab: 'Ctrl+Shift+Tab', closeTab: 'Ctrl+KeyW', split: 'Ctrl+Backslash',
 })
 const LEGACY_GLASS: Record<string, number> = { clear: 85, balanced: 70, rich: 30, solid: 0 }
+export const MAX_GALLERY = 6
 export function defaultPreferences(): AppPreferences {
-  return { version: 3, appearance: { theme: 'system', libraryView: 'grid', glassTransparency: 70, backdrop: 'mist', background: null },
+  return { version: 3, appearance: { theme: 'system', libraryView: 'grid', glassTransparency: 70, backdrop: 'mist', background: null, gallery: [], uiFont: 'system', readingFont: 'ui' },
     pdf: { initialZoom: 'fit-width', zoomStep: 15, fitOnPanelOverflow: true, openAssistantOnCapture: true, quickAskOnCapture: true },
     markdown: { fontSize: 17, contentWidth: 840 }, assistant: { quickPrompts: defaultQuickPrompts(), captureQuestions: defaultCaptureQuestions() }, shortcuts: { ...DEFAULT_SHORTCUTS } }
 }
@@ -105,6 +129,15 @@ export function normalizePreferences(value: unknown, legacyTheme?: string | null
   defaults.appearance.glassTransparency = range(appearance.glassTransparency, 0, 100, legacyGlass)
   defaults.appearance.backdrop = BACKDROPS.some(item => item.id === appearance.backdrop) ? appearance.backdrop : defaults.appearance.backdrop
   defaults.appearance.background = normalizeBackground(appearance.background)
+  // Uploaded images stay in a small gallery; the selected one is always part of it.
+  const gallery: BackgroundImage[] = []
+  for (const item of [...(Array.isArray(appearance.gallery) ? appearance.gallery : []), defaults.appearance.background]) {
+    const image = normalizeBackground(item)
+    if (image && !gallery.some(entry => entry.dataUrl === image.dataUrl) && gallery.length < MAX_GALLERY) gallery.push(image)
+  }
+  defaults.appearance.gallery = gallery
+  defaults.appearance.uiFont = UI_FONTS.some(item => item.id === appearance.uiFont) ? appearance.uiFont : 'system'
+  defaults.appearance.readingFont = READING_FONTS.some(item => item.id === appearance.readingFont) ? appearance.readingFont : 'ui'
   defaults.pdf.initialZoom = pdf.initialZoom === 'fit-width' || pdf.initialZoom === undefined ? 'fit-width' : range(pdf.initialZoom, 25, 400, 100)
   defaults.pdf.zoomStep = range(pdf.zoomStep, 5, 50, defaults.pdf.zoomStep)
   defaults.pdf.fitOnPanelOverflow = typeof pdf.fitOnPanelOverflow === 'boolean' ? pdf.fitOnPanelOverflow : defaults.pdf.fitOnPanelOverflow
@@ -129,6 +162,10 @@ export function preferenceErrors(value: AppPreferences): string[] {
   if (!['system', 'light', 'dark'].includes(value.appearance.theme)) errors.push('请选择有效外观。')
   if (!['grid', 'list'].includes(value.appearance.libraryView)) errors.push('请选择有效文档视图。')
   if (!BACKDROPS.some(item => item.id === value.appearance.backdrop)) errors.push('请选择有效底板。')
+  if (!Array.isArray(value.appearance.gallery) || value.appearance.gallery.length > MAX_GALLERY) errors.push(`图库最多保存 ${MAX_GALLERY} 张图片。`)
+  else for (const image of value.appearance.gallery) errors.push(...backgroundErrors(image))
+  if (!UI_FONTS.some(item => item.id === value.appearance.uiFont)) errors.push('请选择有效界面字体。')
+  if (!READING_FONTS.some(item => item.id === value.appearance.readingFont)) errors.push('请选择有效阅读字体。')
   const check = (name: string, number: number, min: number, max: number) => { if (!Number.isFinite(number) || !Number.isInteger(number) || number < min || number > max) errors.push(`${name}须为 ${min}–${max} 的整数。`) }
   check('玻璃透明度', value.appearance.glassTransparency, 0, 100)
   errors.push(...backgroundErrors(value.appearance.background))

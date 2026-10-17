@@ -220,7 +220,7 @@ try {
   finish(0); await idle();
   checks.push('Saved settings survive reload; a real crop keeps the sidebar closed and scale stable, preserves its undimmed rectangle, shows custom labels, and rapid double-click sends one full image prompt without erasing the draft.');
 
-  await pane().getByRole('button', { name: '清空对话', exact: true }).click(); await prompt().fill('保留的截图草稿 A');
+  await pane().getByRole('button', { name: '新对话', exact: true }).click(); await prompt().fill('保留的截图草稿 A');
   await closeAssistant(); await crop(1);
   const countBeforeContinue = calls.length;
   await quick().getByRole('button', { name: '继续到阅读助手', exact: true }).click();
@@ -288,7 +288,7 @@ try {
   for (let index = 0; index < 3; index++) { assert.equal((await state(index)).draft, `队列草稿 ${String.fromCharCode(65 + index)}`); assert.deepEqual((await state(index)).images.at(-1), calls.findLast(call => call.name === names[index]).images); }
   checks.push('Cross-file screenshot actions share the existing concurrency queue; accepted queued crops disappear immediately, queue-full rejection preserves crop/draft and permits retry, and each eventual request retains its own image and document.');
 
-  await select(0); await openAssistant(); await pane().getByRole('button', { name: '清空对话', exact: true }).click(); await prompt().fill('队列草稿 A');
+  await select(0); await openAssistant(); await pane().getByRole('button', { name: '新对话', exact: true }).click(); await prompt().fill('队列草稿 A');
   await closeAssistant(); await configure(''); await crop(2);
   const missingCount = calls.length;
   await quick().getByRole('button', { name: labels[2], exact: true }).click(); await dialog().waitFor();

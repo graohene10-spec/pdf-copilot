@@ -55,6 +55,13 @@
   /* 徽记：同一预设的两端色做成一块着色玻璃，前景固定白色。 */
   --brand-gradient: linear-gradient(145deg, var(--brand-a), var(--brand-b));
   --brand-ink: #ffffff;
+  /* 扁平徽记：两端色的中间色，一块纯色。 */
+  --brand-solid: color-mix(in srgb, var(--brand-a) 45%, var(--brand-b));
+  /* 文字较多的面板（阅读助手、菜单）：接近实底，任何底板图片上都看得清。 */
+  --panel-solid: color-mix(in srgb, var(--surface) calc(96% - var(--glass-transparency) * 10%), transparent);
+  /* 字体：界面与阅读正文可在设置中分别选择。 */
+  --font-ui: var(--font);
+  --font-reading: var(--font);
   /* 着色玻璃：主操作（发送、保存）以主色染透玻璃，前景固定为 accent-on。 */
   --accent-glass: color-mix(in srgb, var(--accent) 86%, transparent);
   --accent-glass-hover: color-mix(in srgb, var(--accent) 94%, transparent);

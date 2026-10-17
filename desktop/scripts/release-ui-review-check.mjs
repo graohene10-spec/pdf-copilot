@@ -14,7 +14,10 @@ const pane = () => page.locator('.ai-pane:not(.pane-leave-active)');
 const picker = () => pane().getByRole('button', { name: '选择模型与思考强度', exact: true });
 const menu = () => pane().getByRole('dialog', { name: '模型与思考强度', exact: true });
 async function settle() { await page.waitForTimeout(650); }
-async function closeMenu() { await page.keyboard.press('Escape'); await menu().waitFor({ state: 'detached' }); }
+// Esc steps back from the model list first, then closes the card.
+async function closeMenu() { for (let i = 0; i < 2 && await menu().count(); i++) await page.keyboard.press('Escape'); await menu().waitFor({ state: 'detached' }); }
+const modelList = () => menu().locator('.model-name').click();
+const effortSlider = () => menu().getByRole('slider', { name: '思考强度', exact: true });
 
 try {
   await mkdir(artifacts, { recursive: true });
@@ -58,15 +61,16 @@ try {
   await page.getByRole('button', { name: '阅读助手', exact: true }).click();
   await pane().getByRole('textbox', { name: '向 AI 提问', exact: true }).fill('保留用户草稿');
   const before = await page.evaluate(() => localStorage.getItem('paperdesk.ai.settings.v1'));
-  await picker().click();
-  await menu().getByRole('button', { name: '评审模型 6', exact: true }).waitFor();
-  assert.equal(await menu().locator('.menu-models button').count(), 9);
+  await picker().click(); await modelList();
+  await menu().getByRole('option', { name: '评审模型 6', exact: true }).waitFor();
+  assert.equal(await menu().getByRole('option').count(), 9);
   assert.deepEqual(await page.evaluate(() => window.__reviewDiscovery.calls), ['status', 'models']);
   assert.equal(await page.evaluate(() => localStorage.getItem('paperdesk.ai.settings.v1')), before);
   checks.push('Cold composer discovers every Codex model without opening settings or changing stored configuration.');
-  await menu().getByRole('button', { name: '评审模型 5', exact: true }).click();
-  assert.deepEqual(await menu().locator('.menu-efforts button').allTextContents(), ['默认', '低', '高']);
-  await menu().getByRole('button', { name: '低', exact: true }).click();
+  await menu().getByRole('option', { name: '评审模型 5', exact: true }).click();
+  assert.equal(await effortSlider().getAttribute('aria-valuemax'), '2', 'Efforts follow the model: default, low, high.');
+  await effortSlider().focus(); await effortSlider().press('Home'); await effortSlider().press('ArrowRight');
+  assert.equal(await effortSlider().getAttribute('aria-valuetext'), '低');
   const chosen = await page.evaluate(() => JSON.parse(localStorage.getItem('paperdesk.ai.settings.v1')));
   assert.deepEqual(chosen, { ...JSON.parse(before), model: 'review-5', effort: 'low' });
   assert.equal(await pane().getByRole('textbox', { name: '向 AI 提问', exact: true }).inputValue(), '保留用户草稿');
@@ -75,7 +79,7 @@ try {
   await closeMenu();
   checks.push('Model switch adapts supported efforts, writes only model/effort, retains the draft and uses the cached inventory.');
 
-  await pane().getByRole('button', { name: '更改', exact: true }).click();
+  await picker().click(); await menu().getByRole('button', { name: '服务商、密钥与预算', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: '设置', exact: true });
   await dialog.getByLabel('模型', { exact: true }).waitFor();
   await page.evaluate(() => window.__reviewDiscovery.models = [{ id: 'new-inventory', name: '新读取的模型', efforts: ['low', 'high'], defaultEffort: 'high', vision: true }]);
@@ -83,9 +87,9 @@ try {
   await dialog.getByRole('option', { name: '新读取的模型', exact: true }).waitFor({ state: 'attached' });
   await dialog.getByRole('button', { name: '取消', exact: true }).click();
   await dialog.waitFor({ state: 'detached' });
-  await picker().click();
-  await menu().getByRole('button', { name: '新读取的模型', exact: true }).waitFor();
-  assert.equal(await menu().getByRole('button', { name: '评审模型 6', exact: true }).count(), 0);
+  await picker().click(); await modelList();
+  await menu().getByRole('option', { name: '新读取的模型', exact: true }).waitFor();
+  assert.equal(await menu().getByRole('option', { name: '评审模型 6', exact: true }).count(), 0);
   assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('paperdesk.ai.settings.v1'))), chosen);
   await closeMenu();
   checks.push('Refreshing models in settings updates an already-cached composer menu even when settings are cancelled.');
@@ -94,8 +98,9 @@ try {
   await picker().click();
   await menu().getByText('模拟未登录', { exact: true }).waitFor();
   await page.evaluate(() => window.__reviewDiscovery.fail = false);
-  await menu().getByRole('button', { name: '重新读取模型', exact: true }).click();
-  await menu().getByRole('button', { name: '新读取的模型', exact: true }).waitFor();
+  await modelList();
+  await menu().getByRole('button', { name: '重新读取本机模型', exact: true }).click();
+  await menu().getByRole('option', { name: '新读取的模型', exact: true }).waitFor();
   await closeMenu();
   checks.push('Discovery failure is visible and retry recovers without changing the saved model.');
 

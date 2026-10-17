@@ -7,17 +7,19 @@ import FileTabs from './components/FileTabs.vue'
 import CaptureQuickPrompt from './components/CaptureQuickPrompt.vue'
 import { chatPhase, chatState, sendChat, closeChat, closeAllChats, configureRequests, stopChat } from './ai/workspace'
 import { forgetPassword, forgetAllPasswords } from './document/passwords.mjs'
-import { useSettings, matchShortcut, matchWheelShortcut, shortcutFromEvent, shortcutLabel } from './settings'
+import { useSettings, matchShortcut, matchWheelShortcut, shortcutFromEvent, shortcutLabel, UI_FONTS, READING_FONTS } from './settings'
 import { retainReaderEntries } from './reader/cache-policy.mjs'
 import { installGlassContrast } from './ui/glass-contrast'
 import { floatLeavingPanel, restoreLeavingPanel } from './ui/panel-transition'
 import { useFullscreen } from './ui/fullscreen'
 import { vLiquidSelection } from './ui/liquid-selection'
+import { useReorder } from './ui/reorder'
 const PdfReader = defineAsyncComponent(() => import('./components/PdfReader.vue'))
 const MarkdownReader = defineAsyncComponent(() => import('./components/MarkdownReader.vue'))
 const AiPane = defineAsyncComponent(() => import('./components/AiPane.vue'))
 const SettingsDialog = defineAsyncComponent(() => import('./components/SettingsDialog.vue'))
 const SplitPicker = defineAsyncComponent(() => import('./components/SplitPicker.vue'))
+const ContextMenu = defineAsyncComponent(() => import('./components/ContextMenu.vue'))
 const { preferences, effectiveAppearance, load: loadPreferences, save: savePreferences } = useSettings()
 
 const documents = ref<Doc[]>([])
@@ -27,15 +29,41 @@ type OpenTab = { doc: Doc; view?: any; selection?: DocumentSelection }
 const tabs = ref<OpenTab[]>([])
 const active = ref<Doc | null>(null)
 const currentTab = computed(() => tabs.value.find(tab => tab.doc.id === active.value?.id))
-const fileTabs = computed(() => tabs.value.map(tab => ({ id: tab.doc.id, name: tab.doc.name, kind: tab.doc.kind, phase: chatPhase(tab.doc.id), beside: splitIds.value.length > 1 && splitIds.value.includes(tab.doc.id) })))
-/* 并排阅读：splitIds 为并排显示的文件（含当前焦点），少于两份即为单栏。焦点栏就是 active。 */
+const fileTabs = computed(() => tabs.value.map(tab => ({ id: tab.doc.id, name: tab.doc.name, kind: tab.doc.kind, phase: chatPhase(tab.doc.id) })))
+/* 工作区布局
+   - group：一组并排阅读的文档（至少两份，按显示顺序）。去文档库再回来，这一组仍在；
+     点组内任一标签就整组显示，点组外标签单独显示那一份。
+   - aiPanels：阅读助手窗口，可以开多个。doc 为空的跟随焦点文档，否则固定在某份文档上。
+   - order：工作区里所有窗口（文档栏与助手）的左右顺序，用户拖动调整。 */
 const MAX_PANES = 3
-const splitIds = ref<string[]>([])
-const paneIds = computed(() => splitIds.value.length > 1 ? splitIds.value : active.value ? [active.value.id] : [])
+const MAX_AI_PANELS = 3
+type AiPanel = { key: string; doc: string | null; conversation?: string; width: number }
+const group = ref<string[]>([])
+const aiPanels = ref<AiPanel[]>([])
+const order = ref<string[]>([])
+function inGroup(id?: string | null) { return !!id && group.value.length > 1 && group.value.includes(id) }
+const paneIds = computed(() => !active.value ? [] : inGroup(active.value.id) ? group.value : [active.value.id])
 const splitView = computed(() => paneIds.value.length > 1)
-function paneVisible(id: string) { return splitIds.value.length > 1 ? splitIds.value.includes(id) : active.value?.id === id }
+function paneVisible(id: string) { return paneIds.value.includes(id) }
 function visibleReaders() { return paneIds.value.map(id => readerInstances.get(id)).filter(Boolean) }
 function pdfOnScreen() { return paneIds.value.some(id => tabs.value.find(tab => tab.doc.id === id)?.doc.kind === 'pdf') }
+const visibleAi = computed(() => !active.value ? [] : aiPanels.value.filter(panel => !panel.doc || paneVisible(panel.doc)))
+const aiOpen = computed(() => visibleAi.value.length > 0)
+function aiDocument(panel: AiPanel) { const doc = tabDoc(panel.doc || active.value?.id || ''); return doc ? { id: doc.id, title: doc.name, kind: doc.kind } : null }
+function aiContext(panel: AiPanel) {
+  const id = panel.doc || active.value?.id
+  const tab = tabs.value.find(tab => tab.doc.id === id)
+  return { page: tab?.doc.page || 1, selection: id === active.value?.id ? selection.value : tab?.selection }
+}
+/** Display order of the visible windows; new ones join on the right. */
+const panels = computed(() => {
+  const keys = [...paneIds.value.map(id => `doc:${id}`), ...visibleAi.value.map(panel => panel.key)]
+  const ordered = order.value.filter(key => keys.includes(key))
+  for (const key of keys) if (!ordered.includes(key)) ordered.push(key)
+  return ordered
+})
+const multiPanel = computed(() => panels.value.length > 1)
+function panelOrder(key: string) { return Math.max(0, panels.value.indexOf(key)) }
 const splitPicker = ref<{ left: number; top: number; right: number; bottom: number }>()
 const enteringPane = ref<string>()
 let enteringTimer: ReturnType<typeof setTimeout> | undefined
@@ -45,6 +73,15 @@ const splitCandidates = computed(() => {
   const library = [...documents.value].filter(doc => !shown.has(doc.id) && !tabs.value.some(tab => tab.doc.id === doc.id)).sort((a, b) => (b.lastOpenedAt || b.addedAt) - (a.lastOpenedAt || a.addedAt)).map(doc => ({ id: doc.id, name: doc.name, kind: doc.kind, open: false }))
   return [...open, ...library]
 })
+// Tabs of the group sit next to each other in display order, so the strip can frame them.
+watch(group, value => {
+  if (value.length < 2) return
+  const members = value.map(id => tabs.value.find(tab => tab.doc.id === id)).filter(Boolean) as OpenTab[]
+  const first = tabs.value.findIndex(tab => value.includes(tab.doc.id))
+  const rest = tabs.value.filter(tab => !value.includes(tab.doc.id))
+  const next = [...rest.slice(0, first), ...members, ...rest.slice(first)]
+  if (next.some((tab, index) => tab !== tabs.value[index])) tabs.value = next
+}, { flush: 'sync' })
 /* 阅读位置胶囊：翻页或保存后展开约两秒，随后收成一颗进度环。 */
 const pillAwake = reactive<Record<string, boolean>>({})
 const pillSaved = reactive<Record<string, boolean>>({})
@@ -70,8 +107,6 @@ let captureQuickMutation: MutationObserver | undefined
 const captureQuickBusy = computed(() => Boolean(captureQuick.value && (captureQuick.value.pending || chatState(captureQuick.value.documentId).request)))
 const captureQuickStatus = computed(() => captureQuick.value?.status || (captureQuick.value && chatState(captureQuick.value.documentId).request ? '这份文档已有问题正在处理，可点继续查看。' : ''))
 const reader = ref<any>()
-const assistant = ref<any>()
-let focusAssistantPending = false
 const settingsOpen = ref(false)
 const settingsTab = ref<'appearance' | 'reading' | 'shortcuts' | 'ai'>('appearance')
 const fitRequest = ref(0)
@@ -83,7 +118,6 @@ const loading = ref(true)
 const importing = ref(false)
 const draggingFiles = ref(false)
 const opening = ref(false)
-const aiOpen = ref(false)
 const sidebarOpen = ref(true)
 const detailsOpen = ref(false)
 const removeTarget = ref<Doc | null>(null)
@@ -105,16 +139,43 @@ const indexTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
 const tags = computed(() => [...new Set(documents.value.flatMap(doc => doc.tags))].sort())
 const starredCount = computed(() => documents.value.filter(doc => doc.starred).length)
+// 文档库排列：默认按最近阅读；用户拖动过后按自己排好的位置固定，新加入的文档排在最前。
+const LIBRARY_ORDER_KEY = 'library.order.v1'
+const libraryOrder = ref<string[]>([])
+const byRecent = (a: Doc, b: Doc) => (b.lastOpenedAt || b.addedAt) - (a.lastOpenedAt || a.addedAt)
+function arranged(list: Doc[]) {
+  if (!libraryOrder.value.length || category.value === 'recent') return list.sort(byRecent)
+  const rank = new Map(libraryOrder.value.map((id, index) => [id, index]))
+  return list.sort((a, b) => (rank.get(a.id) ?? -1) - (rank.get(b.id) ?? -1) || byRecent(a, b))
+}
 const visibleDocuments = computed(() => {
   let list = [...documents.value]
   if (category.value === 'starred') list = list.filter(doc => doc.starred)
   if (category.value === 'recent') list = list.filter(doc => doc.lastOpenedAt)
   if (tagFilter.value) list = list.filter(doc => doc.tags.includes(tagFilter.value))
-  return list.sort((a, b) => (b.lastOpenedAt || b.addedAt) - (a.lastOpenedAt || a.addedAt))
+  return arranged(list)
+})
+const canArrange = computed(() => !query.value && category.value !== 'recent' && visibleDocuments.value.length > 1)
+const collection = ref<HTMLElement>()
+function arrangeLibrary(visible: string[]) {
+  // 只在筛选结果内调整顺序：被筛掉的文档保持原来的位置。
+  const shown = new Set(visible)
+  let index = 0
+  libraryOrder.value = arranged([...documents.value]).map(doc => shown.has(doc.id) ? visible[index++] : doc.id)
+}
+function saveLibraryOrder() { void library.setSetting(LIBRARY_ORDER_KEY, JSON.stringify(libraryOrder.value)).catch(error => notify(reason(error))) }
+async function loadLibraryOrder() {
+  try { const parsed = JSON.parse(await library.getSetting(LIBRARY_ORDER_KEY) || '[]'); if (Array.isArray(parsed)) libraryOrder.value = parsed.filter(id => typeof id === 'string') } catch { /* 没有保存过顺序 */ }
+}
+function resetLibraryOrder() { libraryOrder.value = []; void library.setSetting(LIBRARY_ORDER_KEY, '[]').catch(() => {}) }
+const reorderLibrary = useReorder({
+  container: () => collection.value,
+  ids: () => visibleDocuments.value.map(doc => doc.id),
+  apply: arrangeLibrary,
+  commit: saveLibraryOrder,
+  enabled: () => canArrange.value,
 })
 const currentTitle = computed(() => tagFilter.value || (category.value === 'starred' ? '我的收藏' : category.value === 'recent' ? '最近阅读' : '文档库'))
-const aiDocument = computed(() => active.value ? { id: active.value.id, title: active.value.name, kind: active.value.kind } : null)
-const aiContext = computed(() => ({ page: active.value?.page || 1, selection: selection.value }))
 const totalPages = computed(() => documents.value.filter(doc => doc.kind === 'pdf' && doc.lastOpenedAt).reduce((sum, doc) => sum + (doc.pageCount || 0), 0))
 
 function notify(message: string) { toast.value = message; clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.value = '', 4800) }
@@ -237,18 +298,25 @@ function cacheReader(doc: Doc, bytes: Uint8Array, view: any) {
 }
 async function openDocument(doc: Doc, reload = false) {
   if (active.value?.id === doc.id && !reload) return
-  // 并排时：已在屏幕上的文件只切换焦点；其他文件替换焦点所在的一栏。
-  if (!reload && splitIds.value.length > 1) {
-    if (splitIds.value.includes(doc.id)) { focusPane(doc.id); return }
-    const previous = active.value?.id
-    splitIds.value = splitIds.value.map(id => id === previous ? doc.id : id)
-  }
+  // 同一组里已经在屏幕上的文档：只移交焦点。
+  if (!reload && inGroup(active.value?.id) && inGroup(doc.id) && readerCache.value.some(entry => entry.id === doc.id)) { focusPane(doc.id); return }
   return showDocument(doc, reload)
+}
+/** Suspend readers that are about to leave the screen while their DOM can still report a scroll position. */
+function suspendLeaving(next: string[]) {
+  for (const id of paneIds.value) {
+    if (id === active.value?.id || next.includes(id)) continue
+    const tab = tabs.value.find(tab => tab.doc.id === id), instance = readerInstances.get(id)
+    if (tab) tab.view = instance?.getViewState?.() || tab.view
+    instance?.suspend?.()
+  }
 }
 async function showDocument(doc: Doc, reload = false) {
   const previous = active.value?.id
-  // 只有仍留在并排中的上一栏才保持渲染；否则先挂起，趁它还在页面上记下阅读位置。
-  if (previous && previous !== doc.id && splitIds.value.length > 1 && splitIds.value.includes(previous)) leaveFocus()
+  const nextVisible = inGroup(doc.id) ? group.value : [doc.id]
+  suspendLeaving(nextVisible)
+  // 上一份文档仍留在屏幕上（同组）时只交出焦点，否则先挂起，趁它还在页面上记下阅读位置。
+  if (previous && previous !== doc.id && nextVisible.includes(previous)) leaveFocus()
   else pauseReader()
   const epoch = ++openEpoch
   void flushProgress()
@@ -273,11 +341,25 @@ async function showDocument(doc: Doc, reload = false) {
       if (instance.isSuspended?.() === false) opening.value = false
       void instance.resume?.()
     }
+    void loadGroupReaders(epoch)
     // Reading must not wait for a database write or an older position save.
     void writeReadingUpdate(doc.id, { lastOpenedAt: Date.now() }, '阅读记录更新失败')
   } catch (error) { if (epoch === openEpoch) { notify(`无法打开文档：${reason(error)}`); closeTab(doc.id) } }
 }
-function closeReader() { pauseReader(); ++openEpoch; void flushProgress(); splitIds.value = []; splitPicker.value = undefined; active.value = null; readerCache.value = []; readerInstances.clear(); opening.value = false; selection.value = undefined; detailsOpen.value = false; void refresh() }
+/** Bring the other visible documents of the group back on screen (after the library, a restart of the view…). */
+async function loadGroupReaders(epoch: number) {
+  for (const id of paneIds.value) {
+    if (readerCache.value.some(entry => entry.id === id)) continue
+    const tab = tabs.value.find(tab => tab.doc.id === id)
+    if (!tab) continue
+    try {
+      const bytes = await readDocument(id)
+      if (epoch !== openEpoch || !paneVisible(id) || readerCache.value.some(entry => entry.id === id) || !active.value) return
+      retainReaders([...readerCache.value, cacheReader(tab.doc, bytes, tab.view)], active.value.id)
+    } catch (error) { notify(`无法打开 ${tab.doc.name}：${reason(error)}`); removeFromGroup(id) }
+  }
+}
+function closeReader() { suspendLeaving([]); pauseReader(); ++openEpoch; void flushProgress(); splitPicker.value = undefined; active.value = null; readerCache.value = []; readerInstances.clear(); opening.value = false; selection.value = undefined; detailsOpen.value = false; void refresh() }
 function focusPane(id: string) {
   if (active.value?.id === id || !paneVisible(id)) return
   const tab = tabs.value.find(tab => tab.doc.id === id)
@@ -291,29 +373,50 @@ function focusPane(id: string) {
 function pointerFocusPane(event: PointerEvent, id: string) {
   if (event.button === 0 || event.button === 1 || event.pointerType === 'touch') focusPane(id)
 }
-async function openBeside(id: string) {
-  splitPicker.value = undefined
+/** Put a document beside another one in the group (right of the anchor by default). */
+async function openBeside(id: string, side: 'left' | 'right' = 'right', anchor?: string) {
+  splitPicker.value = undefined; contextMenu.value = undefined
   const doc = tabDoc(id) || documents.value.find(item => item.id === id)
   if (!doc || !active.value) return
-  if (paneVisible(doc.id)) { focusPane(doc.id); return }
-  const base = paneIds.value
-  if (base.length >= MAX_PANES) { notify(`最多同时并排 ${MAX_PANES} 份文档。`); return }
+  if (inGroup(active.value.id) && inGroup(id)) { focusPane(id); return }
+  const base = inGroup(active.value.id) ? [...group.value] : [active.value.id]
+  if (base.includes(id)) return
+  if (base.length >= MAX_PANES) { notify(`一组最多并排 ${MAX_PANES} 份文档。`); return }
+  const pivot = anchor && base.includes(anchor) ? anchor : active.value.id
+  const at = base.indexOf(pivot) + (side === 'right' ? 1 : 0)
+  base.splice(at, 0, id)
   if (!tabs.value.some(tab => tab.doc.id === doc.id)) tabs.value.push({ doc })
-  splitIds.value = [...base, doc.id]
-  enteringPane.value = doc.id; clearTimeout(enteringTimer); enteringTimer = setTimeout(() => { enteringPane.value = undefined }, 600)
+  // The new window takes its place beside its anchor in the visible order too.
+  const keys = panels.value.filter(key => key !== `doc:${id}`)
+  const anchorIndex = keys.indexOf(`doc:${pivot}`)
+  keys.splice(anchorIndex < 0 ? keys.length : anchorIndex + (side === 'right' ? 1 : 0), 0, `doc:${id}`)
+  order.value = keys
+  group.value = base
+  enteringPane.value = id; clearTimeout(enteringTimer); enteringTimer = setTimeout(() => { enteringPane.value = undefined }, 600)
   // 新栏出现时其余阅读器的宽度变化，交给各自的 ResizeObserver 重新适应。
-  await showDocument(tabDoc(doc.id) || doc)
+  await showDocument(tabDoc(id) || doc)
 }
-function closePane(id: string) {
-  if (splitIds.value.length < 2 || !splitIds.value.includes(id)) return
-  const index = splitIds.value.indexOf(id)
-  const rest = splitIds.value.filter(item => item !== id)
-  if (active.value?.id === id) focusPane(rest[Math.min(index, rest.length - 1)])
-  // 在移出页面之前挂起，阅读器才能记下这一栏的滚动位置。
-  const tab = tabs.value.find(tab => tab.doc.id === id), instance = readerInstances.get(id)
-  if (tab) tab.view = instance?.getViewState?.() || tab.view
-  instance?.suspend?.()
-  splitIds.value = rest.length > 1 ? rest : []
+function removeFromGroup(id: string) {
+  if (!inGroup(id)) return
+  contextMenu.value = undefined
+  const index = group.value.indexOf(id)
+  const rest = group.value.filter(item => item !== id)
+  const shown = paneVisible(id)
+  if (shown && active.value?.id === id) focusPane(rest[Math.min(index, rest.length - 1)])
+  if (shown) {
+    // 在移出页面之前挂起，阅读器才能记下这一栏的滚动位置。
+    const tab = tabs.value.find(tab => tab.doc.id === id), instance = readerInstances.get(id)
+    if (tab) tab.view = instance?.getViewState?.() || tab.view
+    instance?.suspend?.()
+  }
+  group.value = rest.length > 1 ? rest : []
+}
+const closePane = removeFromGroup
+function ungroup() {
+  contextMenu.value = undefined
+  if (!active.value || !inGroup(active.value.id)) { group.value = []; return }
+  suspendLeaving([active.value.id])
+  group.value = []
 }
 function toggleSplitPicker(event?: Event) {
   if (splitPicker.value || !active.value) { splitPicker.value = undefined; return }
@@ -325,10 +428,12 @@ function selectTab(id: string) { const tab = tabs.value.find(tab => tab.doc.id =
 function closeTab(id: string) {
   const index = tabs.value.findIndex(tab => tab.doc.id === id)
   if (index < 0) return
+  contextMenu.value = undefined
   const selected = active.value?.id === id
-  const paneIndex = splitIds.value.length > 1 ? splitIds.value.indexOf(id) : -1
-  const rest = paneIndex >= 0 ? splitIds.value.filter(item => item !== id) : []
-  if (paneIndex >= 0) splitIds.value = rest.length > 1 ? rest : []
+  const paneIndex = inGroup(id) && paneVisible(id) ? group.value.indexOf(id) : -1
+  const rest = paneIndex >= 0 ? group.value.filter(item => item !== id) : []
+  if (inGroup(id)) group.value = group.value.length > 2 ? group.value.filter(item => item !== id) : []
+  aiPanels.value = aiPanels.value.filter(panel => panel.doc !== id)
   if (selected) { pauseReader(); ++openEpoch; void flushProgress(); active.value = null; selection.value = undefined; detailsOpen.value = false; opening.value = false }
   evictReader(id)
   closeChat(id); forgetPassword(id); tabs.value.splice(index, 1)
@@ -337,14 +442,193 @@ function closeTab(id: string) {
   else if (selected && tabs.value.length) selectTab(tabs.value[Math.min(index, tabs.value.length - 1)].doc.id)
   else if (selected) closeReader()
 }
+function closeOtherTabs(id: string) { for (const tab of [...tabs.value]) if (tab.doc.id !== id) closeTab(tab.doc.id) }
 function moveTab(direction: number) {
   if (!tabs.value.length) return
   const index = tabs.value.findIndex(tab => tab.doc.id === active.value?.id)
   selectTab(tabs.value[(index + direction + tabs.value.length) % tabs.value.length].doc.id)
 }
-function openAssistant(focus = false) {
-  aiOpen.value = true; focusAssistantPending = focus
-  void nextTick(() => { if (focusAssistantPending && assistant.value) { assistant.value.focusPrompt?.(); focusAssistantPending = false } })
+// ---- Assistant windows ------------------------------------------------------
+const aiInstances = new Map<string, any>()
+let focusAssistantPending: string | undefined
+function bindAi(key: string, value: any) {
+  if (value) aiInstances.set(key, value); else aiInstances.delete(key)
+  if (value && focusAssistantPending === key) { value.focusPrompt?.(); focusAssistantPending = undefined }
+}
+/** The assistant window showing the focused document (a following one first). */
+function focusedAssistant() {
+  const id = active.value?.id
+  const panel = visibleAi.value.find(panel => !panel.doc) || visibleAi.value.find(panel => panel.doc === id)
+  return panel ? aiInstances.get(panel.key) : undefined
+}
+function assistantFor(element: EventTarget | null) {
+  const key = element instanceof Element ? element.closest<HTMLElement>('[data-panel-key^="ai:"]')?.dataset.panelKey : undefined
+  return key ? aiInstances.get(key) : focusedAssistant()
+}
+function openAssistant(focus = false, pinned: string | null = null) {
+  if (!active.value) return
+  let panel = pinned ? visibleAi.value.find(item => item.doc === pinned) : visibleAi.value.find(item => !item.doc) || visibleAi.value.find(item => item.doc === active.value?.id)
+  if (!panel) {
+    if (aiPanels.value.length >= MAX_AI_PANELS) { notify(`最多同时打开 ${MAX_AI_PANELS} 个阅读助手。`); return }
+    panel = { key: `ai:${crypto.randomUUID()}`, doc: pinned, width: Math.min(420, Math.max(320, Math.round(window.innerWidth * .27))) }
+    aiPanels.value = [...aiPanels.value, panel]
+  }
+  if (focus) {
+    const instance = aiInstances.get(panel.key)
+    if (instance) void nextTick(() => instance.focusPrompt?.())
+    else focusAssistantPending = panel.key
+  }
+}
+function closeAiPanel(key: string) { aiPanels.value = aiPanels.value.filter(panel => panel.key !== key); aiInstances.delete(key) }
+function toggleAssistant() {
+  const id = active.value?.id
+  const panel = visibleAi.value.find(item => !item.doc) || visibleAi.value.find(item => item.doc === id)
+  if (panel) closeAiPanel(panel.key)
+  else openAssistant(true)
+}
+function setPanelConversation(key: string, id: string) { const panel = aiPanels.value.find(item => item.key === key); if (panel) panel.conversation = id }
+// ---- Resizing assistant windows -------------------------------------------
+let widthDrag: { key: string; x: number; width: number; side: number } | undefined
+function startWidthDrag(event: PointerEvent, key: string) {
+  const panel = aiPanels.value.find(item => item.key === key)
+  if (!panel) return
+  const element = (event.currentTarget as HTMLElement).closest<HTMLElement>('[data-panel-key]')
+  const bounds = element?.getBoundingClientRect()
+  // The handle on the left edge grows leftwards; on the right edge it grows rightwards.
+  const side = (event.currentTarget as HTMLElement).dataset.edge === 'right' ? 1 : -1
+  widthDrag = { key, x: event.clientX, width: bounds?.width || panel.width, side }
+  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+  document.documentElement.classList.add('resizing-panels')
+}
+function moveWidthDrag(event: PointerEvent) {
+  if (!widthDrag) return
+  const panel = aiPanels.value.find(item => item.key === widthDrag!.key)
+  if (panel) panel.width = Math.round(Math.min(Math.max(300, window.innerWidth * .6), Math.max(300, widthDrag.width + (event.clientX - widthDrag.x) * widthDrag.side)))
+}
+function endWidthDrag() { if (!widthDrag) return; widthDrag = undefined; document.documentElement.classList.remove('resizing-panels') }
+// ---- Dragging windows to rearrange (lift, others slide aside) ---------------
+let panelDrag: { key: string; element: HTMLElement; grab: number; startX: number; startY: number; moved: boolean; pointer: number } | undefined
+const draggingPanel = ref<string>()
+function startPanelDrag(event: PointerEvent, key: string) {
+  if (event.button !== 0 || !multiPanel.value) return
+  const element = document.querySelector<HTMLElement>(`[data-panel-key="${CSS.escape(key)}"]`)
+  if (!element) return
+  panelDrag = { key, element, grab: event.clientX - element.getBoundingClientRect().left, startX: event.clientX, startY: event.clientY, moved: false, pointer: event.pointerId }
+  window.addEventListener('pointermove', movePanelDrag)
+  window.addEventListener('pointerup', endPanelDrag)
+  window.addEventListener('pointercancel', endPanelDrag)
+}
+function panelElements() { return panels.value.map(key => document.querySelector<HTMLElement>(`[data-panel-key="${CSS.escape(key)}"]`)).filter(Boolean) as HTMLElement[] }
+function movePanelDrag(event: PointerEvent) {
+  const drag = panelDrag
+  if (!drag || event.pointerId !== drag.pointer) return
+  if (!drag.moved) {
+    if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 6) return
+    drag.moved = true; draggingPanel.value = drag.key
+    document.documentElement.classList.add('dragging-panels')
+  }
+  const container = drag.element.parentElement!.getBoundingClientRect()
+  const natural = container.left + drag.element.offsetLeft
+  const left = event.clientX - drag.grab
+  drag.element.style.transform = `translate(${left - natural}px, ${Math.max(-10, Math.min(10, (event.clientY - drag.startY) * .15))}px) scale(1.015)`
+  // Swap with a neighbour once the dragged window's centre crosses that neighbour's centre.
+  const centre = left + drag.element.offsetWidth / 2
+  const keys = panels.value
+  const others = panelElements().filter(element => element !== drag.element)
+  let index = 0
+  for (const other of others) if (centre > container.left + other.offsetLeft + other.offsetWidth / 2) index++
+  const without = keys.filter(key => key !== drag.key)
+  const next = [...without.slice(0, index), drag.key, ...without.slice(index)]
+  if (next.join() === keys.join()) return
+  const before = new Map(others.map(element => [element, element.getBoundingClientRect().left]))
+  applyPanelOrder(next)
+  void nextTick(() => {
+    for (const [element, left] of before) {
+      const delta = left - element.getBoundingClientRect().left
+      if (Math.abs(delta) < 1) continue
+      element.animate([{ transform: `translateX(${delta}px)` }, { transform: 'none' }], { duration: 420, easing: getComputedStyle(document.documentElement).getPropertyValue('--spring-snappy').trim() || 'ease-out' })
+    }
+    const natural = drag.element.parentElement!.getBoundingClientRect().left + drag.element.offsetLeft
+    drag.element.style.transform = `translate(${event.clientX - drag.grab - natural}px, 0) scale(1.015)`
+  })
+}
+function applyPanelOrder(next: string[]) {
+  order.value = next
+  // Document windows of a group follow the same left-to-right order.
+  const docs = next.filter(key => key.startsWith('doc:')).map(key => key.slice(4))
+  if (group.value.length > 1 && docs.length > 1 && docs.every(id => group.value.includes(id))) group.value = [...docs, ...group.value.filter(id => !docs.includes(id))]
+}
+function endPanelDrag() {
+  const drag = panelDrag
+  panelDrag = undefined
+  window.removeEventListener('pointermove', movePanelDrag)
+  window.removeEventListener('pointerup', endPanelDrag)
+  window.removeEventListener('pointercancel', endPanelDrag)
+  if (!drag?.moved) return
+  const from = drag.element.style.transform
+  drag.element.style.transform = ''
+  drag.element.animate([{ transform: from }, { transform: 'none' }], { duration: 460, easing: getComputedStyle(document.documentElement).getPropertyValue('--spring-bouncy').trim() || 'ease-out' })
+  draggingPanel.value = undefined
+  document.documentElement.classList.remove('dragging-panels')
+}
+// ---- Tab context menu -------------------------------------------------------
+type MenuItem = { label: string; icon?: string; action: () => void; danger?: boolean; disabled?: boolean; separator?: boolean; hint?: string }
+const contextMenu = ref<{ x: number; y: number; items: MenuItem[] }>()
+function tabMenu(payload: { id: string; x: number; y: number }) {
+  const tab = tabs.value.find(item => item.doc.id === payload.id)
+  if (!tab) return
+  const id = payload.id, onScreen = paneVisible(id), grouped = inGroup(id)
+  const items: MenuItem[] = []
+  if (active.value && !onScreen) {
+    const full = (inGroup(active.value.id) ? group.value.length : 1) >= MAX_PANES
+    items.push({ label: '在右侧并排打开', icon: 'split-add', action: () => openBeside(id, 'right'), disabled: full, hint: full ? `最多 ${MAX_PANES} 份` : undefined })
+    items.push({ label: '在左侧并排打开', icon: 'split', action: () => openBeside(id, 'left'), disabled: full })
+  }
+  if (grouped) items.push({ label: '移出并排', icon: 'close', action: () => removeFromGroup(id) })
+  if (group.value.length > 1) items.push({ label: '取消整组并排', icon: 'panel', action: ungroup })
+  items.push({ label: '为这份文档开一个助手窗口', icon: 'sparkle', separator: items.length > 0, action: () => { contextMenu.value = undefined; if (!paneVisible(id)) selectTab(id); void nextTick(() => openAssistant(true, id)) } })
+  items.push({ label: '关闭标签', icon: 'close', separator: true, action: () => closeTab(id) })
+  if (tabs.value.length > 1) items.push({ label: '关闭其他标签', action: () => closeOtherTabs(id) })
+  contextMenu.value = { x: payload.x, y: payload.y, items }
+}
+// ---- Dragging a tab: reorder the strip, or drop beside a window ---------------
+const tabDrop = ref<{ id: string; target: string; side: 'left' | 'right'; left: number; top: number; width: number; height: number }>()
+function tabDrag(payload: { id: string; x: number; y: number; phase: 'move' | 'end' | 'cancel' }) {
+  if (payload.phase !== 'move') {
+    const drop = tabDrop.value
+    tabDrop.value = undefined
+    if (payload.phase === 'end' && drop) {
+      if (paneVisible(drop.id) && inGroup(drop.id)) {
+        // Move a window of the group to the other side of the target.
+        const keys = panels.value.filter(key => key !== `doc:${drop.id}`)
+        const at = keys.indexOf(`doc:${drop.target}`) + (drop.side === 'right' ? 1 : 0)
+        applyPanelOrder([...keys.slice(0, at), `doc:${drop.id}`, ...keys.slice(at)])
+      } else void openBeside(drop.id, drop.side, drop.target)
+    }
+    return
+  }
+  const element = document.elementFromPoint(payload.x, payload.y)?.closest<HTMLElement>('.reader-pane[data-pane-id]')
+  const target = element?.dataset.paneId
+  if (!element || !target || target === payload.id) { tabDrop.value = undefined; return }
+  const bounds = element.getBoundingClientRect()
+  const side = payload.x < bounds.left + bounds.width / 2 ? 'left' : 'right'
+  tabDrop.value = { id: payload.id, target, side, left: side === 'left' ? bounds.left : bounds.left + bounds.width / 2, top: bounds.top, width: bounds.width / 2, height: bounds.height }
+}
+function reorderTabs(payload: { from: string; to: string; after: boolean }) {
+  const list = [...tabs.value]
+  const moving = list.find(tab => tab.doc.id === payload.from)
+  if (!moving || payload.from === payload.to) return
+  const rest = list.filter(tab => tab !== moving)
+  const at = rest.findIndex(tab => tab.doc.id === payload.to) + (payload.after ? 1 : 0)
+  rest.splice(at, 0, moving)
+  tabs.value = rest
+  // Within a visible group the windows follow the new tab order.
+  if (inGroup(payload.from) && inGroup(payload.to)) {
+    const docs = rest.map(tab => tab.doc.id).filter(id => group.value.includes(id))
+    const queue = docs.map(id => `doc:${id}`)
+    order.value = panels.value.map(key => key.startsWith('doc:') ? queue.shift() || key : key)
+    group.value = docs
+  }
 }
 function selectedContext(value: typeof selection.value) {
   dismissCaptureQuick()
@@ -414,10 +698,8 @@ async function askCaptureQuick(question: string) {
   const doc = { id: current.documentId, title: active.value.name, kind: active.value.kind }
   const context = { page: current.selection.page, selection: current.selection }
   current.pending = true; current.status = '准备提问…'; captureQuick.value = { ...current }
-  // sendChat takes its selection snapshot before its first await. Force the
-  // selected screenshot for this request without changing the user's choice.
-  const includeSelection = state.includeSelection
-  state.includeSelection = true
+  // A quick question is about the framed region only: it sends the screenshot,
+  // without the page context, document search or earlier references.
   let accepted = false
   const sending = sendChat(doc, context, () => {
     if (active.value?.id === doc.id && toRaw(selection.value) === toRaw(context.selection)) openSettings('ai')
@@ -429,8 +711,7 @@ async function askCaptureQuick(question: string) {
     }
     consumeSelection({ documentId: doc.id, selection: context.selection })
     if (active.value?.id === doc.id) openAssistant()
-  }, question)
-  state.includeSelection = includeSelection
+  }, question, { includeSelection: true, includeDocument: false })
   if (captureQuick.value?.documentId === current.documentId) captureQuick.value.ownedRequest = state.request
   try { await sending }
   finally {
@@ -501,6 +782,12 @@ function applyTheme() {
   root.style.setProperty('--glass-transparency', String(appearance.glassTransparency / 100))
   root.dataset.background = appearance.background ? 'custom' : 'default'
   root.dataset.backdrop = appearance.backdrop
+  // Fonts: the interface font replaces the base stack; the reading font defaults to it.
+  const uiFont = UI_FONTS.find(item => item.id === appearance.uiFont)
+  const readingFont = READING_FONTS.find(item => item.id === appearance.readingFont)
+  if (uiFont && uiFont.id !== 'system') { root.style.setProperty('--font', uiFont.stack); root.style.setProperty('--font-display', uiFont.stack) }
+  else { root.style.removeProperty('--font'); root.style.removeProperty('--font-display') }
+  if (readingFont?.stack) root.style.setProperty('--font-reading', readingFont.stack); else root.style.removeProperty('--font-reading')
   const background = appearance.background?.dataUrl
   if (background !== appliedBackground) {
     // The settings model accepts only bounded, locally encoded raster data URLs.
@@ -548,11 +835,14 @@ let fitAfterPanelResize = false
 watch([sidebarOpen, aiOpen, detailsOpen], () => {
   if (pdfOnScreen() && !window.matchMedia('(max-width: 720px)').matches) for (const instance of visibleReaders()) instance.holdPanelResize?.(true)
 }, { flush: 'sync' })
+// Windows inside the workspace: only assistant windows change the documents' width when they come and go.
+function panelResizeStart(element: Element, entering: boolean) { if (element.classList.contains('ai-panel')) paneResizeStart(element, entering) }
+function panelResizeEnd(element: Element, cancelled = false) { if (resizingPanels.has(element)) paneResizeEnd(element, cancelled) }
 function paneResizeStart(element: Element, entering: boolean) {
   resizingPanels.set(element, entering)
   if (pdfOnScreen() && !window.matchMedia('(max-width: 720px)').matches) for (const instance of visibleReaders()) instance.holdPanelResize?.(true, entering)
   if (entering) restoreLeavingPanel(element)
-  else floatLeavingPanel(element, element.classList.contains('app-sidebar') ? 'left' : 'right')
+  else floatLeavingPanel(element, element.classList.contains('app-sidebar') || element.classList.contains('ai-panel') ? 'left' : 'right')
 }
 function paneResizeEnd(element: Element, cancelled = false) {
   restoreLeavingPanel(element)
@@ -568,7 +858,7 @@ function paneResizeEnd(element: Element, cancelled = false) {
   }
 }
 function openSettings(tab: typeof settingsTab.value = 'appearance') { settingsTab.value = tab; settingsOpen.value = true }
-function aiSettingsSaved(value: any) { configureRequests(value); assistant.value?.applySettings?.(value) }
+function aiSettingsSaved(value: any) { configureRequests(value); for (const instance of aiInstances.values()) instance.applySettings?.(value) }
 function shortcut(action: keyof typeof preferences.value.shortcuts) { return shortcutLabel(preferences.value.shortcuts[action]) }
 // Bound shortcuts only, for the hover tooltips (data-tip-key); disabled ones show no key.
 const tipKeys = computed<Record<string, string>>(() => Object.fromEntries(Object.entries(preferences.value.shortcuts).filter(([, value]) => value).map(([action, value]) => [action, shortcutLabel(value)])))
@@ -585,9 +875,7 @@ watch(search, value => {
 })
 watch(settingsOpen, value => { if (!value && captureQuick.value) monitorCaptureQuick() })
 watch(() => preferences.value.pdf.quickAskOnCapture, value => { if (!value) dismissCaptureQuick() })
-watch(assistant, async value => {
-  if (value && aiOpen.value && focusAssistantPending) { value.focusPrompt?.(); focusAssistantPending = false }
-})
+
 function keydown(event: KeyboardEvent) {
   if (event.defaultPrevented || event.isComposing || event.keyCode === 229) return
   if (event.key === 'Escape') {
@@ -638,7 +926,7 @@ function keydown(event: KeyboardEvent) {
       break
     case 'settings': openSettings(); break
     case 'sidebar': sidebarOpen.value = !sidebarOpen.value; break
-    case 'ai': if (active.value) { if (aiOpen.value) aiOpen.value = false; else openAssistant(true) }; break
+    case 'ai': if (active.value) toggleAssistant(); break
     case 'nextTab': moveTab(1); break
     case 'previousTab': moveTab(-1); break
     case 'closeTab': if (active.value) closeTab(active.value.id); break
@@ -650,7 +938,7 @@ function keydown(event: KeyboardEvent) {
     case 'previousPage': reader.value?.previousPage?.(); break
     case 'nextPage': reader.value?.nextPage?.(); break
     case 'capture': reader.value?.toggleCapture?.(); break
-    case 'aiSend': assistant.value?.send?.(); break
+    case 'aiSend': assistantFor(event.target)?.send?.(); break
     case 'aiStop': if (active.value) stopChat(active.value.id); break
   }
 }
@@ -725,6 +1013,7 @@ onMounted(async () => {
   window.addEventListener('resize', captureViewportChanged)
   systemTheme.addEventListener('change', applyTheme)
   try { await loadPreferences() } catch (error) { notify(`设置加载失败：${reason(error)}`) }
+  await loadLibraryOrder()
   await refresh()
 })
 onBeforeUnmount(() => { for (const timer of pillTimers.values()) clearTimeout(timer); clearTimeout(enteringTimer); disposed = true; ++openEpoch; dismissCaptureQuick(); stopDropListening?.(); clearWheelZoom(); readerInstances.clear(); glassContrast?.dispose(); document.removeEventListener('keydown', keydown); document.removeEventListener('wheel', wheel, true); document.removeEventListener('dragenter', dragEnter); document.removeEventListener('dragover', dragOver); document.removeEventListener('dragleave', dragLeave); document.removeEventListener('drop', fileDrop); document.removeEventListener('selectionchange', selectionChanged); document.removeEventListener('scroll', dismissSelectionAction, true); document.removeEventListener('scroll', captureViewportChanged, true); window.removeEventListener('resize', dismissSelectionAction); window.removeEventListener('resize', captureViewportChanged); closeAllChats(); forgetAllPasswords(); systemTheme.removeEventListener('change', applyTheme); flushProgress(); for (const timer of indexTimers.values()) clearTimeout(timer); clearTimeout(queryTimer); clearTimeout(toastTimer) })
@@ -734,7 +1023,7 @@ onBeforeUnmount(() => { for (const timer of pillTimers.values()) clearTimeout(ti
   <div class="app-shell" :class="{ 'sidebar-collapsed': !sidebarOpen, 'has-reader': active }">
     <Transition name="sidebar" @before-enter="paneResizeStart($event, true)" @before-leave="paneResizeStart($event, false)" @after-enter="paneResizeEnd" @after-leave="paneResizeEnd" @enter-cancelled="paneResizeEnd($event, true)" @leave-cancelled="paneResizeEnd($event, true)">
     <aside class="app-sidebar" v-if="sidebarOpen" data-glass-interactive="panel">
-      <button class="brand" @click="chooseCategory('all')" aria-label="返回文档库"><span class="brand-symbol"><AppIcon name="book" :size="22" /></span><span>开智</span></button>
+      <button class="brand" @click="chooseCategory('all')" aria-label="返回文档库"><span class="brand-symbol"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 6.2c2.9-1 5.6-.6 7.7 1.1v11.4c-2.2-1.5-4.8-1.9-7.7-1.1z" fill="currentColor" /><path d="M20.5 6.2c-2.9-1-5.6-.6-7.7 1.1v11.4c2.2-1.5 4.8-1.9 7.7-1.1z" fill="currentColor" opacity=".7" /></svg></span><span>开智</span></button>
       <button class="import-button" data-tip="加入 PDF / Markdown 文档" :data-tip-key="tipKey('import')" @click="importDocuments" :disabled="importing" aria-label="加入文档"><AppIcon name="plus" :size="18" />{{ importing ? '正在导入…' : '加入文档' }}<kbd v-if="preferences.shortcuts.import">{{ shortcut('import') }}</kbd></button>
       <nav v-liquid-selection="{ radius: '12px' }" class="workspace-nav" aria-label="文档分类">
         <button :class="{ selected: category === 'all' && !tagFilter }" @click="chooseCategory('all')"><AppIcon name="library" :size="18" />全部文档<span>{{ documents.length }}</span></button>
@@ -751,10 +1040,10 @@ onBeforeUnmount(() => { for (const timer of pillTimers.values()) clearTimeout(ti
     <main class="app-main">
       <header class="app-topbar" :class="{ 'with-tabs': tabs.length }" data-glass-interactive="panel">
         <button class="icon-button sidebar-toggle" @click="sidebarOpen = !sidebarOpen" data-tip="显示 / 隐藏侧栏" :data-tip-key="tipKey('sidebar')" aria-label="切换侧栏" :aria-expanded="sidebarOpen"><AppIcon name="panel" :size="18" /></button>
-        <FileTabs v-if="tabs.length" :tabs="fileTabs" :active-id="active?.id" @select="selectTab" @close="closeTab" @library="closeReader" />
+        <FileTabs v-if="tabs.length" :tabs="fileTabs" :active-id="active?.id" :group="group.length > 1 ? group : []" :visible="paneIds" @select="selectTab" @close="closeTab" @library="closeReader" @menu="tabMenu" @drag="tabDrag" @reorder="reorderTabs" />
         <span v-else class="breadcrumb">{{ currentTitle }}</span>
         <div class="topbar-actions">
-          <template v-if="active"><button class="icon-button" :class="{ 'is-starred': active.starred }" @click="toggleStar(active)" data-tip="收藏文档" aria-label="收藏文档"><AppIcon name="star" :size="18" /></button><button class="icon-button" :class="{ active: detailsOpen }" @click="detailsOpen = !detailsOpen" data-tip="文档详情与标签" aria-label="文档详情与标签" :aria-expanded="detailsOpen"><AppIcon name="tag" :size="18" /></button><button class="icon-button split-toggle" data-split-anchor :class="{ active: splitPicker || splitView }" @click="toggleSplitPicker($event)" data-tip="并排阅读" :data-tip-key="tipKey('split')" aria-label="并排阅读" :aria-expanded="!!splitPicker"><AppIcon name="split" :size="18" /><span v-if="splitView" class="split-count">{{ paneIds.length }}</span></button><button class="ai-toggle" data-tip="阅读助手" :data-tip-key="tipKey('ai')" :class="{ active: aiOpen }" @click="aiOpen ? aiOpen = false : openAssistant(true)" :aria-expanded="aiOpen"><AppIcon name="sparkle" :size="17" />阅读助手</button></template>
+          <template v-if="active"><button class="icon-button" :class="{ 'is-starred': active.starred }" @click="toggleStar(active)" data-tip="收藏文档" aria-label="收藏文档"><AppIcon name="star" :size="18" /></button><button class="icon-button" :class="{ active: detailsOpen }" @click="detailsOpen = !detailsOpen" data-tip="文档详情与标签" aria-label="文档详情与标签" :aria-expanded="detailsOpen"><AppIcon name="tag" :size="18" /></button><button class="icon-button split-toggle" data-split-anchor :class="{ active: splitPicker || splitView }" @click="toggleSplitPicker($event)" data-tip="并排阅读" :data-tip-key="tipKey('split')" aria-label="并排阅读" :aria-expanded="!!splitPicker"><AppIcon name="split" :size="18" /><span v-if="splitView" class="split-count">{{ paneIds.length }}</span></button><button class="ai-toggle" data-tip="阅读助手" :data-tip-key="tipKey('ai')" :class="{ active: aiOpen }" @click="toggleAssistant" :aria-expanded="aiOpen"><AppIcon name="sparkle" :size="17" />阅读助手</button></template>
           <button v-else class="icon-button" @click="toggleTheme" :data-tip="theme === 'dark' ? '切换浅色主题' : '切换深色主题'" :aria-label="theme === 'dark' ? '切换浅色主题' : '切换深色主题'"><AppIcon :name="theme === 'dark' ? 'sun' : 'moon'" :size="18" /></button>
           <button class="icon-button" @click="toggleFullscreen" :disabled="fullscreenPending" :aria-label="fullscreen ? '退出全屏' : '进入全屏'" :aria-pressed="fullscreen" :data-tip="fullscreen ? '退出全屏' : '进入全屏'" :data-tip-key="tipKey('fullscreen')"><AppIcon :name="fullscreen ? 'exit-fullscreen' : 'fullscreen'" :size="18" /></button>
           <button class="icon-button" @click="openSettings()" data-tip="设置" :data-tip-key="tipKey('settings')" aria-label="打开设置"><AppIcon name="settings" :size="18" /></button>
@@ -762,20 +1051,20 @@ onBeforeUnmount(() => { for (const timer of pillTimers.values()) clearTimeout(ti
       </header>
 
       <Transition name="view" mode="out-in">
-      <div v-if="!active" class="library-view" key="library">
+      <div v-if="!active" class="library-view" key="library" data-reorder-scroll>
         <header class="library-header">
           <div class="library-heading"><h1>{{ currentTitle }}<span class="heading-count">{{ visibleDocuments.length }}</span></h1></div>
           <div class="library-tools">
             <div class="library-search"><AppIcon name="search" :size="17" /><input ref="search" v-model="query" @input="searchDocuments" placeholder="搜索标题、标签或已索引内容" aria-label="搜索文档" /><button v-if="query" @click="query = ''; refresh()" data-tip="清空搜索" aria-label="清空搜索"><AppIcon name="close" :size="14" /></button><kbd v-else-if="preferences.shortcuts.search">{{ shortcut('search') }}</kbd></div>
-            <div v-liquid-selection class="view-switch"><button :class="{ selected: display === 'grid' }" @click="setDisplay('grid')" data-tip="卡片视图" aria-label="卡片视图"><AppIcon name="grid" :size="16" /></button><button :class="{ selected: display === 'list' }" @click="setDisplay('list')" data-tip="列表视图" aria-label="列表视图"><AppIcon name="list" :size="17" /></button></div>
+            <button v-if="libraryOrder.length && canArrange" class="icon-button arrange-reset" @click="resetLibraryOrder" data-tip="恢复按最近阅读排列" aria-label="恢复按最近阅读排列"><AppIcon name="clock" :size="16" /></button><div v-liquid-selection class="view-switch"><button :class="{ selected: display === 'grid' }" @click="setDisplay('grid')" data-tip="卡片视图" aria-label="卡片视图"><AppIcon name="grid" :size="16" /></button><button :class="{ selected: display === 'list' }" @click="setDisplay('list')" data-tip="列表视图" aria-label="列表视图"><AppIcon name="list" :size="17" /></button></div>
           </div>
         </header>
         <div class="library-summary"><div><AppIcon name="book" :size="15" /><strong>{{ documents.length }}</strong><span>份文档</span></div><span class="summary-divider"></span><div><AppIcon name="star" :size="15" /><strong>{{ starredCount }}</strong><span>份收藏</span></div><span class="summary-divider"></span><div><AppIcon name="file" :size="15" /><strong>{{ totalPages }}</strong><span>页已打开文档</span></div><span v-if="!isDesktop" class="summary-note">浏览器预览</span></div>
         <div v-if="query || category === 'recent'" class="library-list-heading"><span>{{ query ? `搜索「${query}」` : '按最近阅读排列' }}</span></div>
         <div v-if="loading" class="library-empty"><span class="spinner"></span><p>正在读取文档库…</p></div>
         <div v-else-if="!visibleDocuments.length" class="library-empty"><div class="empty-art"><AppIcon name="book" :size="42" /></div><h2>{{ query ? '没有匹配的文档' : category === 'starred' ? '暂无收藏' : tagFilter ? '此标签下暂无文档' : '暂无文档' }}</h2><p>{{ query ? '可搜索标题、标签和已读取的文档内容。' : '点击“加入文档”添加 PDF 或 Markdown，可一次选择多个文件。' }}</p><button v-if="query" @click="query = ''; refresh()">查看全部文档</button><small>导入不会移动或修改原文件</small></div>
-        <div v-else class="document-collection" :class="display">
-          <article v-for="doc in visibleDocuments" :key="doc.id" class="document-card" :class="doc.kind" tabindex="0" role="button" :aria-label="`打开 ${doc.name}`" @click="openDocument(doc)" @keydown.enter="openDocument(doc)">
+        <div v-else ref="collection" class="document-collection" :class="[display, { arrangeable: canArrange }]" :aria-description="canArrange ? '拖动卡片或按 Alt+方向键调整位置' : undefined">
+          <article v-for="doc in visibleDocuments" :key="doc.id" class="document-card" :class="[doc.kind, { 'reorder-lifted': reorderLibrary.dragging.value === doc.id }]" :data-reorder-id="doc.id" tabindex="0" role="button" :aria-label="`打开 ${doc.name}`" @click="openDocument(doc)" @keydown.enter="openDocument(doc)" @keydown="reorderLibrary.keydown($event, doc.id)" @pointerdown="reorderLibrary.pointerdown($event, doc.id)">
             <div class="document-cover"><div class="cover-lines"><i></i><i></i><i></i><i></i></div><div class="document-type-icon"><AppIcon :name="doc.kind === 'pdf' ? 'file' : 'markdown'" :size="display === 'list' ? 23 : 30" /></div><button class="card-star" :class="{ 'is-starred': doc.starred }" @click.stop="toggleStar(doc)" :data-tip="doc.starred ? '取消收藏' : '收藏文档'" :aria-label="doc.starred ? '取消收藏' : '收藏文档'"><AppIcon name="star" :size="17" /></button></div>
             <div class="document-card-body"><div class="document-card-title"><h3 :data-tip="doc.name">{{ doc.name.replace(/\.(pdf|md|markdown)$/i, '') }}</h3><span class="format-pill">{{ doc.kind === 'pdf' ? 'PDF' : 'MD' }}</span></div><p class="document-meta">{{ size(doc.size) }}<span>·</span>{{ doc.lastOpenedAt ? `阅读于 ${date(doc.lastOpenedAt)}` : `加入于 ${date(doc.addedAt)}` }}</p><div class="document-tags"><span v-for="tag in doc.tags.slice(0, 3)" :key="tag">{{ tag }}</span><span v-if="doc.tags.length > 3">+{{ doc.tags.length - 3 }}</span></div><div class="document-progress"><div><i :style="{ width: `${progressPercent(doc)}%` }"></i></div><span>{{ doc.progress ? `${progressPercent(doc)}%` : '未读' }}</span></div></div>
             <button class="card-remove icon-button" @click.stop="removeTarget = doc" data-tip="从文档库移除" aria-label="从文档库移除"><AppIcon name="trash" :size="15" /></button>
@@ -785,25 +1074,27 @@ onBeforeUnmount(() => { for (const timer of pillTimers.values()) clearTimeout(ti
 
       <div v-else class="reading-workspace">
         <section class="reading-main">
-          <div v-if="opening && !splitView" class="reader-overlay"><span class="spinner"></span><p>正在打开 {{ active.name }}…</p></div>
-          <div class="reader-panes" :class="{ split: splitView }" :style="{ '--panes': paneIds.length }">
-            <section v-for="entry in readerCache" v-show="paneVisible(entry.id)" :key="entry.id" class="reader-pane" :class="{ focused: splitView && active.id === entry.id, entering: enteringPane === entry.id }" :style="{ order: paneIds.indexOf(entry.id) }" :data-pane-id="entry.id" :aria-label="splitView ? `并排阅读：${entry.doc.name}` : undefined" @pointerdown.capture="pointerFocusPane($event, entry.id)" @focusin="focusPane(entry.id)">
+          <div v-if="opening && !multiPanel" class="reader-overlay"><span class="spinner"></span><p>正在打开 {{ active.name }}…</p></div>
+          <TransitionGroup tag="div" name="pane" class="reader-panes" :class="{ split: splitView, multi: multiPanel, dragging: draggingPanel }" @before-enter="panelResizeStart($event, true)" @before-leave="panelResizeStart($event, false)" @after-enter="panelResizeEnd($event)" @after-leave="panelResizeEnd($event)" @enter-cancelled="panelResizeEnd($event, true)" @leave-cancelled="panelResizeEnd($event, true)">
+            <section v-for="entry in readerCache" v-show="paneVisible(entry.id)" :key="entry.id" class="reader-pane" :class="{ focused: splitView && active.id === entry.id, entering: enteringPane === entry.id, lifted: draggingPanel === `doc:${entry.id}` }" :style="{ order: panelOrder(`doc:${entry.id}`) }" :data-pane-id="entry.id" :data-panel-key="`doc:${entry.id}`" :aria-label="splitView ? `并排阅读：${entry.doc.name}` : undefined" @pointerdown.capture="pointerFocusPane($event, entry.id)" @focusin="focusPane(entry.id)">
+              <button v-if="multiPanel" class="panel-handle" :aria-label="`拖动调整 ${entry.doc.name} 的位置`" data-tip="拖动调整位置" @pointerdown.stop.prevent="startPanelDrag($event, `doc:${entry.id}`)"><i /><i /><i /></button>
               <KeepAlive>
                 <component v-if="paneVisible(entry.id)" :is="entry.doc.kind === 'pdf' ? PdfReader : MarkdownReader" :ref="value => bindReader(entry.id, value)" :key="entry.id" :data="entry.bytes" :document-id="entry.id" :initial-page="entry.doc.page || 1" :initial-progress="entry.doc.progress || 0" :sidebar-fit-enabled="preferences.pdf.fitOnPanelOverflow" :initial-zoom="preferences.pdf.initialZoom === 'fit-width' ? 'fit' : preferences.pdf.initialZoom / 100" :zoom-step="preferences.pdf.zoomStep / 100" :fit-request="fitRequest" :font-size="preferences.markdown.fontSize" :content-width="preferences.markdown.contentWidth" :find-shortcut="preferences.shortcuts.find ? shortcut('find') : ''" :shortcuts="tipKeys" :initial-view="entry.view" v-on="entry.events" />
               </KeepAlive>
               <div v-if="tabDoc(entry.id)" class="reading-pill" :class="{ awake: pillAwake[entry.id] || splitView, saved: pillSaved[entry.id] }" role="status" :aria-label="`阅读位置自动保存 · ${tabDoc(entry.id)!.kind === 'pdf' ? `第 ${tabDoc(entry.id)!.page || 1} / ${tabDoc(entry.id)!.pageCount || '—'} 页 · ` : ''}已读 ${progressPercent(tabDoc(entry.id)!)}%`">
                 <svg class="pill-ring" viewBox="0 0 24 24" aria-hidden="true"><circle class="pill-ring-track" cx="12" cy="12" r="9" /><circle class="pill-ring-value" cx="12" cy="12" r="9" pathLength="100" :style="{ strokeDashoffset: 100 - progressPercent(tabDoc(entry.id)!) }" /></svg>
                 <span class="pill-text" aria-hidden="true"><span v-if="splitView" class="pill-name">{{ entry.doc.name.replace(/\.(pdf|md|markdown)$/i, '') }}</span><span v-if="tabDoc(entry.id)!.kind === 'pdf'" class="pill-page"><b :key="tabDoc(entry.id)!.page || 1">{{ tabDoc(entry.id)!.page || 1 }}</b><i>/</i>{{ tabDoc(entry.id)!.pageCount || '—' }}</span><span v-else class="pill-page"><b :key="progressPercent(tabDoc(entry.id)!)">{{ progressPercent(tabDoc(entry.id)!) }}</b><i>%</i></span><span class="pill-saved"><AppIcon name="check" :size="11" />已保存</span></span>
-                <button v-if="splitView" class="pill-close" :data-tip="`关闭这一栏`" :aria-label="`关闭并排的 ${entry.doc.name}`" @click.stop="closePane(entry.id)"><AppIcon name="close" :size="11" /></button>
+                <button v-if="splitView" class="pill-close" :data-tip="`移出并排`" :aria-label="`关闭并排的 ${entry.doc.name}`" @click.stop="closePane(entry.id)"><AppIcon name="close" :size="11" /></button>
               </div>
             </section>
-            <section v-if="splitView && opening && !readerCache.some(entry => entry.id === active?.id)" class="reader-pane pending" :style="{ order: paneIds.indexOf(active.id) }"><div class="reader-overlay"><span class="spinner"></span><p>正在打开 {{ active.name }}…</p></div></section>
-          </div>
+            <section v-for="id in (multiPanel ? paneIds.filter(id => !readerCache.some(entry => entry.id === id)) : [])" :key="`pending:${id}`" class="reader-pane pending" :style="{ order: panelOrder(`doc:${id}`) }"><div class="reader-overlay"><span class="spinner"></span><p>正在打开 {{ tabDoc(id)?.name }}…</p></div></section>
+            <section v-for="panel in visibleAi" :key="panel.key" class="ai-panel" :class="{ lifted: draggingPanel === panel.key }" :style="{ order: panelOrder(panel.key), width: `${panel.width}px` }" :data-panel-key="panel.key">
+              <div class="panel-resizer" :data-edge="panelOrder(panel.key) === 0 && multiPanel ? 'right' : 'left'" role="separator" aria-orientation="vertical" aria-label="拖动调整阅读助手宽度" data-tip="拖动调整宽度，双击恢复" @pointerdown.stop="startWidthDrag($event, panel.key)" @pointermove="moveWidthDrag" @pointerup="endWidthDrag" @pointercancel="endWidthDrag" @dblclick="panel.width = 380" />
+              <AiPane v-if="aiDocument(panel)" :ref="value => bindAi(panel.key, value)" data-glass-interactive="panel" :document="aiDocument(panel)!" :context="aiContext(panel)" :conversation-id="panel.conversation" :draggable="multiPanel" :send-shortcut="preferences.shortcuts.aiSend ? shortcut('aiSend') : ''" :consume-capture="consumeSelection" @settings="openSettings('ai')" @close="closeAiPanel(panel.key)" @jump="jump" @clear-selection="clearSelection" @conversation="id => setPanelConversation(panel.key, id)" @grab="startPanelDrag($event, panel.key)" />
+            </section>
+          </TransitionGroup>
           <div v-if="selection && !captureQuick && !aiOpen && selection.image" class="selection-context"><AppIcon name="crop" :size="16" /><span>{{ selection.image ? `已框选第 ${selection.page} 页的图表或公式` : `已选择 ${selection.text.length} 个字符` }}</span><button @click="openAssistant(true)"><AppIcon name="sparkle" :size="15" />向 AI 提问</button><button class="icon-button" @click="clearSelection" data-tip="清除选区" aria-label="清除选区"><AppIcon name="close" :size="14" /></button></div>
         </section>
-        <Transition name="pane" @before-enter="paneResizeStart($event, true)" @before-leave="paneResizeStart($event, false)" @after-enter="paneResizeEnd" @after-leave="paneResizeEnd" @enter-cancelled="paneResizeEnd($event, true)" @leave-cancelled="paneResizeEnd($event, true)">
-          <AiPane v-if="aiOpen && aiDocument" ref="assistant" class="pane-shell" data-glass-interactive="panel" :document="aiDocument" :context="aiContext" :send-shortcut="preferences.shortcuts.aiSend ? shortcut('aiSend') : ''" :consume-capture="consumeSelection" @settings="openSettings('ai')" @close="aiOpen = false" @jump="jump" @clear-selection="clearSelection" />
-        </Transition>
         <Transition name="pane" @before-enter="paneResizeStart($event, true)" @before-leave="paneResizeStart($event, false)" @after-enter="paneResizeEnd" @after-leave="paneResizeEnd" @enter-cancelled="paneResizeEnd($event, true)" @leave-cancelled="paneResizeEnd($event, true)">
           <aside v-if="detailsOpen" class="document-details pane-shell"><div class="details-heading"><h3>文档详情</h3><button class="icon-button" @click="detailsOpen = false" data-tip="关闭文档详情" aria-label="关闭文档详情"><AppIcon name="close" :size="17" /></button></div><div class="detail-icon"><AppIcon :name="active.kind === 'pdf' ? 'file' : 'markdown'" :size="30" /></div><h4>{{ active.name }}</h4><dl><dt>格式</dt><dd>{{ active.kind === 'pdf' ? 'PDF' : 'Markdown' }}</dd><dt>文件大小</dt><dd>{{ size(active.size) }}</dd><dt>加入时间</dt><dd>{{ date(active.addedAt) }}</dd><dt>文件位置</dt><dd class="detail-path">{{ active.path }}</dd></dl><p class="eyebrow">标签</p><div class="editable-tags"><span v-for="tag in active.tags" :key="tag">{{ tag }}<button @click="removeTag(tag)" :data-tip="`移除标签 ${tag}`" :aria-label="`移除标签 ${tag}`"><AppIcon name="close" :size="12" /></button></span></div><form class="add-tag" @submit.prevent="addTag"><input v-model="tagInput" placeholder="添加标签" maxlength="40" /><button :disabled="!tagInput.trim()" data-tip="添加标签" aria-label="添加标签"><AppIcon name="plus" :size="16" /></button></form><button class="remove-document" @click="removeTarget = active"><AppIcon name="trash" :size="16" />从文档库移除</button></aside>
         </Transition>
@@ -811,6 +1102,8 @@ onBeforeUnmount(() => { for (const timer of pillTimers.values()) clearTimeout(ti
       </Transition>
     </main>
 
+    <ContextMenu v-if="contextMenu" :x="contextMenu.x" :y="contextMenu.y" :items="contextMenu.items" @close="contextMenu = undefined" />
+    <div v-if="tabDrop" class="tab-drop-zone" :style="{ left: `${tabDrop.left}px`, top: `${tabDrop.top}px`, width: `${tabDrop.width}px`, height: `${tabDrop.height}px` }"><span>{{ tabDrop.side === 'left' ? '放在左侧' : '放在右侧' }}</span></div>
     <SplitPicker v-if="splitPicker && active" :anchor="splitPicker" :candidates="splitCandidates" :full="paneIds.length >= MAX_PANES" :limit="MAX_PANES" @pick="openBeside" @close="splitPicker = undefined" />
     <Transition name="capture-focus"><CaptureQuickPrompt v-if="captureQuick && !settingsOpen" :frame="captureQuick.frame" :prompts="preferences.assistant.captureQuestions" :busy="captureQuickBusy" :status="captureQuickStatus" @ask="askCaptureQuick" @continue="continueCaptureQuick" @cancel="dismissCaptureQuick(true)" /></Transition>
     <div v-if="draggingFiles" class="file-drop-overlay" aria-live="polite"><div class="file-drop-target"><AppIcon name="plus" :size="32" /><strong>加入文档库</strong><span>松开以加入 PDF / Markdown 文档</span></div></div>

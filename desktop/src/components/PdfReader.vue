@@ -42,7 +42,9 @@ const loading = ref(true)
 const error = ref('')
 const capture = ref(false)
 const outlineOpen = ref(props.initialView?.outlineOpen || false)
-const outline = ref<{ title: string; dest: any; depth: number }[]>([])
+const outline = ref<{ title: string; dest: any; depth: number; page?: number }[]>([])
+// The section being read: the last outline entry that starts on or before the current page.
+const currentOutline = computed(() => { let found = -1; outline.value.forEach((item, index) => { if (item.page && item.page <= page.value) found = index }); return found })
 let viewer: any
 let pdf: any
 let task: any
@@ -506,8 +508,22 @@ async function load() {
     }
     const entries = await pdf.getOutline()
     const flat: any[] = []
-    function flatten(items: any[], depth = 0) { for (const item of items || []) { if (flat.length >= 1000 || depth > 20) break; flat.push({ title: item.title, dest: item.dest, depth }); flatten(item.items, depth + 1) } }
+    // Many PDFs space out CJK titles ("经 典 力 学"); join them back for a clean table of contents.
+    const tidy = (title: string) => String(title || '').replace(/\s+/g, ' ').trim().replace(/(?<=[\u3400-\u9fff\u3000-\u303f\uff00-\uffef])\s+(?=[\u3400-\u9fff\u3000-\u303f\uff00-\uffef])/g, '')
+    function flatten(items: any[], depth = 0) { for (const item of items || []) { if (flat.length >= 1000 || depth > 20) break; flat.push({ title: tidy(item.title), dest: item.dest, depth }); flatten(item.items, depth + 1) } }
     flatten(entries); if (epoch === current) outline.value = flat
+    // Resolve page numbers in the background so the outline can show them and follow the reading position.
+    for (const [index, item] of outline.value.slice(0, 800).entries()) {
+      if (epoch !== current) break
+      try {
+        let dest = item.dest
+        if (typeof dest === 'string') dest = await pdf.getDestination(dest)
+        if (!Array.isArray(dest)) continue
+        const number = typeof dest[0] === 'number' ? dest[0] + 1 : (await pdf.getPageIndex(dest[0])) + 1
+        if (epoch === current && outline.value[index] === item) item.page = number
+      } catch { /* An unresolved entry simply shows no page number. */ }
+      if (index % 40 === 39) await new Promise(resolve => setTimeout(resolve, 0))
+    }
   } catch (reason: any) {
     if (current !== epoch) return
     error.value = reason?.message || '无法读取 PDF。'
@@ -625,7 +641,7 @@ defineExpose({ goToPage, getPage: () => page.value, getPdf: () => pdf, isSuspend
     </div>
     <div class="reader-engine-body">
       <Transition name="pane" @before-enter="outlineResizeStart($event, true)" @before-leave="outlineResizeStart($event, false)" @after-enter="outlineResizeEnd" @after-leave="outlineResizeEnd" @enter-cancelled="outlineResizeEnd" @leave-cancelled="outlineResizeEnd">
-        <aside v-if="outlineOpen" class="document-outline"><p class="eyebrow">文档目录</p><button v-for="(item, index) in outline" :key="index" :style="{ paddingLeft: `${12 + item.depth * 12}px` }" @click="destination(item.dest)">{{ item.title }}</button><p v-if="!outline.length" class="subtle">此文档没有目录。</p></aside>
+        <aside v-if="outlineOpen" class="document-outline"><p class="outline-heading">目录</p><button v-for="(item, index) in outline" :key="index" :class="[`depth-${Math.min(item.depth, 3)}`, { current: index === currentOutline }]" :style="{ '--depth': item.depth }" :aria-current="index === currentOutline ? 'location' : undefined" @click="destination(item.dest)"><span class="outline-title">{{ item.title }}</span><span v-if="item.page" class="outline-page">{{ item.page }}</span></button><p v-if="!outline.length" class="subtle">此文档没有目录。</p></aside>
       </Transition>
       <div ref="viewportHost" class="pdf-viewport"><div ref="container" class="pdf-scroll" tabindex="0" aria-label="PDF 阅读区域" @mouseup="selectedText" @keyup="selectedText"></div></div>
       <div v-if="loading" class="reader-overlay"><span class="spinner"></span><p>正在打开文档…</p></div>

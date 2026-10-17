@@ -2,7 +2,7 @@
 import { computed, ref, watch, onMounted, onBeforeUnmount, nextTick, defineAsyncComponent } from 'vue'
 import AppIcon from './AppIcon.vue'
 import { vLiquidSelection } from '../ui/liquid-selection'
-import { useSettings, defaultPreferences, normalizePreferences, preferenceErrors, importBackgroundImage, defaultQuickPrompts, defaultCaptureQuestions, newCaptureQuestion, quickPromptLabelLength, limitQuickPromptLabel, QUICK_PROMPT_LABEL_LIMIT, QUICK_PROMPT_QUESTION_LIMIT, CAPTURE_QUESTION_MIN, CAPTURE_QUESTION_MAX, BACKDROPS, SHORTCUTS, DEFAULT_SHORTCUTS, shortcutLabel, shortcutFromEvent, shortcutFromWheelEvent, type AppPreferences, type BackdropPreset, type ShortcutAction } from '../settings'
+import { useSettings, defaultPreferences, normalizePreferences, preferenceErrors, importBackgroundImage, defaultQuickPrompts, defaultCaptureQuestions, newCaptureQuestion, quickPromptLabelLength, limitQuickPromptLabel, QUICK_PROMPT_LABEL_LIMIT, QUICK_PROMPT_QUESTION_LIMIT, CAPTURE_QUESTION_MIN, CAPTURE_QUESTION_MAX, BACKDROPS, UI_FONTS, READING_FONTS, MAX_GALLERY, SHORTCUTS, DEFAULT_SHORTCUTS, shortcutLabel, shortcutFromEvent, shortcutFromWheelEvent, type AppPreferences, type BackdropPreset, type BackgroundImage, type ShortcutAction } from '../settings'
 
 type Tab = 'appearance' | 'reading' | 'shortcuts' | 'ai'
 const props = withDefaults(defineProps<{ initialTab?: Tab }>(), { initialTab: 'appearance' })
@@ -69,7 +69,13 @@ async function chooseBackground(event: Event) {
   importingImage.value = true; imageError.value = ''; status.value = ''
   try {
     const background = await importBackgroundImage(file)
-    if (!disposed && !closing && request === imageRequest) draft.value.appearance.background = background
+    if (disposed || closing || request !== imageRequest) return
+    // A new picture joins the gallery and becomes the backdrop; earlier ones stay available.
+    const gallery = draft.value.appearance.gallery
+    const existing = gallery.find(item => item.dataUrl === background.dataUrl)
+    if (!existing && gallery.length >= MAX_GALLERY) { imageError.value = `图库最多保存 ${MAX_GALLERY} 张图片，请先删除一张。`; return }
+    if (!existing) gallery.push(background)
+    draft.value.appearance.background = existing || background
   } catch (cause: any) {
     if (!disposed && !closing && request === imageRequest) imageError.value = cause.message || String(cause)
   } finally {
@@ -80,6 +86,31 @@ function restoreBackground() {
   imageRequest++; importingImage.value = false; imageError.value = ''
   draft.value.appearance.background = null
 }
+function chooseGalleryImage(image: BackgroundImage) {
+  if (saving.value) return
+  imageRequest++; importingImage.value = false; imageError.value = ''
+  draft.value.appearance.background = image
+}
+function removeGalleryImage(image: BackgroundImage) {
+  if (saving.value) return
+  draft.value.appearance.gallery = draft.value.appearance.gallery.filter(item => item.dataUrl !== image.dataUrl)
+  if (draft.value.appearance.background?.dataUrl === image.dataUrl) draft.value.appearance.background = null
+}
+// Fonts: detect which choices are installed by comparing rendered widths with a fallback.
+const installed = ref<Record<string, boolean>>({})
+function fontInstalled(families: string[]) {
+  if (!families.length) return true
+  const canvas = document.createElement('canvas').getContext('2d')
+  if (!canvas) return true
+  const sample = '阅读的乐趣 Reading 123'
+  return families.some(family => ['monospace', 'serif'].some(base => {
+    canvas.font = `20px ${base}`; const plain = canvas.measureText(sample).width
+    canvas.font = `20px '${family}', ${base}`; return Math.abs(canvas.measureText(sample).width - plain) > .5
+  }))
+}
+onMounted(() => { installed.value = Object.fromEntries([...UI_FONTS, ...READING_FONTS].map(item => [item.id, fontInstalled(item.families)])) })
+const uiFontStack = computed(() => UI_FONTS.find(item => item.id === draft.value.appearance.uiFont)?.stack)
+const readingFontStack = computed(() => READING_FONTS.find(item => item.id === draft.value.appearance.readingFont)?.stack || uiFontStack.value)
 function chooseBackdrop(id: BackdropPreset) {
   if (saving.value) return
   restoreBackground()
@@ -223,13 +254,28 @@ function dialogKeydown(event: KeyboardEvent) {
             <div class="settings-group background-setting">
               <div class="backdrop-grid" role="radiogroup" aria-label="底板">
                 <button v-for="(item, index) in BACKDROPS" :key="item.id" type="button" role="radio" class="backdrop-swatch" :style="{ '--swatch': `var(--bd-${item.id})`, '--swatch-brand': `var(--bd-${item.id}-brand)`, '--i': index }" :aria-checked="!draft.appearance.background && draft.appearance.backdrop === item.id" :aria-label="`${item.label}底板`" :disabled="saving" @click="chooseBackdrop(item.id)"><span class="swatch-art" :class="{ ripples: item.id === 'paper' }"><i class="swatch-bar"></i><i class="swatch-dot"></i><span class="swatch-check"><AppIcon name="check" :size="12" /></span></span><span class="swatch-label">{{ item.label }}</span></button>
-                <button type="button" role="radio" class="backdrop-swatch custom-swatch" :style="{ '--i': BACKDROPS.length }" :aria-checked="!!draft.appearance.background" aria-label="自定义图片底板" :disabled="saving || importingImage" @click="imageInput?.click()"><span class="swatch-art"><img v-if="draft.appearance.background" :src="draft.appearance.background.dataUrl" alt="底板图片预览" /><AppIcon v-else name="plus" :size="20" /><span class="swatch-check"><AppIcon name="check" :size="12" /></span></span><span class="swatch-label">{{ importingImage ? '处理中…' : '自定义图片' }}</span></button>
               </div>
-              <div class="background-heading"><span class="background-name" :data-tip="draft.appearance.background?.name">{{ draft.appearance.background ? draft.appearance.background.name : '也可以使用本机图片作为底板' }}</span><button type="button" :disabled="saving || importingImage" @click="imageInput?.click()">{{ importingImage ? '正在处理…' : draft.appearance.background ? '替换图片' : '选择图片' }}</button><button v-if="draft.appearance.background" type="button" :disabled="saving || importingImage" @click="restoreBackground" aria-label="恢复默认底板">移除图片</button></div>
+              <div class="gallery-heading"><span>我的图片</span><small>{{ draft.appearance.gallery.length }} / {{ MAX_GALLERY }}</small></div>
+              <div class="backdrop-grid gallery-grid" role="radiogroup" aria-label="我的图片">
+                <div v-for="(image, index) in draft.appearance.gallery" :key="image.dataUrl.slice(-48)" class="gallery-item" :style="{ '--i': index }">
+                  <button type="button" role="radio" class="backdrop-swatch" :aria-checked="draft.appearance.background?.dataUrl === image.dataUrl" :aria-label="`使用图片 ${image.name}`" :data-tip="image.name" :disabled="saving" @click="chooseGalleryImage(image)"><span class="swatch-art"><img :src="image.dataUrl" alt="" /><span class="swatch-check"><AppIcon name="check" :size="12" /></span></span><span class="swatch-label">{{ image.name }}</span></button>
+                  <button type="button" class="gallery-remove" :aria-label="`从图库删除 ${image.name}`" data-tip="从图库删除" :disabled="saving" @click="removeGalleryImage(image)"><AppIcon name="close" :size="11" /></button>
+                </div>
+                <button v-if="draft.appearance.gallery.length < MAX_GALLERY" type="button" class="backdrop-swatch custom-swatch" :style="{ '--i': draft.appearance.gallery.length }" aria-label="添加图片到图库" :disabled="saving || importingImage" @click="imageInput?.click()"><span class="swatch-art"><AppIcon name="plus" :size="20" /></span><span class="swatch-label">{{ importingImage ? '处理中…' : '添加图片' }}</span></button>
+              </div>
+              <div v-if="draft.appearance.background" class="background-heading"><img class="background-current" :src="draft.appearance.background.dataUrl" alt="底板图片预览" /><span class="background-name" :data-tip="draft.appearance.background.name">{{ draft.appearance.background.name }}</span><button type="button" :disabled="saving || importingImage" @click="imageInput?.click()">替换图片</button><button type="button" :disabled="saving || importingImage" @click="restoreBackground" aria-label="恢复默认底板">改用预设</button></div>
+              <div v-else class="background-heading"><span class="background-name">选择预设，或从图库挑一张图片</span><button type="button" :disabled="saving || importingImage" @click="imageInput?.click()">{{ importingImage ? '正在处理…' : '选择图片' }}</button></div>
               <input ref="imageInput" class="background-file" type="file" accept="image/png,image/jpeg,image/webp" tabindex="-1" aria-label="底板图片文件" @change="chooseBackground" />
               <p v-if="imageError" class="settings-error" role="status">{{ imageError }}</p>
-              <p class="settings-help">每套底板带一套协调的主色与徽记颜色；自定义图片沿用当前预设的主色。支持 PNG、JPEG、WebP，图片保存在本机。调节后可预览，点击保存生效。</p>
+              <p class="settings-help">每套底板带一套协调的主色与徽记颜色；图片底板沿用当前预设的主色。图库最多 {{ MAX_GALLERY }} 张，切换预设不会删除图片。支持 PNG、JPEG、WebP，图片保存在本机。</p>
             </div>
+            <h3 class="section-heading">字体</h3>
+            <div class="settings-group">
+              <label class="setting-row"><span>界面字体</span><select v-model="draft.appearance.uiFont" :disabled="saving" aria-label="界面字体"><option v-for="item in UI_FONTS" :key="item.id" :value="item.id">{{ item.label }}{{ installed[item.id] === false ? '（未安装）' : '' }}</option></select></label>
+              <label class="setting-row"><span>阅读字体</span><select v-model="draft.appearance.readingFont" :disabled="saving" aria-label="阅读字体"><option v-for="item in READING_FONTS" :key="item.id" :value="item.id">{{ item.label }}{{ installed[item.id] === false ? '（未安装）' : '' }}</option></select></label>
+              <div class="font-preview"><p :style="{ fontFamily: uiFontStack }">界面：文档库 · 阅读助手 · 设置</p><p :style="{ fontFamily: readingFontStack }">正文：学而不思则罔，思而不学则殆。Reading 1234</p></div>
+            </div>
+            <p class="settings-help">阅读字体用于 Markdown 正文与阅读助手的回答；PDF 保持原排版。未安装的字体会自动退回系统字体。</p>
             <p class="settings-help">透明度仅影响侧栏、工具栏与面板，正文保持实色。系统开启「减少透明度」时自动使用实色。</p>
           </template>
           <template v-else-if="tab === 'reading'">
@@ -373,6 +419,18 @@ button{color:var(--control-ink)}
 .custom-swatch[aria-checked='true'] .swatch-art{border-style:solid}
 :global(:root[data-theme='dark']) .swatch-bar{background:rgb(255 255 255 / .14)}
 .background-heading{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:14px}
+.background-current{width:44px;height:30px;border-radius:7px;object-fit:cover;border:1px solid var(--glass-outline)}
+.gallery-heading{display:flex;align-items:baseline;justify-content:space-between;margin:18px 2px 10px;font-size:12px;font-weight:600;color:var(--secondary)}
+.gallery-heading small{font-weight:500;color:var(--muted);font-variant-numeric:tabular-nums}
+.gallery-item{position:relative;animation:zg-settle-in var(--dur-smooth) var(--spring-smooth) both;animation-delay:calc(var(--i, 0) * 35ms)}
+.gallery-item>.backdrop-swatch{width:100%;animation:none}
+.gallery-item .swatch-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gallery-remove{position:absolute;top:-6px;right:-6px;z-index:3;display:grid;place-items:center;width:22px;height:22px;padding:0;border:1px solid var(--line);border-radius:50%;background:var(--surface);box-shadow:var(--shadow-1);color:var(--surface-ink);opacity:0;scale:.7;transition:opacity var(--dur-2) var(--ease-out),scale var(--dur-bounce) var(--spring-bouncy)}
+.gallery-item:hover .gallery-remove,.gallery-remove:focus-visible{opacity:1;scale:1}
+.gallery-remove:hover:not(:disabled){background:var(--danger);border-color:transparent;color:#fff}
+.font-preview{padding:12px 0 14px;border-top:1px solid var(--separator)}
+.font-preview p{margin:0;font-size:14px;line-height:1.8;color:var(--control-ink)}
+.font-preview p+p{font-size:15px}
 .background-heading>span{flex:1}
 .background-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--secondary);font-size:12px}
 .background-heading button{min-height:34px;padding:6px 15px;font-size:12px;font-weight:600;background-color:var(--glass-2);background-image:var(--glass-sheen);border:1px solid var(--glass-outline);border-radius:var(--r-full);box-shadow:var(--glass-control-shadow);color:var(--control-ink)}

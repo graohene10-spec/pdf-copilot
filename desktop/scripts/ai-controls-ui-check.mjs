@@ -47,7 +47,7 @@ async function select(index) {
   await prompt().waitFor();
 }
 async function configure(key = 'controls-local-test-key') {
-  await pane().getByRole('button', { name: '更改', exact: true }).click();
+  await pane().getByRole('button', { name: '选择模型与思考强度', exact: true }).click(); await pane().getByRole('button', { name: '服务商、密钥与预算', exact: true }).click();
   await dialog().getByLabel('服务商', { exact: true }).selectOption('openai');
   await dialog().getByLabel('API 地址', { exact: true }).fill(modelOrigin + '/v1');
   await dialog().getByLabel('API Key', { exact: true }).fill(key);
@@ -179,7 +179,7 @@ try {
       },
     };
   });
-  await pane().getByRole('button', { name: '更改', exact: true }).click();
+  await pane().getByRole('button', { name: '选择模型与思考强度', exact: true }).click(); await pane().getByRole('button', { name: '服务商、密钥与预算', exact: true }).click();
   await dialog().getByLabel('服务商', { exact: true }).selectOption('codex');
   const models = dialog().getByRole('combobox', { name: '模型', exact: true });
   await until(() => models.isEnabled());
@@ -229,7 +229,7 @@ try {
   await select(1); assert.equal(await prompt().inputValue(), '用户保留的未发送草稿 B');
   await select(2); assert.equal(await prompt().inputValue(), '用户保留的未发送草稿 C');
   checks.push('All three quick actions send their full intended questions and keep each document draft isolated through queue execution.');
-  await pane().getByRole('button', { name: '清空对话', exact: true }).click();
+  await pane().getByRole('button', { name: '新对话', exact: true }).click();
   await openQuickPrompts();
   const customized = ['按自定义格式核查原文。\n请逐条区分证据与推断。', '列出自定义边界问题及其原文位置。'];
   await quickLabel(1).fill('核查依据'); await quickQuestion(1).fill(customized[0]);
@@ -241,7 +241,7 @@ try {
   assert.equal(calls.length, 4); assert.ok(calls[3].text.startsWith(customized[0] + '\n'));
   assert.equal(await prompt().inputValue(), '自定义按钮也保留的草稿 C');
   assert.equal(await pane().locator('.user-question').first().textContent(), customized[0]);
-  await select(0); await pane().getByRole('button', { name: '清空对话', exact: true }).click();
+  await select(0); await pane().getByRole('button', { name: '新对话', exact: true }).click();
   await prompt().fill('自定义等待期间的草稿 A');
   await pane().getByRole('button', { name: '边界分析', exact: true }).click();
   await pane().locator('.ai-status').filter({ hasText: '队列第 1 位' }).waitFor();
@@ -251,7 +251,7 @@ try {
   finish(names[0]); await pane().locator('.ai-status').filter({ hasText: '回答完成' }).waitFor();
   assert.equal(await prompt().inputValue(), '自定义等待期间的草稿 A');
   checks.push('Custom multi-line prompts send immediately with document context, retain drafts, reject double clicks and share the existing cross-document queue.');
-  await pane().getByRole('button', { name: '清空对话', exact: true }).click(); await configure('');
+  await pane().getByRole('button', { name: '新对话', exact: true }).click(); await configure('');
   await prompt().fill('缺少连接时仍保留的草稿');
   await pane().getByRole('button', { name: '查找假设与局限', exact: true }).click(); await dialog().waitFor();
   await dialog().getByRole('button', { name: '取消', exact: true }).click(); await dialog().waitFor({ state: 'detached' });
