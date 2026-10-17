@@ -86,25 +86,26 @@ onBeforeUnmount(() => window.removeEventListener('keydown', escape, true))
 
 <style scoped>
 /* 模型与强度：一张实底卡片，强度名在上，下面一条可拖动的渐变强度条。 */
-.model-card{position:absolute;right:0;bottom:calc(100% + 10px);z-index:20;width:308px;max-width:calc(100vw - 32px);padding:14px;border-radius:22px;background:var(--surface);border:1px solid var(--line);box-shadow:0 18px 50px -14px rgb(0 0 0 / .35),0 2px 8px rgb(0 0 0 / .06);color:var(--surface-ink);transform-origin:85% 100%;will-change:transform}
+/* 液态玻璃弹层：与应用其他弹出层同一种厚玻璃。 */
+.model-card{position:absolute;right:0;bottom:calc(100% + 10px);z-index:20;width:308px;max-width:calc(100vw - 32px);padding:14px;border-radius:var(--r-xl);background-color:var(--popup-glass);background-image:var(--popup-sheen);-webkit-backdrop-filter:blur(var(--popup-blur)) saturate(var(--glass-sat));backdrop-filter:blur(var(--popup-blur)) saturate(var(--glass-sat));border:1px solid var(--glass-outline);box-shadow:0 18px 44px -16px rgb(0 0 0 / .32),var(--glass-edge);color:var(--surface-ink);transform-origin:85% 100%;will-change:transform}
 button{font:inherit;color:inherit;cursor:pointer}
 .card-head{display:grid;grid-template-columns:34px 1fr 34px;align-items:center;gap:6px}
-.card-icon{display:grid;place-items:center;width:34px;height:34px;padding:0;border:0;border-radius:50%;background:none;box-shadow:none;color:var(--surface-muted)}
+.card-icon{display:grid;place-items:center;width:34px;height:34px;padding:0;border:0;border-radius:var(--r-control);background:none;box-shadow:none;color:var(--surface-muted)}
 .card-icon:hover:not(:disabled){background:var(--fill-3);color:var(--surface-ink)}
 .card-title{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:0}
 .effort-name{font-family:var(--font-display);font-size:19px;font-weight:700;letter-spacing:.2px;background:linear-gradient(100deg,var(--accent),var(--brand-b));-webkit-background-clip:text;background-clip:text;color:transparent;animation:zg-rise-in var(--dur-3) var(--ease-out) both}
 .model-name{display:inline-flex;align-items:center;gap:2px;max-width:100%;height:auto;padding:1px 6px;border:0;border-radius:6px;background:none;box-shadow:none;font-size:12.5px;font-weight:500;color:var(--surface-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .model-name:hover{background:var(--fill-3);color:var(--surface-ink)}
 /* 强度条：已选部分是带星点的渐变，旋钮是一颗白色圆。 */
-.effort-track{--fill:0;position:relative;height:42px;margin-top:14px;border-radius:999px;background:var(--fill-3);cursor:pointer;touch-action:none;outline:none}
+.effort-track{--fill:0;position:relative;height:42px;margin-top:14px;border-radius:var(--r-md);background:color-mix(in srgb,var(--surface-ink) 8%,transparent);box-shadow:inset 0 1px 2px rgb(0 0 0 / .06);cursor:pointer;touch-action:none;outline:none}
 .effort-track:focus-visible{box-shadow:0 0 0 3px var(--accent-ring)}
-.effort-fill{position:absolute;inset:0 auto 0 0;width:calc(42px + (100% - 42px) * var(--fill));border-radius:999px;overflow:hidden;background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 85%,#1b2a6b),color-mix(in srgb,var(--brand-b) 90%,#fff 0%));transition:width var(--dur-smooth) var(--spring-snappy)}
+.effort-fill{position:absolute;inset:0 auto 0 0;width:calc(42px + (100% - 42px) * var(--fill));border-radius:var(--r-md);overflow:hidden;background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 85%,#1b2a6b),color-mix(in srgb,var(--brand-b) 90%,#fff 0%));transition:width var(--dur-smooth) var(--spring-snappy)}
 .effort-fill i{position:absolute;border-radius:50%;background:#fff;opacity:.75;animation:spark 2.4s ease-in-out infinite}
 @keyframes spark{0%,100%{opacity:.25}50%{opacity:.95}}
 .effort-ticks{position:absolute;inset:0 21px;display:flex;align-items:center;justify-content:space-between;pointer-events:none}
 .effort-ticks b{width:4px;height:4px;border-radius:50%;background:color-mix(in srgb,var(--surface-ink) 25%,transparent)}
 .effort-ticks b.passed{background:rgb(255 255 255 / .55)}
-.effort-knob{position:absolute;top:4px;left:calc(4px + (100% - 42px) * var(--fill));width:34px;height:34px;border-radius:50%;background:#fff;box-shadow:0 2px 8px rgb(0 0 0 / .22),0 0 0 .5px rgb(0 0 0 / .08);transition:left var(--dur-smooth) var(--spring-snappy)}
+.effort-knob{position:absolute;top:4px;left:calc(4px + (100% - 42px) * var(--fill));width:34px;height:34px;border-radius:calc(var(--r-md) - 4px);background:linear-gradient(180deg,#fff,#f3f4f6);box-shadow:0 2px 8px rgb(0 0 0 / .22),0 0 0 .5px rgb(0 0 0 / .08);transition:left var(--dur-smooth) var(--spring-snappy)}
 .effort-track:active .effort-knob{scale:1.06}
 .effort-note{margin:9px 2px 2px;font-size:11.5px;color:var(--surface-muted);text-align:center}
 .card-more{display:flex;align-items:center;justify-content:center;gap:3px;width:100%;height:32px;margin-top:8px;padding:0;border:0;border-top:1px solid var(--line-soft);border-radius:0;background:none;box-shadow:none;font-size:11.5px;color:var(--surface-muted)}
@@ -112,7 +113,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 .models-head{display:grid;grid-template-columns:34px 1fr 34px;align-items:center;margin-bottom:6px}
 .models-head strong{font-size:13px;text-align:center}
 .models-list{display:grid;gap:2px;max-height:260px;overflow:auto;scrollbar-width:thin}
-.models-list button{display:flex;align-items:center;justify-content:space-between;gap:8px;height:36px;padding:0 12px;border:0;border-radius:11px;background:none;box-shadow:none;font-size:12.5px;text-align:left}
+.models-list button{display:flex;align-items:center;justify-content:space-between;gap:8px;height:36px;padding:0 12px;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;font-size:12.5px;text-align:left}
 .models-list button:hover{background:var(--fill-3)}
 .models-list button[aria-selected='true']{background:var(--fill-2);font-weight:600}
 .models-list span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

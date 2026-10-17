@@ -37,19 +37,33 @@ export function renderMarkdown(source: string): string {
 
 let mermaidModule: Promise<any> | undefined
 let diagramSeed = 0
-/** Turn diagram placeholders into SVG once the answer is complete. */
-export async function renderDiagrams(root: HTMLElement, dark: boolean) {
-  const figures = [...root.querySelectorAll<HTMLElement>('figure[data-diagram]:not([data-rendered])')]
-  if (!figures.length) return
+// Mermaid is not re-entrant: renders run one at a time, and finished SVGs are reused,
+// so re-rendering an answer (scrolling, theme, streaming) never races or flashes the source.
+const svgCache = new Map<string, string>()
+let renderQueue: Promise<void> = Promise.resolve()
+export function renderDiagrams(root: HTMLElement, dark: boolean): Promise<void> {
+  const pending: HTMLElement[] = []
+  for (const figure of root.querySelectorAll<HTMLElement>('figure[data-diagram]:not([data-rendered])')) {
+    const svg = svgCache.get(`${dark}:${figure.dataset.diagram || ''}`)
+    if (svg) { figure.dataset.rendered = 'true'; figure.innerHTML = svg; figure.classList.add('rendered') }
+    else pending.push(figure)
+  }
+  if (!pending.length) return Promise.resolve()
+  renderQueue = renderQueue.then(() => renderPending(pending, dark)).catch(() => {})
+  return renderQueue
+}
+async function renderPending(figures: HTMLElement[], dark: boolean) {
   mermaidModule ||= import('mermaid').then(module => module.default)
   const mermaid = await mermaidModule
   mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: dark ? 'dark' : 'neutral', fontFamily: 'inherit', flowchart: { htmlLabels: false }, suppressErrorRendering: true })
   for (const figure of figures) {
-    if (!figure.isConnected) continue
+    if (!figure.isConnected || figure.dataset.rendered) continue
     figure.dataset.rendered = 'true'
-    const source = figure.dataset.diagram || ''
+    const source = figure.dataset.diagram || '', key = `${dark}:${source}`
     try {
-      const { svg } = await mermaid.render(`answer-diagram-${++diagramSeed}`, source)
+      const svg = svgCache.get(key) || (await mermaid.render(`answer-diagram-${++diagramSeed}`, source)).svg
+      if (svgCache.size > 60) svgCache.delete(svgCache.keys().next().value!)
+      svgCache.set(key, svg)
       if (!figure.isConnected) continue
       figure.innerHTML = svg
       figure.classList.add('rendered')

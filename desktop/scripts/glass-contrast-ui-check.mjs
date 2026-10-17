@@ -254,15 +254,17 @@ try {
   await appearance({ theme: 'dark', glassTransparency: 83 });
   await page.getByRole('button', { name: '打开 阅读工作台指南.md', exact: true }).click();
   await page.locator('.markdown-paper').waitFor(); await settled();
-  await ink('.file-tab', 'light');
+  // Every tab takes the top bar's ink, so an unselected tab can't drift to a different colour.
+  await ink('.app-topbar', 'light');
+  const tabColors = await page.locator('.file-tab [role="tab"] > span').evaluateAll(elements => elements.map(element => getComputedStyle(element).color));
+  assert.ok(tabColors.length && tabColors.every(color => color === tabColors[0]), `Tabs share one foreground: ${tabColors}`);
   const selectedTabColor = await page.locator('.file-tab [role="tab"] > span').first().evaluate(element => getComputedStyle(element).color);
   await page.locator('.file-tab').first().hover(); await paint();
   assert.equal(await page.locator('.file-tab [role="tab"] > span').first().evaluate(element => getComputedStyle(element).color), selectedTabColor, 'Hovering a folder tab must preserve its locally compensated foreground.');
   await page.getByRole('button', { name: '阅读助手', exact: true }).click();
   await page.locator('.ai-pane').waitFor(); await settled();
-  // The assistant is a near-solid panel: it keeps theme text instead of adapting to the photo.
-  assert.equal(await page.locator('.ai-pane').getAttribute('data-glass-ink'), null);
-  await themeText('.ai-pane .conversation-title .title-text');
+  // The assistant is liquid glass like the sidebar: over the white image its text turns dark even in the dark theme.
+  await ink('.ai-pane', 'dark');
   await page.evaluate(async () => {
     const { library } = await import('/src/sdk/index.ts');
     const { chatState } = await import('/src/ai/workspace.ts');
@@ -275,7 +277,9 @@ try {
   });
   await page.locator('.ai-pane .user-question').waitFor();
   await page.locator('.ai-pane .answer-code').waitFor();
-  await themeText('.ai-pane .user-question');
+  // Questions follow the pane's adapted ink; code blocks are solid and keep the theme's.
+  const paneInk = await page.locator('.ai-pane .title-text').evaluate(element => getComputedStyle(element).color);
+  assert.equal(await page.locator('.ai-pane .user-question').evaluate(element => getComputedStyle(element).color), paneInk);
   await themeText('.ai-pane .answer-code');
   await themeText('.markdown-paper');
   await themeText('.reader-pane:not([style*="display: none"]) .reading-pill .pill-page');
@@ -286,7 +290,7 @@ try {
   await dialog().getByRole('button', { name: '取消', exact: true }).click();
   await dialog().waitFor({ state: 'detached' });
   await shot('开智-玻璃文字对比度-阅读-深色.png');
-  checks.push('The solid AI pane and reading pill keep theme text over the white image; opaque user bubbles, code, Markdown and excluded tea popups retain their own theme foregrounds.');
+  checks.push('The glass AI pane adapts its ink over the white image; the solid reading pill, code, code, Markdown and excluded tea popups retain their own theme foregrounds.');
 
   const writesBefore = await page.evaluate(() => window.__backgroundWriteCount);
   for (const theme of ['light', 'dark']) {
@@ -296,7 +300,7 @@ try {
     const color = await page.locator('.app-sidebar .brand').evaluate(element => getComputedStyle(element).color);
     assert.equal(color, theme === 'light' ? 'rgb(22, 26, 32)' : 'rgb(242, 244, 247)', 'Opaque glass follows the theme, regardless of image colors.');
     await appearance({ glassTransparency: 83 });
-    await ink('.app-sidebar', 'light');
+    await ink('.app-sidebar', 'light'); await ink('.ai-pane', 'dark');
   }
   assert.equal(await page.evaluate(() => window.__backgroundWriteCount), writesBefore, 'Theme and transparency changes must not rewrite the large wallpaper CSS payload.');
   checks.push('0% returns theme-colored opaque glass; returning to 83% restores local compensation without rewriting cached image pixels.');
@@ -304,12 +308,12 @@ try {
   await page.evaluate(() => { document.documentElement.dataset.contrast = 'high'; });
   await noAdaptation();
   await page.evaluate(() => { delete document.documentElement.dataset.contrast; });
-  await ink('.app-sidebar', 'light');
+  await ink('.app-sidebar', 'light'); await ink('.ai-pane', 'dark');
   const media = await context.newCDPSession(page);
   await media.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-transparency', value: 'reduce' }] });
   await noAdaptation();
   await media.send('Emulation.setEmulatedMedia', { features: [] });
-  await ink('.app-sidebar', 'light');
+  await ink('.app-sidebar', 'light'); await ink('.ai-pane', 'dark');
   await media.detach();
   checks.push('Explicit high contrast and system reduced transparency remove injected foreground variables; compensation returns when those modes are disabled.');
 

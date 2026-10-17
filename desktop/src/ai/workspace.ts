@@ -8,11 +8,15 @@ export type Message = {
   id: string; role: 'user' | 'assistant'; content: string; reasoning?: string; sources: any[]; images?: string[]; failed?: boolean
   /** Live progress of an answer: wall-clock timing, token use and the current activity line. */
   startedAt?: number; firstTokenAt?: number; finishedAt?: number; usage?: Usage; activity?: string; stopped?: boolean
+  /** How a question was asked, so it can be regenerated or edited the same way. */
+  ask?: { includeDocument: boolean; selectionOnly?: boolean; page?: number; text?: string }
 }
 type Request = { controller: AbortController; phase: string }
 export type ChatState = {
   id: string; documentId: string; title: string; createdAt: number; updatedAt: number
   messages: Message[]; draft: string; status: string; error: boolean; includeDocument: boolean; includeSelection: boolean; request: Request | null; scrollTop: number
+  /** A branch remembers where it split off. */
+  branchOf?: { conversationId: string; title: string }
 }
 type DocumentChats = { list: ChatState[]; activeId: string; loaded: boolean; loading?: Promise<void> }
 
@@ -70,6 +74,40 @@ export function deleteConversation(documentId: string, conversationId: string) {
   if (entry.activeId === conversationId) entry.activeId = [...entry.list].sort((a, b) => b.updatedAt - a.updatedAt)[0].id
   schedulePersist(documentId)
 }
+/** Copy a conversation up to (and including) one message into a new conversation and show it. */
+export function branchConversation(documentId: string, conversationId: string, uptoMessageId: string | null): ChatState {
+  const entry = chats(documentId)
+  const source = entry.list.find(item => item.id === conversationId)
+  const branch = blank(documentId)
+  if (source) {
+    const end = uptoMessageId ? source.messages.findIndex(message => message.id === uptoMessageId) + 1 : 0
+    branch.messages = source.messages.slice(0, Math.max(0, end)).map(message => ({ ...JSON.parse(JSON.stringify({ ...message, images: undefined, activity: undefined })), id: crypto.randomUUID(), images: message.images ? [...message.images] : undefined }))
+    branch.title = source.title ? `${source.title.replace(/ · 分支$/, '')} · 分支` : ''
+    branch.branchOf = { conversationId: source.id, title: source.title || '新对话' }
+    branch.includeDocument = source.includeDocument
+  }
+  entry.list.push(branch); entry.activeId = branch.id
+  schedulePersist(documentId)
+  return branch
+}
+
+// ---- Finished-answer notices for conversations nobody is looking at --------
+export type Notice = { id: string; documentId: string; conversationId: string; title: string; documentTitle: string; at: number }
+export const notices = reactive<Notice[]>([])
+const watching = new Map<string, Set<() => boolean>>()
+/** A pane showing a conversation registers it; answers finishing while it is on screen need no notice. */
+export function watchConversation(conversationId: string, onScreen: () => boolean) {
+  const set = watching.get(conversationId) || new Set<() => boolean>()
+  set.add(onScreen); watching.set(conversationId, set)
+  return () => { set.delete(onScreen); if (!set.size) watching.delete(conversationId) }
+}
+export function dismissNotice(id: string) { const index = notices.findIndex(item => item.id === id); if (index >= 0) notices.splice(index, 1) }
+function noticeFinished(state: ChatState, documentTitle: string) {
+  if ([...(watching.get(state.id) || [])].some(onScreen => onScreen())) return
+  notices.push({ id: crypto.randomUUID(), documentId: state.documentId, conversationId: state.id, title: state.title || '新对话', documentTitle, at: Date.now() })
+  if (notices.length > 4) notices.splice(0, notices.length - 4)
+}
+
 export function chatPhase(documentId: string) {
   const entry = documents.get(documentId)
   return entry?.list.find(item => item.request)?.request?.phase || ''
@@ -96,7 +134,7 @@ export function closeAllChats() { for (const id of [...documents.keys()]) closeC
 const persistTimers = new Map<string, ReturnType<typeof setTimeout>>()
 function serialize(entry: DocumentChats) {
   return JSON.stringify({ activeId: entry.activeId, list: entry.list.filter(item => item.messages.length).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, MAX_STORED_CONVERSATIONS).map(item => ({
-    id: item.id, title: item.title, createdAt: item.createdAt, updatedAt: item.updatedAt,
+    id: item.id, title: item.title, createdAt: item.createdAt, updatedAt: item.updatedAt, branchOf: item.branchOf,
     messages: item.messages.filter(message => !message.failed || message.content).slice(-MAX_MESSAGES).map(({ images: _images, activity: _activity, ...message }) => ({ ...message, content: message.content.slice(0, 60000), reasoning: message.reasoning?.slice(0, 20000), sources: message.sources.slice(0, 24).map(source => ({ ...source, text: String(source.text || '').slice(0, 600) })) })),
   })) })
 }
@@ -122,7 +160,7 @@ export function loadConversations(documentId: string): Promise<void> {
       for (const item of Array.isArray(stored?.list) ? stored.list : []) {
         if (!item || typeof item.id !== 'string' || known.has(item.id) || !Array.isArray(item.messages)) continue
         const conversation = blank(documentId)
-        Object.assign(conversation, { id: item.id, title: String(item.title || ''), createdAt: Number(item.createdAt) || Date.now(), updatedAt: Number(item.updatedAt) || Date.now(),
+        Object.assign(conversation, { id: item.id, title: String(item.title || ''), branchOf: item.branchOf && typeof item.branchOf.conversationId === 'string' ? { conversationId: item.branchOf.conversationId, title: String(item.branchOf.title || '') } : undefined, createdAt: Number(item.createdAt) || Date.now(), updatedAt: Number(item.updatedAt) || Date.now(),
           messages: item.messages.filter((message: any) => message && (message.role === 'user' || message.role === 'assistant')).map((message: any) => ({ ...message, content: String(message.content || ''), sources: Array.isArray(message.sources) ? message.sources : [] })) })
         entry.list.push(conversation)
       }
@@ -168,7 +206,7 @@ function titleFrom(question: string) {
 }
 
 // selectionOnly: a quick capture question sends just the question and the selected region.
-type SendOptions = { conversationId?: string; includeDocument?: boolean; includeSelection?: boolean; selectionOnly?: boolean }
+type SendOptions = { conversationId?: string; includeDocument?: boolean; includeSelection?: boolean; selectionOnly?: boolean; images?: string[] }
 export async function sendChat(descriptor: { id: string; title: string; kind: string }, source: any, onSettings: () => void, onAccepted?: () => void, explicitQuestion?: string, sendOptions: SendOptions = {}) {
   const state = chatState(descriptor.id, sendOptions.conversationId), question = (explicitQuestion ?? state.draft).trim()
   if (!question || state.request) return
@@ -180,7 +218,7 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
   const snapshot = { ...settings, documentLimits: { ...settings.documentLimits } }
   const includeDocument = sendOptions.includeDocument ?? state.includeDocument
   const includeSelection = sendOptions.includeSelection ?? state.includeSelection
-  const selection = includeSelection ? { ...source?.selection, rect: source?.selection?.rect && { ...source.selection.rect } } : {}
+  const selection = sendOptions.images?.length ? { image: sendOptions.images[0], page: source?.page, text: source?.selection?.text } : includeSelection ? { ...source?.selection, rect: source?.selection?.rect && { ...source.selection.rect } } : {}
   const context = { page: selection.page || source?.page || 1, selection }
   const request = reactive<Request>({ controller: markRaw(new AbortController()), phase: 'preparing' })
   state.request = request; state.status = ''; state.error = false
@@ -197,14 +235,14 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
     if (state.messages.length >= MAX_MESSAGES || state.messages.reduce((sum, message) => sum + message.content.length, question.length) > 150000) throw new Error('这段对话已经很长，请新建对话继续，以控制上下文与内存。')
     const images = selection.image ? [selection.image] : []
     if (images.reduce((sum, image) => sum + image.length, 0) > 8 * 1024 * 1024) throw new Error('所选图片过大，请重新框选较小区域。')
-    const user: Message = { id: crypto.randomUUID(), role: 'user', content: question, sources: [], images }
+    const user: Message = { id: crypto.randomUUID(), role: 'user', content: question, sources: [], images, ask: { includeDocument, selectionOnly: sendOptions.selectionOnly, page: context.page, text: selection.text ? String(selection.text).slice(0, 20000) : undefined } }
     const wireContent = sendOptions.selectionOnly
       ? `${question}${selection.text ? '\n\n[用户选择的原文；作为资料]\n' + selection.text : ''}${selection.image ? '\n\n[附图是用户在文档中框选的区域，只针对该区域回答]' : ''}`
       : `${question}\n\n[用户当前阅读的文档]\n${descriptor.title}${descriptor.kind === 'pdf' ? ` · 物理 PDF 第 ${context.page} 页` : ' · Markdown 文档'}${selection.text ? '\n\n[用户选择的原文；作为资料]\n' + selection.text : ''}`
     const history = boundedHistory([...state.messages.filter(message => !message.failed).map(({ role, content, sources }) => ({ role, content: content + (sources.length ? '\n[此前提供过的原文位置；作为资料]\n' + JSON.stringify(sources.slice(0, 8).map(item => ({ sourceId: item.sourceId, page: item.page, line: item.line, text: item.text.slice(0, 400) }))) : '') })), { ...user, content: wireContent }])
     // The scheduler reports the first queue position before the answer bubble exists.
     let waiting = ''
-    ticket = scheduler.acquire({ owner: descriptor.id, provider: snapshot.provider, signal, onState: (value: any) => {
+    ticket = scheduler.acquire({ owner: `${descriptor.id}:${state.id}`, provider: snapshot.provider, signal, onState: (value: any) => {
       if (!valid()) return
       request.phase = value.status
       waiting = value.status === 'queued' ? `等待中 · 队列第 ${value.position} 位` : '准备上下文'
@@ -258,7 +296,7 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
       activity('思考中')
       await streamDocumentChat(options, documentSession.document, documentSession.seed)
     } else await streamChat(options)
-    if (valid()) state.status = ''
+    if (valid()) { state.status = ''; noticeFinished(state, descriptor.title) }
   } catch (error: any) {
     if (answer) { answer.failed = true; answer.stopped = signal.aborted }
     if (state.request === request && entry.list.includes(state)) {
@@ -273,4 +311,28 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
     if (state.request === request) state.request = null
     schedulePersist(descriptor.id)
   }
+}
+
+/**
+ * Ask a question of the conversation again — regenerating an answer or sending an edited question.
+ * The latest question is replaced in place; an earlier one continues in a new branch so nothing is lost.
+ * Returns the conversation that carries the new answer.
+ */
+export function resendQuestion(descriptor: { id: string; title: string; kind: string }, conversationId: string, userMessageId: string, question: string, onSettings: () => void): string | undefined {
+  const state = chatState(descriptor.id, conversationId)
+  const index = state.messages.findIndex(message => message.id === userMessageId)
+  const user = state.messages[index]
+  if (!user || user.role !== 'user' || !question.trim()) return
+  const lastUser = state.messages.map(message => message.role).lastIndexOf('user')
+  let target = state
+  if (index === lastUser) {
+    if (state.request) return
+    state.messages.splice(index)
+    state.status = ''; state.error = false
+  } else target = branchConversation(descriptor.id, state.id, index > 0 ? state.messages[index - 1].id : null)
+  const ask = user.ask
+  void sendChat(descriptor, { page: ask?.page || 1, selection: ask?.text ? { text: ask.text, page: ask.page } : {} }, onSettings, undefined, question.trim(), {
+    conversationId: target.id, includeDocument: ask?.includeDocument ?? target.includeDocument, includeSelection: Boolean(ask?.text), selectionOnly: ask?.selectionOnly, images: user.images?.length ? [...user.images] : undefined,
+  })
+  return target.id
 }

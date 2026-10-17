@@ -87,9 +87,11 @@
 
   /* 连续透明度由设置写入（0 实色 → 1 清透）。越清透，越依赖扩散保持可读。 */
   --glass-transparency: .7;
-  --glass-1-blur: calc(4px + var(--glass-transparency) * 16px);
-  --glass-2-blur: calc(6px + var(--glass-transparency) * 20px);
-  --glass-3-blur: calc(8px + var(--glass-transparency) * 26px);
+  /* 模糊程度由设置写入（0 不模糊 → 2 双倍），默认 1。 */
+  --glass-blur-scale: 1;
+  --glass-1-blur: calc((4px + var(--glass-transparency) * 16px) * var(--glass-blur-scale));
+  --glass-2-blur: calc((6px + var(--glass-transparency) * 20px) * var(--glass-blur-scale));
+  --glass-3-blur: calc((8px + var(--glass-transparency) * 26px) * var(--glass-blur-scale));
   --glass-sat: 185%;
 
   /* 0 为实心；高透明度端保留少量底色，细边和文字仍有可辨层次。 */
@@ -112,7 +114,7 @@
   --popup-alpha: calc(1 - var(--glass-transparency) * .32);
   --popup-glass: rgb(249 249 247 / var(--popup-alpha));
   --popup-sheen: linear-gradient(180deg, rgb(255 255 255 / .34), rgb(255 255 255 / .06) 36%, rgb(255 255 255 / 0) 64%, rgb(255 255 255 / .1));
-  --popup-blur: calc(22px + var(--glass-transparency) * 18px);
+  --popup-blur: calc((22px + var(--glass-transparency) * 18px) * max(.35, var(--glass-blur-scale)));
 
   /* 宽面：上方一层很淡的天光，下沿回光；厚度主要来自边缘。 */
   --glass-sheen:
@@ -154,13 +156,15 @@
   --folder-shadow: drop-shadow(0 2px 2px rgb(25 34 42 / .1)) drop-shadow(0 5px 4px rgb(25 34 42 / .075));
   --shadow: var(--shadow-2);
 
-  /* 同心圆角：外层面板 28，内嵌元素按内边距递减；控件一律胶囊。 */
-  --r-xs: 7px;
-  --r-sm: 11px;
-  --r-md: 15px;
-  --r-lg: 20px;
-  --r-xl: 28px;
-  --r-2xl: 34px;
+  /* 同心圆角：外层面板 18，内嵌元素按内边距递减；工具条 14，按钮与标签 10。小圆点与进度条仍是胶囊。 */
+  --r-xs: 6px;
+  --r-sm: 8px;
+  --r-md: 11px;
+  --r-lg: 14px;
+  --r-xl: 18px;
+  --r-2xl: 22px;
+  --r-bar: 14px;
+  --r-control: 10px;
   --r-full: 999px;
 
   --sp-1: 4px;
