@@ -32,9 +32,16 @@ const model = createServer(async (request, response) => {
     const payload = JSON.parse(body);
     const user = payload.input.findLast(item => item.role === 'user');
     const text = user.content.find(item => item.type === 'input_text').text;
-    const name = names.find(value => text.includes(value)); assert.ok(name, 'Document identity is captured before asynchronous preparation.');
-    const question = questions.find(value => text.startsWith(value)); assert.ok(question, 'The custom prompt is sent verbatim.');
     const images = user.content.filter(item => item.type === 'input_image').map(item => item.image_url);
+    // Quick capture questions carry only the crop and the question, not the document title,
+    // so the owner is the document whose conversation recorded this exact crop.
+    const owner = await page.evaluate(async ({ ids, image }) => {
+      const { conversations } = await import('/src/ai/workspace.ts');
+      return ids.findIndex(id => conversations(id).some(chat => chat.messages.some(message => message.role === 'user' && (message.images || []).includes(image))));
+    }, { ids, image: images[0] });
+    const name = names[owner]; assert.ok(name, 'Document identity is captured before asynchronous preparation.');
+    assert.equal(names.some(value => text.includes(value)), false, 'A quick capture question does not send the document title.');
+    const question = questions.find(value => text.startsWith(value)); assert.ok(question, 'The custom prompt is sent verbatim.');
     assert.equal(images.length, 1, 'The current crop is sent exactly once.');
     assert.match(images[0], /^data:image\/png;base64,/);
     assert.equal(payload.input.flatMap(item => Array.isArray(item.content) ? item.content : []).filter(item => item.type === 'input_image').length, 1, 'Historical screenshots are not reattached.');
