@@ -251,6 +251,7 @@ watch(pickerOpen, open => {
 })
 watch(busy, value => { if (value) pickerOpen.value = false })
 function moreSettings() { pickerOpen.value = false; emit('settings') }
+function closePicker() { pickerOpen.value = false; void nextTick(() => pickerHost.value?.querySelector<HTMLElement>('.model-picker')?.focus()) }
 function historyOutside(event: PointerEvent) { if (!(event.target as Element)?.closest?.('.history-host')) historyOpen.value = false }
 watch(historyOpen, open => { if (open) document.addEventListener('pointerdown', historyOutside, true); else document.removeEventListener('pointerdown', historyOutside, true) })
 
@@ -303,7 +304,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
         </Transition>
       </div>
       <span v-if="taskSummary.running || taskSummary.queued" class="task-summary" :data-tip="`同时最多 ${taskSummary.limits.concurrent} 题，Codex ${taskSummary.limits.codex} 题`">{{ taskSummary.running }} 运行<template v-if="taskSummary.queued"> · {{ taskSummary.queued }} 等待</template></span>
-      <button class="header-button" aria-label="新对话" data-tip="新对话" @click="startConversation"><AppIcon name="compose" :size="16" /></button>
+      <button class="header-button" aria-label="新对话" data-tip="新对话" :disabled="!messages.length" @click="startConversation"><AppIcon name="compose" :size="16" /></button>
       <button class="header-button close-assistant" data-tip="关闭阅读助手" aria-label="关闭阅读助手" @click="emit('close')"><AppIcon name="close" :size="15" /></button>
     </header>
 
@@ -312,7 +313,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
         <button v-for="mark in marks" :key="mark.id" class="rail-mark" :class="{ current: mark.current }" :style="{ top: `calc(${mark.top} * (100% - 24px) + 12px)` }" :aria-label="`跳到问题：${mark.text.slice(0, 30)}`" @click="goToMark(mark)" @pointerenter="hoverMark = mark" @pointerleave="hoverMark = null" @focus="hoverMark = mark" @blur="hoverMark = null" />
         <Transition name="rail-pop"><div v-if="hoverMark" class="rail-preview" :style="{ top: `calc(${hoverMark.top} * (100% - 24px) + 12px)` }"><strong>{{ hoverMark.text }}</strong><p v-if="hoverMark.answer">{{ hoverMark.answer }}</p></div></Transition>
       </div>
-      <div ref="messageList" class="ai-messages" aria-live="polite" @scroll="onScroll" @click="answerClick">
+      <div ref="messageList" class="ai-messages" @scroll="onScroll" @click="answerClick">
         <div v-if="!messages.length" class="ai-welcome">
           <div class="ai-welcome-mark" aria-hidden="true"><AppIcon name="sparkle" :size="24" /></div>
           <p class="ai-welcome-lead">关于这份文档，想了解什么？</p>
@@ -322,7 +323,6 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
         <article v-for="message in messages" :key="message.id" class="ai-message" :class="message.role" :data-id="message.id">
           <template v-if="message.role === 'user'">
             <div class="user-question">{{ message.content }}</div>
-            <div v-if="message.images?.length" class="user-images"><img v-for="(image, index) in message.images" :key="index" :src="image" alt="提问附带的图片" /></div>
           </template>
           <template v-else>
             <button v-if="live(message) || message.reasoning" class="thinking" :class="{ live: live(message), open: expanded.has(message.id) }" :aria-expanded="expanded.has(message.id)" @click="toggleReasoning(message.id)">
@@ -362,7 +362,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
           <span class="context-ring" :data-tip="`上下文约 ${count(contextUsed)} / ${count(contextLimit)} tokens`" aria-hidden="true" :style="{ '--ratio': contextRatio }"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5" /><circle class="ring-value" cx="10" cy="10" r="7.5" pathLength="100" /></svg></span>
           <div ref="pickerHost" class="model-picker-host">
             <button type="button" class="model-picker" :disabled="busy" aria-haspopup="dialog" :aria-expanded="pickerOpen" aria-label="选择模型与思考强度" data-tip="模型与思考强度" @click="pickerOpen = !pickerOpen"><span class="picker-model">{{ modelLabel }}</span><span class="picker-effort">{{ EFFORT_LABELS[settings.effort || ''] || settings.effort }}</span><AppIcon name="down" :size="12" class="picker-chevron" /></button>
-            <Transition name="picker"><ModelPicker v-if="pickerOpen" :model="settings.model || ''" :effort="settings.effort || ''" :models="pickerModels" :loading="pickerLoading" :error="pickerError" :can-refresh="settings.provider === 'codex'" @model="chooseModel" @effort="chooseEffort" @refresh="refreshPickerModels" @more="moreSettings" @close="pickerOpen = false" /></Transition>
+            <Transition name="picker"><ModelPicker v-if="pickerOpen" :model="settings.model || ''" :effort="settings.effort || ''" :models="pickerModels" :loading="pickerLoading" :error="pickerError" :can-refresh="settings.provider === 'codex'" @model="chooseModel" @effort="chooseEffort" @refresh="refreshPickerModels" @more="moreSettings" @close="closePicker" /></Transition>
           </div>
           <button v-if="busy" class="send-button stop" aria-label="停止" data-tip="停止回答" @click="stop"><span class="stop-square" /></button>
           <button v-else class="send-button" :disabled="!prompt.trim()" aria-label="发送" data-tip="发送" :data-tip-key="sendShortcut || 'Enter'" @click="send()"><AppIcon name="arrow-up" :size="17" /></button>
@@ -431,8 +431,6 @@ button:disabled{opacity:.4;cursor:default}
 .ai-message{margin-bottom:22px;animation:zg-rise-in var(--dur-3) var(--ease-out) both}
 .ai-message.user{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
 .user-question{max-width:88%;padding:9px 14px;border-radius:18px 18px 6px 18px;background:var(--fill-3);font-size:13.5px;line-height:1.75;white-space:pre-wrap;overflow-wrap:anywhere}
-.user-images{display:flex;gap:6px;justify-content:flex-end}
-.user-images img{max-width:140px;max-height:90px;border-radius:10px;border:1px solid var(--line);object-fit:cover}
 /* 思考：一行「思考中 · 用时 · token」，文字有流光；展开看完整思路。 */
 .thinking{display:inline-flex;align-items:center;gap:7px;max-width:100%;height:28px;padding:0 10px 0 8px;margin-bottom:6px;border:0;border-radius:999px;background:none;box-shadow:none;font-size:12px;color:var(--surface-muted)}
 .thinking:hover{background:var(--fill-4);color:var(--surface-secondary)}

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import AppIcon from './AppIcon.vue'
 
 type Model = { id: string; name: string; efforts?: string[]; defaultEffort?: string }
@@ -36,12 +36,24 @@ function key(event: KeyboardEvent) {
   event.preventDefault()
   emit('effort', steps.value[Math.min(steps.value.length - 1, Math.max(0, index.value + delta))])
 }
-function chooseModel(id: string) { emit('model', id); view.value = 'effort'; void nextTick(() => track.value?.focus()) }
-onMounted(() => track.value?.focus({ preventScroll: true }))
+function chooseModel(id: string) { emit('model', id); view.value = 'effort' }
+// 切换视图后把焦点放进新视图，键盘和读屏用户不会丢失位置。
+watch(view, value => setTimeout(() => {
+  if (value === 'effort') track.value?.focus({ preventScroll: true })
+  else card.value?.querySelector<HTMLElement>('.models-list [aria-selected="true"], .models-list button')?.focus({ preventScroll: true })
+}, 200))
+// Esc 不依赖焦点位置：先从模型列表退回，再关闭卡片。
+function escape(event: KeyboardEvent) {
+  if (event.key !== 'Escape') return
+  event.preventDefault(); event.stopPropagation()
+  if (view.value === 'models') view.value = 'effort'; else emit('close')
+}
+onMounted(() => { track.value?.focus({ preventScroll: true }); window.addEventListener('keydown', escape, true) })
+onBeforeUnmount(() => window.removeEventListener('keydown', escape, true))
 </script>
 
 <template>
-  <div ref="card" class="model-card" role="dialog" aria-label="模型与思考强度" @keydown.esc.stop.prevent="view === 'models' ? (view = 'effort') : emit('close')">
+  <div ref="card" class="model-card" role="dialog" aria-label="模型与思考强度">
     <Transition name="card-view" mode="out-in">
       <div v-if="view === 'effort'" key="effort" class="card-effort">
         <div class="card-head">
@@ -58,6 +70,7 @@ onMounted(() => track.value?.focus({ preventScroll: true }))
           <span class="effort-knob" aria-hidden="true" />
         </div>
         <p class="effort-note">{{ EFFORT_NOTES[effort] || '' }}</p>
+        <p v-if="error" class="models-status" role="status">{{ error }}</p>
         <button type="button" class="card-more" @click="emit('more')">服务商、密钥与预算<AppIcon name="chevron-right" :size="12" /></button>
       </div>
       <div v-else key="models" class="card-models">
