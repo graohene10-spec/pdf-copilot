@@ -132,7 +132,8 @@ try {
     await compareState(`${theme}: AI assistant`, ai, () => ai.click());
     await indicator(`${theme}: file tabs`, '.tab-strip', '.file-tab.selected');
     await shapes(`${theme}: reading panels`, '.ai-pane,.composer-field,.markdown-paper', { minRadius: 16 });
-    await shapes(`${theme}: reading capsules`, '.reader-tools,.reader-tools button,.reader-zoom,.reader-search,.tab-strip,.file-tab,.tab-library,.ai-pane .suggestions button,.model-change,.close-assistant,.reading-pill', { capsule: true });
+    await shapes(`${theme}: reading capsules`, '.reader-tools,.reader-tools button,.reader-zoom,.reader-search,.tab-strip,.file-tab,.tab-library,.ai-pane .suggestions button,.model-picker,.context-switch,.reading-pill', { capsule: true });
+    await shapes(`${theme}: assistant header buttons`, '.ai-pane .header-button', { minRadius: 10 });
     const suggestion = page.getByRole('button', { name: '梳理核心观点', exact: true });
     const suggestionColor = (await style(suggestion)).color;
     await suggestion.hover(); await page.waitForTimeout(240);
