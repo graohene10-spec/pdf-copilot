@@ -55,6 +55,8 @@ try {
     await page.keyboard.press('Tab'); await page.keyboard.press('Shift+Tab');
     await page.waitForTimeout(240);
     assert.equal(await control.evaluate(element => document.activeElement === element), true);
+    // The highlight fades in; with the glass assistant open, software rendering can take longer than one fixed wait.
+    await control.evaluate(element => new Promise(resolve => { const start = performance.now(); const poll = () => Number(getComputedStyle(element, '::after').opacity) > 0 || performance.now() - start > 3000 ? resolve() : requestAnimationFrame(poll); poll(); }));
     assert.ok(await control.evaluate(element => Number(getComputedStyle(element, '::after').opacity) > 0), 'Keyboard focus illuminates the material.');
     await page.evaluate(() => document.activeElement?.blur());
     await shot(`liquid-glass-main-${theme}.png`);
