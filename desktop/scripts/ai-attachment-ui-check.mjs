@@ -70,7 +70,8 @@ async function crop(index = 0) {
   return preview().getAttribute('src');
 }
 async function configure(key) {
-  await page.locator('[data-tip="AI 设置"]').click(); await dialog().waitFor();
+  await page.getByRole('button', { name: '选择模型与思考强度', exact: true }).click();
+  await page.getByRole('button', { name: '服务商、密钥与预算', exact: true }).click(); await dialog().waitFor();
   await dialog().getByLabel('服务商', { exact: true }).selectOption('openai');
   await dialog().getByLabel('API 地址', { exact: true }).fill(`${modelOrigin}/v1`);
   await dialog().getByLabel('API Key', { exact: true }).fill(key);
