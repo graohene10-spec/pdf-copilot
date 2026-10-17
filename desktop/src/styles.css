@@ -3199,9 +3199,10 @@ kbd {
     padding: 16px;
   }
 
-  .ai-pane {
+  /* 中等窗口里助手窗口收窄，阅读区仍保有宽度；拖宽过的窗口也按这里的上限。 */
+  .ai-panel {
     width: 290px !important;
-    flex-shrink: 0;
+    min-width: 260px;
   }
 
   .document-outline {
