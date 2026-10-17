@@ -226,7 +226,7 @@ try {
   await select(1); assert.equal(await preview().getAttribute('src'), otherCrop);
   checks.push('An accepted request after an immediate tab switch clears only its origin; the other file keeps its newer crop, and the wire retains the origin image/name.');
 
-  await page.locator('.context-heading input').uncheck();
+  await page.locator('.ai-selection-context input[type="checkbox"]').uncheck();
   await send('ATTACH_OMIT'); await complete('ATTACH_OMIT');
   assert.equal(calls.find(call => call.job === 'ATTACH_OMIT').totalImages, 0);
   assert.equal(await preview().getAttribute('src'), otherCrop);
