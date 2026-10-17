@@ -65,7 +65,7 @@ try {
   let layout = await panes();
   assert.deepEqual(layout.map(pane => [pane.name, pane.focused]), [['并排验证-A', false], ['并排验证-B', true]]);
   assert.ok(Math.abs(layout[0].width - layout[1].width) <= 2, 'Two panes share the width equally.');
-  assert.equal(await page.locator('.file-tab.beside').count(), 1, 'The other visible file is marked in the tab strip.');
+  assert.equal(await page.locator('.file-tab.on-screen').count(), 1, 'The other visible file is marked in the tab strip.');
   assert.equal(await page.locator('.split-count').innerText(), '2');
   checks.push('The picker adds an open or library document beside the current one; panes share the width and the new pane takes focus.');
 
