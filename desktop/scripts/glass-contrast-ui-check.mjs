@@ -255,9 +255,10 @@ try {
   await page.getByRole('button', { name: '打开 阅读工作台指南.md', exact: true }).click();
   await page.locator('.markdown-paper').waitFor(); await settled();
   // Every tab takes the top bar's ink, so an unselected tab can't drift to a different colour.
-  await ink('.app-topbar', 'light');
+  await page.waitForFunction(() => document.querySelector('.app-topbar')?.hasAttribute('data-glass-ink'));
+  const topbarInk = await page.locator('.app-topbar').evaluate(element => { const probe = document.createElement('span'); probe.style.color = 'var(--control-ink)'; element.append(probe); const color = getComputedStyle(probe).color; probe.remove(); return color; });
   const tabColors = await page.locator('.file-tab [role="tab"] > span').evaluateAll(elements => elements.map(element => getComputedStyle(element).color));
-  assert.ok(tabColors.length && tabColors.every(color => color === tabColors[0]), `Tabs share one foreground: ${tabColors}`);
+  assert.ok(tabColors.length && tabColors.every(color => color === topbarInk), `Tabs use the top bar's foreground ${topbarInk}: ${tabColors}`);
   const selectedTabColor = await page.locator('.file-tab [role="tab"] > span').first().evaluate(element => getComputedStyle(element).color);
   await page.locator('.file-tab').first().hover(); await paint();
   assert.equal(await page.locator('.file-tab [role="tab"] > span').first().evaluate(element => getComputedStyle(element).color), selectedTabColor, 'Hovering a folder tab must preserve its locally compensated foreground.');
