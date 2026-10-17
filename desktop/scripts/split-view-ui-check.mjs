@@ -93,16 +93,19 @@ try {
   await settled();
   assert.deepEqual((await panes()).map(pane => pane.name), ['并排验证-A', '并排验证-C']);
   assert.equal(await page.getByRole('tab').count(), 3);
-  // Selecting a tab that is not on screen replaces the focused pane.
-  await page.locator('.reader-pane:visible').first().locator('.pdf-scroll').click({ position: { x: 60, y: 200 } });
+  // Selecting a tab outside the group shows it alone; the A + C group stays framed in the tab strip.
   await page.getByRole('tab', { name: names[1], exact: true }).click(); await settled();
-  assert.deepEqual((await panes()).map(pane => pane.name), ['并排验证-B', '并排验证-C']);
+  assert.equal(await page.locator('.reader-pane:visible').count(), 1);
+  assert.equal(await page.locator('.file-tab.grouped').count(), 2, 'The side-by-side group survives showing another tab.');
+  // Returning to a grouped tab brings the whole group back.
+  await page.getByRole('tab', { name: names[0], exact: true }).click(); await settled();
+  assert.deepEqual((await panes()).map(pane => pane.name), ['并排验证-A', '并排验证-C']);
   // Closing the focused tab hands focus to the remaining pane and leaves a single reader.
-  await page.getByRole('button', { name: `关闭 ${names[1]} 标签`, exact: true }).click(); await settled();
+  await page.getByRole('button', { name: `关闭 ${names[0]} 标签`, exact: true }).click(); await settled();
   layout = await panes();
   assert.equal(layout.length, 1); assert.equal(await page.locator('.reading-pill .pill-close').count(), 0);
   assert.equal(await page.getByRole('tab', { selected: true }).getAttribute('aria-label'), names[2]);
-  checks.push('Closing a pane keeps its tab; opening another tab replaces the focused pane; closing the focused tab returns to one reader.');
+  checks.push('Closing a pane keeps its tab; another tab shows alone while the group stays framed; returning restores the group; closing the focused tab returns to one reader.');
 
   assert.deepEqual(errors, []); assert.deepEqual(remoteRequests, []);
   console.log(JSON.stringify({ passed: true, checks }, null, 2));

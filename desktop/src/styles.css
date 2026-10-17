@@ -2124,6 +2124,15 @@ kbd {
   transition: none;
 }
 
+/* 离开的文档栏立刻让出位置：留在布局里的那几帧会让回来的 PDF 按一半宽度重新适配。 */
+.reader-panes > .reader-pane.pane-leave-active {
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .reader-panes > .reader-pane.pane-enter-from,
 .reader-panes > .reader-pane.pane-leave-to {
   opacity: 1;
