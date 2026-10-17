@@ -357,7 +357,7 @@ button{color:var(--control-ink)}
 .settings-body{display:flex;flex:1;min-height:0}
 /* 分类：一列胶囊，选中的一滴玻璃上下滑动。 */
 .settings-tabs{flex:0 0 156px;padding:10px 0 10px 14px;display:flex;flex-direction:column;gap:3px}
-.settings-tabs button{height:40px;font-size:13px;justify-content:flex-start;gap:10px;background:none;border:0;box-shadow:none;padding:9px 14px;color:var(--control-ink);border-radius:var(--r-full);transition:background-color var(--dur-1) var(--ease-soft)}
+.settings-tabs button{height:40px;font-size:13px;justify-content:flex-start;gap:10px;background:none;border:0;box-shadow:none;padding:9px 14px;color:var(--control-ink);border-radius:var(--r-control);transition:background-color var(--dur-1) var(--ease-soft)}
 .settings-tabs button:hover:not(:disabled){background-color:var(--control-hover);color:var(--control-ink)}
 /* 选中的分类页仅调整灰度底色，保持统一文字颜色。 */
 .settings-tabs button.selected{background-color:var(--control-selected);background-image:var(--glass-sheen);color:var(--control-ink);font-weight:600;box-shadow:var(--glass-control-shadow)}
@@ -438,7 +438,7 @@ button{color:var(--control-ink)}
 .font-preview p+p{font-size:15px}
 .background-heading>span{flex:1}
 .background-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--secondary);font-size:12px}
-.background-heading button{min-height:34px;padding:6px 15px;font-size:12px;font-weight:600;background-color:var(--glass-2);background-image:var(--glass-sheen);border:1px solid var(--glass-outline);border-radius:var(--r-full);box-shadow:var(--glass-control-shadow);color:var(--control-ink)}
+.background-heading button{min-height:34px;padding:6px 15px;font-size:12px;font-weight:600;background-color:var(--glass-2);background-image:var(--glass-sheen);border:1px solid var(--glass-outline);border-radius:var(--r-control);box-shadow:var(--glass-control-shadow);color:var(--control-ink)}
 .background-heading button:hover:not(:disabled){background-color:var(--control-hover);color:var(--control-ink)}
 .background-file{display:none}
 .background-setting .settings-help{margin:12px 0 0}
@@ -448,7 +448,7 @@ button{color:var(--control-ink)}
 .quick-prompt-editor{padding:14px 16px 16px;margin:0 0 12px;min-width:0}
 .quick-prompt-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
 .quick-prompt-heading h4{font-size:13px;font-weight:650;margin:0;color:var(--control-ink)}
-.quick-prompt-heading button{height:30px;padding:4px 13px;font-size:11.5px;font-weight:600;border:1px solid var(--glass-outline);border-radius:var(--r-full);background-color:var(--glass-2);color:var(--control-ink);box-shadow:var(--glass-control-shadow)}
+.quick-prompt-heading button{height:30px;padding:4px 13px;font-size:11.5px;font-weight:600;border:1px solid var(--glass-outline);border-radius:var(--r-control);background-color:var(--glass-2);color:var(--control-ink);box-shadow:var(--glass-control-shadow)}
 .quick-prompt-heading button:hover:not(:disabled){background-color:var(--control-hover)}
 .quick-prompt-editor>label{display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--secondary);font-size:11.5px;margin-bottom:6px}
 .quick-prompt-counter{color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -470,7 +470,7 @@ button{color:var(--control-ink)}
 .settings-error{font-size:11.5px;line-height:1.8;color:var(--danger);margin:14px 14px 0;white-space:pre-line}
 .settings-footer{padding:12px 16px 16px 22px;display:flex;align-items:center;gap:10px;border-top:1px solid var(--separator)}
 .footer-space{flex:1}
-.settings-footer button{min-width:86px;height:40px;font-size:13px;font-weight:600;padding:8px 20px;border-color:var(--glass-outline);border-radius:var(--r-full);background-color:var(--glass-2);background-image:var(--glass-sheen);color:var(--control-ink);box-shadow:var(--glass-control-shadow)}
+.settings-footer button{min-width:86px;height:40px;font-size:13px;font-weight:600;padding:8px 20px;border-color:var(--glass-outline);border-radius:var(--r-control);background-color:var(--glass-2);background-image:var(--glass-sheen);color:var(--control-ink);box-shadow:var(--glass-control-shadow)}
 .settings-footer button:hover:not(:disabled){background-color:var(--control-hover);border-color:var(--glass-outline);color:var(--control-ink)}
 .settings-footer .text-action{min-width:0;height:34px;padding:5px 12px;font-size:12px;background:none;border:0;box-shadow:none;color:var(--accent)}
 .settings-footer .text-action:hover:not(:disabled){background-color:color-mix(in srgb,var(--accent) 10%,transparent);color:var(--accent)}

@@ -65,7 +65,7 @@ header{display:flex;align-items:center;gap:10px;padding:4px 6px 10px}
 header strong{display:block;font-size:13.5px;font-weight:650}
 header small{display:block;font-size:11px;color:var(--muted);margin-top:2px}
 .split-picker-mark{display:grid;place-items:center;flex:0 0 32px;height:32px;border-radius:10px;color:var(--brand-ink);background:var(--brand-gradient);box-shadow:inset 0 1px 0 rgb(255 255 255 / .4),0 6px 14px -6px color-mix(in srgb,var(--brand-b) 70%,transparent)}
-.split-picker-search{display:flex;align-items:center;gap:8px;height:36px;padding:0 12px;margin-bottom:6px;border-radius:var(--r-full);background:var(--fill-3);color:var(--muted)}
+.split-picker-search{display:flex;align-items:center;gap:8px;height:36px;padding:0 12px;margin-bottom:6px;border-radius:var(--r-control);background:var(--fill-3);color:var(--muted)}
 .split-picker-search input{flex:1;min-width:0;height:100%;padding:0;border:0;background:none;box-shadow:none;font-size:12.5px;color:var(--control-ink);outline:none}
 .split-picker-list{overflow:auto;min-height:0;scrollbar-width:thin}
 .split-picker-group{margin:8px 10px 4px;font-size:10.5px;font-weight:600;letter-spacing:.3px;color:var(--muted)}

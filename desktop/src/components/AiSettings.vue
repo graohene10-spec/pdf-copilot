@@ -127,7 +127,7 @@ button{font:inherit;cursor:pointer;color:var(--control-ink)}
 .settings-note{font-size:11.5px;line-height:1.7;color:var(--muted);margin:0}
 .text-button{border:0;background:none;box-shadow:none;color:var(--accent);padding:4px 10px}
 .text-button:hover:not(:disabled){background:color-mix(in srgb,var(--accent) 10%,transparent);color:var(--accent)}
-.primary-button,.secondary-button{height:38px;border:1px solid var(--glass-outline);border-radius:var(--r-full);padding:8px 16px;background-color:var(--glass-2);background-image:var(--glass-sheen);box-shadow:var(--glass-control-shadow);color:var(--control-ink);font-weight:600}
+.primary-button,.secondary-button{height:38px;border:1px solid var(--glass-outline);border-radius:var(--r-control);padding:8px 16px;background-color:var(--glass-2);background-image:var(--glass-sheen);box-shadow:var(--glass-control-shadow);color:var(--control-ink);font-weight:600}
 .secondary-button{align-self:flex-start}
 .secondary-button:hover:not(:disabled){background-color:var(--control-hover);color:var(--control-ink)}
 .primary-button{background-color:var(--accent-glass);background-image:var(--glass-tint-sheen);border-color:transparent;color:var(--accent-on)}
