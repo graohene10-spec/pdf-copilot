@@ -277,6 +277,14 @@ kbd {
   text-shadow: var(--glass-label-shadow);
 }
 
+/* 底图太亮或太暗、主题墨色压不住时，glass-contrast 给这块玻璃一个最低不透明度：玻璃变厚，
+   文字仍是当前主题的颜色——深色主题里的每块玻璃都是深色的，浅色主题里都是浅色的。 */
+[data-glass-floor] {
+  --glass-1: rgb(var(--glass-rgb-1) / max(var(--glass-a1), var(--glass-floor, 0)));
+  --glass-2: rgb(var(--glass-rgb-2) / max(var(--glass-a2), var(--glass-floor, 0)));
+  --glass-3: rgb(var(--glass-rgb-3) / max(var(--glass-a3), var(--glass-floor, 0)));
+}
+
 [data-glass-ink='dark'] {
   --control-hover: color-mix(in srgb, #202020 5%, var(--glass-2));
   --control-selected: color-mix(in srgb, #202020 9%, var(--glass-2));
@@ -1829,6 +1837,8 @@ kbd {
 
 .page-stack {
   min-width: 100%;
+  /* 放大后页面栈跟着最宽的一页变宽，横向滚动范围覆盖整页（含左右留白）。 */
+  width: max-content;
 }
 
 .page-stack[hidden] {
@@ -3214,17 +3224,35 @@ kbd {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a9b8b1' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 10 5 5 5-5'/%3E%3C/svg%3E");
 }
 
+/* 深色主题：文字与线条用一条色调曲线反相（滤镜见 reader/dark-pages.mjs）；彩色图片由上面一层保留原色，只略微压暗。 */
 :root[data-theme=dark] .pdf-canvas {
-  filter: invert(.87) hue-rotate(180deg);
+  filter: url(#kaizhi-pdf-dark);
+}
+
+.pdf-photos {
+  position: absolute;
+  inset: 0;
+  display: none;
+  pointer-events: none;
+}
+
+.pdf-photos > canvas {
+  position: absolute;
+  display: block;
+}
+
+:root[data-theme=dark] .pdf-photos {
+  display: block;
+  filter: brightness(.86) saturate(.96);
 }
 
 :root[data-theme=dark] .page-slot {
-  background: #1d2320;
+  background: #1d1d1e;
   box-shadow: 0 1px 2px rgb(0 0 0 / .3), 0 12px 30px -10px rgb(0 0 0 / .6);
 }
 
 :root[data-theme=dark] .page-placeholder {
-  background: #1d2320;
+  background: #1d1d1e;
   color: var(--n-500);
 }
 

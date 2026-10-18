@@ -12,6 +12,7 @@ import { normalizeSearchText, scanPdfMatches } from '../reader/search.mjs'
 import { documentPassword, rememberPassword } from '../document/passwords.mjs'
 import { floatLeavingPanel, restoreLeavingPanel } from '../ui/panel-transition'
 import { usePdfInk } from '../reader/ink/use-ink'
+import { useHorizontalScroll } from '../reader/hscroll'
 import InkButton from './ink/InkButton.vue'
 import InkPalette from './ink/InkPalette.vue'
 
@@ -394,6 +395,7 @@ function cancelCapture() {
   return true
 }
 const ink = usePdfInk({ container, viewer: () => viewer, documentId: () => props.documentId, page, capture, cancelCapture })
+const hscroll = useHorizontalScroll(container)
 function getCaptureElements(selection: { page: number; image?: string }) {
   if (!active || !selection?.image) return []
   const view = viewer?.views?.get(selection.page)
@@ -649,6 +651,7 @@ defineExpose({ goToPage, getPage: () => page.value, getPdf: () => pdf, isSuspend
         <aside v-if="outlineOpen" class="document-outline"><p class="outline-heading">目录</p><button v-for="(item, index) in outline" :key="index" :class="[`depth-${Math.min(item.depth, 3)}`, { current: index === currentOutline }]" :style="{ '--depth': item.depth }" :aria-current="index === currentOutline ? 'location' : undefined" @click="destination(item.dest)"><span class="outline-title">{{ item.title }}</span><span v-if="item.page" class="outline-page">{{ item.page }}</span></button><p v-if="!outline.length" class="subtle">此文档没有目录。</p></aside>
       </Transition>
       <div ref="viewportHost" class="pdf-viewport"><div ref="container" class="pdf-scroll" tabindex="0" aria-label="PDF 阅读区域" @mouseup="selectedText" @keyup="selectedText"></div>
+        <div v-show="hscroll.bar.visible" class="pdf-hscroll" :class="{ dragging: hscroll.bar.dragging }" role="scrollbar" aria-orientation="horizontal" aria-label="左右滚动页面" :aria-valuenow="Math.round(hscroll.bar.left / Math.max(1, 100 - hscroll.bar.width) * 100)" aria-valuemin="0" aria-valuemax="100" @pointerdown="hscroll.down" @pointermove="hscroll.move" @pointerup="hscroll.up" @pointercancel="hscroll.up"><span class="pdf-hscroll-thumb" :style="{ left: `${hscroll.bar.left}%`, width: `${hscroll.bar.width}%` }" /></div>
         <InkPalette v-if="ink.state.enabled" :mode="ink.state.mode" :colors="ink.state.colors" :last-tool="ink.state.lastTool" :can-undo="ink.state.canUndo" :page-has-ink="ink.state.pageHasInk" :status="ink.state.status" @mode="ink.setMode" @color="ink.setColor" @undo="ink.undo" @clear="ink.clearPage" @close="ink.exit" />
       </div>
       <div v-if="loading" class="reader-overlay"><span class="spinner"></span><p>正在打开文档…</p></div>
@@ -660,9 +663,14 @@ defineExpose({ goToPage, getPage: () => page.value, getPdf: () => pdf, isSuspend
 <style scoped>
 .pdf-viewport { position: relative; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
 .pdf-viewport > .pdf-scroll { position: absolute; inset: 0; }
+/* 页面放大后超出阅读区时，底部出现一条玻璃横向滚动条；系统的横向滚动条隐藏，避免出现两条。 */
+.pdf-viewport > .pdf-scroll::-webkit-scrollbar:horizontal { height: 0; }
+.pdf-hscroll { position: absolute; left: 14px; right: 64px; bottom: 3px; z-index: 6; height: 14px; cursor: default; touch-action: none; }
+.pdf-hscroll-thumb { position: absolute; top: 50%; height: 6px; margin-top: -3px; min-width: 28px; border-radius: var(--r-full); background: color-mix(in srgb, var(--surface-ink) 34%, transparent); box-shadow: inset 0 0 0 .5px rgb(255 255 255 / .35), 0 1px 3px rgb(0 0 0 / .18); transition: height var(--dur-2) var(--spring-snappy), margin-top var(--dur-2) var(--spring-snappy), background var(--dur-1) var(--ease-soft); }
+.pdf-hscroll:hover .pdf-hscroll-thumb, .pdf-hscroll.dragging .pdf-hscroll-thumb { height: 9px; margin-top: -4.5px; background: color-mix(in srgb, var(--surface-ink) 52%, transparent); }
 :deep(.pdf-search-highlights) { position: absolute; inset: 0; pointer-events: none; z-index: 2; overflow: hidden; }
 :deep(.document-search-hit) { position: absolute; background: rgba(235, 181, 44, .32); mix-blend-mode: multiply; }
 :deep(.document-search-current) { background: rgba(245, 138, 33, .5); outline: 1px solid rgba(155, 83, 15, .75); }
-:global(:root[data-theme='dark']) :deep(.document-search-hit) { mix-blend-mode: normal; background: rgba(241, 194, 69, .32); }
-:global(:root[data-theme='dark']) :deep(.document-search-current) { background: rgba(244, 150, 50, .5); outline-color: rgba(255, 210, 128, .8); }
+:global(:root[data-theme='dark'] .document-search-hit) { mix-blend-mode: normal; background: rgba(241, 194, 69, .32); }
+:global(:root[data-theme='dark'] .document-search-current) { background: rgba(244, 150, 50, .5); outline-color: rgba(255, 210, 128, .8); }
 </style>

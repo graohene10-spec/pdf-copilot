@@ -3,12 +3,14 @@ import { normalizeBackground } from '../settings/background.ts'
 type Ink = 'dark' | 'light'
 type RGB = readonly [number, number, number]
 type PixelGrid = { width: number; height: number; pixels: Uint8ClampedArray }
-type Original = { variables: Map<string, { value: string; priority: string }>; attribute: string | null; ink: Ink; key: string }
+type Original = { variables: Map<string, { value: string; priority: string }>; attribute: string | null; ink: Ink; key: string; floor: number }
 const SIZE = 64
 const DARK: RGB = [22, 26, 32]
 const LIGHT: RGB = [242, 244, 247]
 const COLORS: Record<Ink, string> = { dark: '#161a20', light: '#f2f4f7' }
-const VARIABLES = ['--ink', '--control-ink', '--secondary', '--muted', '--glass-label-shadow']
+const VARIABLES = ['--ink', '--control-ink', '--secondary', '--muted', '--glass-label-shadow', '--glass-floor']
+// 玻璃上的文字至少达到这个对比度（WCAG AA 4.5，再留一点余量给照片的局部起伏）。
+const TARGET_CONTRAST = 4.8
 const TEXT_REGIONS = '.breadcrumb,.library-search>kbd,.library-summary>div,.library-summary>.summary-note,.library-list-heading>span,.library-empty>h2,.library-empty>p,.library-empty>small,.document-card-title h3,.document-meta,.document-progress>span'
 // Tabs take the top bar's ink rather than their own: per-tab sampling could leave one tab dark on a dark bar.
 const TARGETS = '.ai-pane,.app-sidebar,.app-topbar,.library-heading,.library-search,.library-summary,.library-toolbar,.library-list-heading,.library-empty,.document-card,.reader-tools,.document-details,' + TEXT_REGIONS
@@ -36,6 +38,23 @@ export function chooseGlassInk(background: RGB, previous?: Ink): Ink {
   const oldContrast = previous === 'dark' ? darkContrast : lightContrast
   const nextContrast = best === 'dark' ? darkContrast : lightContrast
   return nextContrast > oldContrast * 1.12 ? best : previous
+}
+
+const mix = (below: RGB, color: RGB, alpha: number): RGB => below.map((channel, index) => channel * (1 - alpha) + color[index]! * alpha) as unknown as RGB
+
+/**
+ * The least opacity this glass needs so the theme's own ink stays readable on the photo below.
+ * Instead of switching a dark-theme panel to dark text (it would look like a light-theme panel),
+ * the glass simply gets denser until the text reaches the target contrast.
+ */
+export function glassFloor(below: RGB, material: RGB, ink: Ink, target = TARGET_CONTRAST): number {
+  const foreground = luminance(ink === 'dark' ? DARK : LIGHT)
+  const readable = (alpha: number) => ratio(luminance(mix(below, material, alpha)), foreground) >= target
+  if (readable(0)) return 0
+  if (!readable(1)) return 1
+  let low = 0, high = 1
+  for (let step = 0; step < 14; step++) { const middle = (low + high) / 2; if (readable(middle)) high = middle; else low = middle }
+  return Math.ceil(high * 50) / 50
 }
 
 function materialColor(value: string): { rgb: RGB; alpha: number } {
@@ -144,6 +163,7 @@ export function installGlassContrast(root: HTMLElement): { setBackground(dataUrl
     }
     if (saved.attribute === null) element.removeAttribute('data-glass-ink')
     else element.setAttribute('data-glass-ink', saved.attribute)
+    element.removeAttribute('data-glass-floor')
     original.delete(element)
   }
   function reset() {
@@ -181,15 +201,25 @@ export function installGlassContrast(root: HTMLElement): { setBackground(dataUrl
     }
     for (const element of observed) if (element !== shell && !targets.has(element)) { resize.unobserve(element); observed.delete(element); restore(element) }
     if (!observed.has(shell)) { resize.observe(shell); observed.add(shell) }
-    const changes: { element: HTMLElement; ink: Ink; key: string }[] = []
+    const changes: { element: HTMLElement; ink: Ink; key: string; floor: number }[] = []
     const appearanceKey = `${generation}:${appearance.theme}:${win.getComputedStyle(document.documentElement).getPropertyValue('--glass-transparency')}`
     const appearanceChanged = appearanceKey !== lastAppearanceKey
     lastAppearanceKey = appearanceKey
+    // 带底色的玻璃（侧栏、顶栏、工具条、助手、卡片……）一律用当前主题的墨色，底图压不住时只把玻璃加厚；
+    // 只有直接写在图片上的文字（没有玻璃）才按身后的光色在深浅墨色之间切换。玻璃里的控件跟随所在的玻璃。
+    const themeInk: Ink = appearance.theme === 'dark' ? 'light' : 'dark'
+    const glass = new Set<HTMLElement>()
     // Complete geometry/style reads before writing foreground variables. No PDF
     // pixels, body styles, layout dimensions or pointer events are involved.
-    for (const element of targets) {
+    for (const element of [...targets].sort((a, b) => a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1)) {
       if (!observed.has(element)) { resize.observe(element); observed.add(element) }
-      const rectangle = textRectangle(element)
+      let inside = false
+      for (let node = element.parentElement; node && node !== shell; node = node.parentElement) if (glass.has(node)) { inside = true; break }
+      if (inside) { restore(element); continue }
+      const own = materialColor(win.getComputedStyle(element).backgroundColor)
+      const isGlass = own.alpha > .02 && !element.matches(TEXT_REGIONS)
+      if (isGlass) glass.add(element)
+      const rectangle = isGlass ? element.getBoundingClientRect() : textRectangle(element)
       if (!rectangle.width || !rectangle.height || rectangle.bottom <= bounds.top || rectangle.top >= bounds.bottom || rectangle.right <= bounds.left || rectangle.left >= bounds.right) continue
       let background = photoColor(grid, bounds, rectangle)
       const key = `${appearanceKey}:${materialRevision}:${background.map(channel => Math.round(channel)).join(',')}`
@@ -199,30 +229,35 @@ export function installGlassContrast(root: HTMLElement): { setBackground(dataUrl
       // transparency/theme changes, rather than responding to click classes.
       if (previous?.key === key && element.matches('button,input,textarea,.file-tab')) continue
       const layers: HTMLElement[] = []
-      for (let node: HTMLElement | null = element; node && node !== shell; node = node.parentElement) layers.unshift(node)
+      for (let node: HTMLElement | null = isGlass ? element.parentElement : element; node && node !== shell; node = node.parentElement) layers.unshift(node)
       for (const layer of layers) {
         const material = materialColor(win.getComputedStyle(layer).backgroundColor)
         const alpha = Math.max(0, Math.min(1, material.alpha))
-        if (alpha) background = background.map((channel, index) => channel * (1 - alpha) + material.rgb[index]! * alpha) as unknown as RGB
+        if (alpha) background = mix(background, material.rgb, alpha)
       }
+      if (isGlass) { changes.push({ element, ink: themeInk, key, floor: glassFloor(background, own.rgb, themeInk) }); continue }
       // Theme changes are deliberate contrast changes, rather than tiny shifts
       // caused by scrolling. Do not carry the old theme's hysteresis into them.
       const previousInk = !appearanceChanged && previous?.key.startsWith(`${appearanceKey}:${materialRevision}:`) ? previous.ink : undefined
-      changes.push({ element, ink: chooseGlassInk(background, previousInk), key })
+      changes.push({ element, ink: chooseGlassInk(background, previousInk), key, floor: 0 })
     }
-    for (const { element, ink, key } of changes) {
+    for (const { element, ink, key, floor } of changes) {
       let saved = original.get(element)
       if (!saved) {
-        saved = { variables: new Map(VARIABLES.map(name => [name, { value: element.style.getPropertyValue(name), priority: element.style.getPropertyPriority(name) }])), attribute: element.getAttribute('data-glass-ink'), ink, key }
+        saved = { variables: new Map(VARIABLES.map(name => [name, { value: element.style.getPropertyValue(name), priority: element.style.getPropertyPriority(name) }])), attribute: element.getAttribute('data-glass-ink'), ink, key, floor: -1 }
         original.set(element, saved)
-      } else if (saved.ink === ink) { saved.key = key; continue }
+      } else if (saved.ink === ink && saved.floor === floor) { saved.key = key; continue }
       saved.ink = ink
       saved.key = key
+      saved.floor = floor
       for (const name of VARIABLES) {
+        if (name === '--glass-floor') continue
         const value = name === '--glass-label-shadow' ? ink === 'dark' ? '0 1px 1px rgb(255 255 255 / .12)' : '0 1px 1px rgb(0 0 0 / .16)' : COLORS[ink]
         element.style.setProperty(name, value)
       }
       element.dataset.glassInk = ink
+      if (floor > 0) { element.style.setProperty('--glass-floor', String(floor)); element.dataset.glassFloor = '' }
+      else { element.style.removeProperty('--glass-floor'); element.removeAttribute('data-glass-floor') }
     }
     if (appearanceChanged) {
       const request = ++settlement

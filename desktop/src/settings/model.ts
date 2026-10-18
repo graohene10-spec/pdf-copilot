@@ -7,6 +7,11 @@ export type AssistantAvatar = { kind: AvatarKind; image: string | null }
 export type AvatarKind = 'crab' | 'claude' | 'chatgpt' | 'deepseek' | 'custom'
 export const AVATARS: { id: AvatarKind; label: string }[] = [{ id: 'crab', label: '小螃蟹' }, { id: 'claude', label: 'Claude' }, { id: 'chatgpt', label: 'ChatGPT' }, { id: 'deepseek', label: 'DeepSeek' }, { id: 'custom', label: '自定义' }]
 export const MAX_AVATAR_CHARS = 3_000_000
+/** The empty-screen greeting: English salutations, classical Chinese lines, both, or the user's own lines (one per line). */
+export type GreetingStyle = 'mixed' | 'english' | 'poetry' | 'custom'
+export type AssistantGreeting = { style: GreetingStyle; custom: string }
+export const GREETING_STYLES: { id: GreetingStyle; label: string }[] = [{ id: 'mixed', label: '英文问候与古诗' }, { id: 'english', label: '英文问候' }, { id: 'poetry', label: '中文古诗' }, { id: 'custom', label: '自定义' }]
+export const MAX_GREETING_CHARS = 4000
 const AVATAR_IMAGE = /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+=*$/
 export function validAvatarImage(value: unknown): value is string { return typeof value === 'string' && value.length <= MAX_AVATAR_CHARS && AVATAR_IMAGE.test(value) }
 /** A font file the user imported. The bytes live in the local library (key `font.v1.<id>`), never in the app bundle. */
@@ -58,7 +63,7 @@ export interface AppPreferences {
   appearance: { theme: ThemePreference; libraryView: 'grid' | 'list'; glassTransparency: number; glassBlur: number; backdrop: BackdropPreset; background: BackgroundImage | null; gallery: BackgroundImage[]; uiFont: string; readingFont: string; customFonts: CustomFont[] }
   pdf: { initialZoom: 'fit-width' | number; zoomStep: number; fitOnPanelOverflow: boolean; openAssistantOnCapture: boolean; quickAskOnCapture: boolean }
   markdown: { fontSize: number; contentWidth: number }
-  assistant: { quickPrompts: QuickPrompts; captureQuestions: QuickPrompt[]; avatar: AssistantAvatar }
+  assistant: { quickPrompts: QuickPrompts; captureQuestions: QuickPrompt[]; avatar: AssistantAvatar; greeting: AssistantGreeting; predictQuestions: boolean }
   updates: UpdatePreferences
   shortcuts: Record<ShortcutAction, string>
 }
@@ -91,7 +96,7 @@ export const MAX_GALLERY = 6
 export function defaultPreferences(): AppPreferences {
   return { version: 3, appearance: { theme: 'system', libraryView: 'grid', glassTransparency: 70, glassBlur: 50, backdrop: 'mist', background: null, gallery: [], uiFont: 'system', readingFont: 'anthropic', customFonts: [] },
     pdf: { initialZoom: 'fit-width', zoomStep: 15, fitOnPanelOverflow: true, openAssistantOnCapture: true, quickAskOnCapture: true },
-    markdown: { fontSize: 17, contentWidth: 840 }, assistant: { quickPrompts: defaultQuickPrompts(), captureQuestions: defaultCaptureQuestions(), avatar: { kind: 'crab', image: null } }, updates: { autoCheck: true, prerelease: false }, shortcuts: { ...DEFAULT_SHORTCUTS } }
+    markdown: { fontSize: 17, contentWidth: 840 }, assistant: { quickPrompts: defaultQuickPrompts(), captureQuestions: defaultCaptureQuestions(), avatar: { kind: 'crab', image: null }, greeting: { style: 'mixed', custom: '' }, predictQuestions: true }, updates: { autoCheck: true, prerelease: false }, shortcuts: { ...DEFAULT_SHORTCUTS } }
 }
 const modifierOrder = ['Ctrl', 'Alt', 'Shift', 'Meta']
 const aliases: Record<string, string> = { control: 'Ctrl', ctrl: 'Ctrl', alt: 'Alt', option: 'Alt', shift: 'Shift', meta: 'Meta', cmd: 'Meta', command: 'Meta' }
@@ -149,6 +154,11 @@ export function normalizePreferences(value: unknown, legacyTheme?: string | null
   const image = validAvatarImage(avatar.image) ? avatar.image : null
   const kind = AVATARS.some(item => item.id === avatar.kind) ? avatar.kind as AvatarKind : 'crab'
   defaults.assistant.avatar = { kind: kind === 'custom' && !image ? 'crab' : kind, image }
+  const greeting = record(record(input.assistant).greeting)
+  const custom = typeof greeting.custom === 'string' ? greeting.custom.slice(0, MAX_GREETING_CHARS) : ''
+  const style = GREETING_STYLES.some(item => item.id === greeting.style) ? greeting.style as GreetingStyle : 'mixed'
+  defaults.assistant.greeting = { style: style === 'custom' && !custom.trim() ? 'mixed' : style, custom }
+  defaults.assistant.predictQuestions = record(input.assistant).predictQuestions !== false
   const updates = record(input.updates)
   defaults.updates.autoCheck = typeof updates.autoCheck === 'boolean' ? updates.autoCheck : true
   defaults.updates.prerelease = updates.prerelease === true
@@ -210,6 +220,11 @@ export function preferenceErrors(value: AppPreferences): string[] {
   if (!avatar || !AVATARS.some(item => item.id === avatar.kind)) errors.push('请选择有效的助手形象。')
   else if (avatar.image !== null && !validAvatarImage(avatar.image)) errors.push('助手形象图片无效，请选择 3 MB 以内的 PNG、JPEG、GIF 或 WebP。')
   else if (avatar.kind === 'custom' && !avatar.image) errors.push('请先选择自定义助手形象的图片。')
+  const greeting = value.assistant?.greeting
+  if (!greeting || !GREETING_STYLES.some(item => item.id === greeting.style) || typeof greeting.custom !== 'string') errors.push('请选择有效的问候语样式。')
+  else if (greeting.custom.length > MAX_GREETING_CHARS) errors.push(`自定义问候最多 ${MAX_GREETING_CHARS} 个字符。`)
+  else if (greeting.style === 'custom' && !greeting.custom.trim()) errors.push('请至少写一句自定义问候，每行一句。')
+  if (typeof value.assistant?.predictQuestions !== 'boolean') errors.push('问题预测选项无效。')
   if (value.pdf.initialZoom !== 'fit-width') check('PDF 初始缩放', value.pdf.initialZoom, 25, 400)
   check('缩放步长', value.pdf.zoomStep, 5, 50)
   check('Markdown 字号', value.markdown.fontSize, 13, 28)

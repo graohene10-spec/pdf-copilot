@@ -1,16 +1,70 @@
-// 阅读助手空白页的问候：按当地时间分段，每段几句，打开时随机挑一句。
-const GREETINGS: { from: number; to: number; lines: string[] }[] = [
-  { from: 5, to: 9, lines: ['早安，今天读点什么？', '晨光正好，适合翻开一本书', '早，先读一页再说', '新的一天，从一个问题开始'] },
-  { from: 9, to: 12, lines: ['上午好，正是专注的时候', '上午好，从哪一页开始？', '趁头脑清醒，啃块硬骨头', '上午好，把难懂的留给我'] },
-  { from: 12, to: 14, lines: ['午安，边吃边读也不错', '午间片刻，读两页再歇', '午安，慢一点也没关系', '吃饱了，正好想点问题'] },
-  { from: 14, to: 18, lines: ['下午好，来杯茶吧', '午后的光，适合慢慢读', '下午好，读到哪儿了？', '泡壶茶，把这一章读透'] },
-  { from: 18, to: 20, lines: ['傍晚好，收个尾吧', '黄昏时分，再读一节', '傍晚好，今天学到了什么？'] },
-  { from: 20, to: 23, lines: ['晚上好，安静的时间到了', '夜读时分，一盏灯就够', '晚上好，今天的疑问交给我', '夜色正好，适合想深一点'] },
-  { from: 23, to: 29, lines: ['夜深了，别熬太晚', '深夜还在读？我陪你', '星光作伴，再看最后一页', '这么晚了，挑个小问题吧'] },
+// 阅读助手的「门面」文字：空白页的问候、输入框的占位语、思考时的动词。都按种子随机，同一段对话里保持不变。
+import type { GreetingStyle } from '../settings/model'
+
+export type Greeting = { text: string; source?: string; lang: 'en' | 'zh' }
+type Slot = { from: number; to: number; english: string[]; poems: [string, string][] }
+
+// 时段从清晨 5 点起算，凌晨记作 24–29 点。古诗只选与读书或时辰相合的句子，出处写全。
+const SLOTS: Slot[] = [
+  { from: 5, to: 9, english: ['Good morning', 'Morning, sunshine', 'Coffee first?', 'Rise and read'],
+    poems: [['黑发不知勤学早，白首方悔读书迟', '颜真卿《劝学》'], ['日出江花红胜火，春来江水绿如蓝', '白居易《忆江南》'], ['书卷多情似故人，晨昏忧乐每相亲', '于谦《观书》']] },
+  { from: 9, to: 12, english: ['Good morning', 'A fine morning for ideas', 'Shall we begin?', 'Morning, scholar'],
+    poems: [['问渠那得清如许？为有源头活水来', '朱熹《观书有感》'], ['旧书不厌百回读，熟读深思子自知', '苏轼《送安惇秀才失解西归》'], ['纸上得来终觉浅，绝知此事要躬行', '陆游《冬夜读书示子聿》']] },
+  { from: 12, to: 14, english: ['Good afternoon', 'Lunch, then a chapter?', 'Midday, mid-chapter'],
+    poems: [['日长睡起无情思，闲看儿童捉柳花', '杨万里《闲居初夏午睡起》'], ['书卷多情似故人，晨昏忧乐每相亲', '于谦《观书》']] },
+  { from: 14, to: 18, english: ['Good afternoon', 'Fancy a cup of tea?', 'Tea and theorems?', 'Slow light, slow reading'],
+    poems: [['闲坐小窗读周易，不知春去几多时', '叶采《暮春即事》'], ['读书不觉已春深，一寸光阴一寸金', '王贞白《白鹿洞二首》'], ['千淘万漉虽辛苦，吹尽狂沙始到金', '刘禹锡《浪淘沙》']] },
+  { from: 18, to: 20, english: ['Good evening', 'The sky is turning gold', 'Evening, reader'],
+    poems: [['夕阳无限好，只是近黄昏', '李商隐《登乐游原》'], ['落霞与孤鹜齐飞，秋水共长天一色', '王勃《滕王阁序》']] },
+  { from: 20, to: 23, english: ['Good evening', 'The moon is beautiful, isn’t it?', 'A quiet night for reading'],
+    poems: [['粗缯大布裹生涯，腹有诗书气自华', '苏轼《和董传留别》'], ['眼前直下三千字，胸次全无一点尘', '于谦《观书》'], ['古人学问无遗力，少壮工夫老始成', '陆游《冬夜读书示子聿》']] },
+  { from: 23, to: 29, english: ['The moon is beautiful, isn’t it?', 'Burning the midnight oil?', 'Still up? So am I', 'Stars out, pages open'],
+    poems: [['三更灯火五更鸡，正是男儿读书时', '颜真卿《劝学》'], ['晚来天欲雪，能饮一杯无', '白居易《问刘十九》'], ['今夜偏知春气暖，虫声新透绿窗纱', '刘方平《月夜》'], ['明月别枝惊鹊，清风半夜鸣蝉', '辛弃疾《西江月·夜行黄沙道中》']] },
 ]
 
-export function greetingFor(date: Date, random = Math.random()): string {
+const pick = <T>(list: T[], random: number) => list[Math.min(list.length - 1, Math.floor(Math.max(0, random) * list.length))]!
+
+/** The empty-screen greeting for this hour: an English salutation, a classical line, or one of the user's own lines. */
+export function greetingFor(date: Date, random = Math.random(), style: GreetingStyle = 'mixed', custom = ''): Greeting {
   const hour = date.getHours() < 5 ? date.getHours() + 24 : date.getHours()
-  const slot = GREETINGS.find(item => hour >= item.from && hour < item.to) || GREETINGS[3]!
-  return slot.lines[Math.min(slot.lines.length - 1, Math.floor(random * slot.lines.length))]!
+  const slot = SLOTS.find(item => hour >= item.from && hour < item.to) || SLOTS[3]!
+  const own = customLines(custom)
+  if (style === 'custom' && own.length) return { text: pick(own, random), lang: /[一-鿿]/.test(pick(own, random)) ? 'zh' : 'en' }
+  // 「两者」：同一个随机数的前半落在英文，后半落在古诗，各自再按比例挑一句。
+  const poetry = style === 'poetry' || (style === 'mixed' && random >= .5)
+  const local = style === 'mixed' ? (random >= .5 ? random - .5 : random) * 2 : random
+  if (poetry) { const [text, source] = pick(slot.poems, local); return { text, source, lang: 'zh' } }
+  return { text: pick(slot.english, local), lang: 'en' }
 }
+
+export function customLines(text: string) { return text.split(/\r?\n/).map(line => line.trim()).filter(Boolean).slice(0, 60) }
+
+// 输入框空着时的占位语：学术严谨的提问习惯，或一句典故、格言。
+export const PLACEHOLDERS = [
+  '我来，我见，我征服。',
+  '学而不思则罔，思而不学则殆。',
+  '知之为知之，不知为不知，是知也。',
+  '博学之，审问之，慎思之，明辨之，笃行之。',
+  '吾生也有涯，而知也无涯。',
+  '学贵有疑，小疑则小进，大疑则大进。',
+  '工欲善其事，必先利其器。',
+  '大胆假设，小心求证。',
+  '如果说我看得更远，那是因为站在巨人的肩上。',
+  'Sapere aude：敢于运用你自己的理智。',
+  '先给出定义，再讨论结论。',
+  '这个结论依赖哪些前提？',
+  '换一个反例，它还成立吗？',
+  '从第一性原理出发，问一个问题。',
+  '哪一步推导最值得怀疑？',
+]
+export function placeholderFor(random = Math.random()) { return pick(PLACEHOLDERS, random) }
+
+// 思考时的动词，学 Claude Code：每段回答随机一个，配上省略号。
+export const THINKING_VERBS = ['Thinking', 'Pondering', 'Contemplating', 'Ruminating', 'Musing', 'Deliberating', 'Mulling', 'Cogitating', 'Reflecting', 'Considering', 'Reasoning', 'Puzzling', 'Percolating', 'Brewing', 'Synthesizing', 'Untangling', 'Distilling', 'Deciphering']
+export function thinkingVerb(seed: string) {
+  let hash = 0
+  for (const char of seed) hash = (hash * 31 + char.charCodeAt(0)) >>> 0
+  return THINKING_VERBS[hash % THINKING_VERBS.length]!
+}
+/** Claude Code 的转动星标：六个字形来回循环。 */
+export const SPINNER_FRAMES = ['·', '✢', '✳', '✶', '✻', '✽', '✻', '✶', '✳', '✢']

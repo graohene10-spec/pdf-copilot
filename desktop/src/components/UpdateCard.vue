@@ -130,7 +130,7 @@ function notesClick(event: MouseEvent) {
 .update-card-leave-active{transition:opacity var(--dur-2) var(--ease-out),transform var(--dur-2) var(--ease-out)}
 .update-card-leave-to{opacity:0;transform:translateY(10px) scale(.97)}
 @keyframes update-card-in{from{opacity:0;transform:translateY(18px) scale(.94)}to{opacity:1;transform:none}}
-:global(:root[data-glass='solid']) .update-card,:global(:root[data-contrast='high']) .update-card{background-color:var(--surface);background-image:none;-webkit-backdrop-filter:none;backdrop-filter:none}
+:root[data-glass='solid'] .update-card,:root[data-contrast='high'] .update-card{background-color:var(--surface);background-image:none;-webkit-backdrop-filter:none;backdrop-filter:none}
 @media(prefers-reduced-transparency:reduce),(prefers-contrast:more),(forced-colors:active){.update-card{background-color:var(--surface);background-image:none;-webkit-backdrop-filter:none;backdrop-filter:none}}
 @media(prefers-reduced-motion:reduce){.update-card-enter-active,.update-track.indeterminate i{animation:none}.update-card-leave-active,.update-track i,.update-actions button{transition:none}}
 </style>
