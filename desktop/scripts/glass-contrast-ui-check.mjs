@@ -279,7 +279,8 @@ try {
   await page.locator('.ai-pane .user-question').waitFor();
   await page.locator('.ai-pane .answer-code').waitFor();
   // Questions follow the pane's adapted ink; code blocks are solid and keep the theme's.
-  const paneInk = await page.locator('.ai-pane .title-text').evaluate(element => getComputedStyle(element).color);
+  // The title sits on the header's own bar, so compare with the pane body's ink.
+  const paneInk = await page.locator('.ai-pane').evaluate(element => { const probe = document.createElement('span'); probe.style.color = 'var(--ink)'; element.append(probe); const color = getComputedStyle(probe).color; probe.remove(); return color; });
   assert.equal(await page.locator('.ai-pane .user-question').evaluate(element => getComputedStyle(element).color), paneInk);
   await themeText('.ai-pane .answer-code');
   await themeText('.markdown-paper');

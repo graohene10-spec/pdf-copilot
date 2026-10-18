@@ -266,7 +266,7 @@
   to { clip-path: circle(var(--reveal-r, 150vmax) at var(--reveal-x, 100%) var(--reveal-y, 0)); }
 }
 
-/* ---- 文档库 ↔ 阅读：视图过渡，两张快照在合成层交叉淡化 ------------------ */
+/* ---- 文档库 → 阅读：视图过渡，两张快照在合成层交叉淡化 ------------------ */
 
 :root[data-view-switch]::view-transition-old(root) {
   animation: zg-fade-out 180ms var(--ease-out) both;
@@ -274,10 +274,6 @@
 
 :root[data-view-switch]::view-transition-new(root) {
   animation: zg-view-in 300ms var(--ease-out) both;
-}
-
-:root[data-view-switch='close']::view-transition-new(root) {
-  animation-name: zg-fade-in;
 }
 
 @keyframes zg-view-in {
