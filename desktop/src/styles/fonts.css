@@ -1,0 +1,8 @@
+/* 随应用内置的 Anthropic Serif（可变字体，字重 300–800，含光学尺寸轴）。中文仍由系统黑体补位。 */
+@font-face {
+  font-family: 'Anthropic Serif';
+  src: url('../assets/fonts/AnthropicSerif-Variable.woff2') format('woff2');
+  font-weight: 300 800;
+  font-style: normal;
+  font-display: swap;
+}

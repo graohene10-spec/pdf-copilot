@@ -142,6 +142,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            // 免安装版上次自动更新换下的旧文件，启动后再删。
+            #[cfg(windows)] std::thread::spawn(updater::remove_leftovers);
             let data_dir = app.path().app_data_dir()?;
             let library = Library::open(&data_dir.join("library.sqlite3")).map_err(std::io::Error::other)?;
             let resource_dir = app.path().resource_dir()?;

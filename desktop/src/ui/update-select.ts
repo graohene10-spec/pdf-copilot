@@ -10,7 +10,8 @@ export const DESKTOP_TAG_PREFIX = 'desktop-v'
 export const SETUP_SUFFIX = '_x64-setup.exe'
 export const MAX_NOTES_CHARS = 20_000
 
-export type UpdateInstaller = { name: string; url: string; size: number; sha256: string }
+/** `setup` for installed copies, `portable` (ZIP unpacked over the program folder) for the portable copy. */
+export type UpdateInstaller = { name: string; url: string; size: number; sha256: string; kind: 'setup' | 'portable' }
 export type UpdateInfo = {
   version: string
   tag: string

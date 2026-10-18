@@ -334,7 +334,7 @@ function dialogKeydown(event: KeyboardEvent) {
             </div>
             <input ref="fontInput" class="background-file" type="file" multiple accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2" tabindex="-1" aria-label="字体文件" @change="chooseFonts" />
             <p v-if="fontStatus" class="settings-help" role="status">{{ fontStatus }}</p>
-            <p class="settings-help">阅读字体用于 Markdown 正文与阅读助手的回答；PDF 保持原排版。导入的字体只保存在本机，不会上传或随应用分发；导入 Anthropic Serif 字体文件后，「Anthropic Serif」选项会直接使用它。</p>
+            <p class="settings-help">阅读字体用于 Markdown 正文与阅读助手的回答；PDF 保持原排版。Anthropic Serif 已随应用内置；也可以导入其他字体文件，只保存在本机。</p>
             <p class="settings-help">透明度仅影响侧栏、工具栏与面板，正文保持实色。系统开启「减少透明度」时自动使用实色。</p>
           </template>
           <template v-else-if="tab === 'reading'">

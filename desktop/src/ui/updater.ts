@@ -83,6 +83,12 @@ export function check(options: { manual?: boolean; includePrerelease?: boolean }
   return run
 }
 
+/** 一键更新：下载并校验，随后自动安装、重启开智。 */
+export async function update(): Promise<void> {
+  if (installerPath?.version !== state.info?.version) await download()
+  if (state.phase === 'ready') await install()
+}
+
 export async function download(): Promise<void> {
   const info = state.info
   if (!info?.installer || busy()) return
@@ -166,5 +172,5 @@ export async function loadStatus(): Promise<UpdateStatus | null> {
 }
 
 export function useUpdater() {
-  return { state: readonly(state), visible, check, download, cancelDownload, install, skip, later, show, openPage, startAutoCheck, stopAutoCheck, loadStatus }
+  return { state: readonly(state), visible, check, update, download, cancelDownload, install, skip, later, show, openPage, startAutoCheck, stopAutoCheck, loadStatus }
 }
