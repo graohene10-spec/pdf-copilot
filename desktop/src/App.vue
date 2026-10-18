@@ -347,8 +347,23 @@ function cacheReader(doc: Doc, bytes: Uint8Array, view: any) {
   }
   return entry
 }
+/**
+ * 文档库与阅读区之间的切换用视图过渡：只在合成层对两张快照做淡入淡出，
+ * 不必每一帧重算整片玻璃的背景模糊，也不受 PDF 首次解析占用主线程的影响。
+ */
+function switchView<T>(change: () => T): Promise<Awaited<T>> | T {
+  const start = (document as any).startViewTransition?.bind(document)
+  const root = document.documentElement
+  if (!start || root.dataset.themeTransition || root.dataset.viewSwitch || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return change()
+  root.dataset.viewSwitch = active.value ? 'close' : 'open'
+  let result: T
+  const transition = start(async () => { result = change(); await nextTick() })
+  void transition.finished.catch(() => {}).finally(() => { delete root.dataset.viewSwitch })
+  return transition.updateCallbackDone.catch(() => {}).then(() => result) as Promise<Awaited<T>>
+}
 async function openDocument(doc: Doc, reload = false) {
   if (active.value?.id === doc.id && !reload) return
+  if (!active.value && !reload) return switchView(() => showDocument(doc))
   // 同一组里已经在屏幕上的文档：只移交焦点。
   if (!reload && inGroup(active.value?.id) && inGroup(doc.id) && readerCache.value.some(entry => entry.id === doc.id)) { focusPane(doc.id); return }
   return showDocument(doc, reload)
@@ -411,6 +426,10 @@ async function loadGroupReaders(epoch: number) {
   }
 }
 function closeReader() {
+  if (active.value) { switchView(leaveReader); return }
+  leaveReader()
+}
+function leaveReader() {
   suspendLeaving([]); pauseReader(); ++openEpoch; void flushProgress(); splitPicker.value = undefined; active.value = null; opening.value = false; selection.value = undefined; detailsOpen.value = false
   // 没有打开的文件时才真正清空工作区；否则读者与助手留在原处，回来即用。
   if (!tabs.value.length) clearWorkspace()

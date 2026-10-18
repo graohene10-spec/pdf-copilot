@@ -1,0 +1,58 @@
+/* 手写标记图层：每个已渲染页面一层 SVG，位于文字层之上、框选与引用高亮之下。 */
+.ink-layer {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  z-index: 3;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* 页面释放回占位符时，标记随页面一起隐藏。 */
+.page-slot:not(.page-ready) > .ink-layer {
+  visibility: hidden;
+}
+
+/* 荧光笔像真实墨水一样与纸面相乘：文字仍然清晰。 */
+.ink-layer.ink-multiply {
+  mix-blend-mode: multiply;
+}
+
+.ink-stroke {
+  pointer-events: none;
+}
+
+.ink-mode {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.ink-mode .ink-layer {
+  pointer-events: auto;
+  touch-action: none;
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M3 21l1.2-4.6L16.6 4a2 2 0 0 1 2.8 0l.6.6a2 2 0 0 1 0 2.8L7.6 19.8z' fill='%23fff' stroke='%23161a20' stroke-width='1.4' stroke-linejoin='round'/%3E%3Cpath d='M3 21l1.2-4.6 3.4 3.4z' fill='%23161a20'/%3E%3C/svg%3E") 3 21, crosshair;
+}
+
+.ink-mode.ink-tool-eraser .ink-layer {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 22 22'%3E%3Ccircle cx='11' cy='11' r='9' fill='rgba(255,255,255,.55)' stroke='%23161a20' stroke-width='1.4'/%3E%3C/svg%3E") 11 11, cell;
+}
+
+.ink-mode .textLayer,
+.ink-mode .link-layer,
+.ink-mode .pdf-link {
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* 深色主题下 PDF 画布被反相；标记使用同一滤镜，颜色仍落在“纸面”空间。
+   反相后的“相乘”即“滤色”。 */
+:root[data-theme=dark] .ink-layer {
+  filter: invert(.87) hue-rotate(180deg);
+}
+
+:root[data-theme=dark] .ink-layer.ink-multiply {
+  mix-blend-mode: screen;
+}

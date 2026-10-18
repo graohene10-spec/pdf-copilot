@@ -266,6 +266,30 @@
   to { clip-path: circle(var(--reveal-r, 150vmax) at var(--reveal-x, 100%) var(--reveal-y, 0)); }
 }
 
+/* ---- 文档库 ↔ 阅读：视图过渡，两张快照在合成层交叉淡化 ------------------ */
+
+:root[data-view-switch]::view-transition-old(root) {
+  animation: zg-fade-out 180ms var(--ease-out) both;
+}
+
+:root[data-view-switch]::view-transition-new(root) {
+  animation: zg-view-in 300ms var(--ease-out) both;
+}
+
+:root[data-view-switch='close']::view-transition-new(root) {
+  animation-name: zg-fade-in;
+}
+
+@keyframes zg-view-in {
+  from { opacity: 0; transform: scale(.985); }
+  to { opacity: 1; transform: none; }
+}
+
+/* 视图过渡接管时，原有的 Vue 渐变不再叠加。 */
+:root[data-view-switch] :is(.view-enter-active, .view-leave-active) {
+  transition: none !important;
+}
+
 /* ---- 微交互：图标在状态切换时轻轻弹一下 ------------------------------ */
 
 @keyframes zg-icon-pop {
