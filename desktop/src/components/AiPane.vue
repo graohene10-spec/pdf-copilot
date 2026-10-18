@@ -3,13 +3,14 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, defineAsync
 import 'katex/dist/katex.min.css'
 import { getProvider, getNativeModels, getNativeStatus } from '../ai/providers.mjs'
 import { nativeModelInventory, registerNativeModelInventory } from '../ai/native-models'
-import { chatState, sendChat, stopChat, configureRequests, taskSummary, conversations, activeConversationId, selectConversation, newConversation, deleteConversation, loadConversations, conversationTokens, contextWindow, estimateTokens, branchConversation, resendQuestion, watchConversation, allConversations, type Message, type ChatState } from '../ai/workspace'
+import { chatState, sendChat, stopChat, configureRequests, taskSummary, conversations, activeConversationId, selectConversation, newConversation, deleteConversation, loadConversations, conversationTokens, contextWindow, branchConversation, resendQuestion, watchConversation, allConversations, type Message, type ChatState } from '../ai/workspace'
 import { renderMarkdown, renderDiagrams } from '../ai/render'
 import { loadAiSettings, saveModelChoice } from '../ai/settings.mjs'
 import { useSettings } from '../settings'
 import AppIcon from './AppIcon.vue'
 import AssistantMark from './AssistantMark.vue'
-import { greetingFor } from '../ai/greeting'
+import { greetingFor, placeholderFor, thinkingVerb, SPINNER_FRAMES } from '../ai/greeting'
+import { predictQuestion, predictionKey } from '../ai/predict'
 const ModelPicker = defineAsyncComponent(() => import('./ModelPicker.vue'))
 
 const props = defineProps<{ document: { id: string; title: string; kind: string }; context: any; sendShortcut?: string; consumeCapture?: (value: { documentId: string; selection: any }) => void; conversationId?: string; draggable?: boolean
@@ -45,10 +46,11 @@ const input = ref<HTMLTextAreaElement>()
 const selected = computed(() => props.context?.selection || {})
 const hasSelection = computed(() => Boolean(selected.value.text || selected.value.image))
 const { preferences, effectiveAppearance } = useSettings()
-const suggestions = computed(() => preferences.value.assistant.quickPrompts)
 const avatar = computed(() => preferences.value.assistant.avatar)
-// 每段对话的问候固定一句，切换对话或新建时再随机挑。
-const greeting = computed(() => greetingFor(new Date(), (parseInt(state.value.id.slice(0, 6), 16) % 997) / 997))
+// 每段对话的问候与占位语各固定一句，切换对话或新建时再随机挑；占位语每问一次换一句。
+const seed = (text: string) => { let hash = 0; for (const char of text) hash = (hash * 31 + char.charCodeAt(0)) >>> 0; return (hash % 9973) / 9973 }
+const greeting = computed(() => greetingFor(new Date(), seed(state.value.id), preferences.value.assistant.greeting.style, preferences.value.assistant.greeting.custom))
+const placeholder = computed(() => placeholderFor(seed(`${state.value.id}:${messages.value.length}`)))
 const dark = computed(() => document.documentElement.dataset.theme === 'dark' || effectiveAppearance.value.theme === 'dark')
 
 // ---- Conversations -------------------------------------------------------
@@ -135,20 +137,24 @@ watch(() => props.conversationId, id => { if (id) conversationId.value = ownConv
 // 跟随标签的窗口显示文档当前的对话；别处（例如答完提示）切换了对话时跟着切换。
 watch(() => activeConversationId(props.document.id), id => { if (!props.conversationId && id !== conversationId.value) { rememberScroll(); conversationId.value = id; void nextTick(restoreScroll) } })
 
-// ---- Live timing and token counts -----------------------------------------
+// ---- Live timing and the thinking line -------------------------------------
 const now = ref(Date.now())
 let ticker: ReturnType<typeof setInterval> | undefined
+// 120ms 一帧：用时数字与 Claude Code 式的星标一起走。
 watch(busy, value => {
   clearInterval(ticker); ticker = undefined
-  if (value) ticker = setInterval(() => { now.value = Date.now() }, 200)
+  if (value) ticker = setInterval(() => { now.value = Date.now() }, 120)
   now.value = Date.now()
 }, { immediate: true })
+const spinner = computed(() => SPINNER_FRAMES[Math.floor(now.value / 120) % SPINNER_FRAMES.length])
+// 进度里只保留有信息量的状态（排队、读文档、查原文）；「思考中 / 正在回答」由英文动词表达。
+const GENERIC_ACTIVITY = /^(思考中|正在回答|准备上下文|AI 思考中)$/
+function activityNote(message: Message) { const text = message.activity || ''; return GENERIC_ACTIVITY.test(text) ? '' : text }
 const live = (message: Message) => Boolean(busy.value && message === messages.value.at(-1) && message.role === 'assistant' && !message.finishedAt)
 function seconds(ms: number) { return ms < 60000 ? `${Math.max(0, ms / 1000).toFixed(ms < 10000 ? 1 : 0)}s` : `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s` }
 function count(value?: number) { return !value ? '0' : value < 1000 ? String(value) : `${(value / 1000).toFixed(value < 10000 ? 1 : 0)}k` }
 function elapsed(message: Message) { return seconds((message.finishedAt || now.value) - (message.startedAt || now.value)) }
 function thinkingTime(message: Message) { return seconds((message.firstTokenAt || message.finishedAt || now.value) - (message.startedAt || now.value)) }
-function outputTokens(message: Message) { return message.usage?.output ?? (estimateTokens(message.content) + estimateTokens(message.reasoning || '')) }
 function lastThought(message: Message) {
   const lines = (message.reasoning || '').trim().split(/\n+/).filter(Boolean)
   return lines.at(-1)?.replace(/^[#*\-\s]+/, '').slice(0, 160) || ''
@@ -352,9 +358,17 @@ function focusPrompt() { void nextTick(() => input.value?.focus()) }
 function stop() { stopChat(props.document.id, state.value.id) }
 function applySettings(value: any) { settings.value = value; configureRequests(value) }
 function keydown(event: KeyboardEvent) {
-  if (event.key === 'Enter' && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey && !event.isComposing && event.keyCode !== 229 && !props.sendShortcut) { event.preventDefault(); void send() }
+  const plain = !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey && !event.isComposing && event.keyCode !== 229
+  if (prediction.value && !prompt.value) {
+    // Tab 或回车：采用预判的问题，放进输入框里可以再改；发送仍用发送键。
+    if ((event.key === 'Tab' || event.key === 'Enter') && plain) { event.preventDefault(); prompt.value = prediction.value; return }
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); dismissed = predictionKey(predictContext()); prediction.value = ''; return }
+  }
+  if (event.key === 'Enter' && plain && !props.sendShortcut) { event.preventDefault(); void send() }
 }
 function send(question?: string) {
+  // 输入框空着而有预判的问题时，按发送键直接发送它。
+  if (question === undefined && !prompt.value.trim() && prediction.value) question = prediction.value
   const id = props.document.id
   const selection = props.context?.selection
   const usesImage = includeSelection.value && Boolean(selection?.image)
@@ -365,13 +379,35 @@ function send(question?: string) {
     if (usesImage) consumeCapture?.({ documentId: id, selection })
   }, question, { conversationId: state.value.id })
 }
+// ---- Predicted next question --------------------------------------------------
+const prediction = ref('')
+const composerFocused = ref(false)
+let predicting: AbortController | undefined
+let predictTimer: ReturnType<typeof setTimeout> | undefined
+let dismissed = ''
+function predictContext() {
+  return { document: { ...props.document }, page: props.context?.page || 1, selection: selected.value.text || '', history: messages.value.filter(item => item.content && !item.failed).map(item => ({ role: item.role, content: item.content })) }
+}
+// 有上下文（选区、对话或文档上下文开着）且输入框空着时才预判；输入、发送、换页都会取消在途请求。
+const predictable = computed(() => preferences.value.assistant.predictQuestions && !busy.value && !prompt.value && (hasSelection.value || messages.value.length > 0 || includeDocument.value) && (composerFocused.value || messages.value.length > 0))
+watch(() => [predictable.value, props.document.id, props.context?.page, selected.value.text, messages.value.length, messages.value.at(-1)?.finishedAt] as const, () => {
+  clearTimeout(predictTimer); predicting?.abort(); predicting = undefined
+  const context = predictContext(), key = predictionKey(context)
+  if (!predictable.value) { if (prompt.value || busy.value) prediction.value = ''; return }
+  if (key === dismissed) return
+  prediction.value = ''
+  predictTimer = setTimeout(() => {
+    const request = new AbortController(); predicting = request
+    predictQuestion(context, request.signal).then(question => { if (predicting === request && !prompt.value && !busy.value) prediction.value = question }).catch(() => {}).finally(() => { if (predicting === request) predicting = undefined })
+  }, 700)
+}, { immediate: true })
 onMounted(() => {
   void loadConversations(props.document.id).then(() => { conversationId.value = ownConversation(props.document.id, props.conversationId) })
   restoreScroll()
   observer = new ResizeObserver(() => updateRail())
   if (messageList.value) observer.observe(messageList.value)
 })
-onBeforeUnmount(() => { unwatch?.(); rememberScroll(); clearInterval(ticker); observer?.disconnect(); if (renderFrame) cancelAnimationFrame(renderFrame); pickerRequest?.abort(); document.removeEventListener('pointerdown', pickerOutside, true); document.removeEventListener('pointerdown', historyOutside, true) })
+onBeforeUnmount(() => { unwatch?.(); rememberScroll(); clearInterval(ticker); clearTimeout(predictTimer); predicting?.abort(); observer?.disconnect(); if (renderFrame) cancelAnimationFrame(renderFrame); pickerRequest?.abort(); document.removeEventListener('pointerdown', pickerOutside, true); document.removeEventListener('pointerdown', historyOutside, true) })
 defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startConversation })
 </script>
 
@@ -412,9 +448,8 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
       <div ref="messageList" class="ai-messages" @scroll="onScroll" @click="answerClick">
         <div v-if="!messages.length" class="ai-welcome">
           <AssistantMark :kind="avatar.kind" :image="avatar.image" :size="56" class="ai-welcome-mark" />
-          <h2 class="ai-welcome-lead">{{ greeting }}</h2>
-          <p>关于《{{ document.title.replace(/\.(pdf|md|markdown)$/i, '') }}》，直接提问，或选取文字、框选图表。</p>
-          <div class="suggestions"><button v-for="(suggestion, index) in suggestions" :key="index" :data-tip="suggestion.question" :disabled="busy" @click="send(suggestion.question)">{{ suggestion.label }}</button></div>
+          <h2 class="ai-welcome-lead" :lang="greeting.lang === 'zh' ? 'zh-CN' : 'en'">{{ greeting.text }}</h2>
+          <p v-if="greeting.source" class="ai-welcome-source">— {{ greeting.source }}</p>
         </div>
         <article v-for="message in messages" :key="message.id" class="ai-message" :class="message.role" :data-id="message.id">
           <template v-if="message.role === 'user'">
@@ -429,9 +464,9 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
           </template>
           <template v-else>
             <button v-if="live(message) || message.reasoning" class="thinking" :class="{ live: live(message), open: expanded.has(message.id) }" :aria-expanded="expanded.has(message.id)" @click="toggleReasoning(message.id)">
-              <span class="thinking-star" aria-hidden="true"><AppIcon name="sparkle" :size="13" /></span>
-              <span class="thinking-label">{{ live(message) ? (message.activity || '思考中') : `已思考 ${thinkingTime(message)}` }}</span>
-              <span class="thinking-meta">{{ live(message) ? elapsed(message) : '' }}<template v-if="live(message)"> · {{ message.usage?.estimated === false ? '' : '约 ' }}{{ count(outputTokens(message)) }} tokens</template></span>
+              <span class="thinking-star" aria-hidden="true">{{ live(message) ? spinner : '✻' }}</span>
+              <span class="thinking-label">{{ live(message) ? `${thinkingVerb(message.id)}…` : `Thought for ${thinkingTime(message)}` }}</span>
+              <span v-if="live(message)" class="thinking-meta">{{ elapsed(message) }}<template v-if="activityNote(message)"> · {{ activityNote(message) }}</template></span>
               <AppIcon v-if="message.reasoning" class="thinking-chevron" name="down" :size="12" />
             </button>
             <p v-if="live(message) && !expanded.has(message.id) && lastThought(message)" class="thinking-direction">{{ lastThought(message) }}</p>
@@ -464,9 +499,13 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
           <label class="selection-chip" :class="{ off: !includeSelection }"><input v-model="includeSelection" type="checkbox" :disabled="busy" :aria-label="selected.image ? `使用第 ${selected.page} 页截图` : '使用所选文字'" /><img v-if="selected.image" :src="selected.image" alt="选取的截图预览" /><span v-else class="selection-text">{{ selected.text.slice(0, 80) }}</span><small>{{ selected.image ? `第 ${selected.page} 页截图` : '所选文字' }}</small></label>
           <button class="chip-remove" data-tip="清除选区" aria-label="清除选区" @click="emit('clearSelection')"><AppIcon name="close" :size="11" /></button>
         </div>
-        <textarea ref="input" v-model="prompt" :style="{ height: `${composerHeight}px` }" placeholder="询问这份文档…" aria-label="向 AI 提问" @keydown="keydown" />
+        <div class="prompt-box">
+          <textarea ref="input" v-model="prompt" :style="{ height: `${composerHeight}px` }" :placeholder="prediction ? '' : placeholder" aria-label="向 AI 提问" :aria-describedby="prediction ? `prediction-${state.id}` : undefined" @keydown="keydown" @focus="composerFocused = true" @blur="composerFocused = false" />
+          <!-- 预判的问题：像 Claude Code 一样以淡色出现在空输入框里，按 Tab 或回车采用。 -->
+          <p v-if="prediction && !prompt" :id="`prediction-${state.id}`" class="prompt-ghost"><span>{{ prediction }}</span><kbd>Tab</kbd><small>/</small><kbd>Enter</kbd><small>采用</small></p>
+        </div>
         <div class="composer-actions">
-          <label class="context-switch" :class="{ on: includeDocument }" data-tip="提问时附带当前页与文档检索"><input v-model="includeDocument" type="checkbox" :disabled="busy" aria-label="当前页上下文与文档检索" /><AppIcon name="book" :size="14" /><span>文档上下文</span></label>
+          <label class="context-switch" :class="{ on: includeDocument }" :data-tip="includeDocument ? '已开启：提问时附带当前页与文档检索' : '已关闭：只发送问题与选区'"><input v-model="includeDocument" type="checkbox" role="switch" :disabled="busy" aria-label="当前页上下文与文档检索" /><span class="mini-switch" aria-hidden="true"><i /></span><span>文档上下文</span></label>
           <span class="composer-space" />
           <span class="context-ring" :data-tip="`上下文约 ${count(contextUsed)} / ${count(contextLimit)} tokens`" aria-hidden="true" :style="{ '--ratio': contextRatio }"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5" /><circle class="ring-value" cx="10" cy="10" r="7.5" pathLength="100" /></svg></span>
           <div ref="pickerHost" class="model-picker-host">
@@ -497,7 +536,7 @@ button:disabled{opacity:.4;cursor:default}
 .frost-button.primary{background:color-mix(in srgb,var(--accent) 82%,transparent);border-color:transparent;color:var(--accent-on,#fff)}
 .frost-button.primary:hover:not(:disabled){background:var(--accent)}
 /* 深色底图上（浅色字）面板用烟灰玻璃而不是发白的乳白玻璃；浅色底图上仍是白玻璃。 */
-.ai-pane[data-glass-ink='light']{background-color:rgb(14 18 24 / calc(.22 + var(--glass-a3) * .55));--frost:rgb(255 255 255 / .09);--frost-hover:rgb(255 255 255 / .16);--bar-glass:rgb(255 255 255 / .1);--hairline:rgb(255 255 255 / .12)}
+.ai-pane[data-glass-ink='light']{background-color:rgb(14 18 24 / max(calc(.22 + var(--glass-a3) * .55), var(--glass-floor, 0)));--frost:rgb(255 255 255 / .09);--frost-hover:rgb(255 255 255 / .16);--bar-glass:rgb(255 255 255 / .1);--hairline:rgb(255 255 255 / .12)}
 /* 头部：浮在面板上的一条独立玻璃条，带一点高度，与下面的对话区分开。 */
 .ai-header{position:relative;z-index:8;display:flex;align-items:center;gap:4px;flex-shrink:0;height:48px;margin:8px 8px 0;padding:0 6px 0 8px;border:1px solid var(--hairline);border-radius:var(--r-lg);background:var(--bar-glass);box-shadow:inset 0 1px 0 var(--glass-rim-soft),0 8px 22px -14px rgb(0 0 0 / .45)}
 .ai-header.draggable{cursor:grab}
@@ -559,12 +598,11 @@ button:disabled{opacity:.4;cursor:default}
 .rail-pop-enter-from,.rail-pop-leave-to{opacity:0;translate:6px 0}
 .ai-welcome{display:flex;flex-direction:column;align-items:center;text-align:center;padding:8vh 6px 8px;animation:zg-rise-in var(--dur-bounce) var(--spring-snappy) both}
 .ai-welcome-mark{margin-bottom:16px;animation:zg-pop-in var(--dur-bounce) var(--spring-bouncy) both}
-/* 问候用衬线大字，像 Claude 的「Good afternoon」。 */
-.ai-welcome-lead{max-width:100%;margin:0 0 8px;font-family:var(--font-reading);font-size:25px;font-weight:500;line-height:1.3;letter-spacing:-.01em;text-wrap:balance}
-.ai-welcome p{max-width:30em;font-size:12.5px;line-height:1.75;color:var(--muted);margin:0;text-wrap:balance}
-.suggestions{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:20px}
-.suggestions button{max-width:100%;height:32px;padding:0 13px;border:1px solid var(--hairline);border-radius:var(--r-control);background:var(--frost);box-shadow:inset 0 1px 0 var(--glass-rim-soft);font-size:12.5px;font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.suggestions button:hover:not(:disabled){background:var(--frost-hover)}
+/* 问候固定用内置的 Anthropic Serif（不随阅读字体设置变化），像 Claude 的「Good afternoon」；
+   古诗没有对应的西文字形，退到宋体 / 思源宋体，仍是衬线。 */
+.ai-welcome-lead{max-width:100%;margin:0;font-family:'Anthropic Serif','Source Han Serif SC','Noto Serif CJK SC','Noto Serif SC','Songti SC','STSong','SimSun',serif;font-size:27px;font-weight:400;line-height:1.35;letter-spacing:-.012em;text-wrap:balance;font-optical-sizing:auto}
+.ai-welcome-lead:lang(zh-CN){font-size:22px;letter-spacing:.06em;line-height:1.6}
+.ai-welcome-source{margin:10px 0 0;font-family:'Anthropic Serif','Source Han Serif SC','Noto Serif CJK SC','Songti SC','SimSun',serif;font-size:12.5px;letter-spacing:.04em;color:var(--muted)}
 .ai-message{margin-bottom:22px;animation:zg-rise-in var(--dur-3) var(--ease-out) both}
 .ai-message.user{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
 .user-question{max-width:88%;padding:9px 14px;border-radius:var(--r-lg) var(--r-lg) var(--r-xs) var(--r-lg);background:color-mix(in srgb,var(--ink) 9%,transparent);border:1px solid var(--hairline);font-size:13.5px;line-height:1.75;white-space:pre-wrap;overflow-wrap:anywhere}
@@ -573,12 +611,10 @@ button:disabled{opacity:.4;cursor:default}
 .question-editor{width:min(100%,520px);padding:8px;border-radius:var(--r-lg);background:color-mix(in srgb,var(--ink) 7%,transparent);border:1px solid var(--hairline);animation:zg-pop-in var(--dur-3) var(--spring-snappy) both}
 .question-editor textarea{min-height:64px;padding:6px 8px;border-radius:var(--r-sm)}
 .editor-actions{display:flex;justify-content:flex-end;gap:6px;margin-top:6px}
-/* 思考：一行「思考中 · 用时 · token」，文字有流光；展开看完整思路。 */
+/* 思考：Claude Code 式的转动星标 + 随机英文动词 + 用时，文字有流光；展开看完整思路。 */
 .thinking{display:inline-flex;align-items:center;gap:7px;max-width:100%;height:28px;padding:0 10px 0 8px;margin-bottom:6px;border:0;border-radius:var(--r-control);background:none;box-shadow:none;font-size:12px;color:var(--muted)}
 .thinking:hover{background:var(--frost);color:var(--secondary)}
-.thinking-star{display:grid;place-items:center;color:var(--accent)}
-.thinking.live .thinking-star{animation:think-pulse 1.4s var(--ease-soft) infinite}
-@keyframes think-pulse{0%,100%{opacity:.45;transform:scale(.88) rotate(0)}50%{opacity:1;transform:scale(1.08) rotate(20deg)}}
+.thinking-star{display:grid;place-items:center;width:14px;font-size:14px;line-height:1;color:#d97757;font-family:'Segoe UI Symbol','Apple Symbols','Noto Sans Symbols 2',var(--font-ui)}
 .thinking-label{font-weight:600;white-space:nowrap}
 .thinking.live .thinking-label{background:linear-gradient(90deg,var(--muted) 0%,var(--muted) 35%,var(--ink) 50%,var(--muted) 65%,var(--muted) 100%);background-size:250% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:think-shimmer 1.8s linear infinite}
 @keyframes think-shimmer{from{background-position:120% 0}to{background-position:-120% 0}}
@@ -645,7 +681,9 @@ button:disabled{opacity:.4;cursor:default}
 .ai-status{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
 .ai-error{margin:0 0 12px;padding:9px 12px;border-radius:var(--r-md);background:color-mix(in srgb,var(--danger) 12%,transparent);border:1px solid color-mix(in srgb,var(--danger) 25%,transparent);font-size:12px;line-height:1.6;color:var(--danger);overflow-wrap:anywhere}
 /* 输入栏：一片薄玻璃，只用细边与内高光与底板分开，没有厚重投影。 */
-.ai-composer{flex-shrink:0;padding:6px 10px 10px}
+.ai-composer{flex-shrink:0;padding:6px 10px 10px;container:composer / inline-size}
+/* 输入栏很窄时（最小窗口）芯片才允许省略文字；平时完整显示「文档上下文」，由模型按钮先让出宽度。 */
+@container composer (max-width: 300px){.context-switch{flex-shrink:1}}
 .composer-field{position:relative;border:1px solid var(--hairline);border-radius:var(--r-lg);background:var(--bar-glass);box-shadow:inset 0 1px 0 var(--glass-rim-soft),0 1px 2px rgb(0 0 0 / .04);transition:border-color var(--dur-2) var(--ease-out),background var(--dur-2) var(--ease-out)}
 .composer-field:focus-within{border-color:color-mix(in srgb,var(--ink) 24%,transparent)}
 .composer-resize{position:absolute;left:50%;top:-6px;width:56px;height:12px;margin-left:-28px;cursor:ns-resize;z-index:2;touch-action:none}
@@ -653,7 +691,13 @@ button:disabled{opacity:.4;cursor:default}
 .composer-field:hover .composer-resize::after,.composer-resize:active::after{opacity:1}
 textarea{box-sizing:border-box;display:block;width:100%;min-height:52px;max-height:none;padding:12px 14px 4px;resize:none;border:0;border-radius:var(--r-lg) var(--r-lg) 0 0;background:transparent;box-shadow:none;color:var(--ink);font:inherit;font-family:var(--font-ui);font-size:13.5px;line-height:1.65;outline:none}
 textarea:hover:not(:focus),textarea:focus{background:transparent;border:0;box-shadow:none}
-textarea::placeholder{color:var(--muted)}
+textarea::placeholder{color:var(--muted);font-family:'Anthropic Serif','Source Han Serif SC','Noto Serif CJK SC','Songti SC','SimSun',var(--font-ui);letter-spacing:.02em}
+.prompt-box{position:relative}
+/* 预判的问题：与占位语同位置的一行淡字，末尾是按键提示。 */
+.prompt-ghost{position:absolute;left:14px;right:14px;top:12px;margin:0;display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 6px;font-size:13.5px;line-height:1.65;color:var(--muted);pointer-events:none;animation:zg-fade-in var(--dur-2) var(--ease-out)}
+.prompt-ghost span{color:color-mix(in srgb,var(--ink) 52%,transparent)}
+.prompt-ghost kbd{padding:0 5px;border:1px solid var(--hairline);border-radius:5px;background:var(--frost);font:600 10.5px/16px var(--font-ui);color:var(--secondary)}
+.prompt-ghost small{font-size:11px;margin-right:4px}
 .ai-selection-context{display:flex;align-items:flex-start;gap:6px;padding:10px 10px 0}
 .selection-chip{display:flex;align-items:center;gap:8px;min-width:0;max-width:calc(100% - 28px);padding:4px 10px 4px 4px;border:1px solid var(--hairline);border-radius:var(--r-md);background:var(--frost);cursor:pointer;transition:opacity var(--dur-2) var(--ease-out)}
 .selection-chip.off{opacity:.45}
@@ -666,17 +710,25 @@ textarea::placeholder{color:var(--muted)}
 .chip-remove:hover{background:var(--frost-hover)}
 .composer-actions{display:flex;align-items:center;gap:6px;min-width:0;padding:4px 8px 8px}
 .composer-space{flex:1}
-.context-switch{position:relative;display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 11px 0 9px;border:1px solid var(--hairline);border-radius:var(--r-control);background:transparent;font-size:12px;font-weight:550;color:var(--muted);cursor:pointer;white-space:nowrap;transition:background var(--dur-1) var(--ease-soft),color var(--dur-1) var(--ease-soft)}
+/* 文档上下文：芯片里带一枚小开关。开 = 实心墨色胶囊、圆点在右；关 = 空心描边、圆点在左。
+   墨色跟随 glass-contrast 的深浅判断，所以浅色底图上是深色实心，深色底图上是浅色实心，都一眼可辨。 */
+.context-switch{position:relative;display:inline-flex;align-items:center;gap:5px;min-width:0;flex-shrink:0;height:30px;padding:0 9px 0 7px;border:1px solid var(--hairline);border-radius:var(--r-control);background:transparent;font-size:12px;font-weight:550;color:var(--muted);cursor:pointer;white-space:nowrap;transition:background var(--dur-1) var(--ease-soft),color var(--dur-1) var(--ease-soft),border-color var(--dur-1) var(--ease-soft)}
 .context-switch input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer}
 .context-switch:hover{background:var(--frost)}
-.context-switch.on{background:var(--frost-hover);color:var(--ink);box-shadow:inset 0 1px 0 var(--glass-rim-soft)}
+.context-switch.on{border-color:color-mix(in srgb,var(--ink) 26%,transparent);background:color-mix(in srgb,var(--ink) 9%,transparent);color:var(--ink);font-weight:650}
 .context-switch:focus-within{box-shadow:0 0 0 2px var(--accent-ring)}
+.context-switch>span:last-child{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.mini-switch{position:relative;flex-shrink:0;pointer-events:none;width:22px;height:13px;box-sizing:border-box;border:1.5px solid color-mix(in srgb,var(--ink) 42%,transparent);border-radius:var(--r-full);transition:background var(--dur-2) var(--ease-out),border-color var(--dur-2) var(--ease-out)}
+.mini-switch i{position:absolute;top:1.5px;left:2px;width:7px;height:7px;border-radius:50%;background:color-mix(in srgb,var(--ink) 50%,transparent);transition:transform var(--dur-3) var(--spring-snappy),background var(--dur-2) var(--ease-out)}
+.context-switch.on .mini-switch{border-color:var(--ink);background:var(--ink)}
+.context-switch.on .mini-switch i{transform:translateX(9px);background:color-mix(in srgb,var(--ink) 4%,var(--surface))}
+.ai-pane[data-glass-ink='light'] .context-switch.on .mini-switch i{background:rgb(20 24 30)}
 .context-ring{--ratio:0;display:grid;place-items:center;width:24px;height:24px;flex-shrink:0}
 .context-ring svg{width:18px;height:18px;rotate:-90deg}
 .context-ring circle{fill:none;stroke:color-mix(in srgb,var(--ink) 14%,transparent);stroke-width:2.6}
 .context-ring .ring-value{stroke:var(--secondary);stroke-linecap:round;stroke-dasharray:100;stroke-dashoffset:calc(100 - var(--ratio) * 100);transition:stroke-dashoffset var(--dur-smooth) var(--spring-smooth)}
 .model-picker-host{position:relative;min-width:0;display:flex}
-.model-picker{display:flex;align-items:center;gap:6px;min-width:0;max-width:190px;height:30px;padding:0 9px 0 11px;border:1px solid transparent;border-radius:var(--r-control);background:none;box-shadow:none;font-size:12px;color:var(--secondary)}
+.model-picker{display:flex;align-items:center;gap:6px;min-width:64px;max-width:190px;flex-shrink:1;height:30px;padding:0 9px 0 11px;border:1px solid transparent;border-radius:var(--r-control);background:none;box-shadow:none;font-size:12px;color:var(--secondary)}
 .model-picker:hover:not(:disabled),.model-picker[aria-expanded='true']{background:var(--frost);border-color:var(--hairline);color:var(--ink)}
 .picker-model{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
 .picker-effort{flex:0 0 auto;font-weight:500;color:var(--muted)}
@@ -691,6 +743,6 @@ textarea::placeholder{color:var(--muted)}
 .picker-enter-active{transition:opacity var(--dur-2) var(--ease-out),transform var(--dur-bounce) var(--spring-snappy)}
 .picker-leave-active{transition:opacity var(--dur-1) var(--ease-out),transform var(--dur-1) var(--ease-out)}
 .picker-enter-from,.picker-leave-to{opacity:0;transform:translateY(8px) scale(.94)}
-@media(prefers-reduced-motion:reduce){.ai-message,.thinking-star,.thinking-label,.question-editor{animation:none!important}}
+@media(prefers-reduced-motion:reduce){.ai-message,.thinking-label,.question-editor,.prompt-ghost{animation:none!important}}
 @media(prefers-reduced-transparency:reduce),(prefers-contrast:more){.ai-messages{-webkit-mask-image:none;mask-image:none}}
 </style>

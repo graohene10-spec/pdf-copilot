@@ -97,13 +97,16 @@ try {
   await shot('开智-清透玻璃-自定义底板-浅色.png');
   await page.locator('[data-tip="切换深色主题"]').first().click(); await page.waitForFunction(() => !document.documentElement.dataset.themeTransition);
   await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark');
-  await page.waitForFunction(() => document.querySelector('.app-sidebar')?.dataset.glassInk === 'dark');
-  assert.equal(await page.locator('.app-sidebar').evaluate(element => getComputedStyle(element).getPropertyValue('--control-ink').trim()), '#161a20', 'Bright custom images use dark text even in a dark theme.');
-  assert.equal(await page.locator('html').evaluate(element => element.style.getPropertyValue('--photo-dark-alpha')), '', 'Text adaptation does not apply a material tint compensation.');
+  // 深色主题里玻璃一律是深色玻璃配浅色字；底图很亮时只把这块玻璃加厚，不换成浅色主题的深色字。
+  await page.waitForFunction(() => document.querySelector('.app-sidebar')?.dataset.glassInk === 'light');
+  assert.equal(await page.locator('.app-sidebar').evaluate(element => getComputedStyle(element).getPropertyValue('--control-ink').trim()), '#f2f4f7', 'Bright custom images keep light text in the dark theme.');
+  const sidebarFloor = await page.locator('.app-sidebar').evaluate(element => Number(element.style.getPropertyValue('--glass-floor') || 0));
+  assert.ok(sidebarFloor > .3, `The dark glass gets denser over a bright image (floor ${sidebarFloor}).`);
+  assert.equal(await page.locator('html').evaluate(element => element.style.getPropertyValue('--photo-dark-alpha')), '', 'No global tint is applied; only the glass over the bright area gets denser.');
   assert.equal(await page.locator('html').getAttribute('data-background'), 'custom');
   await shot('开智-清透玻璃-自定义底板-深色.png');
   await page.locator('[data-tip="切换浅色主题"]').first().click(); await page.waitForFunction(() => !document.documentElement.dataset.themeTransition);
-  checks.push('Save and reload preserve image pixels and percentage; bright custom backgrounds use dark foregrounds, without changing glass tint or making external requests.');
+  checks.push('Save and reload preserve image pixels and percentage; in the dark theme a bright custom background keeps light text on denser dark glass, without external requests.');
 
   await openSettings();
   const priorImage = JSON.parse(await prefs()).appearance.background.dataUrl;

@@ -213,10 +213,10 @@ try {
   checks.push(`Zooming ${scaleBefore} → ${await page.locator('.reader-zoom button').nth(1).innerText()} scales the stroke with the page and keeps it on the same words.`);
   await page.locator('[data-tip="适应宽度"]').click(); await ready(1);
 
-  // Dark theme: the ink layer is inverted with the page canvas.
+  // Dark theme: the ink layer uses the same tone-mapped filter as the page canvas.
   await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; });
   const filter = await slot(1).locator('.ink-layer').evaluate(element => getComputedStyle(element).filter);
-  assert.match(filter, /invert/);
+  assert.equal(filter, 'url("#kaizhi-pdf-dark")', 'The ink layer shares the page canvas tone-mapped dark filter.');
   await page.mouse.move(5, 5);
   await shot('pdf-ink-dark.png', { clip: await slot(1).boundingBox().then(box => ({ x: box.x, y: Math.max(0, box.y), width: box.width, height: 360 })) });
   await page.evaluate(() => { document.documentElement.dataset.theme = 'light'; });

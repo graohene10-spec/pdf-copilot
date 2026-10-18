@@ -1,6 +1,7 @@
 import { ContinuousPdfViewer as PageWindow } from '../../../extension/reader/continuous.mjs';
 import { clamp, renderPixelRatio, MAX_CANVAS_PIXELS } from '../../../extension/reader/geometry.mjs';
 import { MAX_RENDERED_PAGES } from '../../../extension/reader/scroll-layout.mjs';
+import { installDarkFilter, photoLayer, releasePhotoLayer } from './dark-pages.mjs';
 
 // Keep the former per-page resolution. A five-page desktop window and one
 // detached redraw buffer have a bounded 24M-pixel allocation. Inactive tabs
@@ -20,6 +21,7 @@ export class ContinuousPdfViewer extends PageWindow {
     for (const element of others) element.removeAttribute('id');
     super({ ...options, maxRenderedPages: DESKTOP_RENDERED_PAGES });
     for (const element of others) if (!element.id) element.id = 'page-surface';
+    installDarkFilter();
     this.paintJobs = [];
     this.suspended = false;
     this.activity = 0;
@@ -148,6 +150,7 @@ export class ContinuousPdfViewer extends PageWindow {
     if (!view.paintedScale) {
       view.canvas.remove(); view.canvas.width = view.canvas.height = 0;
       view.text.remove(); view.links.remove();
+      releasePhotoLayer(view.photos); view.photos = null;
     }
     view.text.style.visibility = view.links.style.visibility = keepContent ? '' : 'hidden';
     view.slot.classList.toggle('pdf-preview', !!view.paintedScale);
@@ -182,6 +185,9 @@ export class ContinuousPdfViewer extends PageWindow {
       await buffer.task.promise;
       buffer.task = null;
       if (!valid()) return;
+      // 深色主题里保留彩色图片原色的那一层；浅色主题下它不显示。
+      buffer.photos = await photoLayer(page, viewport, buffer.canvas, this.pdfjs.OPS).catch(() => null);
+      if (!valid()) return;
       buffer.layer = new this.pdfjs.TextLayer({ textContentSource: page.streamTextContent(), container: buffer.text, viewport });
       await buffer.layer.render();
       if (!valid()) return;
@@ -212,6 +218,9 @@ export class ContinuousPdfViewer extends PageWindow {
         else view.slot.insertBefore(buffer[key], view.overlay);
         view[key] = buffer[key];
       }
+      releasePhotoLayer(view.photos);
+      view.photos = buffer.photos || null;
+      if (view.photos) view.canvas.after(view.photos);
       view.viewport = viewport; view.layer = buffer.layer; view.paintedScale = scale;
       view.ready = true; view.slot.classList.add('page-ready'); view.slot.classList.remove('pdf-preview');
       buffer.committed = true;
@@ -225,9 +234,15 @@ export class ContinuousPdfViewer extends PageWindow {
       if (view.pending === buffer) view.pending = null;
       if (buffer && !buffer.committed) {
         buffer.layer?.cancel();
+        releasePhotoLayer(buffer.photos);
         buffer.canvas.width = buffer.canvas.height = 0;
       }
     }
+  }
+
+  release(view) {
+    releasePhotoLayer(view.photos); view.photos = null;
+    super.release(view);
   }
 
   cancelDeferredZoom() {

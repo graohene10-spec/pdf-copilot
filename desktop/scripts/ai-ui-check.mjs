@@ -21,7 +21,10 @@ await page.route('https://api.openai.com/v1/responses', async route => {
     await route.fulfill({ status: 204, headers: { 'access-control-allow-origin': origin, 'access-control-allow-methods': 'POST', 'access-control-allow-headers': 'authorization,content-type' } });
     return;
   }
-  const payload = route.request().postDataJSON(); requests.push(payload);
+  const payload = route.request().postDataJSON();
+  // 问题预判是独立的短请求：给一句建议就结束，不计入这里的提问。
+  if (JSON.stringify(payload).includes('请预判这位读者')) { await route.fulfill({ status: 200, contentType: 'text/event-stream', headers: { 'access-control-allow-origin': origin }, body: response([{ type: 'response.output_text.delta', delta: '预判的问题？' }, { type: 'response.completed', response: { status: 'completed', output: [] } }]) }); return; }
+  requests.push(payload);
   assert.equal(route.request().headers().authorization, 'Bearer fake-ui-key');
   if (mode === 'hold') { heldRoute = route; return; }
   let events;

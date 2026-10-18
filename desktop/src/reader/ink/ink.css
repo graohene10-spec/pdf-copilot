@@ -47,10 +47,10 @@
   user-select: none;
 }
 
-/* 深色主题下 PDF 画布被反相；标记使用同一滤镜，颜色仍落在“纸面”空间。
+/* 深色主题下 PDF 画布用色调曲线反相；标记使用同一滤镜，颜色仍落在“纸面”空间。
    反相后的“相乘”即“滤色”。 */
 :root[data-theme=dark] .ink-layer {
-  filter: invert(.87) hue-rotate(180deg);
+  filter: url(#kaizhi-pdf-dark);
 }
 
 :root[data-theme=dark] .ink-layer.ink-multiply {

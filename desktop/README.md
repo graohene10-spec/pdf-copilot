@@ -1,8 +1,8 @@
-# 开智 0.3.1
+# 开智 0.4.0
 
 开智是一款 Windows PDF / Markdown 阅读与管理工具，支持并排阅读、同书多开、本机手写标记和 AI 文档问答。界面采用可调节的液态玻璃材质，文档库、阅读进度、设置和对话记录保存在本机。
 
-[下载 0.3.1](https://github.com/graohene10-spec/pdf-copilot/releases/tag/desktop-v0.3.1) · [本版更新](RELEASE_NOTES_0.3.1.md) · [0.3.0 更新](RELEASE_NOTES_0.3.0.md) · [升级指南](docs/UPDATING.md) · [隐私与数据](docs/PRIVACY.md) · [构建与发布](docs/RELEASING.md)
+[下载 0.4.0](https://github.com/graohene10-spec/pdf-copilot/releases/tag/desktop-v0.4.0) · [本版更新](RELEASE_NOTES_0.4.0.md) · [0.3.1 更新](RELEASE_NOTES_0.3.1.md) · [升级指南](docs/UPDATING.md) · [隐私与数据](docs/PRIVACY.md) · [构建与发布](docs/RELEASING.md)
 
 ## 下载与首次使用
 
@@ -10,9 +10,9 @@
 
 | GitHub 附件 | 用途 |
 | --- | --- |
-| [kaizhi_0.3.1_x64-setup.exe](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.3.1/kaizhi_0.3.1_x64-setup.exe) | 安装版，约 7.5 MiB |
-| [kaizhi_0.3.1_x64-portable.zip](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.3.1/kaizhi_0.3.1_x64-portable.zip) | 免安装版，约 8.0 MiB；解压后运行 `开智-portable/开智.exe` |
-| kaizhi_0.3.1_source.zip | 完整源码，供开发者构建 |
+| [kaizhi_0.4.0_x64-setup.exe](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.4.0/kaizhi_0.4.0_x64-setup.exe) | 安装版，约 7.5 MiB |
+| [kaizhi_0.4.0_x64-portable.zip](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.4.0/kaizhi_0.4.0_x64-portable.zip) | 免安装版，约 8.0 MiB；解压后运行 `开智-portable/开智.exe` |
+| kaizhi_0.4.0_source.zip | 完整源码，供开发者构建 |
 | manifest.json / SHA256SUMS.txt | 文件清单、源码提交和附件校验值 |
 
 1. 安装程序，或将免安装 ZIP 全部解压，保留 `开智.exe` 旁的 `native-host/` 文件夹。
@@ -28,6 +28,8 @@
 
 - 本地文档按标题、标签、收藏和最近阅读管理；文档库搜索可查标题、标签及已索引内容。加入文档仅记录原文件位置，不移动或改写文件。
 - PDF 支持连续阅读、目录、内部链接、页码跳转、缩放、选文、图表框选和引用定位。`Ctrl + 滚轮` 缩放，`Ctrl + 0` 适应宽度。
+- 页面放大到比阅读区宽时，阅读区底部出现一条玻璃横向滚动条，可拖动或点轨道跳转，范围覆盖整页；`Shift + 滚轮` 和触控板横滑同样可用。
+- 深色主题下，PDF 的文字与线条按一条色调曲线反相（深灰底、柔白字，浅灰细线和淡底色仍可分辨）；彩色图片和照片保留原色、只略微压暗；扫描页按文字处理，读起来是深底浅字。
 - Markdown 支持目录、公式、本地相对图片、任务列表、常用 GitHub 排版元素、源码视图和按原文件行号定位。
 - `Ctrl + F` 聚焦阅读工具栏的搜索框；`Enter / Shift + Enter` 切换下一个 / 上一个结果。PDF 逐页搜索可取消，纯扫描 PDF 需要文字层才能搜索正文。
 - `F11` 进入或退出全屏。文档打开后自动保存阅读位置；各标签分别保留本次运行中的缩放、目录、搜索状态和 Markdown 视图。
@@ -48,9 +50,13 @@
 
 ## AI 问答与对话记录
 
-支持 OpenAI API、DeepSeek 和本机 Codex。回答流式显示，可停止、复制、跳转原文引用，并显示思考过程与用量信息；回答中的公式和 Mermaid 图表可排版显示。模型及思考强度可在输入区旁直接切换，其他服务参数仍在「设置 → AI」。
+支持 OpenAI API、DeepSeek 和本机 Codex。回答流式显示，可停止、复制、跳转原文引用；思考时显示 Claude Code 式的转动星标、随机的英文动词（Thinking… / Pondering… 等）和用时，展开可看完整思路，不显示 token 计数；回答中的公式和 Mermaid 图表可排版显示。输入区旁的小卡片可直接切换模型和思考强度，其他服务参数仍在「设置 → AI」；输入区右侧的圆环显示当前对话的上下文占用。
 
-普通选中文字不会自动展开助手，点击浮动的「问 AI」入口才会带入原文。开启文档上下文后，助手可读取当前页、搜索和补充有限的相关原文；支持图片的模型可接收页图或框选截图。点击发送才会准备上下文并调用服务。
+空白对话只显示助手形象和一句问候：按当地时间随机的英文问候（如 Fancy a cup of tea?）或与时辰、读书相合的古诗，固定使用内置的 Anthropic Serif。样式可在「设置 → AI → 空白页问候」改为英文、古诗、两者或自己写的句子。输入框空着时显示一句随机的学术格言或典故作占位。
+
+普通选中文字不会自动展开助手，点击浮动的「问 AI」入口才会带入原文。开启文档上下文（芯片里的小开关：实心为开，空心为关）后，助手可读取当前页、搜索和补充有限的相关原文；支持图片的模型可接收页图或框选截图。点击发送才会准备上下文并调用服务。
+
+**问题预判**（默认开启）：有上下文（选区、已有对话或文档上下文开着）且输入框为空、获得焦点或刚答完时，开智用小模型（DeepSeek Flash、GPT-5.4 Mini，或 Codex 当前模型的最低思考强度）读取当前页的一段文字、选区和最近几轮对话，把最可能的下一个问题淡淡地写在输入框里：按 `Tab` 或回车采用，`Esc` 收起；输入框空着时直接按发送键也会发送它。可在「设置 → AI → 空白页问候」下方关闭。
 
 对话菜单可新建、切换和删除对话；问题可编辑后重答，回答可重新生成或从此处分支。历史记录按「这份文档 / 全部文档」查看，后者汇总仍在文档库中的文档对话。
 
@@ -58,14 +64,9 @@
 
 每段对话同时最多一题，当前窗口共用并发与等待队列；默认同时运行 2 题，其中 Codex 最多 1 题，最多等待 8 题。切换标签、切换对话、回文档库或收起助手不会停止已提交的回答；「停止」针对当前会话，关闭同一文档的最后一个标签会中止该文档任务并保存历史。队列已满时保留问题和附件，以便重试。
 
-### 两套快捷提问
+### 框选快捷提问
 
-「设置 → AI」提供独立的两套配置，按钮介绍最多 12 个 Unicode 字素，实际提示词最多 16000 个字符。
-
-| 设置项 | 显示位置与用法 |
-| --- | --- |
-| 快捷提问 | 阅读助手空对话中的三个建议按钮；点击直接发送，并保留未发送草稿 |
-| 框选快捷提问 | 1–6 个截图旁的提问气泡，默认四个：为什么、详细展开、通俗解释、举个例子 |
+「设置 → AI → 框选快捷提问」可配置 1–6 个截图旁的提问气泡，默认四个：为什么、详细展开、通俗解释、举个例子。气泡介绍最多 12 个 Unicode 字素，实际提示词最多 16000 个字符。0.4.0 起，空对话里的三个快捷提问按钮已移除。
 
 按 `Alt + Shift + S` 框选 PDF，选区外会虚化并压暗，旁边显示提问气泡。按数字键 `1–6` 或点击即可发送问题和截图；「自己提问」保留截图并打开输入框，`Esc` 或点击虚化区域取消。快捷气泡不会额外自动附上整页或启用文档检索，但可能携带该会话的受限文字历史。
 
@@ -80,7 +81,7 @@
 | 外观 | 主题、文档视图、六套底板预设、本机图片图库、玻璃透明度与模糊程度、界面和阅读字体 |
 | 阅读 | PDF 初始缩放、缩放步长、侧栏超宽匹配与框选行为；Markdown 字号及内容宽度 |
 | 快捷键 | 录入组合键、禁用操作、冲突检查及恢复默认 |
-| AI | 服务、模型、接口、凭据、阅读预算、并发队列、助手形象及两套快捷提问 |
+| AI | 服务、模型、接口、凭据、阅读预算、并发队列、助手形象、空白页问候、问题预判及框选快捷提问 |
 | 更新 | 当前版本、检查更新、自动检查、接收测试版 |
 
 底板提供晨雾、暮光、薄荷、薰衣草、石墨、素白六种预设，也可上传 PNG / JPEG / WebP，图库最多保留六张。玻璃透明度与模糊程度连续可调；拖动滑杆时设置窗暂时变淡，便于查看效果。深浅主题、实色、高对比度及系统减少动效设置均有对应回退。
@@ -133,7 +134,7 @@ npm test
 cargo test --release --locked --manifest-path src-tauri/Cargo.toml
 npm run desktop:build
 npm run package:desktop
-node scripts/release-assets.mjs --tag desktop-v0.3.1
+node scripts/release-assets.mjs --tag desktop-v0.4.0
 ```
 
 本机测试使用 release 配置可复用正式构建缓存；CI 当前使用默认测试配置。工具不在 PATH 时可使用 `scripts/build-windows.ps1`。本机构建产物在 `release/` 中使用中文名称；`release/github/` 中整理为上方表格的英文附件名。程序运行时可加 `package:desktop -- --staging` 先输出至 `artifacts/package-staging/`。

@@ -2,9 +2,10 @@
 import { computed, ref, watch, onMounted, onBeforeUnmount, nextTick, defineAsyncComponent } from 'vue'
 import AppIcon from './AppIcon.vue'
 import AssistantMark from './AssistantMark.vue'
+import { greetingFor } from '../ai/greeting'
 import { importFontFiles, forgetFontFile, registerCustomFonts } from '../ui/custom-fonts'
 import { vLiquidSelection } from '../ui/liquid-selection'
-import { useSettings, defaultPreferences, normalizePreferences, preferenceErrors, importBackgroundImage, defaultQuickPrompts, defaultCaptureQuestions, newCaptureQuestion, quickPromptLabelLength, limitQuickPromptLabel, QUICK_PROMPT_LABEL_LIMIT, QUICK_PROMPT_QUESTION_LIMIT, CAPTURE_QUESTION_MIN, CAPTURE_QUESTION_MAX, BACKDROPS, AVATARS, MAX_CUSTOM_FONTS, fontChoices, MAX_AVATAR_CHARS, validAvatarImage, UI_FONTS, READING_FONTS, MAX_GALLERY, SHORTCUTS, DEFAULT_SHORTCUTS, shortcutLabel, shortcutFromEvent, shortcutFromWheelEvent, type AppPreferences, type BackdropPreset, type BackgroundImage, type ShortcutAction } from '../settings'
+import { useSettings, defaultPreferences, normalizePreferences, preferenceErrors, importBackgroundImage, defaultCaptureQuestions, newCaptureQuestion, quickPromptLabelLength, limitQuickPromptLabel, QUICK_PROMPT_LABEL_LIMIT, QUICK_PROMPT_QUESTION_LIMIT, CAPTURE_QUESTION_MIN, CAPTURE_QUESTION_MAX, BACKDROPS, AVATARS, GREETING_STYLES, MAX_GREETING_CHARS, MAX_CUSTOM_FONTS, fontChoices, MAX_AVATAR_CHARS, validAvatarImage, UI_FONTS, READING_FONTS, MAX_GALLERY, SHORTCUTS, DEFAULT_SHORTCUTS, shortcutLabel, shortcutFromEvent, shortcutFromWheelEvent, type AppPreferences, type BackdropPreset, type BackgroundImage, type ShortcutAction } from '../settings'
 
 type Tab = 'appearance' | 'reading' | 'shortcuts' | 'ai' | 'updates'
 const props = withDefaults(defineProps<{ initialTab?: Tab }>(), { initialTab: 'appearance' })
@@ -21,6 +22,8 @@ const saving = ref(false)
 const importingImage = ref(false)
 // 助手形象：内置几种，或用户自己的图片；GIF、APNG、WebP 动图原样保留。
 const avatarInput = ref<HTMLInputElement>()
+const previewSeed = ref(Math.random())
+const greetingPreview = computed(() => draft.value ? greetingFor(new Date(), previewSeed.value, draft.value.assistant.greeting.style, draft.value.assistant.greeting.custom) : { text: '', lang: 'en' as const })
 const avatarError = ref('')
 async function chooseAvatar(event: Event) {
   const input = event.target as HTMLInputElement, file = input.files?.[0]
@@ -215,14 +218,6 @@ function restoreCaptureQuestions() {
   captureKeys.value = draft.value.assistant.captureQuestions.map(() => ++captureKeySeed)
   composingLabel.value = null; status.value = ''
 }
-function restoreQuickPrompt(index: number) {
-  draft.value.assistant.quickPrompts[index] = defaultQuickPrompts()[index]
-  composingLabel.value = null; status.value = ''
-}
-function restoreQuickPrompts() {
-  draft.value.assistant.quickPrompts = defaultQuickPrompts()
-  composingLabel.value = null; status.value = ''
-}
 function startRecording(action: ShortcutAction) { recording.value = action; captureError.value = '' }
 function record(event: KeyboardEvent, action: ShortcutAction) {
   event.stopPropagation()
@@ -374,16 +369,16 @@ function dialogKeydown(event: KeyboardEvent) {
             <input ref="avatarInput" class="background-file" type="file" accept="image/png,image/jpeg,image/gif,image/webp" tabindex="-1" aria-label="助手形象图片文件" @change="chooseAvatar" />
             <p v-if="avatarError" class="settings-error" role="status">{{ avatarError }}</p>
           </section>
-          <section v-if="ready && tab === 'ai'" class="quick-prompts-section" aria-label="快捷提问设置">
-            <div class="quick-prompts-heading"><h3>快捷提问</h3><button type="button" class="text-action" :disabled="saving" @click="restoreQuickPrompts" aria-label="恢复全部快捷提问默认">恢复默认</button></div>
-            <p class="settings-help">点击侧栏按钮即可发送对应提示词。按钮介绍最多 {{ QUICK_PROMPT_LABEL_LIMIT }} 字，提示词最多 {{ QUICK_PROMPT_QUESTION_LIMIT }} 个字符；保存后生效。</p>
-            <section v-for="(item, index) in draft.assistant.quickPrompts" :key="index" class="quick-prompt-editor settings-group" :aria-labelledby="`quick-prompt-heading-${index}`">
-              <div class="quick-prompt-heading"><h4 :id="`quick-prompt-heading-${index}`">按钮 {{ index + 1 }}</h4><button type="button" :disabled="saving" @click="restoreQuickPrompt(index)" :aria-label="`恢复快捷提问 ${index + 1} 默认`">恢复默认</button></div>
-              <label :for="`quick-prompt-label-${index}`">按钮介绍 <span class="quick-prompt-counter" :id="`quick-prompt-count-${index}`">{{ quickPromptLabelLength(item.label) }} / {{ QUICK_PROMPT_LABEL_LIMIT }}</span></label>
-              <input :id="`quick-prompt-label-${index}`" :value="item.label" :disabled="saving" type="text" :aria-label="`快捷提问 ${index + 1} 按钮介绍`" :aria-describedby="`quick-prompt-count-${index}`" @input="editQuickPromptLabel($event, index)" @compositionstart="composingLabel = `quickPrompts:${index}`" @compositionend="finishQuickPromptLabel($event, index)" />
-              <label :for="`quick-prompt-question-${index}`">提示词</label>
-              <textarea :id="`quick-prompt-question-${index}`" v-model="item.question" :disabled="saving" :maxlength="QUICK_PROMPT_QUESTION_LIMIT" rows="3" :aria-label="`快捷提问 ${index + 1} 提示词`" />
-            </section>
+          <section v-if="ready && tab === 'ai'" class="quick-prompts-section greeting-section" aria-label="空白页问候">
+            <div class="quick-prompts-heading"><h3>空白页问候</h3></div>
+            <p class="settings-help">阅读助手空白页的大字问候，按当地时间随机挑一句，固定使用 Anthropic Serif。</p>
+            <div class="settings-group">
+              <label class="setting-row"><span>问候样式</span><select v-model="draft.assistant.greeting.style" :disabled="saving" aria-label="问候样式"><option v-for="item in GREETING_STYLES" :key="item.id" :value="item.id">{{ item.label }}</option></select></label>
+              <label v-if="draft.assistant.greeting.style === 'custom'" class="greeting-custom"><span>自定义问候，每行一句</span><textarea v-model="draft.assistant.greeting.custom" :disabled="saving" :maxlength="MAX_GREETING_CHARS" rows="4" aria-label="自定义问候，每行一句" placeholder="Fancy a cup of tea?&#10;月色真美&#10;Good morning" /></label>
+              <div class="greeting-preview" aria-label="问候预览"><strong :lang="greetingPreview.lang === 'zh' ? 'zh-CN' : 'en'">{{ greetingPreview.text }}</strong><small v-if="greetingPreview.source">— {{ greetingPreview.source }}</small><button type="button" class="text-action" :disabled="saving" @click="previewSeed = Math.random()">换一句</button></div>
+            </div>
+            <div class="settings-group predict-setting"><label class="setting-check"><input v-model="draft.assistant.predictQuestions" type="checkbox" :disabled="saving" aria-label="输入框为空时预判下一个问题" aria-describedby="predict-help" /><span>输入框为空时预判下一个问题</span></label></div>
+            <p id="predict-help" class="settings-help">有上下文（选区、对话或文档上下文开着）时，用小模型（DeepSeek Flash、GPT-5.4 Mini，或 Codex 当前模型的最低思考强度）读一下当前页、选区和最近对话，把最可能的问题淡淡地写在输入框里：按 Tab 或回车采用，Esc 收起；输入框空着时直接按发送键也会发送它。每次预判消耗少量额度。</p>
           </section>
           <section v-if="ready && tab === 'ai'" class="quick-prompts-section capture-questions-section" aria-label="框选快捷提问设置">
             <div class="quick-prompts-heading"><h3>框选快捷提问</h3><button type="button" class="text-action" :disabled="saving" @click="restoreCaptureQuestions" aria-label="恢复框选提问默认">恢复默认</button></div>
@@ -416,7 +411,7 @@ function dialogKeydown(event: KeyboardEvent) {
 .settings-backdrop.peeking .settings-dialog{opacity:.14;transition:opacity var(--dur-2) var(--ease-out)}
 .settings-backdrop.peeking .transparency-row{position:relative;z-index:2}
 .settings-dialog{position:relative;width:780px;max-width:100%;height:648px;max-height:90vh;background-color:var(--popup-glass);background-image:var(--popup-sheen);-webkit-backdrop-filter:blur(var(--popup-blur)) saturate(var(--glass-sat));backdrop-filter:blur(var(--popup-blur)) saturate(var(--glass-sat));border:1px solid var(--glass-outline);border-radius:var(--r-2xl);box-shadow:0 30px 90px -20px color-mix(in srgb,var(--canvas-deep) 30%,rgb(0 0 0 / .35)),var(--shadow-3),var(--glass-edge);display:flex;flex-direction:column;color:var(--ink);overflow:hidden;transform-origin:50% 60%}
-:global(:root[data-glass='solid']) .settings-dialog,:global(:root[data-contrast='high']) .settings-dialog{background-color:var(--surface);background-image:none;-webkit-backdrop-filter:none;backdrop-filter:none}
+:root[data-glass='solid'] .settings-dialog,:root[data-contrast='high'] .settings-dialog{background-color:var(--surface);background-image:none;-webkit-backdrop-filter:none;backdrop-filter:none}
 @media(prefers-reduced-transparency:reduce),(prefers-contrast:more),(forced-colors:active){.settings-dialog{background-color:var(--surface);background-image:none;-webkit-backdrop-filter:none;backdrop-filter:none}}
 button{color:var(--control-ink)}
 .dialog-header{display:flex;align-items:center;justify-content:space-between;padding:16px 16px 6px 26px}
@@ -476,7 +471,7 @@ button{color:var(--control-ink)}
 .backdrop-swatch:hover:not(:disabled){background:none;border:0}
 .swatch-art{position:relative;display:grid;place-items:center;height:64px;border-radius:var(--r-md);background:var(--swatch, var(--fill-3));border:1px solid var(--glass-outline);box-shadow:var(--shadow-1),inset 0 1px 0 rgb(255 255 255 / .5);overflow:hidden;color:var(--muted);transition:transform var(--dur-press) var(--spring-press),box-shadow var(--dur-2) var(--ease-out)}
 .swatch-art.ripples::after{content:'';position:absolute;inset:0;background:url('../assets/white-ripples.svg') center/cover;opacity:.8}
-:global(:root[data-theme='dark']) .swatch-art.ripples::after{opacity:.1}
+:root[data-theme='dark'] .swatch-art.ripples::after{opacity:.1}
 .swatch-art img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .backdrop-swatch:hover:not(:disabled) .swatch-art{transform:translateY(-2px);box-shadow:var(--shadow-2),inset 0 1px 0 rgb(255 255 255 / .5)}
 .backdrop-swatch:active:not(:disabled) .swatch-art{transform:scale(.96)}
@@ -491,7 +486,7 @@ button{color:var(--control-ink)}
 .backdrop-swatch:focus-visible .swatch-art{outline:2px solid var(--accent);outline-offset:3px}
 .custom-swatch .swatch-art{background:var(--fill-3);border-style:dashed}
 .custom-swatch[aria-checked='true'] .swatch-art{border-style:solid}
-:global(:root[data-theme='dark']) .swatch-bar{background:rgb(255 255 255 / .14)}
+:root[data-theme='dark'] .swatch-bar{background:rgb(255 255 255 / .14)}
 .background-heading{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:14px}
 .background-current{width:44px;height:30px;border-radius:7px;object-fit:cover;border:1px solid var(--glass-outline)}
 .gallery-heading{display:flex;align-items:baseline;justify-content:space-between;margin:18px 2px 10px;font-size:12px;font-weight:600;color:var(--secondary)}
@@ -518,6 +513,14 @@ button{color:var(--control-ink)}
 .font-import{height:32px;padding:0 14px;font-size:12.5px;font-weight:600}
 .font-remove{display:grid;place-items:center;width:28px;height:28px;padding:0;border:0;background:none;box-shadow:none;color:var(--muted)}
 .font-remove:hover:not(:disabled){background:color-mix(in srgb,var(--danger) 12%,transparent);color:var(--danger)}
+.greeting-custom{display:flex;flex-direction:column;gap:6px;padding:10px 0;border-bottom:1px solid var(--separator);font-size:12.5px;color:var(--secondary)}
+.greeting-custom textarea{box-sizing:border-box;width:100%;min-height:84px;resize:vertical;padding:8px 12px;border-radius:var(--r-md);font:inherit;font-family:'Anthropic Serif','Source Han Serif SC','Noto Serif CJK SC','Songti SC','SimSun',serif;font-size:13px;line-height:1.7}
+.greeting-preview{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 10px;padding:14px 0 12px}
+.greeting-preview strong{font-family:'Anthropic Serif','Source Han Serif SC','Noto Serif CJK SC','Songti SC','SimSun',serif;font-size:20px;font-weight:400;letter-spacing:-.01em;color:var(--control-ink)}
+.greeting-preview strong:lang(zh-CN){font-size:17px;letter-spacing:.05em}
+.greeting-preview small{font-size:11.5px;color:var(--muted)}
+.greeting-preview .text-action{margin-left:auto}
+.predict-setting{margin-top:12px}
 .avatar-grid{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}
 .avatar-option{display:flex;flex-direction:column;align-items:center;gap:6px;width:76px;height:auto;padding:8px 4px;border:1px solid transparent;border-radius:var(--r-md);background:none;box-shadow:none;font-size:11.5px;color:var(--secondary)}
 .avatar-option:hover:not(:disabled){background:var(--fill-4)}
