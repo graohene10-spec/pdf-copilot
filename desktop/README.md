@@ -2,9 +2,9 @@
 
 基于 Tauri 2 + Vue 3 / TypeScript + Rust + SQLite 的 Windows PDF / Markdown 阅读管理工具。现有浏览器插件保留在父目录，桌面原型独立位于 `desktop/`。
 
-0.3.0 新增 PDF 手写标记、同书多开、全部文档的对话记录与可更换的助手形象，内置 Anthropic Serif 阅读字体；应用内更新改为一键完成，安装版与免安装版都会自动下载、校验、替换并重启。沿用原应用标识和本地数据目录，保留文档库、阅读进度、设置与已保存凭据。
+0.3.1 起应用内更新一键完成（安装版与免安装版都会自动下载、校验、替换并重启），并内置 Anthropic Serif 阅读字体。0.3.0 新增 PDF 手写标记、同书多开、全部文档的对话记录与可更换的助手形象。沿用原应用标识和本地数据目录，保留文档库、阅读进度、设置与已保存凭据。
 
-[下载 0.3.0 Windows 版](https://github.com/graohene10-spec/pdf-copilot/releases/tag/desktop-v0.3.0) · [本版更新](RELEASE_NOTES_0.3.0.md)
+[下载 0.3.1 Windows 版](https://github.com/graohene10-spec/pdf-copilot/releases/tag/desktop-v0.3.1) · [本版更新](RELEASE_NOTES_0.3.1.md)
 
 ## 已实现
 
