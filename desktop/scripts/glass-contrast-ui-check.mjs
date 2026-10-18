@@ -37,6 +37,37 @@ async function upload(image, name) {
   await dialog().waitFor({ state: 'detached' });
   await settled();
 }
+const themeInk = theme => theme === 'dark' ? 'light' : 'dark';
+const INK_COLOR = { dark: 'rgb(22, 26, 32)', light: 'rgb(242, 244, 247)' };
+/**
+ * Glass (an element with its own translucent material) always takes the theme's ink and only gets denser;
+ * bare text drawn straight on the photo still picks the ink that reads on the image below.
+ */
+async function inkByRole(selector, theme, imageInk) {
+  await page.waitForFunction(({ selector, theme, imageInk }) => {
+    const elements = [...document.querySelectorAll(selector)];
+    const alpha = value => { const match = /\/\s*([\d.]+)\)$|rgba\([^)]*,\s*([\d.]+)\)$/.exec(value); return match ? Number(match[1] ?? match[2]) : value.startsWith('rgb(') ? 1 : 0; };
+    return elements.length > 0 && elements.every(element => element.getAttribute('data-glass-ink') === (alpha(getComputedStyle(element).backgroundColor) > .02 ? theme : imageInk));
+  }, { selector, theme: themeInk(theme), imageInk });
+}
+/** Text in glass components reaches 4.5:1 against the glass composited over the given image half. */
+async function glassReadable(selector, side) {
+  const samples = await page.locator(selector).evaluateAll((elements, side) => {
+    const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
+    const paint = canvas.getContext('2d', { willReadFrequently: true });
+    const rgba = color => { paint.clearRect(0, 0, 1, 1); paint.fillStyle = color; paint.fillRect(0, 0, 1, 1); return [...paint.getImageData(0, 0, 1, 1).data]; };
+    const luminance = color => color.map(value => value / 255).map(value => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4).reduce((sum, value, index) => sum + value * [.2126, .7152, .0722][index], 0);
+    const shell = document.querySelector('.app-shell');
+    return elements.map(element => {
+      const layers = []; for (let parent = element; parent && parent !== shell; parent = parent.parentElement) layers.unshift(parent);
+      let background = side === 'black' ? [0, 0, 0] : [255, 255, 255];
+      for (const layer of layers) { const color = rgba(getComputedStyle(layer).backgroundColor), alpha = color[3] / 255; background = background.map((value, index) => value * (1 - alpha) + color[index] * alpha); }
+      const light = luminance(background), ink = luminance(rgba(getComputedStyle(element).color).slice(0, 3));
+      return { name: element.className.split(' ')[0], contrast: (Math.max(light, ink) + .05) / (Math.min(light, ink) + .05) };
+    });
+  }, side);
+  for (const sample of samples) { assert.ok(sample.contrast >= 4.5, `${sample.name} glass keeps 4.5:1 over the ${side} image (measured ${sample.contrast.toFixed(2)}).`); metrics.minimumGlassContrast = Math.min(metrics.minimumGlassContrast ?? Infinity, sample.contrast); }
+}
 async function ink(selector, value) {
   await page.waitForFunction(({ selector, value }) => [...document.querySelectorAll(selector)].length > 0 && [...document.querySelectorAll(selector)].every(element => element.getAttribute('data-glass-ink') === value), { selector, value });
 }
@@ -50,8 +81,8 @@ async function selectedInk() {
   assert.equal(colors.selected, colors.plain, 'Selected and ordinary controls must share the locally compensated text color.');
 }
 async function localTextContrast(selector, side) {
-  const expected = side === 'black' ? 'rgb(242, 244, 247)' : 'rgb(22, 26, 32)';
-  await page.waitForFunction(({ selector, expected }) => [...document.querySelectorAll(selector)].length > 0 && [...document.querySelectorAll(selector)].every(element => getComputedStyle(element).color === expected), { selector, expected });
+  // Text inside glass takes the glass's theme ink; text straight on the photo takes the image's ink. Either way it must read.
+  await page.waitForFunction(selector => [...document.querySelectorAll(selector)].length > 0 && [...document.querySelectorAll(selector)].every(element => ['rgb(242, 244, 247)', 'rgb(22, 26, 32)'].includes(getComputedStyle(element).color)), selector);
   const samples = await page.locator(selector).evaluateAll((elements, side) => {
     const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
     const paint = canvas.getContext('2d', { willReadFrequently: true });
@@ -155,14 +186,16 @@ try {
     uploaded[kind] = await page.evaluate(async () => { const { useSettings } = await import('/src/settings/index.ts'); return useSettings().preferences.value.appearance.background; });
     for (const theme of ['light', 'dark']) {
       await appearance({ theme, glassTransparency: 83 });
-      await ink('.app-sidebar,.app-topbar,.library-heading,.library-search,.library-summary,.document-card', kind === 'white' ? 'dark' : 'light');
+      await inkByRole('.app-sidebar,.app-topbar,.library-heading,.library-search,.library-summary,.document-card', theme, kind === 'white' ? 'dark' : 'light');
       await selectedInk();
+      await glassReadable('.app-sidebar,.app-topbar,.library-search,.document-card', kind);
       const fill = await page.locator('.app-sidebar').evaluate(element => getComputedStyle(element).backgroundColor);
-      assert.ok(/(?:rgba|color)\(/.test(fill), 'Custom wallpaper preserves translucent chrome.');
-      assert.equal(fill, normalMaterial[theme], 'Foreground compensation must not change the glass tint or opacity.');
+      const parts = value => value.match(/[\d.]+/g).map(Number);
+      assert.deepEqual(parts(fill).slice(0, 3), parts(normalMaterial[theme]).slice(0, 3), 'Compensation keeps the theme\'s glass tint.');
+      assert.ok((parts(fill)[3] ?? 1) >= (parts(normalMaterial[theme])[3] ?? 1) - .001, 'Compensation may only make the glass denser.');
     }
   }
-  checks.push('Actual white and black PNG uploads compensate each glass region in both themes; selected controls preserve the same foreground color.');
+  checks.push('White and black PNG uploads in both themes: glass keeps the theme ink and becomes denser until it reads at 4.5:1; bare text on the photo takes the image ink; selected controls preserve the same foreground color.');
 
   await appearance({ theme: 'light', glassTransparency: 50 });
   await upload(Buffer.from(fixtures.gray, 'base64'), '主题往返灰阶底板.png');
@@ -170,9 +203,8 @@ try {
   for (const theme of ['light', 'dark', 'light', 'dark', 'light']) {
     await appearance({ theme, glassTransparency: 50 });
     await page.waitForTimeout(320);
-    await ink('.app-sidebar .import-button', theme === 'light' ? 'dark' : 'light');
-    const wrong = await page.locator(themeControls).evaluateAll((elements, theme) => elements.filter(element => element.dataset.glassInk !== (theme === 'light' ? 'dark' : 'light')).map(element => element.className), theme);
-    assert.deepEqual(wrong, [], 'Foregrounds must settle on the current material after repeated theme changes.');
+    await ink('.app-sidebar,.app-topbar', themeInk(theme));
+    await page.waitForFunction(({ selector, color }) => [...document.querySelectorAll(selector)].every(element => getComputedStyle(element).color === color), { selector: themeControls, color: INK_COLOR[themeInk(theme)] });
   }
   await page.evaluate(async () => {
     const { useSettings } = await import('/src/settings/index.ts');
@@ -183,7 +215,7 @@ try {
     }
   });
   await page.waitForTimeout(320);
-  await ink('.app-sidebar .import-button', 'dark');
+  await ink('.app-sidebar', 'dark');
   await page.evaluate(async () => { const { useSettings } = await import('/src/settings/index.ts'); useSettings().previewAppearance(null); });
   await page.evaluate(async () => {
     for (const theme of ['dark', 'light', 'dark', 'light']) {
@@ -195,8 +227,9 @@ try {
     }
   });
   await page.waitForTimeout(320);
-  await ink('.app-sidebar .import-button,.app-topbar .sidebar-toggle', 'dark');
-  checks.push('Gray imagery restores every sampled foreground after settled and rapid dark/light round trips, including controls whose material colors are still transitioning on the first frame.');
+  await ink('.app-sidebar,.app-topbar', 'dark');
+  await page.waitForFunction(color => [...document.querySelectorAll('.app-sidebar .import-button,.app-topbar .sidebar-toggle')].every(element => getComputedStyle(element).color === color), INK_COLOR.dark);
+  checks.push('Gray imagery: after settled and rapid dark/light round trips every glass bar and its controls end on the current theme\'s ink, including controls whose material colors are still transitioning on the first frame.');
 
   await page.evaluate(async uploaded => {
     const { useSettings } = await import('/src/settings/index.ts');
@@ -214,9 +247,9 @@ try {
     await new Promise(resolve => requestAnimationFrame(resolve));
     settings.previewAppearance({ ...settings.preferences.value.appearance, theme: 'light', glassTransparency: 83, background: uploaded.black });
   }, uploaded);
-  await ink('.app-sidebar,.app-topbar,.library-heading,.library-search,.library-summary,.document-card', 'light');
+  await inkByRole('.app-sidebar,.app-topbar,.library-heading,.library-search,.library-summary,.document-card', 'light', 'light');
   await page.waitForTimeout(260);
-  await ink('.app-sidebar,.app-topbar,.library-heading,.library-search,.library-summary,.document-card', 'light');
+  await inkByRole('.app-sidebar,.app-topbar,.library-heading,.library-search,.library-summary,.document-card', 'light', 'light');
   await page.evaluate(async () => {
     window.createImageBitmap = window.__originalContrastDecode;
     delete window.__originalContrastDecode;
@@ -227,7 +260,7 @@ try {
 
   await appearance({ theme: 'light', glassTransparency: 83 });
   await upload(Buffer.from(fixtures.split, 'base64'), '左黑右白底板.png');
-  await ink('.app-sidebar', 'light');
+  await ink('.app-sidebar', 'dark'); await glassReadable('.app-sidebar', 'black');
   await ink('.library-heading', 'light');
   await selectedInk();
   await localTextContrast('.breadcrumb', 'black');
@@ -243,13 +276,13 @@ try {
   await ink('.library-heading', 'light');
   await page.getByRole('button', { name: '切换侧栏', exact: true }).click();
   await page.locator('.app-sidebar').waitFor(); await settled();
-  await ink('.app-sidebar,.library-heading', 'light');
+  await ink('.app-sidebar', 'dark'); await ink('.library-heading', 'light');
   await page.setViewportSize({ width: 1000, height: 720 }); await paint();
-  await ink('.app-sidebar', 'light');
+  await ink('.app-sidebar', 'dark');
   await ink('.library-heading', 'light');
   await page.setViewportSize({ width: 1440, height: 940 }); await paint();
-  await ink('.app-sidebar,.library-heading', 'light');
-  checks.push('Black-left/white-right imagery uses the actual local title region; cover mapping and foregrounds remain correct after resizing and collapsing/reopening the sidebar.');
+  await ink('.app-sidebar', 'dark'); await ink('.library-heading', 'light'); await glassReadable('.app-sidebar', 'black');
+  checks.push('Black-left/white-right imagery: the bare title uses its actual local region, glass over the black half stays light-theme glass made dense enough to read; mapping stays correct after resizing and collapsing/reopening the sidebar.');
 
   await appearance({ theme: 'dark', glassTransparency: 83 });
   await page.getByRole('button', { name: '打开 阅读工作台指南.md', exact: true }).click();
@@ -264,8 +297,8 @@ try {
   assert.equal(await page.locator('.file-tab [role="tab"] > span').first().evaluate(element => getComputedStyle(element).color), selectedTabColor, 'Hovering a folder tab must preserve its locally compensated foreground.');
   await page.getByRole('button', { name: '阅读助手', exact: true }).click();
   await page.locator('.ai-pane').waitFor(); await settled();
-  // The assistant is liquid glass like the sidebar: over the white image its text turns dark even in the dark theme.
-  await ink('.ai-pane', 'dark');
+  // The assistant is glass like the sidebar: in the dark theme it stays dark glass with light text, even over the white half.
+  await ink('.ai-pane', 'light'); await glassReadable('.ai-pane', 'white');
   await page.evaluate(async () => {
     const { library } = await import('/src/sdk/index.ts');
     const { chatState } = await import('/src/ai/workspace.ts');
@@ -292,7 +325,7 @@ try {
   await dialog().getByRole('button', { name: '取消', exact: true }).click();
   await dialog().waitFor({ state: 'detached' });
   await shot('开智-玻璃文字对比度-阅读-深色.png');
-  checks.push('The glass AI pane adapts its ink over the white image; the solid reading pill, code, code, Markdown and excluded tea popups retain their own theme foregrounds.');
+  checks.push('In the dark theme the glass AI pane over the white image stays dark glass with light text at 4.5:1; the solid reading pill, code, Markdown and excluded tea popups retain their own theme foregrounds.');
 
   const writesBefore = await page.evaluate(() => window.__backgroundWriteCount);
   for (const theme of ['light', 'dark']) {
@@ -302,7 +335,7 @@ try {
     const color = await page.locator('.app-sidebar .brand').evaluate(element => getComputedStyle(element).color);
     assert.equal(color, theme === 'light' ? 'rgb(22, 26, 32)' : 'rgb(242, 244, 247)', 'Opaque glass follows the theme, regardless of image colors.');
     await appearance({ glassTransparency: 83 });
-    await ink('.app-sidebar', 'light'); await ink('.ai-pane', 'dark');
+    await ink('.app-sidebar,.ai-pane', themeInk(theme));
   }
   assert.equal(await page.evaluate(() => window.__backgroundWriteCount), writesBefore, 'Theme and transparency changes must not rewrite the large wallpaper CSS payload.');
   checks.push('0% returns theme-colored opaque glass; returning to 83% restores local compensation without rewriting cached image pixels.');
@@ -310,12 +343,12 @@ try {
   await page.evaluate(() => { document.documentElement.dataset.contrast = 'high'; });
   await noAdaptation();
   await page.evaluate(() => { delete document.documentElement.dataset.contrast; });
-  await ink('.app-sidebar', 'light'); await ink('.ai-pane', 'dark');
+  await ink('.app-sidebar,.ai-pane', 'light');
   const media = await context.newCDPSession(page);
   await media.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-transparency', value: 'reduce' }] });
   await noAdaptation();
   await media.send('Emulation.setEmulatedMedia', { features: [] });
-  await ink('.app-sidebar', 'light'); await ink('.ai-pane', 'dark');
+  await ink('.app-sidebar,.ai-pane', 'light');
   await media.detach();
   checks.push('Explicit high contrast and system reduced transparency remove injected foreground variables; compensation returns when those modes are disabled.');
 

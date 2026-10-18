@@ -20,6 +20,8 @@ const model = createServer(async (request, response) => {
   try {
     let body = ''; for await (const chunk of request) body += chunk;
     const payload = JSON.parse(body);
+    // 问题预判是独立的短请求：给一句建议就结束，不计入这里的提问。
+    if (body.includes('请预判这位读者')) { response.writeHead(200, { 'content-type': 'text/event-stream' }); response.end(`data: ${JSON.stringify({ type: 'response.output_text.delta', delta: '预判的问题？' })}\n\ndata: ${JSON.stringify({ type: 'response.completed', response: { status: 'completed', output: [] } })}\n\n`); return; }
     const question = payload.input.findLast(item => item.role === 'user').content.find(item => item.type === 'input_text').text;
     const job = question.match(/JOB_[A-Z0-9_]+/)?.[0]; assert.ok(job, question);
     asked.push({ job, history: payload.input.filter(item => item.role === 'user').length });
@@ -82,7 +84,7 @@ try {
   await dialog.getByLabel('API Key', { exact: true }).fill('conversation-local-key');
   await dialog.getByLabel('模型', { exact: true }).fill('conversation-local-model');
   await dialog.getByRole('button', { name: '保存', exact: true }).click(); await dialog.waitFor({ state: 'detached' });
-  await pane().getByRole('checkbox', { name: '当前页上下文与文档检索', exact: true }).uncheck();
+  await pane().getByRole('switch', { name: '当前页上下文与文档检索', exact: true }).uncheck();
 
   // Two turns, then regenerate the last answer in place.
   await ask('JOB_ONE'); finish('JOB_ONE'); await idle();
@@ -126,7 +128,7 @@ try {
   await ask('JOB_PARALLEL_A');
   await pane().getByRole('button', { name: '新对话', exact: true }).click();
   await until(async () => (await questions().count()) === 0, 'fresh conversation');
-  await pane().getByRole('checkbox', { name: '当前页上下文与文档检索', exact: true }).uncheck();
+  await pane().getByRole('switch', { name: '当前页上下文与文档检索', exact: true }).uncheck();
   await ask('JOB_PARALLEL_B');
   assert.ok(held.has('JOB_PARALLEL_A') && held.has('JOB_PARALLEL_B'), 'Both conversations run in parallel.');
   checks.push('Two conversations of one document stream at the same time.');

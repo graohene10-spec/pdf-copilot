@@ -30,6 +30,8 @@ const model = createServer(async (request, response) => {
     assert.equal(request.headers.authorization, 'Bearer capture-quick-local-key');
     let body = ''; for await (const chunk of request) body += chunk;
     const payload = JSON.parse(body);
+    // 问题预判是独立的短请求：给一句建议就结束，不计入这里的提问。
+    if (body.includes('请预判这位读者')) { response.writeHead(200, { 'content-type': 'text/event-stream' }); response.end(`data: ${JSON.stringify({ type: 'response.output_text.delta', delta: '预判的问题？' })}\n\ndata: ${JSON.stringify({ type: 'response.completed', response: { status: 'completed', output: [] } })}\n\n`); return; }
     const user = payload.input.findLast(item => item.role === 'user');
     const text = user.content.find(item => item.type === 'input_text').text;
     const images = user.content.filter(item => item.type === 'input_image').map(item => item.image_url);
@@ -102,11 +104,9 @@ async function configure(key, enable = true) {
   await dialog().getByLabel('其中 Codex 同时运行数', { exact: true }).fill('1');
   await dialog().getByLabel('最多等待的提问', { exact: true }).fill('1');
   await dialog().getByLabel('PDF 框选后显示快捷提问', { exact: true }).setChecked(enable);
-  // The assistant's three suggestions and the capture bubbles are configured alike; extra default bubbles are removed.
+  // Three capture bubbles with custom questions; extra default bubbles are removed.
   while (await dialog().getByRole('button', { name: '删除框选提问 4', exact: true }).count()) await dialog().getByRole('button', { name: '删除框选提问 4', exact: true }).click();
   for (let index = 0; index < 3; index++) {
-    await dialog().getByLabel(`快捷提问 ${index + 1} 按钮介绍`, { exact: true }).fill(labels[index]);
-    await dialog().getByLabel(`快捷提问 ${index + 1} 提示词`, { exact: true }).fill(questions[index]);
     await dialog().getByLabel(`框选提问 ${index + 1} 提问概括`, { exact: true }).fill(labels[index]);
     await dialog().getByLabel(`框选提问 ${index + 1} 提问内容`, { exact: true }).fill(questions[index]);
   }
@@ -239,10 +239,10 @@ try {
   await quick().waitFor({ state: 'detached' }); await preview().waitFor(); await readyPdf();
   const continuedImage = await preview().getAttribute('src');
   assert.equal(calls.length, countBeforeContinue); assert.equal(await prompt().inputValue(), '保留的截图草稿 A');
-  await pane().getByRole('button', { name: labels[1], exact: true }).click(); await preview().waitFor({ state: 'detached' });
+  await prompt().fill(questions[1]); await prompt().press('Control+Enter'); await preview().waitFor({ state: 'detached' });
   await until(() => held.has(names[0])); assert.deepEqual(calls.at(-1).images, [continuedImage]);
   finish(0); await idle();
-  checks.push('Continue opens the ordinary assistant with the exact unsent crop and existing draft; a later shortcut consumes and sends that crop once.');
+  checks.push('Continue opens the ordinary assistant with the exact unsent crop and existing draft; the next question sent from the composer consumes and sends that crop once.');
 
   await closeAssistant();
   await page.getByRole('button', { name: '进入全屏', exact: true }).click();
@@ -310,7 +310,7 @@ try {
   await quick().getByRole('button', { name: '继续到阅读助手', exact: true }).click(); await preview().waitFor();
   const retryImage = await preview().getAttribute('src');
   await configure('capture-quick-local-key');
-  await pane().getByRole('button', { name: labels[2], exact: true }).click(); await preview().waitFor({ state: 'detached' });
+  await prompt().fill(questions[2]); await prompt().press('Control+Enter'); await preview().waitFor({ state: 'detached' });
   await until(() => held.has(names[0])); assert.deepEqual(calls.at(-1).images, [retryImage]); finish(0); await idle();
   checks.push('Missing credentials open settings without consuming the crop; cancel returns to the choices, Continue retains the attachment, and configuring the local service later sends that exact image.');
 

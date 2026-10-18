@@ -681,7 +681,9 @@ button:disabled{opacity:.4;cursor:default}
 .ai-status{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
 .ai-error{margin:0 0 12px;padding:9px 12px;border-radius:var(--r-md);background:color-mix(in srgb,var(--danger) 12%,transparent);border:1px solid color-mix(in srgb,var(--danger) 25%,transparent);font-size:12px;line-height:1.6;color:var(--danger);overflow-wrap:anywhere}
 /* 输入栏：一片薄玻璃，只用细边与内高光与底板分开，没有厚重投影。 */
-.ai-composer{flex-shrink:0;padding:6px 10px 10px}
+.ai-composer{flex-shrink:0;padding:6px 10px 10px;container:composer / inline-size}
+/* 输入栏很窄时（最小窗口）芯片才允许省略文字；平时完整显示「文档上下文」，由模型按钮先让出宽度。 */
+@container composer (max-width: 300px){.context-switch{flex-shrink:1}}
 .composer-field{position:relative;border:1px solid var(--hairline);border-radius:var(--r-lg);background:var(--bar-glass);box-shadow:inset 0 1px 0 var(--glass-rim-soft),0 1px 2px rgb(0 0 0 / .04);transition:border-color var(--dur-2) var(--ease-out),background var(--dur-2) var(--ease-out)}
 .composer-field:focus-within{border-color:color-mix(in srgb,var(--ink) 24%,transparent)}
 .composer-resize{position:absolute;left:50%;top:-6px;width:56px;height:12px;margin-left:-28px;cursor:ns-resize;z-index:2;touch-action:none}
@@ -710,22 +712,23 @@ textarea::placeholder{color:var(--muted);font-family:'Anthropic Serif','Source H
 .composer-space{flex:1}
 /* 文档上下文：芯片里带一枚小开关。开 = 实心墨色胶囊、圆点在右；关 = 空心描边、圆点在左。
    墨色跟随 glass-contrast 的深浅判断，所以浅色底图上是深色实心，深色底图上是浅色实心，都一眼可辨。 */
-.context-switch{position:relative;display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 11px 0 8px;border:1px solid var(--hairline);border-radius:var(--r-control);background:transparent;font-size:12px;font-weight:550;color:var(--muted);cursor:pointer;white-space:nowrap;transition:background var(--dur-1) var(--ease-soft),color var(--dur-1) var(--ease-soft),border-color var(--dur-1) var(--ease-soft)}
+.context-switch{position:relative;display:inline-flex;align-items:center;gap:5px;min-width:0;flex-shrink:0;height:30px;padding:0 9px 0 7px;border:1px solid var(--hairline);border-radius:var(--r-control);background:transparent;font-size:12px;font-weight:550;color:var(--muted);cursor:pointer;white-space:nowrap;transition:background var(--dur-1) var(--ease-soft),color var(--dur-1) var(--ease-soft),border-color var(--dur-1) var(--ease-soft)}
 .context-switch input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer}
 .context-switch:hover{background:var(--frost)}
 .context-switch.on{border-color:color-mix(in srgb,var(--ink) 26%,transparent);background:color-mix(in srgb,var(--ink) 9%,transparent);color:var(--ink);font-weight:650}
 .context-switch:focus-within{box-shadow:0 0 0 2px var(--accent-ring)}
-.mini-switch{position:relative;flex-shrink:0;width:24px;height:14px;box-sizing:border-box;border:1.5px solid color-mix(in srgb,var(--ink) 42%,transparent);border-radius:var(--r-full);transition:background var(--dur-2) var(--ease-out),border-color var(--dur-2) var(--ease-out)}
-.mini-switch i{position:absolute;top:2px;left:2px;width:7px;height:7px;border-radius:50%;background:color-mix(in srgb,var(--ink) 50%,transparent);transition:transform var(--dur-3) var(--spring-snappy),background var(--dur-2) var(--ease-out)}
+.context-switch>span:last-child{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.mini-switch{position:relative;flex-shrink:0;pointer-events:none;width:22px;height:13px;box-sizing:border-box;border:1.5px solid color-mix(in srgb,var(--ink) 42%,transparent);border-radius:var(--r-full);transition:background var(--dur-2) var(--ease-out),border-color var(--dur-2) var(--ease-out)}
+.mini-switch i{position:absolute;top:1.5px;left:2px;width:7px;height:7px;border-radius:50%;background:color-mix(in srgb,var(--ink) 50%,transparent);transition:transform var(--dur-3) var(--spring-snappy),background var(--dur-2) var(--ease-out)}
 .context-switch.on .mini-switch{border-color:var(--ink);background:var(--ink)}
-.context-switch.on .mini-switch i{transform:translateX(10px);background:color-mix(in srgb,var(--ink) 4%,var(--surface))}
+.context-switch.on .mini-switch i{transform:translateX(9px);background:color-mix(in srgb,var(--ink) 4%,var(--surface))}
 .ai-pane[data-glass-ink='light'] .context-switch.on .mini-switch i{background:rgb(20 24 30)}
 .context-ring{--ratio:0;display:grid;place-items:center;width:24px;height:24px;flex-shrink:0}
 .context-ring svg{width:18px;height:18px;rotate:-90deg}
 .context-ring circle{fill:none;stroke:color-mix(in srgb,var(--ink) 14%,transparent);stroke-width:2.6}
 .context-ring .ring-value{stroke:var(--secondary);stroke-linecap:round;stroke-dasharray:100;stroke-dashoffset:calc(100 - var(--ratio) * 100);transition:stroke-dashoffset var(--dur-smooth) var(--spring-smooth)}
 .model-picker-host{position:relative;min-width:0;display:flex}
-.model-picker{display:flex;align-items:center;gap:6px;min-width:0;max-width:190px;height:30px;padding:0 9px 0 11px;border:1px solid transparent;border-radius:var(--r-control);background:none;box-shadow:none;font-size:12px;color:var(--secondary)}
+.model-picker{display:flex;align-items:center;gap:6px;min-width:64px;max-width:190px;flex-shrink:1;height:30px;padding:0 9px 0 11px;border:1px solid transparent;border-radius:var(--r-control);background:none;box-shadow:none;font-size:12px;color:var(--secondary)}
 .model-picker:hover:not(:disabled),.model-picker[aria-expanded='true']{background:var(--frost);border-color:var(--hairline);color:var(--ink)}
 .picker-model{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
 .picker-effort{flex:0 0 auto;font-weight:500;color:var(--muted)}

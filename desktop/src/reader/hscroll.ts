@@ -7,24 +7,30 @@ import { onBeforeUnmount, onMounted, reactive, type Ref } from 'vue'
 export function useHorizontalScroll(container: Ref<HTMLElement | undefined>) {
   const bar = reactive({ visible: false, left: 0, width: 100, dragging: false })
   let frame = 0, drag: { offset: number; track: HTMLElement } | undefined
+  let limitKey = '', limit = 0
+  // 预留的竖向滚动条槽会让 scrollWidth − clientWidth 比真正能滚到的位置多出几像素：尺寸变了就实测一次最右端。
+  function maximum(element: HTMLElement) {
+    const key = `${element.scrollWidth}x${element.clientWidth}`
+    if (key !== limitKey) { const keep = element.scrollLeft; element.scrollLeft = 1e7; limit = element.scrollLeft; element.scrollLeft = keep; limitKey = key }
+    return limit
+  }
   let resize: ResizeObserver | undefined, mutations: MutationObserver | undefined
   function measure() {
     frame = 0
     const element = container.value
     if (!element) return
-    const overflow = element.scrollWidth - element.clientWidth
+    const overflow = element.scrollWidth - element.clientWidth > 1 ? maximum(element) : 0
     bar.visible = overflow > 1
     if (!bar.visible) return
-    bar.width = Math.max(6, element.clientWidth / element.scrollWidth * 100)
-    bar.left = element.scrollLeft / overflow * (100 - bar.width)
+    bar.width = Math.max(6, element.clientWidth / (element.clientWidth + overflow) * 100)
+    bar.left = Math.min(1, element.scrollLeft / overflow) * (100 - bar.width)
   }
   function update() { if (!frame) frame = requestAnimationFrame(measure) }
   function ratio(event: PointerEvent, track: HTMLElement) { const box = track.getBoundingClientRect(); return (event.clientX - box.left) / Math.max(1, box.width) * 100 }
   function scrollTo(percent: number) {
     const element = container.value
     if (!element) return
-    const overflow = element.scrollWidth - element.clientWidth
-    element.scrollLeft = Math.max(0, Math.min(1, percent / Math.max(1e-6, 100 - bar.width))) * overflow
+    element.scrollLeft = Math.max(0, Math.min(1, percent / Math.max(1e-6, 100 - bar.width))) * maximum(element)
   }
   function down(event: PointerEvent) {
     if (event.button !== 0) return

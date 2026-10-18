@@ -26,6 +26,8 @@ const model = createServer(async (request, response) => {
     assert.equal(request.headers.authorization, 'Bearer tabs-synthetic-key');
     let body = ''; for await (const chunk of request) body += chunk;
     const payload = JSON.parse(body);
+    // 问题预判是独立的短请求：给一句建议就结束，不计入这里的提问。
+    if (body.includes('请预判这位读者')) { response.writeHead(200, { 'content-type': 'text/event-stream' }); response.end(`data: ${JSON.stringify({ type: 'response.output_text.delta', delta: '预判的问题？' })}\n\ndata: ${JSON.stringify({ type: 'response.completed', response: { status: 'completed', output: [] } })}\n\n`); return; }
     const user = payload.input.findLast(item => item.role === 'user');
     const text = user.content.find(item => item.type === 'input_text').text;
     const job = text.match(/JOB_[A-Z]_\d+/)?.[0]; assert.ok(job);

@@ -230,12 +230,21 @@ export function installGlassContrast(root: HTMLElement): { setBackground(dataUrl
       if (previous?.key === key && element.matches('button,input,textarea,.file-tab')) continue
       const layers: HTMLElement[] = []
       for (let node: HTMLElement | null = isGlass ? element.parentElement : element; node && node !== shell; node = node.parentElement) layers.unshift(node)
-      for (const layer of layers) {
-        const material = materialColor(win.getComputedStyle(layer).backgroundColor)
-        const alpha = Math.max(0, Math.min(1, material.alpha))
-        if (alpha) background = mix(background, material.rgb, alpha)
+      const materials = layers.map(layer => materialColor(win.getComputedStyle(layer).backgroundColor)).filter(material => material.alpha > 0)
+      const below = (color: RGB) => materials.reduce((result, material) => mix(result, material.rgb, Math.min(1, material.alpha)), color)
+      background = below(background)
+      if (isGlass) {
+        // 一块玻璃可能横跨照片的亮处和暗处（例如顶栏左边压在深色上）：按约 120px 的格子分别算，取最需要加厚的一格，
+        // 玻璃上任何位置的文字都够清楚。
+        const columns = Math.min(10, Math.max(1, Math.ceil(rectangle.width / 120))), rows = Math.min(10, Math.max(1, Math.ceil(rectangle.height / 120)))
+        let floor = 0
+        for (let column = 0; column < columns; column++) for (let row = 0; row < rows; row++) {
+          const cell = new DOMRect(rectangle.left + rectangle.width * column / columns, rectangle.top + rectangle.height * row / rows, rectangle.width / columns, rectangle.height / rows)
+          floor = Math.max(floor, glassFloor(below(photoColor(grid, bounds, cell)), own.rgb, themeInk))
+        }
+        changes.push({ element, ink: themeInk, key, floor })
+        continue
       }
-      if (isGlass) { changes.push({ element, ink: themeInk, key, floor: glassFloor(background, own.rgb, themeInk) }); continue }
       // Theme changes are deliberate contrast changes, rather than tiny shifts
       // caused by scrolling. Do not carry the old theme's hysteresis into them.
       const previousInk = !appearanceChanged && previous?.key.startsWith(`${appearanceKey}:${materialRevision}:`) ? previous.ink : undefined

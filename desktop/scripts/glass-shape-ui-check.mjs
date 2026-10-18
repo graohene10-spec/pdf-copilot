@@ -135,13 +135,13 @@ try {
     await compareState(`${theme}: AI assistant`, ai, () => ai.click());
     await indicator(`${theme}: file tabs`, '.tab-strip', '.file-tab.selected');
     await shapes(`${theme}: reading panels`, '.ai-pane,.composer-field,.markdown-paper', { minRadius: 12 });
-    await shapes(`${theme}: reading controls`, '.reader-tools,.reader-tools button,.reader-zoom,.reader-search,.tab-strip,.file-tab,.tab-library,.ai-pane .suggestions button,.model-picker,.context-switch,.reading-pill', { minRadius: 6, maxRadius: 16 });
+    await shapes(`${theme}: reading controls`, '.reader-tools,.reader-tools button,.reader-zoom,.reader-search,.tab-strip,.file-tab,.tab-library,.model-picker,.context-switch,.reading-pill', { minRadius: 6, maxRadius: 16 });
     await shapes(`${theme}: assistant header buttons`, '.ai-pane .header-button', { minRadius: 10 });
-    const suggestion = page.getByRole('button', { name: '梳理核心观点', exact: true });
-    const suggestionColor = (await style(suggestion)).color;
-    await suggestion.hover(); await page.waitForTimeout(240);
-    assert.equal((await style(suggestion)).color, suggestionColor, `${theme}: AI suggestion hover keeps text color.`);
-    // Quick prompts send immediately; type a draft to examine the enabled send capsule.
+    const chip = page.locator('.ai-pane .context-switch');
+    const chipColor = (await style(chip)).color;
+    await chip.hover(); await page.waitForTimeout(240);
+    assert.equal((await style(chip)).color, chipColor, `${theme}: document-context chip hover keeps text color.`);
+    // Type a draft to examine the enabled send capsule.
     await page.getByRole('textbox', { name: '向 AI 提问', exact: true }).fill('本页的主要结论是什么？');
     const send = page.getByRole('button', { name: '发送', exact: true });
     assert.equal(await send.isEnabled(), true);

@@ -21,6 +21,8 @@ const model = createServer(async (request, response) => {
     assert.equal(request.headers.authorization, 'Bearer actions-synthetic-key');
     let body = ''; for await (const chunk of request) body += chunk;
     const payload = JSON.parse(body);
+    // 问题预判是独立的短请求：给一句建议就结束，不计入这里的提问。
+    if (body.includes('请预判这位读者')) { response.writeHead(200, { 'content-type': 'text/event-stream' }); response.end(`data: ${JSON.stringify({ type: 'response.output_text.delta', delta: '预判的问题？' })}\n\ndata: ${JSON.stringify({ type: 'response.completed', response: { status: 'completed', output: [] } })}\n\n`); return; }
     const question = payload.input.findLast(item => item.role === 'user').content.find(item => item.type === 'input_text').text;
     const job = question.match(/ACTIONS_[ABC]/)?.[0]; assert.ok(job);
     response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store' });
@@ -74,7 +76,7 @@ async function select(index) {
   await page.waitForFunction(() => !document.querySelector('.pane-enter-active,.pane-leave-active,.view-enter-active,.view-leave-active'));
 }
 async function ask(job) {
-  await pane().getByRole('checkbox', { name: '当前页上下文与文档检索', exact: true }).uncheck();
+  await pane().getByRole('switch', { name: '当前页上下文与文档检索', exact: true }).uncheck();
   await prompt().fill(job);
   await pane().getByRole('button', { name: '发送', exact: true }).click();
   await until(() => held.has(job));
@@ -241,7 +243,7 @@ try {
   await select(1); assert.equal(await clear().isDisabled(), true); assert.equal(await change().isEnabled(), true);
   await ask('ACTIONS_B'); await assertLayout('Two real local streams: per-document disabled state, stop stays visible');
   await select(2);
-  await pane().getByRole('checkbox', { name: '当前页上下文与文档检索', exact: true }).uncheck();
+  await pane().getByRole('switch', { name: '当前页上下文与文档检索', exact: true }).uncheck();
   await prompt().fill('ACTIONS_C');
   await pane().getByRole('button', { name: '发送', exact: true }).click();
   await pane().locator('.ai-status').filter({ hasText: '队列第 1 位' }).waitFor();
