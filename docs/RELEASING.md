@@ -1,5 +1,7 @@
 # 打包与发布
 
+本文针对 PDF Copilot 浏览器扩展，使用 `v<版本>` 标签。开智桌面版使用独立的 `desktop-v<版本>` 标签及自动发布流程，见[桌面构建与发布说明](../desktop/docs/RELEASING.md)。
+
 1. 同步 package.json 与 extension/manifest.json 版本。
 2. 下载锁定依赖，运行 `npm run build` 构建自带公式版、`npm run build:lite` 构建极简版。构建助手，运行两版静态检查/测试。
 3. 按 ACCEPTANCE.md 检查功能，并在 QA_REPORT.md、README 和发行说明中准确记录已测试与未测试的范围。真实账户推理检查会使用额度；不要将模拟回复或命令处理函数检查写成真实服务/快捷键已通过。

@@ -1,16 +1,49 @@
-# PDF Copilot · PDF 阅读助手
+# 开智 · PDF / Markdown 阅读与管理
 
-本仓库同时提供 **开智 0.2.2 Windows 桌面版**，支持 PDF / Markdown 文档库、多文件标签、全文搜索、全屏阅读和可自定义的 AI 快捷提问，以及可自定义底板的液态玻璃界面。[下载开智桌面版](https://github.com/graohene10-spec/pdf-copilot/releases/tag/desktop-v0.2.2) · [本版更新](desktop/RELEASE_NOTES_0.2.2.md) · [桌面版使用与构建说明](desktop/README.md)。桌面源码位于 `desktop/`，复用本仓库的阅读与 AI 公共模块；桌面与浏览器插件分别使用独立版本号。
+开智是一款 Windows PDF / Markdown 阅读与管理工具，结合本地文档库、并排阅读、手写标记和 AI 文档问答，提供可自定义底板与字体的液态玻璃界面。本仓库也保留 PDF Copilot 浏览器扩展；两个产品独立发布，版本号分别维护。
+
+| 产品 | 最新正式版 | 下载与说明 |
+| --- | --- | --- |
+| 开智 Windows 桌面版 | **0.3.1** | [下载](https://github.com/graohene10-spec/pdf-copilot/releases/tag/desktop-v0.3.1) · [使用说明](desktop/README.md) · [本版更新](desktop/RELEASE_NOTES_0.3.1.md) |
+| PDF Copilot 浏览器扩展 | **v0.3.3** | [下载](https://github.com/graohene10-spec/pdf-copilot/releases/tag/v0.3.3) · [扩展教程](docs/USER_GUIDE.md) |
+
+## 开智 Windows 桌面版
+
+- **阅读与管理**：PDF / Markdown 文档库、标签、收藏、阅读进度、文档内搜索和全屏；可把多个文件拖入窗口加入文档库。
+- **并排与同书多开**：最多三栏并排，PDF / Markdown 可混合；同一本书可在右侧再开一份，各自浏览不同位置，共用对话与标记。
+- **PDF 手写标记**：笔、荧光笔、划线、橡皮和撤销，自动保存在本机；不改写原 PDF，当前不导出带标记的 PDF。
+- **AI 阅读助手**：OpenAI API、DeepSeek 或本机 Codex，支持选文、截图、原文检索、引用跳转、多个会话与已保存的历史对话；框选后可用自定义气泡或数字键直接提问。
+- **外观与字体**：六套底板预设、本机图片、玻璃透明度与模糊程度、助手形象；0.3.1 内置 Anthropic Serif 西文字体，也可导入自己的字体。
+- **应用内更新**：0.3.1 起安装版和免安装版均支持一键下载、校验、安装并重启。
+
+### 下载与开始阅读
+
+| 文件 | 用途 |
+| --- | --- |
+| [kaizhi_0.3.1_x64-setup.exe](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.3.1/kaizhi_0.3.1_x64-setup.exe) | Windows x64 安装版，约 7.5 MiB |
+| [kaizhi_0.3.1_x64-portable.zip](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.3.1/kaizhi_0.3.1_x64-portable.zip) | 免安装版，约 8.0 MiB；全部解压后运行 `开智-portable/开智.exe` |
+| kaizhi_0.3.1_source.zip | 完整源码，供开发者构建 |
+| manifest.json / SHA256SUMS.txt | 发布清单与附件校验值 |
+
+1. 安装或解压运行，系统需有 WebView2；免安装版保留程序旁的 `native-host/` 文件夹。
+2. 点击「加入文档」、按 `Ctrl + O` 或拖入 PDF / Markdown 文件，即可阅读；包内 `samples/` 提供示例。
+3. 需要 AI 时进入「设置 → AI」：API 服务填写自己的 Key，Codex 使用本机已安装并登录的程序。打开「阅读助手」即可提问。
+
+**升级到 0.3.1**：0.3.0 安装版可在应用内升级；0.2.2 及更早安装版、0.3.0 及更早免安装版需手动下载一次。后续更新在「设置 → 更新」中检查。文档库、阅读进度、设置和已保存凭据继续沿用；免安装版的数据也保存在当前 Windows 账号的应用数据目录。
+
+[桌面使用与快捷键](desktop/README.md) · [升级与备份](desktop/docs/UPDATING.md) · [桌面隐私说明](desktop/docs/PRIVACY.md) · [源码构建与发布](desktop/docs/RELEASING.md)
+
+## PDF Copilot 浏览器扩展
 
 轻量的 Windows Edge / Chrome 扩展，把 AI 对话放在 PDF 阅读旁边。继续使用浏览器自带阅读器，也可以切换到基于 PDF.js 的增强阅读器，连续滚动、选文、框选公式，并让 AI 按需查阅相关页。
 
-**当前版本：v0.3.3。** 使用 DeepSeek / OpenAI API Key，只需安装扩展；复用 Codex CLI 登录，再安装随包提供的 Windows 小助手。默认版自带公式排版模块和字体，无需安装 LaTeX。
+**浏览器扩展稳定版：v0.3.3。** 使用 DeepSeek / OpenAI API Key，只需安装扩展；复用 Codex CLI 登录，再安装随包提供的 Windows 小助手。默认版自带公式排版模块和字体，无需安装 LaTeX。以下安装与使用步骤针对浏览器扩展。
 
 [下载 v0.3.3](https://github.com/graohene10-spec/pdf-copilot/releases/tag/v0.3.3) · [完整安装与使用教程](docs/USER_GUIDE.md) · [本版更新](docs/RELEASE_NOTES_v0.3.3.md) · [隐私与权限](PRIVACY.md)
 
 当前开发版新增增强模式框选快捷键、切换标签页后继续接收回复，以及多个窗口共用的并发限制与等待队列。这些新增功能尚未包含在上面的 v0.3.3 发行包中；本地从源码构建可使用。
 
-## 第一次安装：从这里开始
+### 第一次安装：从这里开始
 
 需要 Windows，以及基于 Chromium 132 或更新版本的 Edge / Chrome。当前采用手动加载扩展的方式，尚未上架浏览器商店；普通用户使用安装包无需 Node.js、Python、.NET SDK 或 TeX。
 
@@ -25,7 +58,7 @@
 
 **安装后请保留加载的 extension 文件夹。** 浏览器持续从该目录读取插件文件。遇到问题，可按[逐步教程](docs/USER_GUIDE.md)核对每一步和成功提示。
 
-## 能做什么
+### 能做什么
 
 | 功能 | 浏览器自带 PDF 阅读器 | 增强阅读器 |
 |---|---|---|
@@ -52,7 +85,7 @@
 
 ![侧栏与临时问答界面（合成 PDF 与本机模拟回复）](docs/images/chat.png)
 
-## 下载文件怎么选
+### 下载文件怎么选
 
 在 [v0.3.3 Release 的 Assets](https://github.com/graohene10-spec/pdf-copilot/releases/tag/v0.3.3) 选择一种完整包即可：
 
@@ -68,13 +101,13 @@
 
 默认完整包约 **3.3 MiB**，极简完整包约 **2.9 MiB**，具体见附带的对照表。两版使用同一扩展 ID，选择一版安装。默认版不从 CDN 获取公式字体；API 模型仍需要网络和相应账户权限。
 
-## 模型连接要点
+### 模型连接要点
 
 - **DeepSeek / OpenAI API**：默认 API 地址分别为 `https://api.deepseek.com`、`https://api.openai.com/v1`。只填写基础地址，不追加 `/chat/completions` 或 `/responses`。模型预设不保证账户可调用，可自行输入模型 ID。API Key 默认仅保留到浏览器关闭；“记住密钥”使用扩展本地存储。具体步骤见[API 配置教程](docs/USER_GUIDE.md#方式-adeepseek--openai-api-key)。
 - **Codex**：使用同一 Windows 用户下的 Windows 原生 CLI，需要 0.159.2 或更新版本；完整 PDF 动态工具往返已在 0.160.0 验证。先安装 CLI、运行 `codex login`，再双击 `windows-helper/install.cmd`，在设置中 **检查连接并读取模型**。不需要填写 API Key。具体安装命令与排障见[Codex 教程](docs/USER_GUIDE.md#方式-bcodex-本机登录)。
 - 已有 ChatGPT 浏览器登录不会自动变成 OpenAI API Key。Codex 路径使用 CLI 自身认证；设置页显示实际程序、版本及登录结果。可用模型、额度和图片能力由服务和账户决定。
 
-## 快捷键与本地文件权限
+### 快捷键与本地文件权限
 
 | 操作 | 建议默认快捷键 |
 |---|---|
@@ -88,7 +121,7 @@
 
 对浏览器已经打开的 `file:///` PDF 截图，需要在扩展详情启用 **允许访问文件网址**。从该标签页切入增强阅读器时，还需点击阅读页的 **授权本地文件读取并打开 PDF**，补齐本地读取授权。也可以直接在增强阅读器点击 **打开 PDF** 选择文件，跳过这两项网址读取授权。在线 PDF 首次打开会按网站申请读取权限；一次性或登录下载地址失败时，下载文件后用文件选择器打开。
 
-## 从上一发行版升级
+### 从上一发行版升级
 
 1. 下载并解压本版完整包，关闭旧阅读器、侧栏和临时窗口。
 2. 将新 **extension 文件夹的内容**覆盖到原加载目录，在浏览器扩展管理页点击 **重新加载**。不要移除原扩展再安装，以便保留设置和书签。
@@ -97,19 +130,19 @@
 
 [详细更新说明](docs/UPDATING.md) · [常见问题与逐步排障](docs/USER_GUIDE.md#常见问题按提示排查)
 
-## 数据与资源
+### 数据与资源
 
 PDF 在浏览器本地解析，搜索索引、自动页图和裁剪过程保留在内存。点击发送后，问题、当前附件/当前页及有限文字历史交给所选模型服务；历史图片不自动重发。不同文档分别保存有限内存会话，临时窗口独立，关闭释放。个人书签只保存文档指纹和页码。
 
 默认版复用 PDF.js 和 KaTeX，没有前端框架、开发者后台或常驻服务。增强阅读器最多保留 3 个页面画布，合计约 1600 万像素；本地文件上限 256 MiB。每题按需提供的证据有页数、文字、图片与调用次数上限，长文档检索可能只覆盖部分范围。应用不主动保存截图文件，浏览器/操作系统行为和服务端政策不在此保证内。[隐私与权限细节](PRIVACY.md)
 
-## 验证范围
+### 验证范围
 
 94 项单元检查通过，1 项真实元数据检查默认跳过；默认/极简版各 6 组资源配置检查通过，另有 6 组上下文回归通过。此前公开版的自动当前页、滚动/框选/公式/字号、24 组功能验收及本地 URL 检查保留为回归基础。浏览器检查使用合成 PDF、隔离 Edge 配置与本机模拟模型；此前 Codex 的真实工具往返另使用过少量合成证据。
 
 DeepSeek / OpenAI API 真实推理、全新电脑安装卸载、不同系统的真实快捷键及原生选文菜单尚未完整实测。当前没有商店签名或自动更新。详细范围见[测试记录](docs/QA_REPORT.md)与[验收清单](docs/ACCEPTANCE.md)。
 
-## 开发者：从源码构建
+### 开发者：从源码构建
 
 使用发行安装包的用户可跳过。开发机需要 Node.js 22+；编译助手需 .NET Framework 4.x 编译器，不需 .NET SDK 或 NuGet。
 
@@ -130,4 +163,4 @@ npm run package
 
 ## 许可
 
-本项目采用 [MIT](LICENSE)。PDF.js、KaTeX 等第三方许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+项目自身代码采用 [MIT](LICENSE)。PDF.js、KaTeX 等第三方资源说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

@@ -1,5 +1,7 @@
 # PDF Copilot v0.3.3 安装与使用教程
 
+本文针对浏览器扩展。使用开智 Windows 桌面版，请看[桌面使用说明](../desktop/README.md)和[桌面升级指南](../desktop/docs/UPDATING.md)。
+
 本教程从下载开始，按顺序完成即可安装并进行第一次 PDF 提问。使用 API Key 和使用 Codex 是两条可选路线，选择一条即可。
 
 [下载本版](https://github.com/graohene10-spec/pdf-copilot/releases/tag/v0.3.3) · [功能介绍](../README.md) · [隐私说明](../PRIVACY.md)
