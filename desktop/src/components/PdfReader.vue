@@ -11,6 +11,9 @@ import ReaderSearch from './ReaderSearch.vue'
 import { normalizeSearchText, scanPdfMatches } from '../reader/search.mjs'
 import { documentPassword, rememberPassword } from '../document/passwords.mjs'
 import { floatLeavingPanel, restoreLeavingPanel } from '../ui/panel-transition'
+import { usePdfInk } from '../reader/ink/use-ink'
+import InkButton from './ink/InkButton.vue'
+import InkPalette from './ink/InkPalette.vue'
 
 const props = withDefaults(defineProps<{
   data: Uint8Array
@@ -390,6 +393,7 @@ function cancelCapture() {
   capture.value = false; viewer?.capture(false)
   return true
 }
+const ink = usePdfInk({ container, viewer: () => viewer, documentId: () => props.documentId, page, capture, cancelCapture })
 function getCaptureElements(selection: { page: number; image?: string }) {
   if (!active || !selection?.image) return []
   const view = viewer?.views?.get(selection.page)
@@ -627,7 +631,7 @@ async function resume() {
 }
 onActivated(resume)
 onDeactivated(suspend)
-defineExpose({ goToPage, getPage: () => page.value, getPdf: () => pdf, isSuspended: () => !active, clearSelection: () => viewer?.clearOverlays(), getCaptureFrame, getCaptureElements, zoomIn, zoomOut, fitWidth, nextPage, previousPage, toggleOutline, toggleCapture, cancelCapture, focusSearch, clearSearch, getDisplayScale: () => scale.value, getViewState, holdPanelResize, suspend, resume, getCacheStats: () => viewer?.getCacheStats() })
+defineExpose({ goToPage, getPage: () => page.value, getPdf: () => pdf, isSuspended: () => !active, clearSelection: () => viewer?.clearOverlays(), getCaptureFrame, getCaptureElements, zoomIn, zoomOut, fitWidth, nextPage, previousPage, toggleOutline, toggleCapture, cancelCapture, toggleInk: ink.toggle, exitInk: ink.exit, focusSearch, clearSearch, getDisplayScale: () => scale.value, getViewState, holdPanelResize, suspend, resume, getCacheStats: () => viewer?.getCacheStats() })
 </script>
 
 <template>
@@ -637,13 +641,16 @@ defineExpose({ goToPage, getPage: () => page.value, getPdf: () => pdf, isSuspend
       <div class="reader-page-control"><button @click="previousPage" :disabled="page <= 1" data-tip="上一页" aria-label="上一页" :data-tip-key="shortcuts?.previousPage">‹</button><input aria-label="页码" v-model.number="pageInput" type="number" min="1" :max="total" @change="goToPage(pageInput)" @keydown.enter="goToPage(pageInput)" /><span>/ {{ total || '—' }}</span><button @click="nextPage" :disabled="page >= total" data-tip="下一页" aria-label="下一页" :data-tip-key="shortcuts?.nextPage">›</button></div>
       <div class="reader-zoom"><button data-tip="缩小" aria-label="缩小" :data-tip-key="shortcuts?.zoomOut" @click="zoomOut">−</button><button @click="fitWidth" data-tip="适应宽度" :data-tip-key="shortcuts?.fitWidth">{{ scale >= .01 ? Math.round(scale * 100) : Math.round(scale * 1000) / 10 }}%</button><button data-tip="放大" aria-label="放大" :data-tip-key="shortcuts?.zoomIn" @click="zoomIn">＋</button></div>
       <button class="quiet-button crop-toggle" :class="{ active: capture }" @click="toggleCapture" data-tip="框选公式或图表作为 AI 上下文" :data-tip-key="shortcuts?.capture"><AppIcon name="crop" :size="17" />{{ capture ? '拖动框选' : '框选' }}</button>
+      <InkButton :active="ink.state.enabled" @click="ink.toggle" />
       <ReaderSearch ref="searchControl" v-model="searchQuery" :busy="searchBusy" :current="searchCount" :total="searchMatches.length" :status="searchStatus" :shortcut="findShortcut" @next="nextSearch" @previous="previousSearch" @clear="clearSearch" />
     </div>
     <div class="reader-engine-body">
       <Transition name="pane" @before-enter="outlineResizeStart($event, true)" @before-leave="outlineResizeStart($event, false)" @after-enter="outlineResizeEnd" @after-leave="outlineResizeEnd" @enter-cancelled="outlineResizeEnd" @leave-cancelled="outlineResizeEnd">
         <aside v-if="outlineOpen" class="document-outline"><p class="outline-heading">目录</p><button v-for="(item, index) in outline" :key="index" :class="[`depth-${Math.min(item.depth, 3)}`, { current: index === currentOutline }]" :style="{ '--depth': item.depth }" :aria-current="index === currentOutline ? 'location' : undefined" @click="destination(item.dest)"><span class="outline-title">{{ item.title }}</span><span v-if="item.page" class="outline-page">{{ item.page }}</span></button><p v-if="!outline.length" class="subtle">此文档没有目录。</p></aside>
       </Transition>
-      <div ref="viewportHost" class="pdf-viewport"><div ref="container" class="pdf-scroll" tabindex="0" aria-label="PDF 阅读区域" @mouseup="selectedText" @keyup="selectedText"></div></div>
+      <div ref="viewportHost" class="pdf-viewport"><div ref="container" class="pdf-scroll" tabindex="0" aria-label="PDF 阅读区域" @mouseup="selectedText" @keyup="selectedText"></div>
+        <InkPalette v-if="ink.state.enabled" :mode="ink.state.mode" :colors="ink.state.colors" :last-tool="ink.state.lastTool" :can-undo="ink.state.canUndo" :page-has-ink="ink.state.pageHasInk" :status="ink.state.status" @mode="ink.setMode" @color="ink.setColor" @undo="ink.undo" @clear="ink.clearPage" @close="ink.exit" />
+      </div>
       <div v-if="loading" class="reader-overlay"><span class="spinner"></span><p>正在打开文档…</p></div>
       <div v-if="error" class="reader-overlay error-state"><AppIcon name="file" :size="34" /><p>{{ error }}</p><button @click="load">重试</button></div>
     </div>

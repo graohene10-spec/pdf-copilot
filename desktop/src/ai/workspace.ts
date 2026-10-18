@@ -148,6 +148,11 @@ function schedulePersist(documentId: string) {
   clearTimeout(persistTimers.get(documentId))
   persistTimers.set(documentId, setTimeout(() => flushPersist(documentId), 500))
 }
+/** Every conversation with messages across the given documents, newest first (loads saved ones on demand). */
+export async function allConversations(documentIds: string[]): Promise<ChatState[]> {
+  await Promise.all(documentIds.map(id => loadConversations(id)))
+  return documentIds.flatMap(id => chats(id).list.filter(item => item.messages.length)).sort((a, b) => b.updatedAt - a.updatedAt)
+}
 /** Load saved conversations once per document; the live ones stay in front. */
 export function loadConversations(documentId: string): Promise<void> {
   const entry = chats(documentId)

@@ -83,16 +83,23 @@
 }
 
 .pane-leave-active {
-  transition: opacity var(--dur-2) var(--ease-out),
-              transform var(--dur-2) var(--ease-pane);
+  transition: opacity var(--dur-3) var(--ease-out),
+              transform var(--dur-3) var(--ease-pane),
+              filter var(--dur-3) var(--ease-out);
   transform-origin: 100% 6%;
   will-change: opacity, transform;
 }
 
-.pane-enter-from,
-.pane-leave-to {
+.pane-enter-from {
   opacity: 0;
   transform: translate(14px, -8px) scale(.9);
+}
+
+/* 关闭：向右上角收拢、轻微失焦再淡出，在原位置完成。 */
+.pane-leave-to {
+  opacity: 0;
+  transform: translate(18px, -6px) scale(.88);
+  filter: blur(3px);
 }
 
 .pane-enter-to,
@@ -114,24 +121,20 @@
 
 /* ---- 视图切换：文档库 ↔ 阅读 ---------------------------------------- */
 
+/* 只做透明度渐变：给整片带背景模糊的玻璃做缩放，每一帧都要重算模糊，打开文档时会一卡一卡。 */
 .view-enter-active {
-  transition: opacity var(--dur-3) var(--ease-out), transform var(--dur-smooth) var(--spring-smooth);
+  transition: opacity var(--dur-3) var(--ease-out);
 }
 
 .view-leave-active {
-  transition: opacity var(--dur-2) var(--ease-out), transform var(--dur-2) var(--ease-out);
+  transition: opacity var(--dur-2) var(--ease-out);
   position: absolute;
   inset: 0;
 }
 
-.view-enter-from {
-  opacity: 0;
-  transform: scale(.985);
-}
-
+.view-enter-from,
 .view-leave-to {
   opacity: 0;
-  transform: scale(1.01);
 }
 
 /* ---- 通用入场 -------------------------------------------------------- */
@@ -214,16 +217,22 @@
 
 .sidebar-leave-active {
   overflow: hidden;
-  transition: opacity var(--dur-2) var(--ease-out),
-              transform var(--dur-2) var(--ease-pane);
+  transition: opacity var(--dur-3) var(--ease-out),
+              transform var(--dur-3) var(--ease-pane),
+              filter var(--dur-3) var(--ease-out);
   transform-origin: 0 4%;
   will-change: opacity, transform;
 }
 
-.sidebar-enter-from,
-.sidebar-leave-to {
+.sidebar-enter-from {
   opacity: 0;
   transform: translate(-12px, -8px) scale(.9);
+}
+
+.sidebar-leave-to {
+  opacity: 0;
+  transform: translate(-16px, -6px) scale(.88);
+  filter: blur(3px);
 }
 
 /* 文字按最终宽度排版，避免折叠时挤成一列。 */
@@ -255,6 +264,30 @@
 @keyframes zg-theme-reveal {
   from { clip-path: circle(0 at var(--reveal-x, 100%) var(--reveal-y, 0)); }
   to { clip-path: circle(var(--reveal-r, 150vmax) at var(--reveal-x, 100%) var(--reveal-y, 0)); }
+}
+
+/* ---- 文档库 ↔ 阅读：视图过渡，两张快照在合成层交叉淡化 ------------------ */
+
+:root[data-view-switch]::view-transition-old(root) {
+  animation: zg-fade-out 180ms var(--ease-out) both;
+}
+
+:root[data-view-switch]::view-transition-new(root) {
+  animation: zg-view-in 300ms var(--ease-out) both;
+}
+
+:root[data-view-switch='close']::view-transition-new(root) {
+  animation-name: zg-fade-in;
+}
+
+@keyframes zg-view-in {
+  from { opacity: 0; transform: scale(.985); }
+  to { opacity: 1; transform: none; }
+}
+
+/* 视图过渡接管时，原有的 Vue 渐变不再叠加。 */
+:root[data-view-switch] :is(.view-enter-active, .view-leave-active) {
+  transition: none !important;
 }
 
 /* ---- 微交互：图标在状态切换时轻轻弹一下 ------------------------------ */

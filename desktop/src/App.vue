@@ -7,14 +7,15 @@ import FileTabs from './components/FileTabs.vue'
 import CaptureQuickPrompt from './components/CaptureQuickPrompt.vue'
 import { chatPhase, chatState, sendChat, closeChat, closeAllChats, configureRequests, stopChat, notices, dismissNotice, selectConversation, type Notice } from './ai/workspace'
 import { forgetPassword, forgetAllPasswords } from './document/passwords.mjs'
-import { useSettings, matchShortcut, matchWheelShortcut, shortcutFromEvent, shortcutLabel, UI_FONTS, READING_FONTS } from './settings'
+import { useSettings, matchShortcut, matchWheelShortcut, shortcutFromEvent, shortcutLabel, UI_FONTS, READING_FONTS, fontChoices } from './settings'
 import { retainReaderEntries } from './reader/cache-policy.mjs'
 import { installGlassContrast } from './ui/glass-contrast'
-import { floatLeavingPanel, restoreLeavingPanel } from './ui/panel-transition'
+import { restoreLeavingPanel } from './ui/panel-transition'
 import { useFullscreen } from './ui/fullscreen'
 import { vLiquidSelection } from './ui/liquid-selection'
 import { useReorder } from './ui/reorder'
 import { startAutoCheck, stopAutoCheck } from './ui/updater'
+import { registerCustomFonts } from './ui/custom-fonts'
 const PdfReader = defineAsyncComponent(() => import('./components/PdfReader.vue'))
 const MarkdownReader = defineAsyncComponent(() => import('./components/MarkdownReader.vue'))
 const AiPane = defineAsyncComponent(() => import('./components/AiPane.vue'))
@@ -31,7 +32,7 @@ type OpenTab = { doc: Doc; view?: any; selection?: DocumentSelection }
 const tabs = ref<OpenTab[]>([])
 const active = ref<Doc | null>(null)
 const currentTab = computed(() => tabs.value.find(tab => tab.doc.id === active.value?.id))
-const fileTabs = computed(() => tabs.value.map(tab => ({ id: tab.doc.id, name: tab.doc.name, kind: tab.doc.kind, phase: chatPhase(tab.doc.id) })))
+const fileTabs = computed(() => tabs.value.map(tab => ({ id: tab.doc.id, name: isCopy(tab.doc.id) ? `${tab.doc.name}（${tab.doc.id.split('~')[1]}）` : tab.doc.name, kind: tab.doc.kind, phase: chatPhase(sourceId(tab.doc.id)) })))
 /* 工作区布局
    - group：一组并排阅读的文档（至少两份，按显示顺序）。去文档库再回来，这一组仍在；
      点组内任一标签就整组显示，点组外标签单独显示那一份。
@@ -58,9 +59,32 @@ const stageDoc = computed(() => active.value || lastActive.value)
 const stagePaneIds = computed(() => !stageDoc.value ? [] : inGroup(stageDoc.value.id) ? group.value : [stageDoc.value.id])
 const stageAi = computed(() => active.value ? visibleAi.value : aiPanels.value.filter(panel => !panel.doc || stagePaneIds.value.includes(panel.doc)))
 const aiOpen = computed(() => visibleAi.value.length > 0)
-function aiDocument(panel: AiPanel) { const doc = tabDoc(panel.doc || stageDoc.value?.id || ''); return doc ? { id: doc.id, title: doc.name, kind: doc.kind } : null }
+// 跟随标签的助手窗口：并排时在两栏之间点击不会让它来回切换；切到别的标签或组时才跟过去。
+const followDoc = ref<string | null>(null)
+watch(() => [stageDoc.value?.id, stagePaneIds.value.join()] as const, ([id]) => {
+  if (!id) return
+  if (followDoc.value && stagePaneIds.value.length > 1 && stagePaneIds.value.includes(followDoc.value)) return
+  followDoc.value = id
+}, { immediate: true })
+function followedId(panel: AiPanel) { return panel.doc || (followDoc.value && tabDoc(followDoc.value) ? followDoc.value : stageDoc.value?.id) || '' }
+// 同一本书多开的几份共用一套对话。
+function aiDocument(panel: AiPanel) { const doc = tabDoc(followedId(panel)); return doc ? { id: sourceId(doc.id), title: doc.name, kind: doc.kind } : null }
+/** The other documents on screen, offered in the assistant's header to switch which one it reads. */
+function aiAlternatives(panel: AiPanel) { const id = followedId(panel); return panel.doc ? [] : stagePaneIds.value.filter(item => sourceId(item) !== sourceId(id)).map(item => tabDoc(item)).filter(Boolean).map(doc => ({ id: doc!.id, title: doc!.name })) }
+function switchAiDocument(panel: AiPanel, id: string) { if (!panel.doc) followDoc.value = id }
+const libraryIndex = computed(() => documents.value.map(doc => ({ id: doc.id, title: doc.name })))
+async function openConversationAt(target: { documentId: string; conversationId: string }) {
+  const shown = stagePaneIds.value.find(id => sourceId(id) === target.documentId)
+  const doc = (shown && tabDoc(shown)) || tabs.value.find(tab => tab.doc.id === target.documentId)?.doc || documents.value.find(item => item.id === target.documentId)
+  if (!doc) return
+  selectConversation(target.documentId, target.conversationId)
+  if (active.value?.id !== doc.id && !stagePaneIds.value.includes(doc.id)) await openDocument(doc)
+  followDoc.value = doc.id
+  const panel = aiPanels.value.find(item => item.doc === doc.id) || aiPanels.value.find(item => !item.doc)
+  if (panel) { if (!panel.doc) panel.conversation = undefined } else openAssistant(true)
+}
 function aiContext(panel: AiPanel) {
-  const id = panel.doc || stageDoc.value?.id
+  const id = followedId(panel)
   const tab = tabs.value.find(tab => tab.doc.id === id)
   return { page: tab?.doc.page || 1, selection: id === active.value?.id ? selection.value : tab?.selection }
 }
@@ -100,6 +124,24 @@ function wakePill(id: string) {
   pillTimers.set(id, setTimeout(() => { pillAwake[id] = false; pillTimers.delete(id) }, 2200))
 }
 function tabDoc(id: string) { return tabs.value.find(tab => tab.doc.id === id)?.doc }
+// 同一本书再开一份时，标签用 `原编号~序号`：文件、对话、标记都按原编号共用，阅读位置各自独立、不写回文档库。
+function sourceId(id: string): string; function sourceId(id: string | undefined): string | undefined
+function sourceId(id: string | undefined) { return id?.split('~')[0] }
+function isCopy(id: string) { return id.includes('~') }
+function openCopy(id: string) {
+  contextMenu.value = undefined
+  const doc = tabDoc(id)
+  if (!doc) return
+  const source = sourceId(id)
+  let number = 2
+  while (tabDoc(`${source}~${number}`)) number++
+  const copy = { ...doc, id: `${source}~${number}` }
+  const index = tabs.value.findIndex(tab => tab.doc.id === id)
+  const tab = tabs.value[index]!
+  tabs.value.splice(index + 1, 0, { doc: copy, view: readerInstances.get(id)?.getViewState?.() || tab.view })
+  if (active.value?.id !== id) { void openDocument(doc).then(() => openBeside(copy.id, 'right')); return }
+  void openBeside(copy.id, 'right')
+}
 type ReaderEntry = { id: string; doc: Doc; size: number; bytes: Uint8Array; view?: any; events: Record<string, (...args: any[]) => void> }
 const readerCache = shallowRef<ReaderEntry[]>([])
 const readerInstances = new Map<string, any>()
@@ -111,8 +153,8 @@ const captureQuick = shallowRef<CaptureQuick>()
 let captureQuickFrame = 0
 let captureQuickResize: ResizeObserver | undefined
 let captureQuickMutation: MutationObserver | undefined
-const captureQuickBusy = computed(() => Boolean(captureQuick.value && (captureQuick.value.pending || chatState(captureQuick.value.documentId).request)))
-const captureQuickStatus = computed(() => captureQuick.value?.status || (captureQuick.value && chatState(captureQuick.value.documentId).request ? '这份文档已有问题正在处理，可点继续查看。' : ''))
+const captureQuickBusy = computed(() => Boolean(captureQuick.value && (captureQuick.value.pending || chatState(sourceId(captureQuick.value.documentId)).request)))
+const captureQuickStatus = computed(() => captureQuick.value?.status || (captureQuick.value && chatState(sourceId(captureQuick.value.documentId)).request ? '这份文档已有问题正在处理，可点继续查看。' : ''))
 const reader = ref<any>()
 const settingsOpen = ref(false)
 const settingsTab = ref<'appearance' | 'reading' | 'shortcuts' | 'ai' | 'updates'>('appearance')
@@ -206,7 +248,8 @@ function updateLocal(doc: Doc) {
   const index = documents.value.findIndex(item => item.id === doc.id)
   if (index >= 0) documents.value[index] = current
   for (const tab of tabs.value) if (tab.doc.id === doc.id) tab.doc = current
-  if (active.value?.id === doc.id) active.value = current
+    else if (isCopy(tab.doc.id) && sourceId(tab.doc.id) === doc.id) tab.doc = { ...doc, id: tab.doc.id, page: tab.doc.page, pageCount: tab.doc.pageCount, progress: tab.doc.progress }
+  if (active.value && sourceId(active.value.id) === doc.id) active.value = tabDoc(active.value.id) || active.value
 }
 async function refresh() {
   const epoch = ++listEpoch
@@ -252,6 +295,7 @@ async function flushProgress() {
   await Promise.all(pending.map(([id, patch]) => writeReadingUpdate(id, patch, '阅读位置保存失败')))
 }
 function writeReadingUpdate(id: string, patch: Partial<Doc>, message: string) {
+  if (isCopy(id)) return Promise.resolve()
   const write = (progressWrites.get(id) || Promise.resolve()).then(async () => {
     try { updateLocal(await library.update(id, patch)); if ('page' in patch && paneVisible(id)) wakePill(id) }
     catch (error) { notify(`${message}：${reason(error)}`) }
@@ -282,7 +326,7 @@ function evictReader(id: string) { readerCache.value = readerCache.value.filter(
 function readDocument(id: string) {
   let promise = pendingReads.get(id)
   if (!promise) {
-    promise = library.read(id); pendingReads.set(id, promise)
+    promise = library.read(sourceId(id)); pendingReads.set(id, promise)
     const current = promise
     void promise.finally(() => { if (pendingReads.get(id) === current) pendingReads.delete(id) }).catch(() => {})
   }
@@ -303,8 +347,23 @@ function cacheReader(doc: Doc, bytes: Uint8Array, view: any) {
   }
   return entry
 }
+/**
+ * 文档库与阅读区之间的切换用视图过渡：只在合成层对两张快照做淡入淡出，
+ * 不必每一帧重算整片玻璃的背景模糊，也不受 PDF 首次解析占用主线程的影响。
+ */
+function switchView<T>(change: () => T): Promise<Awaited<T>> | T {
+  const start = (document as any).startViewTransition?.bind(document)
+  const root = document.documentElement
+  if (!start || root.dataset.themeTransition || root.dataset.viewSwitch || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return change()
+  root.dataset.viewSwitch = active.value ? 'close' : 'open'
+  let result: T
+  const transition = start(async () => { result = change(); await nextTick() })
+  void transition.finished.catch(() => {}).finally(() => { delete root.dataset.viewSwitch })
+  return transition.updateCallbackDone.catch(() => {}).then(() => result) as Promise<Awaited<T>>
+}
 async function openDocument(doc: Doc, reload = false) {
   if (active.value?.id === doc.id && !reload) return
+  if (!active.value && !reload) return switchView(() => showDocument(doc))
   // 同一组里已经在屏幕上的文档：只移交焦点。
   if (!reload && inGroup(active.value?.id) && inGroup(doc.id) && readerCache.value.some(entry => entry.id === doc.id)) { focusPane(doc.id); return }
   return showDocument(doc, reload)
@@ -367,6 +426,10 @@ async function loadGroupReaders(epoch: number) {
   }
 }
 function closeReader() {
+  if (active.value) { switchView(leaveReader); return }
+  leaveReader()
+}
+function leaveReader() {
   suspendLeaving([]); pauseReader(); ++openEpoch; void flushProgress(); splitPicker.value = undefined; active.value = null; opening.value = false; selection.value = undefined; detailsOpen.value = false
   // 没有打开的文件时才真正清空工作区；否则读者与助手留在原处，回来即用。
   if (!tabs.value.length) clearWorkspace()
@@ -449,7 +512,9 @@ function closeTab(id: string) {
   aiPanels.value = aiPanels.value.filter(panel => panel.doc !== id)
   if (selected) { pauseReader(); ++openEpoch; void flushProgress(); active.value = null; selection.value = undefined; detailsOpen.value = false; opening.value = false }
   evictReader(id)
-  closeChat(id); forgetPassword(id); tabs.value.splice(index, 1)
+  // 另一份同书标签还开着时，对话与密码留给它。
+  if (!tabs.value.some(tab => tab.doc.id !== id && sourceId(tab.doc.id) === sourceId(id))) { closeChat(sourceId(id)); forgetPassword(sourceId(id)) }
+  tabs.value.splice(index, 1)
   // 关闭并排中的焦点文件时，焦点落到相邻的一栏，其余栏保持不动。
   if (selected && rest.length) selectTab(rest[Math.min(paneIndex, rest.length - 1)])
   else if (selected && tabs.value.length) selectTab(tabs.value[Math.min(index, tabs.value.length - 1)].doc.id)
@@ -608,12 +673,7 @@ function holdNotice(id: string, hold: boolean) {
 }
 async function openNotice(notice: Notice) {
   dismissNotice(notice.id)
-  const doc = tabs.value.find(tab => tab.doc.id === notice.documentId)?.doc || documents.value.find(item => item.id === notice.documentId)
-  if (!doc) return
-  selectConversation(notice.documentId, notice.conversationId)
-  if (active.value?.id !== doc.id) await openDocument(doc)
-  const panel = aiPanels.value.find(item => item.doc === doc.id) || aiPanels.value.find(item => !item.doc)
-  if (panel) { if (!panel.doc) panel.conversation = undefined } else openAssistant(true)
+  await openConversationAt(notice)
 }
 function appContextMenu(event: MouseEvent) {
   if (event.defaultPrevented) return
@@ -657,6 +717,10 @@ function tabMenu(payload: { id: string; x: number; y: number }) {
   if (grouped) items.push({ label: '移出并排', icon: 'close', action: () => removeFromGroup(id) })
   if (group.value.length > 1) items.push({ label: '取消整组并排', icon: 'panel', action: ungroup })
   items.push({ label: '为这份文档开一个助手窗口', icon: 'sparkle', separator: items.length > 0, action: () => { contextMenu.value = undefined; if (!paneVisible(id)) selectTab(id); void nextTick(() => openAssistant(true, id)) } })
+  {
+    const full = (inGroup(active.value?.id) ? group.value.length : 1) >= MAX_PANES
+    items.push({ label: '在右侧再开一份', icon: 'split-add', action: () => openCopy(id), disabled: full, hint: full ? `最多 ${MAX_PANES} 份` : undefined })
+  }
   items.push({ label: '关闭标签', icon: 'close', separator: true, action: () => closeTab(id) })
   if (tabs.value.length > 1) items.push({ label: '关闭其他标签', action: () => closeOtherTabs(id) })
   contextMenu.value = { x: payload.x, y: payload.y, items }
@@ -726,7 +790,7 @@ function dismissCaptureQuick(clear = false) {
   captureQuickFrame = 0
   captureQuickResize?.disconnect(); captureQuickResize = undefined
   captureQuickMutation?.disconnect(); captureQuickMutation = undefined
-  if (current?.pending && current.ownedRequest && chatState(current.documentId).request === current.ownedRequest) stopChat(current.documentId)
+  if (current?.pending && current.ownedRequest && chatState(sourceId(current.documentId)).request === current.ownedRequest) stopChat(sourceId(current.documentId))
   if (clear && current && active.value?.id === current.documentId && toRaw(selection.value) === toRaw(current.selection)) clearSelection()
 }
 function monitorCaptureQuick() {
@@ -763,30 +827,31 @@ function continueCaptureQuick() { dismissCaptureQuick(); openAssistant(true) }
 async function askCaptureQuick(question: string) {
   const current = captureQuick.value
   if (!current || current.pending || active.value?.id !== current.documentId) return
-  const state = chatState(current.documentId)
+  const tabId = current.documentId
+  const state = chatState(sourceId(tabId))
   if (state.request) { current.status = '这份文档已有问题正在处理，可点继续查看。'; captureQuick.value = { ...current }; return }
-  const doc = { id: current.documentId, title: active.value.name, kind: active.value.kind }
+  const doc = { id: sourceId(tabId), title: active.value.name, kind: active.value.kind }
   const context = { page: current.selection.page, selection: current.selection }
   current.pending = true; current.status = '准备提问…'; captureQuick.value = { ...current }
   // A quick question is about the framed region only: it sends the screenshot,
   // without the page context, document search or earlier references.
   let accepted = false
   const sending = sendChat(doc, context, () => {
-    if (active.value?.id === doc.id && toRaw(selection.value) === toRaw(context.selection)) openSettings('ai')
+    if (active.value?.id === tabId && toRaw(selection.value) === toRaw(context.selection)) openSettings('ai')
   }, () => {
     accepted = true; current.pending = false
     // Do not abort an accepted queued request when removing its capture UI.
-    if (captureQuick.value?.documentId === doc.id && toRaw(captureQuick.value.selection) === toRaw(context.selection)) {
+    if (captureQuick.value?.documentId === tabId && toRaw(captureQuick.value.selection) === toRaw(context.selection)) {
       captureQuick.value.pending = false; captureQuick.value.ownedRequest = undefined; dismissCaptureQuick()
     }
-    consumeSelection({ documentId: doc.id, selection: context.selection })
-    if (active.value?.id === doc.id) openAssistant()
+    consumeSelection({ documentId: tabId, selection: context.selection })
+    if (active.value?.id === tabId) openAssistant()
   }, question, { includeSelection: true, includeDocument: false, selectionOnly: true })
   if (captureQuick.value?.documentId === current.documentId) captureQuick.value.ownedRequest = state.request
   try { await sending }
   finally {
     const retained = captureQuick.value
-    if (!accepted && retained?.documentId === doc.id && toRaw(retained.selection) === toRaw(context.selection)) {
+    if (!accepted && retained?.documentId === tabId && toRaw(retained.selection) === toRaw(context.selection)) {
       retained.pending = false; retained.ownedRequest = undefined; retained.status = state.status || '未能发送，请重试。'; captureQuick.value = { ...retained }
     }
   }
@@ -794,7 +859,7 @@ async function askCaptureQuick(question: string) {
 function selectionChanged() { if (window.getSelection()?.isCollapsed) selectionAction.value = undefined }
 function dismissSelectionAction() { selectionAction.value = undefined }
 async function toggleStar(doc: Doc) {
-  try { updateLocal(await library.update(doc.id, { starred: !doc.starred })) }
+  try { updateLocal(await library.update(sourceId(doc.id), { starred: !doc.starred })) }
   catch (error) { notify(reason(error)) }
 }
 function readingProgress(id: string, value: { page: number; pageCount: number; progress: number }) {
@@ -808,36 +873,39 @@ function readingProgress(id: string, value: { page: number; pageCount: number; p
   const local = documents.value.find(doc => doc.id === id)
   if (local) Object.assign(local, patch)
   if (moved) wakePill(id)
+  if (isCopy(id)) return
   pendingProgress.set(id, patch)
   clearTimeout(progressTimer); progressTimer = setTimeout(flushProgress, 800)
 }
 function indexText(id: string, text: string) {
+  if (isCopy(id)) return
   clearTimeout(indexTimers.get(id))
   indexTimers.set(id, setTimeout(() => { indexTimers.delete(id); void library.index(id, text.slice(0, 2000000)).catch(error => notify(`搜索索引更新失败：${reason(error)}`)) }, 1200))
 }
 function clearSelection() { dismissCaptureQuick(); selection.value = undefined; selectionAction.value = undefined; if (currentTab.value) currentTab.value.selection = undefined; window.getSelection()?.removeAllRanges(); reader.value?.clearSelection?.() }
 function consumeSelection(value: { documentId: string; selection: any }) {
-  const tab = tabs.value.find(tab => tab.doc.id === value.documentId)
-  if (!tab || toRaw(tab.selection) !== toRaw(value.selection)) return
+  // 助手按原编号报告，选区可能来自同书的任一份。
+  const tab = tabs.value.find(tab => (tab.doc.id === value.documentId || sourceId(tab.doc.id) === value.documentId) && toRaw(tab.selection) === toRaw(value.selection))
+  if (!tab) return
   tab.selection = undefined
-  if (active.value?.id === value.documentId && toRaw(selection.value) === toRaw(value.selection)) clearSelection()
+  if (active.value?.id === tab.doc.id && toRaw(selection.value) === toRaw(value.selection)) clearSelection()
 }
 function jump(value: { page?: number; rect?: any; line?: number }) { if (active.value?.kind === 'markdown') reader.value?.goToPage?.(value.line || value.page || 1); else if (value.page) reader.value?.goToPage?.(value.page, value.rect) }
 async function addTag() {
   const value = tagInput.value.trim().slice(0, 40)
   if (!value || !active.value) return
-  try { updateLocal(await library.update(active.value.id, { tags: [...new Set([...active.value.tags, value])] })); tagInput.value = '' }
+  try { updateLocal(await library.update(sourceId(active.value.id), { tags: [...new Set([...active.value.tags, value])] })); tagInput.value = '' }
   catch (error) { notify(reason(error)) }
 }
 async function removeTag(value: string) {
   if (!active.value) return
-  try { updateLocal(await library.update(active.value.id, { tags: active.value.tags.filter(tag => tag !== value) })) }
+  try { updateLocal(await library.update(sourceId(active.value.id), { tags: active.value.tags.filter(tag => tag !== value) })) }
   catch (error) { notify(reason(error)) }
 }
 async function removeDocument() {
   if (!removeTarget.value) return
   const target = removeTarget.value
-  try { if (active.value?.id === target.id) rememberReader(); await flushProgress(); await progressWrites.get(target.id); clearTimeout(indexTimers.get(target.id)); indexTimers.delete(target.id); await library.remove(target.id); closeTab(target.id); removeTarget.value = null; await refresh(); notify('已从文档库移除，原文件保留。') }
+  try { if (active.value?.id === target.id) rememberReader(); await flushProgress(); await progressWrites.get(target.id); clearTimeout(indexTimers.get(target.id)); indexTimers.delete(target.id); await library.remove(target.id); for (const tab of [...tabs.value]) if (sourceId(tab.doc.id) === target.id) closeTab(tab.doc.id); removeTarget.value = null; await refresh(); notify('已从文档库移除，原文件保留。') }
   catch (error) { notify(reason(error)) }
 }
 let appliedBackground: string | undefined
@@ -855,8 +923,9 @@ function applyTheme() {
   root.dataset.background = appearance.background ? 'custom' : 'default'
   root.dataset.backdrop = appearance.backdrop
   // Fonts: the interface font replaces the base stack; the reading font defaults to it.
-  const uiFont = UI_FONTS.find(item => item.id === appearance.uiFont)
-  const readingFont = READING_FONTS.find(item => item.id === appearance.readingFont)
+  void registerCustomFonts(appearance.customFonts)
+  const uiFont = fontChoices(UI_FONTS, appearance.customFonts).find(item => item.id === appearance.uiFont)
+  const readingFont = fontChoices(READING_FONTS, appearance.customFonts).find(item => item.id === appearance.readingFont)
   if (uiFont && uiFont.id !== 'system') { root.style.setProperty('--font', uiFont.stack); root.style.setProperty('--font-display', uiFont.stack) }
   else { root.style.removeProperty('--font'); root.style.removeProperty('--font-display') }
   if (readingFont?.stack) root.style.setProperty('--font-reading', readingFont.stack); else root.style.removeProperty('--font-reading')
@@ -913,8 +982,8 @@ function panelResizeEnd(element: Element, cancelled = false) { if (resizingPanel
 function paneResizeStart(element: Element, entering: boolean) {
   resizingPanels.set(element, entering)
   if (pdfOnScreen() && !window.matchMedia('(max-width: 720px)').matches) for (const instance of visibleReaders()) instance.holdPanelResize?.(true, entering)
+  // 关闭时面板留在原位做完收拢动画，阅读区在动画结束后才一次性展开，PDF 只重新适配一次。
   if (entering) restoreLeavingPanel(element)
-  else floatLeavingPanel(element, element.classList.contains('app-sidebar') || element.classList.contains('ai-panel') ? 'left' : 'right')
 }
 function paneResizeEnd(element: Element, cancelled = false) {
   restoreLeavingPanel(element)
@@ -1156,7 +1225,7 @@ onBeforeUnmount(() => { stopAutoCheck(); for (const timer of pillTimers.values()
             <section v-for="entry in readerCache" v-show="paneVisible(entry.id)" :key="entry.id" class="reader-pane" :class="{ focused: splitView && stageDoc!.id === entry.id, entering: enteringPane === entry.id, lifted: draggingPanel === `doc:${entry.id}` }" :style="{ order: panelOrder(`doc:${entry.id}`) }" :data-pane-id="entry.id" :data-panel-key="`doc:${entry.id}`" :aria-label="splitView ? `并排阅读：${entry.doc.name}` : undefined" @pointerdown.capture="pointerFocusPane($event, entry.id)" @pointerdown="paneToolbarGrab($event, entry.id)" @focusin="focusPane(entry.id)">
               <button v-if="multiPanel" class="panel-handle" :aria-label="`拖动调整 ${entry.doc.name} 的位置`" data-tip="拖动调整位置" @pointerdown.stop.prevent="startPanelDrag($event, `doc:${entry.id}`)"><i /><i /><i /></button>
               <KeepAlive>
-                <component v-if="paneVisible(entry.id)" :is="entry.doc.kind === 'pdf' ? PdfReader : MarkdownReader" :ref="value => bindReader(entry.id, value)" :key="entry.id" :data="entry.bytes" :document-id="entry.id" :initial-page="entry.doc.page || 1" :initial-progress="entry.doc.progress || 0" :sidebar-fit-enabled="preferences.pdf.fitOnPanelOverflow" :initial-zoom="preferences.pdf.initialZoom === 'fit-width' ? 'fit' : preferences.pdf.initialZoom / 100" :zoom-step="preferences.pdf.zoomStep / 100" :fit-request="fitRequest" :font-size="preferences.markdown.fontSize" :content-width="preferences.markdown.contentWidth" :find-shortcut="preferences.shortcuts.find ? shortcut('find') : ''" :shortcuts="tipKeys" :initial-view="entry.view" v-on="entry.events" />
+                <component v-if="paneVisible(entry.id)" :is="entry.doc.kind === 'pdf' ? PdfReader : MarkdownReader" :ref="value => bindReader(entry.id, value)" :key="entry.id" :data="entry.bytes" :document-id="sourceId(entry.id)" :initial-page="entry.doc.page || 1" :initial-progress="entry.doc.progress || 0" :sidebar-fit-enabled="preferences.pdf.fitOnPanelOverflow" :initial-zoom="preferences.pdf.initialZoom === 'fit-width' ? 'fit' : preferences.pdf.initialZoom / 100" :zoom-step="preferences.pdf.zoomStep / 100" :fit-request="fitRequest" :font-size="preferences.markdown.fontSize" :content-width="preferences.markdown.contentWidth" :find-shortcut="preferences.shortcuts.find ? shortcut('find') : ''" :shortcuts="tipKeys" :initial-view="entry.view" v-on="entry.events" />
               </KeepAlive>
               <div v-if="tabDoc(entry.id)" class="reading-pill" :class="{ awake: pillAwake[entry.id] || splitView }" :data-tip="splitView ? entry.doc.name : undefined" role="status" :aria-label="`阅读位置自动保存 · ${tabDoc(entry.id)!.kind === 'pdf' ? `第 ${tabDoc(entry.id)!.page || 1} / ${tabDoc(entry.id)!.pageCount || '—'} 页 · ` : ''}已读 ${progressPercent(tabDoc(entry.id)!)}%`">
                 <svg class="pill-ring" viewBox="0 0 24 24" aria-hidden="true"><circle class="pill-ring-track" cx="12" cy="12" r="9" /><circle class="pill-ring-value" cx="12" cy="12" r="9" pathLength="100" :style="{ strokeDashoffset: 100 - progressPercent(tabDoc(entry.id)!) }" /></svg>
@@ -1167,7 +1236,7 @@ onBeforeUnmount(() => { stopAutoCheck(); for (const timer of pillTimers.values()
             <section v-for="id in (multiPanel ? paneIds.filter(id => !readerCache.some(entry => entry.id === id)) : [])" :key="`pending:${id}`" class="reader-pane pending" :style="{ order: panelOrder(`doc:${id}`) }"><div class="reader-overlay"><span class="spinner"></span><p>正在打开 {{ tabDoc(id)?.name }}…</p></div></section>
             <section v-for="panel in stageAi" :key="panel.key" class="ai-panel" :class="{ lifted: draggingPanel === panel.key }" :style="{ order: panelOrder(panel.key), width: `${panel.width}px` }" :data-panel-key="panel.key">
               <div class="panel-resizer" :data-edge="panelOrder(panel.key) === 0 && multiPanel ? 'right' : 'left'" role="separator" aria-orientation="vertical" aria-label="拖动调整阅读助手宽度" data-tip="拖动调整宽度，双击恢复" @pointerdown.stop="startWidthDrag($event, panel.key)" @pointermove="moveWidthDrag" @pointerup="endWidthDrag" @pointercancel="endWidthDrag" @dblclick="panel.width = 380" />
-              <AiPane v-if="aiDocument(panel)" :ref="value => bindAi(panel.key, value)" data-glass-interactive="panel" :document="aiDocument(panel)!" :context="aiContext(panel)" :conversation-id="panel.conversation" :draggable="multiPanel" :send-shortcut="preferences.shortcuts.aiSend ? shortcut('aiSend') : ''" :consume-capture="consumeSelection" @settings="openSettings('ai')" @close="closeAiPanel(panel.key)" @jump="jump" @clear-selection="clearSelection" @conversation="id => setPanelConversation(panel.key, id)" @grab="startPanelDrag($event, panel.key)" />
+              <AiPane v-if="aiDocument(panel)" :ref="value => bindAi(panel.key, value)" data-glass-interactive="panel" :document="aiDocument(panel)!" :context="aiContext(panel)" :conversation-id="panel.conversation" :draggable="multiPanel" :send-shortcut="preferences.shortcuts.aiSend ? shortcut('aiSend') : ''" :consume-capture="consumeSelection" @settings="openSettings('ai')" @close="closeAiPanel(panel.key)" @jump="jump" @clear-selection="clearSelection" @conversation="id => setPanelConversation(panel.key, id)" @grab="startPanelDrag($event, panel.key)" :alternatives="aiAlternatives(panel)" :library="libraryIndex" @switch-document="id => switchAiDocument(panel, id)" @open-conversation="openConversationAt" />
             </section>
           </TransitionGroup>
           <div v-if="selection && !captureQuick && !aiOpen && selection.image" class="selection-context"><AppIcon name="crop" :size="16" /><span>{{ selection.image ? `已框选第 ${selection.page} 页的图表或公式` : `已选择 ${selection.text.length} 个字符` }}</span><button @click="openAssistant(true)"><AppIcon name="sparkle" :size="15" />向 AI 提问</button><button class="icon-button" @click="clearSelection" data-tip="清除选区" aria-label="清除选区"><AppIcon name="close" :size="14" /></button></div>

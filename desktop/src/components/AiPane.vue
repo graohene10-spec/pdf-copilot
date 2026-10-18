@@ -3,15 +3,21 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, defineAsync
 import 'katex/dist/katex.min.css'
 import { getProvider, getNativeModels, getNativeStatus } from '../ai/providers.mjs'
 import { nativeModelInventory, registerNativeModelInventory } from '../ai/native-models'
-import { chatState, sendChat, stopChat, configureRequests, taskSummary, conversations, activeConversationId, selectConversation, newConversation, deleteConversation, loadConversations, conversationTokens, contextWindow, estimateTokens, branchConversation, resendQuestion, watchConversation, type Message } from '../ai/workspace'
+import { chatState, sendChat, stopChat, configureRequests, taskSummary, conversations, activeConversationId, selectConversation, newConversation, deleteConversation, loadConversations, conversationTokens, contextWindow, estimateTokens, branchConversation, resendQuestion, watchConversation, allConversations, type Message, type ChatState } from '../ai/workspace'
 import { renderMarkdown, renderDiagrams } from '../ai/render'
 import { loadAiSettings, saveModelChoice } from '../ai/settings.mjs'
 import { useSettings } from '../settings'
 import AppIcon from './AppIcon.vue'
+import AssistantMark from './AssistantMark.vue'
+import { greetingFor } from '../ai/greeting'
 const ModelPicker = defineAsyncComponent(() => import('./ModelPicker.vue'))
 
-const props = defineProps<{ document: { id: string; title: string; kind: string }; context: any; sendShortcut?: string; consumeCapture?: (value: { documentId: string; selection: any }) => void; conversationId?: string; draggable?: boolean }>()
-const emit = defineEmits<{ jump: [value: { page: number; rect?: any; line?: number }]; close: []; settings: []; error: [value: string]; clearSelection: []; conversation: [id: string]; grab: [event: PointerEvent] }>()
+const props = defineProps<{ document: { id: string; title: string; kind: string }; context: any; sendShortcut?: string; consumeCapture?: (value: { documentId: string; selection: any }) => void; conversationId?: string; draggable?: boolean
+  /** Other documents on screen beside this one (side-by-side), to switch which one the assistant reads. */
+  alternatives?: { id: string; title: string }[]
+  /** Every library document, for the history of all conversations. */
+  library?: { id: string; title: string }[] }>()
+const emit = defineEmits<{ jump: [value: { page: number; rect?: any; line?: number }]; close: []; settings: []; error: [value: string]; clearSelection: []; conversation: [id: string]; grab: [event: PointerEvent]; switchDocument: [id: string]; openConversation: [value: { documentId: string; conversationId: string }] }>()
 const settings = ref<any>(loadAiSettings())
 // A window that follows the active tab may carry a conversation id from the previous document;
 // only an id that belongs to this document is honoured.
@@ -40,10 +46,29 @@ const selected = computed(() => props.context?.selection || {})
 const hasSelection = computed(() => Boolean(selected.value.text || selected.value.image))
 const { preferences, effectiveAppearance } = useSettings()
 const suggestions = computed(() => preferences.value.assistant.quickPrompts)
+const avatar = computed(() => preferences.value.assistant.avatar)
+// 每段对话的问候固定一句，切换对话或新建时再随机挑。
+const greeting = computed(() => greetingFor(new Date(), (parseInt(state.value.id.slice(0, 6), 16) % 997) / 997))
 const dark = computed(() => document.documentElement.dataset.theme === 'dark' || effectiveAppearance.value.theme === 'dark')
 
 // ---- Conversations -------------------------------------------------------
 const historyOpen = ref(false)
+// 对话记录：本文档 / 全部文档。全部文档按时间排，点别的文档的对话会打开那份文档。
+const historyScope = ref<'document' | 'all'>('document')
+const everything = ref<ChatState[]>([])
+const loadingAll = ref(false)
+const titles = computed(() => new Map((props.library || []).map(item => [item.id, item.title.replace(/\.(pdf|md|markdown)$/i, '')])))
+async function showAll() {
+  historyScope.value = 'all'
+  loadingAll.value = true
+  try { everything.value = await allConversations((props.library || []).map(item => item.id)) } finally { loadingAll.value = false }
+}
+function openAny(item: ChatState) {
+  historyOpen.value = false
+  if (item.documentId === props.document.id) useConversation(item.id)
+  else emit('openConversation', { documentId: item.documentId, conversationId: item.id })
+}
+watch(historyOpen, open => { if (!open) historyScope.value = 'document' })
 function useConversation(id: string) {
   conversationId.value = id
   if (!props.conversationId) selectConversation(props.document.id, id)
@@ -359,8 +384,16 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
         <Transition name="history-pop">
           <div v-if="historyOpen" class="history-menu" role="dialog" aria-label="对话记录">
             <button class="history-new" @click="startConversation"><AppIcon name="compose" :size="15" />新对话</button>
-            <p class="history-label">这份文档的对话</p>
-            <div class="history-list">
+            <div v-if="alternatives?.length" class="history-switch"><p class="history-label">助手正在读</p><button class="current" disabled>{{ document.title }}</button><button v-for="item in alternatives" :key="item.id" @click="historyOpen = false; emit('switchDocument', item.id)">改读 {{ item.title }}</button></div>
+            <div class="history-scope" role="tablist" aria-label="对话范围"><button role="tab" :aria-selected="historyScope === 'document'" @click="historyScope = 'document'">这份文档</button><button role="tab" :aria-selected="historyScope === 'all'" @click="showAll">全部文档</button></div>
+            <div v-if="historyScope === 'all'" class="history-list">
+              <p v-if="loadingAll" class="history-empty">正在读取…</p>
+              <div v-for="item in everything" v-else :key="item.id" class="history-item" :class="{ current: item.id === conversationId }">
+                <button class="history-open" @click="openAny(item)"><span><AppIcon v-if="item.branchOf" name="branch" :size="12" class="branch-mark" />{{ item.title || '新对话' }}</span><small>{{ titles.get(item.documentId) || '已移除的文档' }} · {{ relative(item.updatedAt) }}</small></button>
+              </div>
+              <p v-if="!loadingAll && !everything.length" class="history-empty">还没有对话。</p>
+            </div>
+            <div v-else class="history-list">
               <div v-for="item in history" :key="item.id" class="history-item" :class="{ current: item.id === conversationId }">
                 <button class="history-open" @click="useConversation(item.id)"><span><AppIcon v-if="item.branchOf" name="branch" :size="12" class="branch-mark" />{{ item.title || '新对话' }}</span><small>{{ relative(item.updatedAt) }} · {{ Math.ceil(item.messages.length / 2) }} 问<template v-if="item.request"> · 回答中</template></small></button>
                 <button v-if="item.messages.length" class="history-delete" :aria-label="`删除对话 ${item.title}`" data-tip="删除这段对话" @click.stop="removeConversation(item.id)"><AppIcon name="trash" :size="13" /></button>
@@ -378,9 +411,9 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
     <div class="ai-body">
       <div ref="messageList" class="ai-messages" @scroll="onScroll" @click="answerClick">
         <div v-if="!messages.length" class="ai-welcome">
-          <div class="ai-welcome-mark" aria-hidden="true"><AppIcon name="sparkle" :size="24" /></div>
-          <p class="ai-welcome-lead">关于这份文档，想了解什么？</p>
-          <p>可以直接提问，也可以选取文字或框选图表。</p>
+          <AssistantMark :kind="avatar.kind" :image="avatar.image" :size="56" class="ai-welcome-mark" />
+          <h2 class="ai-welcome-lead">{{ greeting }}</h2>
+          <p>关于《{{ document.title.replace(/\.(pdf|md|markdown)$/i, '') }}》，直接提问，或选取文字、框选图表。</p>
           <div class="suggestions"><button v-for="(suggestion, index) in suggestions" :key="index" :data-tip="suggestion.question" :disabled="busy" @click="send(suggestion.question)">{{ suggestion.label }}</button></div>
         </div>
         <article v-for="message in messages" :key="message.id" class="ai-message" :class="message.role" :data-id="message.id">
@@ -453,6 +486,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
    控件是磨砂的扁平玻璃，输入栏是浮在底板上的一片薄玻璃，两者之间只有很轻的分隔。 */
 .ai-pane{--ink:var(--surface-ink);--control-ink:var(--ink);--secondary:var(--surface-secondary);--muted:var(--surface-muted);
   --frost:color-mix(in srgb,var(--glass-light) 70%,transparent);--frost-hover:color-mix(in srgb,var(--glass-light) 100%,transparent);--hairline:color-mix(in srgb,var(--ink) 11%,transparent);
+  --bar-glass:color-mix(in srgb,var(--glass-light) 78%,transparent);
   display:flex;flex-direction:column;height:100%;min-width:0;width:100%;background-color:var(--glass-3);background-image:var(--glass-sheen);-webkit-backdrop-filter:var(--glass-filter-3);backdrop-filter:var(--glass-filter-3);border:1px solid var(--glass-outline);border-radius:var(--r-xl);box-shadow:var(--shadow-pane),var(--glass-edge);color:var(--ink);overflow:hidden;font-family:var(--font-ui)}
 button{font:inherit;cursor:pointer;color:var(--ink)}
 button:disabled{opacity:.4;cursor:default}
@@ -462,15 +496,17 @@ button:disabled{opacity:.4;cursor:default}
 .frost-button:hover:not(:disabled){background:var(--frost-hover)}
 .frost-button.primary{background:color-mix(in srgb,var(--accent) 82%,transparent);border-color:transparent;color:var(--accent-on,#fff)}
 .frost-button.primary:hover:not(:disabled){background:var(--accent)}
-/* 头部：当前对话标题（点开是对话记录）、新对话与关闭。 */
-.ai-header{display:flex;align-items:center;gap:4px;flex-shrink:0;height:52px;padding:0 8px 0 10px;border-bottom:1px solid var(--hairline)}
+/* 深色底图上（浅色字）面板用烟灰玻璃而不是发白的乳白玻璃；浅色底图上仍是白玻璃。 */
+.ai-pane[data-glass-ink='light']{background-color:rgb(14 18 24 / calc(.22 + var(--glass-a3) * .55));--frost:rgb(255 255 255 / .09);--frost-hover:rgb(255 255 255 / .16);--bar-glass:rgb(255 255 255 / .1);--hairline:rgb(255 255 255 / .12)}
+/* 头部：浮在面板上的一条独立玻璃条，带一点高度，与下面的对话区分开。 */
+.ai-header{position:relative;z-index:8;display:flex;align-items:center;gap:4px;flex-shrink:0;height:48px;margin:8px 8px 0;padding:0 6px 0 8px;border:1px solid var(--hairline);border-radius:var(--r-lg);background:var(--bar-glass);box-shadow:inset 0 1px 0 var(--glass-rim-soft),0 8px 22px -14px rgb(0 0 0 / .45)}
 .ai-header.draggable{cursor:grab}
 .drag-grip{display:grid;place-items:center;width:18px;height:30px;margin-right:-2px;border-radius:6px;color:var(--muted);cursor:grab;opacity:.6}
 .drag-grip:hover{background:var(--frost);opacity:1}
 .history-host{position:relative;flex:1;min-width:0}
 .conversation-title{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:1px;max-width:100%;height:40px;padding:0 10px;border:0;border-radius:var(--r-control);background:none;box-shadow:none;text-align:left}
 .conversation-title:hover,.conversation-title[aria-expanded='true']{background:var(--frost)}
-.title-text{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13.5px;font-weight:650;letter-spacing:.1px}
+.title-text{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;font-weight:700;letter-spacing:.1px}
 .conversation-title small{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--muted)}
 .header-button{display:grid;place-items:center;flex:0 0 32px;width:32px;height:32px;padding:0;border:1px solid transparent;border-radius:var(--r-control);background:none;box-shadow:none;color:var(--secondary)}
 .header-button:hover:not(:disabled){background:var(--frost);border-color:var(--hairline);color:var(--ink)}
@@ -481,6 +517,14 @@ button:disabled{opacity:.4;cursor:default}
 .history-new{display:flex;align-items:center;gap:8px;height:36px;padding:0 12px;border:0;border-radius:var(--r-control);background:color-mix(in srgb,var(--ink) 6%,transparent);box-shadow:none;font-size:13px;font-weight:600}
 .history-new:hover{background:color-mix(in srgb,var(--ink) 10%,transparent)}
 .history-label{margin:12px 10px 6px;font-size:11px;font-weight:600;color:var(--muted)}
+.history-scope{display:grid;grid-template-columns:1fr 1fr;gap:2px;margin:8px 0 4px;padding:2px;border-radius:var(--r-control);background:color-mix(in srgb,var(--ink) 6%,transparent)}
+.history-scope button{height:28px;padding:0;border:0;border-radius:calc(var(--r-control) - 2px);background:none;box-shadow:none;font-size:12px;font-weight:600;color:var(--muted)}
+.history-scope button[aria-selected='true']{background:var(--popup-glass);color:var(--ink);box-shadow:0 1px 3px rgb(0 0 0 / .1)}
+.history-switch{display:flex;flex-wrap:wrap;gap:4px;padding:0 4px}
+.history-switch .history-label{width:100%;margin:10px 6px 2px}
+.history-switch button{max-width:100%;height:28px;padding:0 10px;border:1px solid var(--hairline);border-radius:var(--r-sm);background:none;box-shadow:none;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.history-switch button.current{opacity:1;background:color-mix(in srgb,var(--ink) 8%,transparent);font-weight:600}
+.history-switch button:hover:not(:disabled){background:color-mix(in srgb,var(--ink) 6%,transparent)}
 .history-list{overflow:auto;min-height:0;scrollbar-width:none}
 .history-item{position:relative;display:flex;align-items:center;border-radius:var(--r-control)}
 .history-item:hover{background:color-mix(in srgb,var(--ink) 5%,transparent)}
@@ -514,9 +558,10 @@ button:disabled{opacity:.4;cursor:default}
 .rail-pop-leave-active{transition:opacity var(--dur-1) var(--ease-out)}
 .rail-pop-enter-from,.rail-pop-leave-to{opacity:0;translate:6px 0}
 .ai-welcome{display:flex;flex-direction:column;align-items:center;text-align:center;padding:8vh 6px 8px;animation:zg-rise-in var(--dur-bounce) var(--spring-snappy) both}
-.ai-welcome-mark{display:grid;place-items:center;width:46px;height:46px;margin-bottom:14px;border-radius:var(--r-md);color:var(--brand-ink);background:var(--brand-solid);animation:zg-pop-in var(--dur-bounce) var(--spring-bouncy) both}
-.ai-welcome-lead{font-family:var(--font-display);font-size:16px;font-weight:650;margin:0 0 6px}
-.ai-welcome p{font-size:12.5px;line-height:1.8;color:var(--muted);margin:0}
+.ai-welcome-mark{margin-bottom:16px;animation:zg-pop-in var(--dur-bounce) var(--spring-bouncy) both}
+/* 问候用衬线大字，像 Claude 的「Good afternoon」。 */
+.ai-welcome-lead{max-width:100%;margin:0 0 8px;font-family:var(--font-reading);font-size:25px;font-weight:500;line-height:1.3;letter-spacing:-.01em;text-wrap:balance}
+.ai-welcome p{max-width:30em;font-size:12.5px;line-height:1.75;color:var(--muted);margin:0;text-wrap:balance}
 .suggestions{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:20px}
 .suggestions button{max-width:100%;height:32px;padding:0 13px;border:1px solid var(--hairline);border-radius:var(--r-control);background:var(--frost);box-shadow:inset 0 1px 0 var(--glass-rim-soft);font-size:12.5px;font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .suggestions button:hover:not(:disabled){background:var(--frost-hover)}
@@ -601,8 +646,8 @@ button:disabled{opacity:.4;cursor:default}
 .ai-error{margin:0 0 12px;padding:9px 12px;border-radius:var(--r-md);background:color-mix(in srgb,var(--danger) 12%,transparent);border:1px solid color-mix(in srgb,var(--danger) 25%,transparent);font-size:12px;line-height:1.6;color:var(--danger);overflow-wrap:anywhere}
 /* 输入栏：一片薄玻璃，只用细边与内高光与底板分开，没有厚重投影。 */
 .ai-composer{flex-shrink:0;padding:6px 10px 10px}
-.composer-field{position:relative;border:1px solid var(--hairline);border-radius:var(--r-lg);background:color-mix(in srgb,var(--glass-light) 55%,transparent);box-shadow:inset 0 1px 0 var(--glass-rim-soft),0 1px 2px rgb(0 0 0 / .04);transition:border-color var(--dur-2) var(--ease-out),background var(--dur-2) var(--ease-out)}
-.composer-field:focus-within{border-color:color-mix(in srgb,var(--ink) 22%,transparent);background:color-mix(in srgb,var(--glass-light) 80%,transparent)}
+.composer-field{position:relative;border:1px solid var(--hairline);border-radius:var(--r-lg);background:var(--bar-glass);box-shadow:inset 0 1px 0 var(--glass-rim-soft),0 1px 2px rgb(0 0 0 / .04);transition:border-color var(--dur-2) var(--ease-out),background var(--dur-2) var(--ease-out)}
+.composer-field:focus-within{border-color:color-mix(in srgb,var(--ink) 24%,transparent)}
 .composer-resize{position:absolute;left:50%;top:-6px;width:56px;height:12px;margin-left:-28px;cursor:ns-resize;z-index:2;touch-action:none}
 .composer-resize::after{content:'';position:absolute;left:18px;right:18px;top:4px;height:4px;border-radius:2px;background:color-mix(in srgb,var(--ink) 25%,transparent);opacity:0;transition:opacity var(--dur-2) var(--ease-out)}
 .composer-field:hover .composer-resize::after,.composer-resize:active::after{opacity:1}

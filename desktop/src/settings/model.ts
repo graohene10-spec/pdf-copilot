@@ -2,6 +2,25 @@ import { normalizeBackground, backgroundErrors, type BackgroundImage } from './b
 import { defaultQuickPrompts, normalizeQuickPrompts, quickPromptErrors, defaultCaptureQuestions, normalizeCaptureQuestions, captureQuestionErrors, type QuickPrompt, type QuickPrompts } from './quick-prompts.ts'
 
 export type ShortcutAction = 'import' | 'search' | 'find' | 'fullscreen' | 'settings' | 'sidebar' | 'ai' | 'outline' | 'capture' | 'fitWidth' | 'zoomOut' | 'zoomIn' | 'previousPage' | 'nextPage' | 'aiSend' | 'aiStop' | 'nextTab' | 'previousTab' | 'closeTab' | 'split'
+/** The assistant's mark on its empty screen: a built-in glyph or the user's own image (GIF/APNG/WebP animate). */
+export type AssistantAvatar = { kind: AvatarKind; image: string | null }
+export type AvatarKind = 'crab' | 'claude' | 'chatgpt' | 'deepseek' | 'custom'
+export const AVATARS: { id: AvatarKind; label: string }[] = [{ id: 'crab', label: '小螃蟹' }, { id: 'claude', label: 'Claude' }, { id: 'chatgpt', label: 'ChatGPT' }, { id: 'deepseek', label: 'DeepSeek' }, { id: 'custom', label: '自定义' }]
+export const MAX_AVATAR_CHARS = 3_000_000
+const AVATAR_IMAGE = /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+=*$/
+export function validAvatarImage(value: unknown): value is string { return typeof value === 'string' && value.length <= MAX_AVATAR_CHARS && AVATAR_IMAGE.test(value) }
+/** A font file the user imported. The bytes live in the local library (key `font.v1.<id>`), never in the app bundle. */
+export type CustomFont = { id: string; family: string; file: string; weight: string; style: 'normal' | 'italic' }
+export const MAX_CUSTOM_FONTS = 16
+/** The font choices for the interface or reading text, including the user's imported families. */
+export function fontChoices(base: FontChoice[], customFonts: CustomFont[], fallback = SYSTEM_SANS): FontChoice[] {
+  const families = [...new Set(customFonts.map(font => font.family))]
+  return [...base, ...families.map(family => ({ id: `custom:${family}`, label: `${family}（已导入）`, families: [], stack: `'${family.replace(/'/g, '')}', ${fallback}` }))]
+}
+function validCustomFont(value: any): value is CustomFont {
+  return !!value && typeof value.id === 'string' && /^[\w-]{1,64}$/.test(value.id) && typeof value.family === 'string' && value.family.trim().length > 0 && value.family.length <= 80 && !/['"\\;{}]/.test(value.family)
+    && typeof value.file === 'string' && value.file.length <= 200 && typeof value.weight === 'string' && /^\d{3}( \d{3})?$/.test(value.weight) && (value.style === 'normal' || value.style === 'italic')
+}
 export type UpdatePreferences = { autoCheck: boolean; prerelease: boolean }
 export type ThemePreference = 'system' | 'light' | 'dark'
 export type BackdropPreset = 'mist' | 'dawn' | 'mint' | 'lavender' | 'graphite' | 'paper'
@@ -36,10 +55,10 @@ export const BACKDROPS: { id: BackdropPreset; label: string }[] = [
 ]
 export interface AppPreferences {
   version: 3
-  appearance: { theme: ThemePreference; libraryView: 'grid' | 'list'; glassTransparency: number; glassBlur: number; backdrop: BackdropPreset; background: BackgroundImage | null; gallery: BackgroundImage[]; uiFont: string; readingFont: string }
+  appearance: { theme: ThemePreference; libraryView: 'grid' | 'list'; glassTransparency: number; glassBlur: number; backdrop: BackdropPreset; background: BackgroundImage | null; gallery: BackgroundImage[]; uiFont: string; readingFont: string; customFonts: CustomFont[] }
   pdf: { initialZoom: 'fit-width' | number; zoomStep: number; fitOnPanelOverflow: boolean; openAssistantOnCapture: boolean; quickAskOnCapture: boolean }
   markdown: { fontSize: number; contentWidth: number }
-  assistant: { quickPrompts: QuickPrompts; captureQuestions: QuickPrompt[] }
+  assistant: { quickPrompts: QuickPrompts; captureQuestions: QuickPrompt[]; avatar: AssistantAvatar }
   updates: UpdatePreferences
   shortcuts: Record<ShortcutAction, string>
 }
@@ -70,9 +89,9 @@ export const DEFAULT_SHORTCUTS: Readonly<Record<ShortcutAction, string>> = Objec
 const LEGACY_GLASS: Record<string, number> = { clear: 85, balanced: 70, rich: 30, solid: 0 }
 export const MAX_GALLERY = 6
 export function defaultPreferences(): AppPreferences {
-  return { version: 3, appearance: { theme: 'system', libraryView: 'grid', glassTransparency: 70, glassBlur: 50, backdrop: 'mist', background: null, gallery: [], uiFont: 'system', readingFont: 'anthropic' },
+  return { version: 3, appearance: { theme: 'system', libraryView: 'grid', glassTransparency: 70, glassBlur: 50, backdrop: 'mist', background: null, gallery: [], uiFont: 'system', readingFont: 'anthropic', customFonts: [] },
     pdf: { initialZoom: 'fit-width', zoomStep: 15, fitOnPanelOverflow: true, openAssistantOnCapture: true, quickAskOnCapture: true },
-    markdown: { fontSize: 17, contentWidth: 840 }, assistant: { quickPrompts: defaultQuickPrompts(), captureQuestions: defaultCaptureQuestions() }, updates: { autoCheck: true, prerelease: false }, shortcuts: { ...DEFAULT_SHORTCUTS } }
+    markdown: { fontSize: 17, contentWidth: 840 }, assistant: { quickPrompts: defaultQuickPrompts(), captureQuestions: defaultCaptureQuestions(), avatar: { kind: 'crab', image: null } }, updates: { autoCheck: true, prerelease: false }, shortcuts: { ...DEFAULT_SHORTCUTS } }
 }
 const modifierOrder = ['Ctrl', 'Alt', 'Shift', 'Meta']
 const aliases: Record<string, string> = { control: 'Ctrl', ctrl: 'Ctrl', alt: 'Alt', option: 'Alt', shift: 'Shift', meta: 'Meta', cmd: 'Meta', command: 'Meta' }
@@ -126,6 +145,10 @@ export function normalizePreferences(value: unknown, legacyTheme?: string | null
   const appearance = record(input.appearance), pdf = record(input.pdf), markdown = record(input.markdown), shortcuts = record(input.shortcuts)
   defaults.assistant.quickPrompts = normalizeQuickPrompts(record(input.assistant).quickPrompts)
   defaults.assistant.captureQuestions = normalizeCaptureQuestions(record(input.assistant).captureQuestions)
+  const avatar = record(record(input.assistant).avatar)
+  const image = validAvatarImage(avatar.image) ? avatar.image : null
+  const kind = AVATARS.some(item => item.id === avatar.kind) ? avatar.kind as AvatarKind : 'crab'
+  defaults.assistant.avatar = { kind: kind === 'custom' && !image ? 'crab' : kind, image }
   const updates = record(input.updates)
   defaults.updates.autoCheck = typeof updates.autoCheck === 'boolean' ? updates.autoCheck : true
   defaults.updates.prerelease = updates.prerelease === true
@@ -144,8 +167,9 @@ export function normalizePreferences(value: unknown, legacyTheme?: string | null
     if (image && !gallery.some(entry => entry.dataUrl === image.dataUrl) && gallery.length < MAX_GALLERY) gallery.push(image)
   }
   defaults.appearance.gallery = gallery
-  defaults.appearance.uiFont = UI_FONTS.some(item => item.id === appearance.uiFont) ? appearance.uiFont : 'system'
-  defaults.appearance.readingFont = READING_FONTS.some(item => item.id === appearance.readingFont) ? appearance.readingFont : 'anthropic'
+  defaults.appearance.customFonts = (Array.isArray(appearance.customFonts) ? appearance.customFonts : []).filter(validCustomFont).slice(0, MAX_CUSTOM_FONTS).map((font: CustomFont) => ({ id: font.id, family: font.family.trim(), file: font.file, weight: font.weight, style: font.style }))
+  defaults.appearance.uiFont = fontChoices(UI_FONTS, defaults.appearance.customFonts).some(item => item.id === appearance.uiFont) ? appearance.uiFont : 'system'
+  defaults.appearance.readingFont = fontChoices(READING_FONTS, defaults.appearance.customFonts).some(item => item.id === appearance.readingFont) ? appearance.readingFont : 'anthropic'
   defaults.pdf.initialZoom = pdf.initialZoom === 'fit-width' || pdf.initialZoom === undefined ? 'fit-width' : range(pdf.initialZoom, 25, 400, 100)
   defaults.pdf.zoomStep = range(pdf.zoomStep, 5, 50, defaults.pdf.zoomStep)
   defaults.pdf.fitOnPanelOverflow = typeof pdf.fitOnPanelOverflow === 'boolean' ? pdf.fitOnPanelOverflow : defaults.pdf.fitOnPanelOverflow
@@ -172,14 +196,20 @@ export function preferenceErrors(value: AppPreferences): string[] {
   if (!BACKDROPS.some(item => item.id === value.appearance.backdrop)) errors.push('请选择有效底板。')
   if (!Array.isArray(value.appearance.gallery) || value.appearance.gallery.length > MAX_GALLERY) errors.push(`图库最多保存 ${MAX_GALLERY} 张图片。`)
   else for (const image of value.appearance.gallery) errors.push(...backgroundErrors(image))
-  if (!UI_FONTS.some(item => item.id === value.appearance.uiFont)) errors.push('请选择有效界面字体。')
-  if (!READING_FONTS.some(item => item.id === value.appearance.readingFont)) errors.push('请选择有效阅读字体。')
+  const customFonts = Array.isArray(value.appearance.customFonts) ? value.appearance.customFonts : []
+  if (customFonts.length > MAX_CUSTOM_FONTS || !customFonts.every(validCustomFont)) errors.push(`导入的字体无效，最多 ${MAX_CUSTOM_FONTS} 个字体文件。`)
+  if (!fontChoices(UI_FONTS, customFonts).some(item => item.id === value.appearance.uiFont)) errors.push('请选择有效界面字体。')
+  if (!fontChoices(READING_FONTS, customFonts).some(item => item.id === value.appearance.readingFont)) errors.push('请选择有效阅读字体。')
   const check = (name: string, number: number, min: number, max: number) => { if (!Number.isFinite(number) || !Number.isInteger(number) || number < min || number > max) errors.push(`${name}须为 ${min}–${max} 的整数。`) }
   check('玻璃透明度', value.appearance.glassTransparency, 0, 100)
   check('模糊程度', value.appearance.glassBlur, 0, 100)
   errors.push(...backgroundErrors(value.appearance.background))
   errors.push(...quickPromptErrors(value.assistant?.quickPrompts))
   errors.push(...captureQuestionErrors(value.assistant?.captureQuestions))
+  const avatar = value.assistant?.avatar
+  if (!avatar || !AVATARS.some(item => item.id === avatar.kind)) errors.push('请选择有效的助手形象。')
+  else if (avatar.image !== null && !validAvatarImage(avatar.image)) errors.push('助手形象图片无效，请选择 3 MB 以内的 PNG、JPEG、GIF 或 WebP。')
+  else if (avatar.kind === 'custom' && !avatar.image) errors.push('请先选择自定义助手形象的图片。')
   if (value.pdf.initialZoom !== 'fit-width') check('PDF 初始缩放', value.pdf.initialZoom, 25, 400)
   check('缩放步长', value.pdf.zoomStep, 5, 50)
   check('Markdown 字号', value.markdown.fontSize, 13, 28)
