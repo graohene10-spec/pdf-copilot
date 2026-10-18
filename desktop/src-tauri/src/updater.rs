@@ -4,7 +4,8 @@
 //! other tags (the browser extension's `vX.Y.Z`) are ignored. Downloads are
 //! limited to that repository's release assets, verified against the release's
 //! `SHA256SUMS.txt`, and stored in a fixed temporary folder. Installation runs
-//! only an installer from that folder, through a fixed command template.
+//! only an installer from that folder, through a fixed command template; the
+//! portable copy instead unpacks the verified ZIP over its own folder.
 use crate::db::Result;
 use reqwest::{Client, Response, Url};
 use serde::{Deserialize, Serialize};
@@ -23,6 +24,10 @@ const RELEASE_PAGES: &str = "/graohene10-spec/pdf-copilot/releases";
 const ASSET_PATH: &str = "/graohene10-spec/pdf-copilot/releases/download/desktop-v";
 const TAG_PREFIX: &str = "desktop-v";
 const SETUP_SUFFIX: &str = "_x64-setup.exe";
+const PORTABLE_SUFFIX: &str = "_x64-portable.zip";
+/// Files replaced by a portable update keep this suffix until the next launch removes them.
+const OLD_SUFFIX: &str = ".kaizhi-old";
+const MAX_UNPACKED_BYTES: u64 = 1024 * 1024 * 1024;
 const USER_AGENT: &str = concat!("kaizhi-desktop/", env!("CARGO_PKG_VERSION"));
 const UPDATE_DIR: &str = "kaizhi-update";
 const MAX_NOTES_CHARS: usize = 20_000;
@@ -51,7 +56,7 @@ struct Asset { name: String, #[serde(default)] size: u64, browser_download_url: 
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct UpdateInstaller { pub name: String, pub url: String, pub size: u64, pub sha256: String }
+pub struct UpdateInstaller { pub name: String, pub url: String, pub size: u64, pub sha256: String, pub kind: String }
 
 #[derive(Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -112,9 +117,12 @@ fn validate_asset_url(address: &str) -> Result<(Url, String)> {
         return Err(invalid());
     }
     let name = url.path_segments().and_then(|mut segments| segments.next_back()).unwrap_or_default().to_owned();
-    if !safe_file_name(&name) || !name.ends_with("-setup.exe") { return Err(invalid()); }
+    if !safe_file_name(&name) || !is_update_file(&name) { return Err(invalid()); }
     Ok((url, name))
 }
+
+/// The installer (installed copies) or the portable ZIP (portable copies).
+fn is_update_file(name: &str) -> bool { name.ends_with("-setup.exe") || name.ends_with(PORTABLE_SUFFIX) }
 
 fn safe_file_name(name: &str) -> bool {
     !name.is_empty() && name.len() <= 128 && !name.starts_with('.')
@@ -182,17 +190,19 @@ async fn installer_checksum(release: &Release, name: &str) -> Option<String> {
 }
 
 pub async fn check(include_prerelease: bool) -> Result<Option<UpdateInfo>> {
-    check_against(&semver::Version::parse(env!("CARGO_PKG_VERSION")).map_err(|e| e.to_string())?, include_prerelease).await
+    check_against(&semver::Version::parse(env!("CARGO_PKG_VERSION")).map_err(|e| e.to_string())?, include_prerelease, status().installed).await
 }
 
-async fn check_against(current: &semver::Version, include_prerelease: bool) -> Result<Option<UpdateInfo>> {
+/// Installed copies update through the setup program, portable copies through the portable ZIP.
+async fn check_against(current: &semver::Version, include_prerelease: bool, installed: bool) -> Result<Option<UpdateInfo>> {
     let response = get(Url::parse(RELEASES_API).map_err(|e| e.to_string())?, "application/vnd.github+json").await?;
     let releases: Vec<Release> = serde_json::from_slice(&read_limited(response, MAX_API_BYTES).await?).map_err(|_| "GitHub 返回的发布信息无法识别")?;
     let Some((version, release)) = select_release(releases, current, include_prerelease) else { return Ok(None) };
     let mut installer = None;
-    if let Some(asset) = release.assets.iter().find(|asset| asset.name.ends_with(SETUP_SUFFIX) && validate_asset_url(&asset.browser_download_url).is_ok()) {
+    let (suffix, kind) = if installed { (SETUP_SUFFIX, "setup") } else { (PORTABLE_SUFFIX, "portable") };
+    if let Some(asset) = release.assets.iter().find(|asset| asset.name.ends_with(suffix) && validate_asset_url(&asset.browser_download_url).is_ok()) {
         if let Some(sha256) = installer_checksum(&release, &asset.name).await {
-            installer = Some(UpdateInstaller { name: asset.name.clone(), url: asset.browser_download_url.clone(), size: asset.size, sha256 });
+            installer = Some(UpdateInstaller { name: asset.name.clone(), url: asset.browser_download_url.clone(), size: asset.size, sha256, kind: kind.into() });
         }
     }
     let html_url = Url::parse(&release.html_url).ok().filter(is_release_page).map(String::from)
@@ -299,57 +309,159 @@ fn verified_installer(path: &str) -> Result<PathBuf> {
     let path = Path::new(path).canonicalize().map_err(|_| invalid())?;
     let dir = update_dir().canonicalize().map_err(|_| invalid())?;
     let name = path.file_name().and_then(|name| name.to_str()).ok_or_else(invalid)?;
-    if path.parent() != Some(dir.as_path()) || !safe_file_name(name) || !name.ends_with("-setup.exe") || !path.is_file() { return Err(invalid()); }
+    if path.parent() != Some(dir.as_path()) || !safe_file_name(name) || !is_update_file(name) || !path.is_file() { return Err(invalid()); }
     Ok(path)
 }
 
 #[cfg(not(windows))]
 pub fn install(_app: &tauri::AppHandle, path: &str) -> Result<()> {
     verified_installer(path)?;
-    Err("自动安装仅支持 Windows 安装版，请前往发布页面下载".into())
+    Err("自动安装仅支持 Windows".into())
 }
 
-/// Runs the NSIS installer silently, then starts the updated program again.
+/// Installs a downloaded update and restarts 开智.
 ///
-/// `/S` is NSIS's built-in silent switch; Tauri's installer then reuses the
-/// existing install folder and closes a still-running 开智 by itself. Tauri
-/// also understands `/P` (passive, progress only) and `/R` (relaunch), but
-/// those are template details, so the relaunch is done here instead. The
-/// initial ping is a sleep that lets this process exit before setup starts.
+/// Installed copies run the NSIS installer silently (`/S`); Tauri's installer
+/// reuses the existing install folder and closes a still-running 开智 by
+/// itself. Portable copies unpack the verified ZIP over their own folder.
+/// Either way a detached `cmd` waits ~2 s for this process to exit and then
+/// starts the updated program.
 #[cfg(windows)]
 pub fn install(app: &tauri::AppHandle, path: &str) -> Result<()> {
-    let setup = verified_installer(path)?;
-    if !status().installed { return Err("免安装版不能自动更新，请前往发布页面下载".into()); }
+    let package = verified_installer(path)?;
     let exe = std::env::current_exe().map_err(|_| "无法确定开智的安装位置")?;
-    launch_installer(&setup, &exe)?;
+    let portable = package.to_string_lossy().ends_with(PORTABLE_SUFFIX);
+    if portable == status().installed { return Err("更新包与当前版本类型不符，请重新检查更新".into()); }
+    if portable {
+        let dir = exe.parent().ok_or("无法确定开智所在的文件夹")?;
+        apply_portable(&package, dir, &exe)?;
+        relaunch(None, &exe)?;
+    } else {
+        relaunch(Some(&package), &exe)?;
+    }
     let app = app.clone();
     std::thread::spawn(move || { std::thread::sleep(Duration::from_millis(300)); app.exit(0); });
     Ok(())
 }
 
-/// Runs the NSIS installer silently in a detached `cmd`, then starts `exe` again.
-///
-/// `/S` is NSIS's built-in silent switch; Tauri's installer then reuses the
-/// existing install folder and closes a still-running 开智 by itself. Tauri's
-/// template also understands `/P` (passive, progress bar only) and `/R`
-/// (relaunch), but those are template details, so relaunching is done here.
-/// The initial ping is a ~2 s sleep that lets this app exit before setup starts.
+/// Unpacks a verified portable ZIP into a staging folder, then swaps its files
+/// into `dir`. A file in use (the running exe) can still be renamed on Windows,
+/// so each existing file is first moved aside with [`OLD_SUFFIX`]; on any error
+/// every swapped file is put back. Files not in the ZIP (user data) are untouched.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn apply_portable(package: &Path, dir: &Path, exe: &Path) -> Result<()> {
+    let staging = update_dir().join("portable");
+    let _ = std::fs::remove_dir_all(&staging);
+    let files = unpack(package, &staging)?;
+    let exe_name = exe.file_name().ok_or("无法确定开智的程序文件")?;
+    if !files.iter().any(|file| file.as_os_str() == exe_name) { return Err("更新包里没有开智的程序文件，已取消更新".into()); }
+    let mut swapped: Vec<(PathBuf, Option<PathBuf>)> = Vec::new();
+    let result = (|| -> Result<()> {
+        for file in &files {
+            let target = dir.join(file);
+            if let Some(parent) = target.parent() { std::fs::create_dir_all(parent).map_err(|e| format!("无法写入开智所在的文件夹：{e}"))?; }
+            let old = target.exists().then(|| aside(&target)).transpose()?;
+            swapped.push((target.clone(), old));
+            std::fs::copy(staging.join(file), &target).map_err(|e| format!("无法替换 {}：{e}", file.display()))?;
+        }
+        Ok(())
+    })();
+    if let Err(error) = result {
+        for (target, old) in swapped.into_iter().rev() {
+            let _ = std::fs::remove_file(&target);
+            if let Some(old) = old { let _ = std::fs::rename(old, &target); }
+        }
+        return Err(format!("{error}。开智保持原版本，可稍后重试"));
+    }
+    let _ = std::fs::remove_dir_all(&staging);
+    Ok(())
+}
+
+/// Moves `target` to a free `<name>.kaizhi-old[.n]` beside it.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn aside(target: &Path) -> Result<PathBuf> {
+    let name = target.file_name().ok_or("更新路径无效")?.to_string_lossy().into_owned();
+    for index in 0..32 {
+        let old = target.with_file_name(if index == 0 { format!("{name}{OLD_SUFFIX}") } else { format!("{name}{OLD_SUFFIX}.{index}") });
+        // An older leftover may still be locked by a process that has not exited yet.
+        if old.exists() && std::fs::remove_file(&old).is_err() { continue; }
+        return std::fs::rename(target, &old).map(|_| old).map_err(|e| format!("无法替换 {name}：{e}"));
+    }
+    Err(format!("无法替换 {name}：旧文件仍被占用"))
+}
+
+/// Extracts every file of the ZIP below `staging`, dropping the single top-level
+/// folder the release packs everything into. Returns the relative file paths.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn unpack(package: &Path, staging: &Path) -> Result<Vec<PathBuf>> {
+    let broken = |_| "更新包已损坏，请重新下载".to_string();
+    let mut archive = zip::ZipArchive::new(std::fs::File::open(package).map_err(|e| format!("无法读取更新包：{e}"))?).map_err(broken)?;
+    let mut names = Vec::new();
+    for index in 0..archive.len() {
+        let entry = archive.by_index(index).map_err(broken)?;
+        // enclosed_name rejects absolute paths and `..`, so nothing lands outside staging.
+        let path = entry.enclosed_name().ok_or("更新包含有无效路径，已取消更新")?;
+        names.push((index, path, entry.is_dir()));
+    }
+    let root = names.first().and_then(|(_, path, _)| path.components().next()).map(|part| PathBuf::from(part.as_os_str()));
+    let strip = root.filter(|root| names.iter().all(|(_, path, dir)| path.starts_with(root) && (path != root || *dir)));
+    let mut files = Vec::new();
+    let mut total = 0_u64;
+    for (index, path, dir) in names {
+        let relative = match &strip { Some(root) => path.strip_prefix(root).map(Path::to_path_buf).unwrap_or_default(), None => path };
+        if dir || relative.as_os_str().is_empty() { continue; }
+        let mut entry = archive.by_index(index).map_err(broken)?;
+        total += entry.size();
+        if total > MAX_UNPACKED_BYTES { return Err("更新包解压后超过大小限制".into()); }
+        let target = staging.join(&relative);
+        if let Some(parent) = target.parent() { std::fs::create_dir_all(parent).map_err(|e| format!("无法解压更新包：{e}"))?; }
+        let mut output = std::fs::File::create(&target).map_err(|e| format!("无法解压更新包：{e}"))?;
+        std::io::copy(&mut entry, &mut output).map_err(|e| format!("无法解压更新包：{e}"))?;
+        files.push(relative);
+    }
+    if files.is_empty() { return Err("更新包是空的，已取消更新".into()); }
+    Ok(files)
+}
+
+/// Deletes files a previous portable update moved aside. Runs at startup; files
+/// still locked are left for a later launch.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn remove_leftovers() {
+    let Some(dir) = std::env::current_exe().ok().and_then(|exe| exe.parent().map(Path::to_path_buf)) else { return };
+    remove_leftovers_in(&dir, 0);
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+fn remove_leftovers_in(dir: &Path, depth: usize) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(kind) = entry.file_type() else { continue };
+        if kind.is_dir() && depth < 4 { remove_leftovers_in(&path, depth + 1); }
+        else if kind.is_file() && entry.file_name().to_string_lossy().contains(OLD_SUFFIX) { let _ = std::fs::remove_file(path); }
+    }
+}
+
+/// In a detached `cmd`: wait ~2 s for this app to exit, run the NSIS installer
+/// silently when there is one, then start `exe` again.
 #[cfg(windows)]
-fn launch_installer(setup: &Path, exe: &Path) -> Result<()> {
+fn relaunch(setup: Option<&Path>, exe: &Path) -> Result<()> {
     use std::{os::windows::process::CommandExt, process::{Command, Stdio}};
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
     let plain = |path: &Path| path.to_str().map(|s| s.strip_prefix(r"\\?\").unwrap_or(s).to_owned()).filter(|s| !s.contains(['"', '%', '\r', '\n']));
-    let (Some(setup), Some(exe)) = (plain(setup), plain(exe)) else { return Err("安装路径包含不支持的字符，请前往发布页面下载".into()) };
+    let unsupported = || "安装路径包含不支持的字符，无法自动更新".to_string();
+    let exe = plain(exe).ok_or_else(unsupported)?;
+    let install = match setup { Some(setup) => format!(r#"start "" /wait "{}" /S & "#, plain(setup).ok_or_else(unsupported)?), None => String::new() };
     // `cmd /S /C "<line>"` strips exactly the outer quotes; both paths are quoted
     // and contain no `"` or `%`, so cmd interprets nothing inside them.
-    let line = format!(r#"/D /S /C "ping -n 3 127.0.0.1 >nul & start "" /wait "{setup}" /S & start "" "{exe}""#);
+    let line = format!(r#"/D /S /C "ping -n 3 127.0.0.1 >nul & {install}start "" "{exe}""#);
     let spawn = |flags: u32| Command::new("cmd.exe").raw_arg(&line).creation_flags(flags)
         .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
-    // Breaking away keeps setup alive if the app runs inside a job object that
-    // kills its children on exit; not every job allows it, hence the retry.
+    // Breaking away keeps the helper alive if the app runs inside a job object
+    // that kills its children on exit; not every job allows it, hence the retry.
     spawn(CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB).or_else(|_| spawn(CREATE_NO_WINDOW))
-        .map(|_| ()).map_err(|e| format!("无法启动更新安装程序：{e}"))
+        .map(|_| ()).map_err(|e| format!("无法启动更新程序：{e}"))
 }
 
 #[tauri::command]
@@ -421,11 +533,12 @@ mod tests {
         assert!(checksum_for(sums, "kaizhi_0.2.2_x64-portable.zip").is_some());
         assert!(checksum_for(sums, "setup.exe").is_none());
         assert!(validate_asset_url("https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.2.2/kaizhi_0.2.2_x64-setup.exe").is_ok());
+        assert!(validate_asset_url("https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.2.2/kaizhi_0.2.2_x64-portable.zip").is_ok());
+        assert!(validate_asset_url("https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.2.2/kaizhi_0.2.2_source.zip").is_err());
         for url in [
             "http://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.2.2/kaizhi_0.2.2_x64-setup.exe",
             "https://github.com/other/pdf-copilot/releases/download/desktop-v0.2.2/kaizhi_0.2.2_x64-setup.exe",
             "https://github.com/graohene10-spec/pdf-copilot/releases/download/v0.3.3/pdf-copilot-0.3.3.zip",
-            "https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.2.2/kaizhi_0.2.2_x64-portable.zip",
             "https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.2.2/..%2Fevil-setup.exe",
             "https://evil.example/graohene10-spec/pdf-copilot/releases/download/desktop-v0.2.2/kaizhi_0.2.2_x64-setup.exe",
             "https://github.com:8443/graohene10-spec/pdf-copilot/releases/download/desktop-v0.2.2/kaizhi_0.2.2_x64-setup.exe",
@@ -444,7 +557,7 @@ mod tests {
     #[test]
     #[ignore]
     fn live_check_and_download_previous_release() {
-        let info = tauri::async_runtime::block_on(check_against(&semver::Version::parse("0.2.1").unwrap(), false)).unwrap().expect("a release newer than 0.2.1");
+        let info = tauri::async_runtime::block_on(check_against(&semver::Version::parse("0.2.1").unwrap(), false, true)).unwrap().expect("a release newer than 0.2.1");
         assert!(info.tag.starts_with("desktop-v") && info.html_url.starts_with("https://github.com/graohene10-spec/pdf-copilot/releases/"));
         let installer = info.installer.expect("installer with checksum");
         eprintln!("{} {} {} bytes sha256={}", info.version, installer.name, installer.size, installer.sha256);
@@ -471,5 +584,43 @@ mod tests {
         std::fs::write(&outside, b"x").unwrap();
         assert!(verified_installer(outside.to_str().unwrap()).is_err());
         std::fs::remove_file(outside).unwrap();
+    }
+
+    fn zip_with(path: &Path, files: &[(&str, &[u8])]) {
+        let mut writer = zip::ZipWriter::new(std::fs::File::create(path).unwrap());
+        let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        for (name, data) in files { writer.start_file(*name, options).unwrap(); writer.write_all(data).unwrap(); }
+        writer.finish().unwrap();
+    }
+
+    #[test]
+    fn portable_update_swaps_program_files_and_keeps_user_files() {
+        let root = std::env::temp_dir().join(format!("kaizhi-portable-test-{}", uuid::Uuid::new_v4()));
+        let dir = root.join("开智");
+        std::fs::create_dir_all(dir.join("native-host")).unwrap();
+        std::fs::write(dir.join("开智.exe"), b"old exe").unwrap();
+        std::fs::write(dir.join("native-host/PdfCopilotHost.exe"), b"old host").unwrap();
+        std::fs::write(dir.join("my-notes.txt"), b"keep me").unwrap();
+        let package = root.join("kaizhi_0.3.0_x64-portable.zip");
+        zip_with(&package, &[("开智-portable/开智.exe", b"new exe"), ("开智-portable/native-host/PdfCopilotHost.exe", b"new host"), ("开智-portable/samples/a.md", b"# A")]);
+        apply_portable(&package, &dir, &dir.join("开智.exe")).unwrap();
+        assert_eq!(std::fs::read(dir.join("开智.exe")).unwrap(), b"new exe");
+        assert_eq!(std::fs::read(dir.join("native-host/PdfCopilotHost.exe")).unwrap(), b"new host");
+        assert_eq!(std::fs::read(dir.join("samples/a.md")).unwrap(), b"# A");
+        assert_eq!(std::fs::read(dir.join("my-notes.txt")).unwrap(), b"keep me");
+        assert_eq!(std::fs::read(dir.join(format!("开智.exe{OLD_SUFFIX}"))).unwrap(), b"old exe");
+        remove_leftovers_in(&dir, 0);
+        assert!(!dir.join(format!("开智.exe{OLD_SUFFIX}")).exists() && !dir.join(format!("native-host/PdfCopilotHost.exe{OLD_SUFFIX}")).exists());
+
+        // A package without the running program, or with paths leaving the folder, changes nothing.
+        let wrong = root.join("wrong_x64-portable.zip");
+        zip_with(&wrong, &[("other/other.exe", b"x")]);
+        assert!(apply_portable(&wrong, &dir, &dir.join("开智.exe")).is_err());
+        let evil = root.join("evil_x64-portable.zip");
+        zip_with(&evil, &[("开智.exe", b"x"), ("../escape.txt", b"x")]);
+        assert!(apply_portable(&evil, &dir, &dir.join("开智.exe")).is_err());
+        assert!(!root.join("escape.txt").exists());
+        assert_eq!(std::fs::read(dir.join("开智.exe")).unwrap(), b"new exe");
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

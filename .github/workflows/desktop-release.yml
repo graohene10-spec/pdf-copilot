@@ -1,5 +1,6 @@
 # Builds the Windows desktop app (开智) for a `desktop-vX.Y.Z` tag and publishes the
-# GitHub Release that the in-app updater reads. Tags with a pre-release suffix
+# GitHub Release that the in-app updater reads. A push to main whose desktop version
+# has no tag yet creates that tag here first, so merging a version bump releases it. Tags with a pre-release suffix
 # (desktop-v0.3.0-beta.1) become GitHub pre-releases, offered only to testers.
 # Extension tags (vX.Y.Z) do not match and are never built here.
 name: Desktop release
@@ -7,6 +8,7 @@ name: Desktop release
 on:
   push:
     tags: ['desktop-v*']
+    branches: [main]
   workflow_dispatch:
     inputs:
       tag:
@@ -21,18 +23,52 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Decides which tag to build. On main it tags the commit when desktop/package.json
+  # has a version without a tag; tags pushed with GITHUB_TOKEN do not start this
+  # workflow again, so the build runs below in the same run.
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        if: github.event_name == 'push' && github.ref_type == 'branch'
+
+      - id: tag
+        shell: bash
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            tag="$INPUT_TAG"
+          elif [ "$GITHUB_REF_TYPE" = tag ]; then
+            tag="$GITHUB_REF_NAME"
+          else
+            tag="desktop-v$(node -p "require('./desktop/package.json').version")"
+            if git ls-remote --exit-code --tags origin "refs/tags/$tag" > /dev/null; then
+              echo "$tag 已发布，跳过"
+              tag=""
+            else
+              git tag "$tag" "$GITHUB_SHA"
+              git push origin "refs/tags/$tag"
+            fi
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
   windows:
+    needs: prepare
+    if: needs.prepare.outputs.tag != ''
     runs-on: windows-latest
     timeout-minutes: 60
     env:
-      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
     defaults:
       run:
         shell: pwsh
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          ref: refs/tags/${{ needs.prepare.outputs.tag }}
 
       - uses: actions/setup-node@v4
         with:

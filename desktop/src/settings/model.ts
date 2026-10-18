@@ -38,7 +38,7 @@ export const UI_FONTS: FontChoice[] = [
 ]
 const SERIF = "'Times New Roman', serif"
 export const READING_FONTS: FontChoice[] = [
-  // 西文用 Anthropic Serif（未安装时用随应用附带的 Source Serif 4），中文仍走系统黑体，读起来与 Claude 一致。
+  // 西文用随应用内置的 Anthropic Serif，中文仍走系统黑体，读起来与 Claude 一致。
   { id: 'anthropic', label: 'Anthropic Serif（西文衬线，中文黑体）', families: [], stack: `'Anthropic Serif', 'Tiempos Text', 'Source Serif 4 Variable', Georgia, ${SYSTEM_SANS}` },
   { id: 'ui', label: '跟随界面字体', families: [], stack: '' },
   font('source-han-serif', '思源宋体', ['Source Han Serif SC', 'Noto Serif CJK SC', 'Noto Serif SC', '思源宋体'], SERIF),

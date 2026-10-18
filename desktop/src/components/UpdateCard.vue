@@ -11,7 +11,7 @@ const state = updater.state
 const visible = updater.visible
 const info = computed(() => state.info)
 const notes = computed(() => info.value?.notes.trim() ? renderMarkdown(info.value.notes) : '')
-const canInstall = computed(() => !!info.value?.installer && !!state.status?.installed)
+const canInstall = computed(() => !!info.value?.installer)
 const published = computed(() => {
   const time = info.value?.publishedAt ? new Date(info.value.publishedAt) : null
   return time && !Number.isNaN(time.getTime()) ? time.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }) : ''
@@ -28,11 +28,10 @@ const progressText = computed(() => {
 })
 const hint = computed(() => {
   if (canInstall.value || !info.value) return ''
-  if (!state.status?.installed) return '免安装版请在发布页下载新的 ZIP，解压后替换原文件夹；文档库和设置会保留。'
-  return '此版本没有可校验的安装包，请在发布页下载。'
+  return '此版本没有可校验的更新包，请在发布页下载。'
 })
 
-function retry() { if (state.errorSource === 'install') void updater.install(); else void updater.download() }
+function retry() { void updater.update() }
 function keydown(event: KeyboardEvent) {
   if (event.key === 'Escape' && state.phase !== 'installing' && state.phase !== 'downloading') { event.stopPropagation(); updater.later() }
 }
@@ -65,8 +64,8 @@ function notesClick(event: MouseEvent) {
         </div>
         <p><span>正在下载 {{ percent === null ? '' : `${percent}%` }}</span><span>{{ progressText }}</span></p>
       </div>
-      <p v-else-if="state.phase === 'ready'" class="update-status" role="status">安装包已下载并通过校验。安装时开智会关闭，完成后自动重新打开。</p>
-      <p v-else-if="state.phase === 'installing'" class="update-status" role="status">正在启动安装程序，开智即将关闭并在安装完成后重新打开…</p>
+      <p v-else-if="state.phase === 'ready'" class="update-status" role="status">更新包已下载并通过校验，正在安装…</p>
+      <p v-else-if="state.phase === 'installing'" class="update-status" role="status">正在安装更新，开智会自动关闭并重新打开…</p>
       <p v-else-if="state.phase === 'error'" class="update-status update-error" role="alert">{{ state.error }}</p>
       <p v-else-if="hint" class="update-status">{{ hint }}</p>
 
@@ -75,14 +74,13 @@ function notesClick(event: MouseEvent) {
           <span class="update-space" />
           <button type="button" @click="updater.cancelDownload()" aria-label="取消下载更新">取消</button>
         </template>
-        <template v-else-if="state.phase !== 'installing'">
+        <template v-else-if="state.phase !== 'installing' && state.phase !== 'ready'">
           <button type="button" class="update-text" @click="updater.skip()" aria-label="跳过此版本，不再自动提示">跳过此版本</button>
           <span class="update-space" />
           <button type="button" @click="updater.later()" aria-label="稍后提醒">稍后</button>
           <button v-if="!canInstall" type="button" class="update-primary" @click="updater.openPage()" aria-label="前往发布页面下载"><AppIcon name="external" :size="14" />前往下载页</button>
           <button v-else-if="state.phase === 'error'" type="button" class="update-primary" @click="retry" aria-label="重试更新">重试</button>
-          <button v-else-if="state.phase === 'ready'" type="button" class="update-primary" @click="updater.install()" aria-label="重启开智并安装更新">重启并安装</button>
-          <button v-else type="button" class="update-primary" @click="updater.download()" aria-label="立即下载更新">立即更新</button>
+          <button v-else type="button" class="update-primary" @click="updater.update()" aria-label="立即更新，完成后自动重启">立即更新</button>
         </template>
       </footer>
     </section>

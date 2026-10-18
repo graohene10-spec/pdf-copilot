@@ -20,7 +20,7 @@ const statusText = computed(() => {
     case 'up-to-date': return '已是最新版本'
     case 'available': return `发现新版本 ${found.value}`
     case 'downloading': return `正在下载 ${found.value}…`
-    case 'ready': return `${found.value} 已下载，可以安装`
+    case 'ready': return `${found.value} 已下载，正在安装…`
     case 'installing': return '正在启动安装程序…'
     case 'error': return state.errorSource === 'check' ? `检查失败：${state.error}` : `发现新版本 ${found.value}，${state.errorSource === 'install' ? '安装' : '下载'}未完成`
     default: return state.skippedAvailable ? `已跳过 ${state.skippedAvailable}，点「检查更新」可重新查看` : state.lastChecked ? '未发现可提示的新版本' : '尚未检查'
@@ -50,7 +50,7 @@ function check() { void updater.check({ manual: true, includePrerelease: prerele
       <label class="setting-check"><input v-model="autoCheck" type="checkbox" :disabled="props.disabled" aria-label="自动检查更新" /><span>自动检查更新</span></label>
       <label class="setting-check"><input v-model="prerelease" type="checkbox" :disabled="props.disabled" aria-label="接收测试版更新" aria-describedby="update-prerelease-help" /><span>接收测试版更新</span></label>
     </div>
-    <p id="update-prerelease-help" class="settings-help">上次检查：{{ lastChecked }}。测试版供提前试用新功能，可能不够稳定；关闭后，等到更高的正式版发布时再更新。<template v-if="isDesktop && state.status && !state.status.installed">免安装版不能自动安装，发现新版本时请从发布页下载。</template></p>
+    <p id="update-prerelease-help" class="settings-help">上次检查：{{ lastChecked }}。测试版供提前试用新功能，可能不够稳定；关闭后，等到更高的正式版发布时再更新。<template v-if="isDesktop && state.status && !state.status.installed">免安装版同样一键更新：新版本会直接替换当前文件夹里的程序，文档库和设置保留。</template></p>
   </section>
 </template>
 
