@@ -25,6 +25,11 @@
   inherits: false;
 }
 
+/* 实色玻璃、关闭折射或高对比度时立刻撤掉透镜（运行时随后再清理掉滤镜），不必等下一帧。 */
+:root:is([data-glass='solid'], [data-refraction='off'], [data-contrast='high']) * {
+  --refraction: initial !important;
+}
+
 /* 每块玻璃声明自己的模糊与饱和度，折射滤镜按它们生成；动效期间临时改写 backdrop-filter 也不会影响读数。 */
 @property --lens-blur {
   syntax: '<length>';

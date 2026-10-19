@@ -740,9 +740,9 @@ textarea::placeholder{color:var(--muted);font-family:'Anthropic Serif','Source H
 .composer-space{flex:1}
 /* 文档上下文：芯片里带一枚小开关。开 = 实心墨色胶囊、圆点在右；关 = 空心描边、圆点在左。
    墨色跟随 glass-contrast 的深浅判断，所以浅色底图上是深色实心，深色底图上是浅色实心，都一眼可辨。 */
-/* 文档上下文：一枚胶囊开关。关闭时是安静的描边小书本，图标上划一道斜线；开启时整枚胶囊带上主色的玻璃底，
+/* 文档上下文：一枚圆角方块开关（与其他控件一样偏方）。关闭时是安静的描边小书本，图标上划一道斜线；开启时整枚胶囊带上主色的玻璃底，
    书本与文字变成主色，斜线收起。深色、浅色主题和深浅字色的玻璃上都用同一套主色。 */
-.context-switch{--context-on:var(--accent);position:relative;display:inline-flex;align-items:center;gap:6px;min-width:0;flex-shrink:0;height:30px;padding:0 11px 0 9px;border:1px solid transparent;border-radius:var(--r-full);background:transparent;font-size:12px;font-weight:550;color:var(--muted);cursor:pointer;white-space:nowrap;transition:background var(--dur-2) var(--ease-out),border-color var(--dur-2) var(--ease-out),color var(--dur-2) var(--ease-out),box-shadow var(--dur-2) var(--ease-out),transform var(--dur-press) var(--spring-press)}
+.context-switch{--context-on:var(--accent);position:relative;display:inline-flex;align-items:center;gap:6px;min-width:0;flex-shrink:0;height:30px;padding:0 11px 0 9px;border:1px solid transparent;border-radius:var(--r-control);background:transparent;font-size:12px;font-weight:550;color:var(--muted);cursor:pointer;white-space:nowrap;transition:background var(--dur-2) var(--ease-out),border-color var(--dur-2) var(--ease-out),color var(--dur-2) var(--ease-out),box-shadow var(--dur-2) var(--ease-out),transform var(--dur-press) var(--spring-press)}
 .context-switch input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer}
 .context-switch:hover{background:var(--frost);color:var(--secondary)}
 .context-switch:active{transform:scale(.96)}
