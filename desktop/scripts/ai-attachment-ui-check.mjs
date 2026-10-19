@@ -72,7 +72,6 @@ async function crop(index = 0) {
   return preview().getAttribute('src');
 }
 async function configure(key) {
-  await page.getByRole('button', { name: '选择模型与思考强度', exact: true }).click();
   await page.getByRole('button', { name: '打开设置', exact: true }).click(); await page.getByRole('dialog', { name: '设置', exact: true }).getByRole('button', { name: 'AI', exact: true }).click(); await dialog().waitFor();
   await dialog().getByLabel('服务商', { exact: true }).selectOption('openai');
   await dialog().getByLabel('API 地址', { exact: true }).fill(`${modelOrigin}/v1`);
