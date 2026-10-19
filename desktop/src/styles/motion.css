@@ -205,12 +205,18 @@
   backdrop-filter: blur(0px);
 }
 
-/* ---- 侧栏：从左上方弹出，关闭时向原点收缩 --------------------------- */
+/* ---- 侧栏：宽度弹簧收放，阅读区跟着平滑变宽 / 变窄 ------------------ */
 
+/* 侧栏的宽度（连同与主区之间的间距）随弹簧动画收放，主区每一帧都跟着让位，不再在开头或结尾一下子跳开；
+   PDF 在动画期间停在原位，结束后带着新尺寸的位图从旧大小弹性缩放到新位置（见 PdfReader）。 */
 .sidebar-enter-active {
   overflow: hidden;
   transition: opacity var(--dur-2) var(--ease-out),
-              transform var(--dur-panel) var(--spring-snappy);
+              transform var(--dur-bounce) var(--spring-snappy),
+              flex-basis var(--dur-bounce) var(--spring-snappy),
+              width var(--dur-bounce) var(--spring-snappy),
+              margin-right var(--dur-bounce) var(--spring-snappy),
+              padding var(--dur-bounce) var(--spring-snappy);
   transform-origin: 0 0;
   will-change: opacity, transform;
 }
@@ -218,28 +224,87 @@
 .sidebar-leave-active {
   overflow: hidden;
   transition: opacity var(--dur-3) var(--ease-out),
-              transform var(--dur-3) var(--ease-pane),
-              filter var(--dur-3) var(--ease-out);
+              transform var(--dur-spring) var(--ease-pane),
+              filter var(--dur-3) var(--ease-out),
+              flex-basis var(--dur-spring) var(--ease-pane),
+              width var(--dur-spring) var(--ease-pane),
+              margin-right var(--dur-spring) var(--ease-pane),
+              padding var(--dur-spring) var(--ease-pane);
   transform-origin: 0 4%;
   will-change: opacity, transform;
 }
 
 .sidebar-enter-from {
   opacity: 0;
-  transform: translate(-12px, -8px) scale(.9);
+  transform: translateX(-10px) scale(.96);
+  flex-basis: 0 !important;
+  width: 0 !important;
+  margin-right: -10px;
+  padding-left: 0;
+  padding-right: 0;
 }
 
 .sidebar-leave-to {
   opacity: 0;
-  transform: translate(-16px, -6px) scale(.88);
+  transform: translateX(-14px) scale(.94);
   filter: blur(3px);
+  flex-basis: 0 !important;
+  width: 0 !important;
+  margin-right: -10px;
+  padding-left: 0;
+  padding-right: 0;
 }
 
-/* 文字按最终宽度排版，避免折叠时挤成一列。 */
+/* 内容按展开后的宽度排版，侧栏变窄时只被裁掉，不会挤成一列。 */
 .sidebar-enter-active > *,
 .sidebar-leave-active > * {
-  min-width: 0;
+  flex-shrink: 0;
+  min-width: 206px;
   white-space: nowrap;
+}
+
+/* ---- 顶栏：全屏时可以收起成角落的小标签 ------------------------------- */
+
+.topbar-enter-active,
+.topbar-leave-active {
+  overflow: hidden;
+  transition: opacity var(--dur-2) var(--ease-out),
+              transform var(--dur-bounce) var(--spring-snappy),
+              flex-basis var(--dur-bounce) var(--spring-snappy),
+              height var(--dur-bounce) var(--spring-snappy),
+              margin-bottom var(--dur-bounce) var(--spring-snappy),
+              border-width var(--dur-bounce) var(--spring-snappy);
+  transform-origin: 0 0;
+}
+
+.topbar-leave-active {
+  transition-duration: var(--dur-2), var(--dur-spring), var(--dur-spring), var(--dur-spring), var(--dur-spring), var(--dur-spring);
+  transition-timing-function: var(--ease-out), var(--ease-pane), var(--ease-pane), var(--ease-pane), var(--ease-pane), var(--ease-pane);
+}
+
+.topbar-enter-from,
+.topbar-leave-to {
+  opacity: 0;
+  transform: translateY(-12px) scale(.97);
+  flex-basis: 0 !important;
+  height: 0 !important;
+  margin-bottom: -10px;
+  border-width: 0;
+}
+
+/* 收起后的小标签：贴在屏幕左上角的一枚竖向玻璃标签，从角落弹出。 */
+.chrome-tag-enter-active {
+  transition: opacity var(--dur-2) var(--ease-out), transform var(--dur-bounce) var(--spring-bouncy);
+}
+
+.chrome-tag-leave-active {
+  transition: opacity var(--dur-1) var(--ease-out), transform var(--dur-2) var(--ease-out);
+}
+
+.chrome-tag-enter-from,
+.chrome-tag-leave-to {
+  opacity: 0;
+  transform: translateX(-10px) scale(.7);
 }
 
 /* ---- 焦点环：沿元素自身圆角绘制，胶囊仍是胶囊 ----------------------- */

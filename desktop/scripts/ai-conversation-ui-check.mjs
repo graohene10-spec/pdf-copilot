@@ -77,7 +77,7 @@ try {
   await page.locator('.markdown-paper').filter({ hasText: '对话分支验证' }).waitFor();
   await page.getByRole('button', { name: '阅读助手', exact: true }).click(); await prompt().waitFor();
   await pane().getByRole('button', { name: '选择模型与思考强度', exact: true }).click();
-  await pane().getByRole('button', { name: '服务商、密钥与预算', exact: true }).click();
+  await page.getByRole('button', { name: '打开设置', exact: true }).click(); await page.getByRole('dialog', { name: '设置', exact: true }).getByRole('button', { name: 'AI', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: '设置', exact: true });
   await dialog.getByLabel('服务商', { exact: true }).selectOption('openai');
   await dialog.getByLabel('API 地址', { exact: true }).fill(modelOrigin + '/v1');

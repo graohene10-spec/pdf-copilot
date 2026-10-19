@@ -1,7 +1,7 @@
 import { normalizeBackground, backgroundErrors, type BackgroundImage } from './background.ts'
 import { defaultQuickPrompts, normalizeQuickPrompts, quickPromptErrors, defaultCaptureQuestions, normalizeCaptureQuestions, captureQuestionErrors, type QuickPrompt, type QuickPrompts } from './quick-prompts.ts'
 
-export type ShortcutAction = 'import' | 'search' | 'find' | 'fullscreen' | 'settings' | 'sidebar' | 'ai' | 'outline' | 'capture' | 'fitWidth' | 'zoomOut' | 'zoomIn' | 'previousPage' | 'nextPage' | 'aiSend' | 'aiStop' | 'nextTab' | 'previousTab' | 'closeTab' | 'split'
+export type ShortcutAction = 'import' | 'search' | 'find' | 'fullscreen' | 'settings' | 'sidebar' | 'ai' | 'outline' | 'capture' | 'fitWidth' | 'zoomOut' | 'zoomIn' | 'previousPage' | 'nextPage' | 'aiSend' | 'aiStop' | 'nextTab' | 'previousTab' | 'closeTab' | 'split' | 'inkPen' | 'inkHighlighter' | 'inkUnderline'
 /** The assistant's mark on its empty screen: a built-in glyph or the user's own image (GIF/APNG/WebP animate). */
 export type AssistantAvatar = { kind: AvatarKind; image: string | null }
 export type AvatarKind = 'crab' | 'claude' | 'chatgpt' | 'deepseek' | 'custom'
@@ -28,6 +28,17 @@ function validCustomFont(value: any): value is CustomFont {
 }
 export type UpdatePreferences = { autoCheck: boolean; prerelease: boolean }
 export type ThemePreference = 'system' | 'light' | 'dark'
+/**
+ * 自定义底图上的玻璃怎样保证文字可读：
+ * thicken — 字色跟随主题，底图太亮/太暗时把那块玻璃加厚（加厚的就是玻璃的白色或深色底色，所以会“泛白 / 发灰”）；
+ * ink — 玻璃保持设定的透明度，字色按身后的明暗在深浅之间切换（同屏可能深浅字色并存）；
+ * off — 不做任何补偿，完全按透明度显示。
+ */
+export type GlassLegibility = 'thicken' | 'ink' | 'off'
+export const GLASS_LEGIBILITY: { id: GlassLegibility; label: string }[] = [{ id: 'thicken', label: '加厚玻璃（统一字色）' }, { id: 'ink', label: '切换字色（玻璃通透）' }, { id: 'off', label: '关闭' }]
+/** 玻璃的底色：跟随主题的白 / 深灰，或取自身后底图的颜色（只保留色相，亮度仍按主题）。 */
+export type GlassTint = 'theme' | 'photo'
+export const GLASS_TINTS: { id: GlassTint; label: string }[] = [{ id: 'theme', label: '跟随主题' }, { id: 'photo', label: '取自底图颜色' }]
 export type BackdropPreset = 'mist' | 'dawn' | 'mint' | 'lavender' | 'graphite' | 'paper'
 /* 字体：只列常见的中文字体。选中却未安装时，按顺序退回系统字体。 */
 const SYSTEM_SANS = "'Segoe UI Variable Text', 'Segoe UI', -apple-system, 'PingFang SC', 'Microsoft YaHei UI', 'Microsoft YaHei', system-ui, sans-serif"
@@ -60,7 +71,7 @@ export const BACKDROPS: { id: BackdropPreset; label: string }[] = [
 ]
 export interface AppPreferences {
   version: 3
-  appearance: { theme: ThemePreference; libraryView: 'grid' | 'list'; glassTransparency: number; glassBlur: number; backdrop: BackdropPreset; background: BackgroundImage | null; gallery: BackgroundImage[]; uiFont: string; readingFont: string; customFonts: CustomFont[] }
+  appearance: { theme: ThemePreference; libraryView: 'grid' | 'list'; glassTransparency: number; glassBlur: number; glassRefraction: boolean; glassLegibility: GlassLegibility; glassCompensation: number; glassTint: GlassTint; backdrop: BackdropPreset; background: BackgroundImage | null; gallery: BackgroundImage[]; uiFont: string; readingFont: string; customFonts: CustomFont[] }
   pdf: { initialZoom: 'fit-width' | number; zoomStep: number; fitOnPanelOverflow: boolean; openAssistantOnCapture: boolean; quickAskOnCapture: boolean }
   markdown: { fontSize: number; contentWidth: number }
   assistant: { quickPrompts: QuickPrompts; captureQuestions: QuickPrompt[]; avatar: AssistantAvatar; greeting: AssistantGreeting; predictQuestions: boolean }
@@ -82,6 +93,7 @@ export const SHORTCUTS: { action: ShortcutAction; label: string }[] = [
   { action: 'aiStop', label: '停止 AI 回答' },
   { action: 'nextTab', label: '下一个文件标签' }, { action: 'previousTab', label: '上一个文件标签' }, { action: 'closeTab', label: '关闭当前文件标签' },
   { action: 'split', label: '并排阅读' },
+  { action: 'inkPen', label: '标记：钢笔' }, { action: 'inkHighlighter', label: '标记：荧光笔' }, { action: 'inkUnderline', label: '标记：下划线' },
 ]
 export const DEFAULT_SHORTCUTS: Readonly<Record<ShortcutAction, string>> = Object.freeze({
   import: 'Ctrl+KeyO', search: 'Ctrl+KeyK', settings: 'Ctrl+Comma', sidebar: 'Ctrl+KeyB',
@@ -90,11 +102,12 @@ export const DEFAULT_SHORTCUTS: Readonly<Record<ShortcutAction, string>> = Objec
   zoomOut: 'Ctrl+WheelDown', zoomIn: 'Ctrl+WheelUp', previousPage: 'Alt+ArrowUp', nextPage: 'Alt+ArrowDown',
   aiSend: 'Ctrl+Enter', aiStop: 'Ctrl+Shift+Enter',
   nextTab: 'Ctrl+Tab', previousTab: 'Ctrl+Shift+Tab', closeTab: 'Ctrl+KeyW', split: 'Ctrl+Backslash',
+  inkPen: 'Alt+Digit1', inkHighlighter: 'Alt+Digit2', inkUnderline: 'Alt+Digit3',
 })
 const LEGACY_GLASS: Record<string, number> = { clear: 85, balanced: 70, rich: 30, solid: 0 }
 export const MAX_GALLERY = 6
 export function defaultPreferences(): AppPreferences {
-  return { version: 3, appearance: { theme: 'system', libraryView: 'grid', glassTransparency: 70, glassBlur: 50, backdrop: 'mist', background: null, gallery: [], uiFont: 'system', readingFont: 'anthropic', customFonts: [] },
+  return { version: 3, appearance: { theme: 'system', libraryView: 'grid', glassTransparency: 70, glassBlur: 50, glassRefraction: true, glassLegibility: 'thicken', glassCompensation: 50, glassTint: 'theme', backdrop: 'mist', background: null, gallery: [], uiFont: 'system', readingFont: 'anthropic', customFonts: [] },
     pdf: { initialZoom: 'fit-width', zoomStep: 15, fitOnPanelOverflow: true, openAssistantOnCapture: true, quickAskOnCapture: true },
     markdown: { fontSize: 17, contentWidth: 840 }, assistant: { quickPrompts: defaultQuickPrompts(), captureQuestions: defaultCaptureQuestions(), avatar: { kind: 'crab', image: null }, greeting: { style: 'mixed', custom: '' }, predictQuestions: true }, updates: { autoCheck: true, prerelease: false }, shortcuts: { ...DEFAULT_SHORTCUTS } }
 }
@@ -168,6 +181,10 @@ export function normalizePreferences(value: unknown, legacyTheme?: string | null
   const legacyGlass = typeof appearance.glass === 'string' && Object.hasOwn(LEGACY_GLASS, appearance.glass) ? LEGACY_GLASS[appearance.glass] : defaults.appearance.glassTransparency
   defaults.appearance.glassTransparency = range(appearance.glassTransparency, 0, 100, legacyGlass)
   defaults.appearance.glassBlur = range(appearance.glassBlur, 0, 100, 50)
+  defaults.appearance.glassRefraction = appearance.glassRefraction !== false
+  defaults.appearance.glassLegibility = GLASS_LEGIBILITY.some(item => item.id === appearance.glassLegibility) ? appearance.glassLegibility : 'thicken'
+  defaults.appearance.glassCompensation = range(appearance.glassCompensation, 0, 100, 50)
+  defaults.appearance.glassTint = GLASS_TINTS.some(item => item.id === appearance.glassTint) ? appearance.glassTint : 'theme'
   defaults.appearance.backdrop = BACKDROPS.some(item => item.id === appearance.backdrop) ? appearance.backdrop : defaults.appearance.backdrop
   defaults.appearance.background = normalizeBackground(appearance.background)
   // Uploaded images stay in a small gallery; the selected one is always part of it.
@@ -213,6 +230,10 @@ export function preferenceErrors(value: AppPreferences): string[] {
   const check = (name: string, number: number, min: number, max: number) => { if (!Number.isFinite(number) || !Number.isInteger(number) || number < min || number > max) errors.push(`${name}须为 ${min}–${max} 的整数。`) }
   check('玻璃透明度', value.appearance.glassTransparency, 0, 100)
   check('模糊程度', value.appearance.glassBlur, 0, 100)
+  check('可读性补偿强度', value.appearance.glassCompensation, 0, 100)
+  if (typeof value.appearance.glassRefraction !== 'boolean') errors.push('光线折射选项无效。')
+  if (!GLASS_LEGIBILITY.some(item => item.id === value.appearance.glassLegibility)) errors.push('请选择有效的可读性补偿方式。')
+  if (!GLASS_TINTS.some(item => item.id === value.appearance.glassTint)) errors.push('请选择有效的玻璃底色。')
   errors.push(...backgroundErrors(value.appearance.background))
   errors.push(...quickPromptErrors(value.assistant?.quickPrompts))
   errors.push(...captureQuestionErrors(value.assistant?.captureQuestions))

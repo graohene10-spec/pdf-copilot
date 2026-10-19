@@ -59,7 +59,7 @@ async function open(name) {
   await page.locator('.ai-pane').waitFor();
 }
 async function configure() {
-  await page.getByRole('button', { name: '选择模型与思考强度', exact: true }).click(); await page.getByRole('button', { name: '服务商、密钥与预算', exact: true }).click();
+  await page.getByRole('button', { name: '选择模型与思考强度', exact: true }).click(); await page.getByRole('button', { name: '打开设置', exact: true }).click(); await page.getByRole('dialog', { name: '设置', exact: true }).getByRole('button', { name: 'AI', exact: true }).click();
   await page.getByLabel('服务商', { exact: true }).selectOption('openai');
   await page.getByLabel('API Key', { exact: true }).fill('fake-ui-key');
   await page.getByRole('dialog').getByRole('button', { name: '保存', exact: true }).click();

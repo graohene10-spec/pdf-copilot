@@ -1,6 +1,8 @@
 // 深色主题下的 PDF：文字与线条用一条色调曲线反相（见 installDarkFilter），
 // 彩色图片与照片不反相——从未经滤镜的画布上把这些区域原样复制到上面一层，只略微压暗。
 // 扫描页、公式图片这类“白纸黑字”的灰度图片仍按文字处理，一起反相。
+// 判断一张图是不是照片要读一点像素：只在深色主题、浏览器空闲时异步读 24×24 的缩略图，结果按页缓存，
+// 滚动途中不会因为从显卡回读画布而卡顿；浅色主题完全不做这件事。
 
 const FILTER_ID = 'kaizhi-pdf-dark';
 // 页面底色约 #1d1d1e，正文约 #e3e3e3；指数小于 1，把原稿里接近白色的浅灰、细线和淡底色拉开，不再糊成一片。
@@ -73,28 +75,51 @@ export function looksLikePaper(pixels) {
   return !count || (saturation / count < .1 && light / count > .5);
 }
 
+/** Image rectangles of a rendered page in unscaled viewport units, from the render's own operator list. */
+export function imageUnits(operatorList, viewport, OPS) {
+  return imageRectangles(operatorList, viewport.transform, OPS).map(rectangle => ({ x: rectangle.x / viewport.scale, y: rectangle.y / viewport.scale, width: rectangle.width / viewport.scale, height: rectangle.height / viewport.scale }));
+}
+
+/** A unit rectangle on a page canvas: device pixels, clipped to the bitmap. */
+function pixelRectangle(unit, canvas, viewport) {
+  const scaleX = canvas.width / viewport.width * viewport.scale, scaleY = canvas.height / viewport.height * viewport.scale;
+  const x = Math.max(0, Math.floor(unit.x * scaleX)), y = Math.max(0, Math.floor(unit.y * scaleY));
+  const width = Math.min(canvas.width, Math.ceil((unit.x + unit.width) * scaleX)) - x;
+  const height = Math.min(canvas.height, Math.ceil((unit.y + unit.height) * scaleY)) - y;
+  return { x, y, width, height };
+}
+
 /**
- * Builds the colour-preserving layer for one rendered page: small canvases copied from the page bitmap
- * over each colourful image. Returns null when the page has nothing to keep (text-only or scanned pages).
+ * Which of the page's images are colourful (kept in colour) rather than paper-like (inverted with the text).
+ * Each region is scaled to a 24×24 bitmap asynchronously; only that tiny bitmap is read back, never the page.
  */
-export async function photoLayer(page, viewport, canvas, OPS) {
-  const operators = await page.getOperatorList();
-  const scaleX = canvas.width / viewport.width, scaleY = canvas.height / viewport.height;
-  const pieces = [];
+export async function classifyImages(canvas, viewport, units) {
   const probe = document.createElement('canvas');
   probe.width = probe.height = 24;
   const sample = probe.getContext('2d', { willReadFrequently: true });
-  for (const rectangle of imageRectangles(operators, viewport.transform, OPS)) {
-    const x = Math.max(0, Math.floor(rectangle.x * scaleX)), y = Math.max(0, Math.floor(rectangle.y * scaleY));
-    const width = Math.min(canvas.width, Math.ceil((rectangle.x + rectangle.width) * scaleX)) - x;
-    const height = Math.min(canvas.height, Math.ceil((rectangle.y + rectangle.height) * scaleY)) - y;
-    if (width < 8 || height < 8) continue;
-    sample.clearRect(0, 0, 24, 24);
-    sample.drawImage(canvas, x, y, width, height, 0, 0, 24, 24);
-    if (looksLikePaper(sample.getImageData(0, 0, 24, 24).data)) continue;
-    pieces.push({ x, y, width, height });
-  }
-  probe.width = probe.height = 0;
+  const flags = [];
+  try {
+    for (const unit of units) {
+      const { x, y, width, height } = pixelRectangle(unit, canvas, viewport);
+      if (width < 8 || height < 8 || !canvas.width) { flags.push(false); continue; }
+      let bitmap;
+      try { bitmap = await createImageBitmap(canvas, x, y, width, height, { resizeWidth: 24, resizeHeight: 24, resizeQuality: 'low' }); }
+      catch { flags.push(false); continue; }
+      sample.clearRect(0, 0, 24, 24);
+      sample.drawImage(bitmap, 0, 0);
+      bitmap.close();
+      flags.push(!looksLikePaper(sample.getImageData(0, 0, 24, 24).data));
+    }
+  } finally { probe.width = probe.height = 0; }
+  return flags;
+}
+
+/**
+ * Builds the colour-preserving layer for one rendered page from already classified images: small canvases
+ * copied from the page bitmap over each colourful image. Returns null when the page has nothing to keep.
+ */
+export function photoLayer(canvas, viewport, images) {
+  const pieces = images.filter(image => image.photo).map(image => pixelRectangle(image.unit, canvas, viewport)).filter(piece => piece.width >= 8 && piece.height >= 8);
   if (!pieces.length) return null;
   const layer = document.createElement('div');
   layer.className = 'pdf-photos';

@@ -6,7 +6,7 @@ import { onBeforeUnmount, onMounted, reactive, type Ref } from 'vue'
  */
 export function useHorizontalScroll(container: Ref<HTMLElement | undefined>) {
   const bar = reactive({ visible: false, left: 0, width: 100, dragging: false })
-  let frame = 0, drag: { offset: number; track: HTMLElement } | undefined
+  let frame = 0, timer: ReturnType<typeof setTimeout> | undefined, drag: { offset: number; track: HTMLElement } | undefined
   let limitKey = '', limit = 0
   // 预留的竖向滚动条槽会让 scrollWidth − clientWidth 比真正能滚到的位置多出几像素：尺寸变了就实测一次最右端。
   function maximum(element: HTMLElement) {
@@ -16,7 +16,7 @@ export function useHorizontalScroll(container: Ref<HTMLElement | undefined>) {
   }
   let resize: ResizeObserver | undefined, mutations: MutationObserver | undefined
   function measure() {
-    frame = 0
+    timer = undefined
     const element = container.value
     if (!element) return
     const overflow = element.scrollWidth - element.clientWidth > 1 ? maximum(element) : 0
@@ -25,7 +25,8 @@ export function useHorizontalScroll(container: Ref<HTMLElement | undefined>) {
     bar.width = Math.max(6, element.clientWidth / (element.clientWidth + overflow) * 100)
     bar.left = Math.min(1, element.scrollLeft / overflow) * (100 - bar.width)
   }
-  function update() { if (!frame) frame = requestAnimationFrame(measure) }
+  // 在这一帧画完之后再读尺寸：此时布局是干净的，读 scrollWidth 不会强迫浏览器在滚动帧中途重新排版。
+  function update() { if (!frame && !timer) frame = requestAnimationFrame(() => { frame = 0; timer = setTimeout(measure, 0) }) }
   function ratio(event: PointerEvent, track: HTMLElement) { const box = track.getBoundingClientRect(); return (event.clientX - box.left) / Math.max(1, box.width) * 100 }
   function scrollTo(percent: number) {
     const element = container.value
@@ -58,6 +59,6 @@ export function useHorizontalScroll(container: Ref<HTMLElement | undefined>) {
     mutations.observe(element, { childList: true })
     watchStack()
   })
-  onBeforeUnmount(() => { container.value?.removeEventListener('scroll', update); resize?.disconnect(); mutations?.disconnect(); if (frame) cancelAnimationFrame(frame) })
+  onBeforeUnmount(() => { container.value?.removeEventListener('scroll', update); resize?.disconnect(); mutations?.disconnect(); if (frame) cancelAnimationFrame(frame); clearTimeout(timer) })
   return { bar, update, down, move, up }
 }

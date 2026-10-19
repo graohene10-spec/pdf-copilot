@@ -2,6 +2,7 @@
 // Floating liquid-glass palette shown while markup mode is on.
 import InkIcon from './InkIcon.vue'
 import { INK_COLORS, type InkMode, type InkTool } from '../../reader/ink/model.ts'
+import { useSettings, shortcutLabel, type ShortcutAction } from '../../settings'
 
 const props = defineProps<{ mode: InkMode; colors: Record<InkTool, string>; lastTool: InkTool; canUndo: boolean; pageHasInk: boolean; status?: string }>()
 const emit = defineEmits<{ mode: [value: InkMode]; color: [value: string]; undo: []; clear: []; close: [] }>()
@@ -12,12 +13,16 @@ const tools: { mode: InkMode; label: string; tip: string }[] = [
   { mode: 'eraser', label: '橡皮', tip: '橡皮：点按或拖过笔迹即擦除' },
 ]
 const activeColor = () => props.colors[props.lastTool]
+// 悬停提示里带上每支笔的快捷键（设置 → 快捷键里可以改）。
+const { preferences } = useSettings()
+const SHORTCUT: Partial<Record<InkMode, ShortcutAction>> = { pen: 'inkPen', highlighter: 'inkHighlighter', underline: 'inkUnderline' }
+const keyFor = (mode: InkMode) => { const action = SHORTCUT[mode]; const binding = action ? preferences.value.shortcuts[action] : ''; return binding ? shortcutLabel(binding) : undefined }
 </script>
 
 <template>
   <div class="ink-palette" role="toolbar" aria-label="标记工具">
     <div class="ink-group">
-      <button v-for="tool in tools" :key="tool.mode" type="button" class="ink-tool" :class="{ on: mode === tool.mode }" :aria-label="tool.label" :aria-pressed="mode === tool.mode" :data-tip="tool.tip" @click="emit('mode', tool.mode)">
+      <button v-for="tool in tools" :key="tool.mode" type="button" class="ink-tool" :class="{ on: mode === tool.mode }" :aria-label="tool.label" :aria-pressed="mode === tool.mode" :data-tip="tool.tip" :data-tip-key="keyFor(tool.mode)" @click="emit('mode', tool.mode)">
         <InkIcon :name="tool.mode" />
         <i v-if="tool.mode !== 'eraser'" class="ink-tip" :style="{ background: colors[tool.mode as InkTool] }" aria-hidden="true" />
       </button>
@@ -52,8 +57,10 @@ const activeColor = () => props.colors[props.lastTool]
   border-radius: var(--r-lg);
   background-color: var(--popup-glass);
   background-image: var(--popup-sheen);
-  -webkit-backdrop-filter: blur(var(--popup-blur)) saturate(var(--glass-sat));
-  backdrop-filter: blur(var(--popup-blur)) saturate(var(--glass-sat));
+  --lens-blur: var(--popup-blur);
+  --lens-saturate: var(--glass-sat);
+  -webkit-backdrop-filter: var(--refraction, blur(var(--popup-blur)) saturate(var(--glass-sat)));
+  backdrop-filter: var(--refraction, blur(var(--popup-blur)) saturate(var(--glass-sat)));
   border: 1px solid var(--glass-outline);
   box-shadow: 0 14px 34px -14px rgb(0 0 0 / .32), var(--glass-edge);
   color: var(--surface-ink);

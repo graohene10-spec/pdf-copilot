@@ -54,6 +54,7 @@ let pdf: any
 let task: any
 let epoch = 0
 let observer: ResizeObserver | undefined
+let themeWatch: MutationObserver | undefined
 let indexedText = new Map<number, string>()
 let indexedCharacters = 0
 let layoutTimer: ReturnType<typeof setTimeout> | undefined
@@ -244,7 +245,10 @@ async function renderZoom(value: number | null, deferLayout = false) {
       waitBeforeCommit: deferLayout ? waitForPanelCommit : undefined,
       beforeCommit: () => {
         if (!active || current !== epoch || document !== pdf || (deferLayout && (panelResizeHeld || outlineResizeHeld || stagedPage !== viewer.currentPage))) return false
+        // 侧栏、顶栏或面板开关之后，新尺寸的页面一次提交：从旧位置、旧大小弹性缩放到新位置，而不是跳过去。
+        const from = deferLayout && container.value ? { box: container.value.getBoundingClientRect(), scale: viewer.displayScale } : null
         releaseViewport()
+        if (from) queueMicrotask(() => springFromPrevious(from.box, from.scale))
         return true
       },
     })
@@ -259,6 +263,20 @@ async function renderZoom(value: number | null, deferLayout = false) {
       if (viewer.active?.failed && !panelResizeHeld && !outlineResizeHeld) releaseViewport()
     }
   } catch (reason: any) { if (active && revision === renderRevision && current === epoch) emit('error', reason?.message || '无法调整 PDF 缩放。') }
+}
+let morph: Animation | undefined
+function springFromPrevious(box: DOMRect, previousScale: number) {
+  const element = container.value
+  if (!active || !element || !viewer?.displayScale || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+  const now = element.getBoundingClientRect()
+  const ratio = previousScale / viewer.displayScale
+  const dx = box.left - now.left, dy = box.top - now.top
+  if (Math.abs(ratio - 1) < .01 && Math.abs(dx) < 2 && Math.abs(dy) < 2) return
+  morph?.cancel()
+  const spring = getComputedStyle(document.documentElement).getPropertyValue('--spring-snappy').trim() || 'cubic-bezier(.3, 1.18, .4, 1)'
+  element.style.transformOrigin = '0 0'
+  const animation = morph = element.animate([{ transform: `translate(${dx}px, ${dy}px) scale(${ratio})` }, { transform: 'none' }], { duration: 520, easing: spring })
+  animation.finished.then(() => { if (morph === animation && container.value) container.value.style.transformOrigin = '' }, () => {})
 }
 async function renderFit() {
   // The desktop viewer computes this once from the current page's measured
@@ -549,11 +567,14 @@ onMounted(async () => {
       if (indexedText.has(view.number) || indexedCharacters >= 2000000) return
       const current = epoch
       const visible = activation
-      let content
-      try { content = await view.page.getTextContent() }
-      catch (reason: any) { if (active && visible === activation && current === epoch && !view.disposed) emit('error', reason?.message || '无法读取页面文字。'); return }
+      // 搜索索引直接用文字层已经取到的文字，不再向 worker 再要一遍整页文字。
+      let strings: string[] | undefined = view.layer?.textContentItemsStr
+      if (!strings?.length) {
+        try { strings = (await view.page.getTextContent()).items.map((item: any) => item.str || '') }
+        catch (reason: any) { if (active && visible === activation && current === epoch && !view.disposed) emit('error', reason?.message || '无法读取页面文字。'); return }
+      }
       if (current !== epoch || view.disposed) return
-      const text = content.items.map((item: any) => item.str || '').join(' ').slice(0, 2000000 - indexedCharacters)
+      const text = strings!.join(' ').slice(0, 2000000 - indexedCharacters)
       indexedText.set(view.number, text); indexedCharacters += text.length
       if (active && visible === activation) emit('text', collectedText())
     },
@@ -571,6 +592,9 @@ onMounted(async () => {
     onError(reason: any) { if (active) emit('error', reason?.message || String(reason)) },
   })
   observer = new ResizeObserver(() => { if (active) { positionFrozenViewport(); scheduleLayout() } })
+  // 切到深色主题时给已经画好的页面补上彩色图片层（浅色主题里不做任何像素判断）。
+  themeWatch = new MutationObserver(() => { if (active) viewer?.refreshPhotos?.() })
+  themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
   if (active) observer.observe(viewportHost.value!)
   else viewer.suspend()
   await load()
@@ -579,7 +603,7 @@ watch(() => props.data, () => { if (viewer) load() })
 watch(() => props.initialZoom, value => { if (active && !loading.value && viewer?.pdf) void zoom(value === 'fit' ? null : value) })
 watch(() => props.fitRequest, requestPanelFit)
 watch(() => props.sidebarFitEnabled, enabled => { if (!enabled) pendingPanelFit = false; else requestPanelFit() })
-onBeforeUnmount(() => { stopSearch(); removeSearchHighlights(); active = false; ++activation; ++epoch; clearTimeout(layoutTimer); observer?.disconnect(); releaseViewport(); viewer?.reset(); releaseCommitWaiters(); for (const clear of transientMarkers) clear(); task?.destroy() })
+onBeforeUnmount(() => { themeWatch?.disconnect(); stopSearch(); removeSearchHighlights(); active = false; ++activation; ++epoch; clearTimeout(layoutTimer); observer?.disconnect(); releaseViewport(); viewer?.reset(); releaseCommitWaiters(); for (const clear of transientMarkers) clear(); task?.destroy() })
 function getViewState() {
   if (!active) return cachedView
   if (loading.value || !viewer?.pdf || !container.value) return undefined
@@ -633,7 +657,7 @@ async function resume() {
 }
 onActivated(resume)
 onDeactivated(suspend)
-defineExpose({ goToPage, getPage: () => page.value, getPdf: () => pdf, isSuspended: () => !active, clearSelection: () => viewer?.clearOverlays(), getCaptureFrame, getCaptureElements, zoomIn, zoomOut, fitWidth, nextPage, previousPage, toggleOutline, toggleCapture, cancelCapture, toggleInk: ink.toggle, exitInk: ink.exit, focusSearch, clearSearch, getDisplayScale: () => scale.value, getViewState, holdPanelResize, suspend, resume, getCacheStats: () => viewer?.getCacheStats() })
+defineExpose({ goToPage, getPage: () => page.value, getPdf: () => pdf, isSuspended: () => !active, clearSelection: () => viewer?.clearOverlays(), getCaptureFrame, getCaptureElements, zoomIn, zoomOut, fitWidth, nextPage, previousPage, toggleOutline, toggleCapture, cancelCapture, toggleInk: ink.toggle, exitInk: ink.exit, pickInk: ink.pick, focusSearch, clearSearch, getDisplayScale: () => scale.value, getViewState, holdPanelResize, suspend, resume, getCacheStats: () => viewer?.getCacheStats() })
 </script>
 
 <template>

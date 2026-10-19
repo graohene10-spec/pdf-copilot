@@ -12,11 +12,12 @@ const checks = [], errors = [], remoteRequests = [];
 let vite, browser, page;
 const pane = () => page.locator('.ai-pane:not(.pane-leave-active)');
 const picker = () => pane().getByRole('button', { name: '选择模型与思考强度', exact: true });
-const menu = () => pane().getByRole('dialog', { name: '模型与思考强度', exact: true });
+const menu = () => pane().getByRole('group', { name: '模型与思考强度', exact: true });
 async function settle() { await page.waitForTimeout(650); }
 // Esc steps back from the model list first, then closes the card.
-async function closeMenu() { for (let i = 0; i < 2 && await menu().count(); i++) await page.keyboard.press('Escape'); await menu().waitFor({ state: 'detached' }); }
-const modelList = () => menu().locator('.model-name').click();
+async function closeMenu() { if (await menu().isVisible()) await page.keyboard.press('Escape'); await menu().waitFor({ state: 'hidden' }); }
+// 模型胶囊直接排在抽屉里，不再需要先切到列表。
+const modelList = async () => {};
 const effortSlider = () => menu().getByRole('slider', { name: '思考强度', exact: true });
 
 try {
@@ -79,7 +80,7 @@ try {
   await closeMenu();
   checks.push('Model switch adapts supported efforts, writes only model/effort, retains the draft and uses the cached inventory.');
 
-  await picker().click(); await menu().getByRole('button', { name: '服务商、密钥与预算', exact: true }).click();
+  await picker().click(); await page.getByRole('button', { name: '打开设置', exact: true }).click(); await page.getByRole('dialog', { name: '设置', exact: true }).getByRole('button', { name: 'AI', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: '设置', exact: true });
   await dialog.getByLabel('模型', { exact: true }).waitFor();
   await page.evaluate(() => window.__reviewDiscovery.models = [{ id: 'new-inventory', name: '新读取的模型', efforts: ['low', 'high'], defaultEffort: 'high', vision: true }]);
@@ -108,7 +109,7 @@ try {
   await picker().click();
   await page.waitForFunction(() => window.__reviewDiscovery.held.length === 1);
   await page.getByRole('tab', { name: '模型菜单-B.md', exact: true }).click();
-  await menu().waitFor({ state: 'detached' });
+  await menu().waitFor({ state: 'hidden' });
   await page.waitForFunction(() => window.__reviewDiscovery.ports.size === 0);
   await page.evaluate(() => { window.__reviewDiscovery.held.splice(0).forEach(respond => respond()); window.__reviewDiscovery.hold = false; });
   assert.equal(await page.evaluate(async () => (await import('/src/ai/native-models.ts')).nativeModelInventory.value.length), 0);

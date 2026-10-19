@@ -74,6 +74,9 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   await openPdf(page, '深色模式.pdf', imagePdf());
   assert.equal(await page.locator('.pdf-canvas').first().evaluate(element => getComputedStyle(element).filter), 'url("#kaizhi-pdf-dark")');
+  // 照片层在浏览器空闲时才补上（滚动中不读像素），等它出现并淡入完成。
+  await page.locator('.page-slot').first().locator('.pdf-photos canvas').waitFor();
+  await page.waitForFunction(() => !document.querySelector('.pdf-photos').getAnimations().length);
   assert.equal(await page.locator('.page-slot').first().locator('.pdf-photos canvas').count(), 1, 'The colour photo gets a colour-preserving layer.');
   // Page coordinates (PDF points, 500×650) to screen.
   const slot = await page.locator('.page-slot').first().boundingBox();
@@ -90,7 +93,7 @@ try {
   checks.push(`Dark mode: background ${background}, pale rule ${rule}, pale fill ${callout} stay distinct; the photo keeps ${photoRed}; a red vector box stays red-hued (${vectorRed}).`);
   await page.locator('.pdf-scroll').evaluate(element => { element.scrollTop = element.querySelectorAll('.page-slot')[1].offsetTop - 20; });
   await page.waitForFunction(() => document.querySelectorAll('.page-slot')[1]?.classList.contains('page-ready'));
-  await page.waitForTimeout(600);
+  await page.waitForTimeout(2500);
   assert.equal(await page.locator('.page-slot').nth(1).locator('.pdf-photos').count(), 0, 'A scanned page is treated as text, not as a photo.');
   const scan = await page.locator('.page-slot').nth(1).boundingBox();
   const samples = await pixels(page, Array.from({ length: 40 }, (_, index) => [scan.x + scan.width * (.1 + (index % 8) * .1), scan.y + 60 + Math.floor(index / 8) * 9]));

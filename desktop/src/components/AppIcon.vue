@@ -37,6 +37,7 @@ const paths: Record<string, string> = {
   reset: 'M3 12a9 9 0 1 0 3-6.7 M3 4v5h5',
   history: 'M3 12a9 9 0 1 0 3-6.7 M3 4v5h5 M12 7v5l3 2',
   compose: 'M12 20h9 M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z',
+  'collapse-up': 'M4 4h16 M12 20V9 M7.5 13.5 12 9l4.5 4.5',
   'arrow-up': 'M12 19V5 M6 11l6-6 6 6',
   grip: 'M9 6h.01 M15 6h.01 M9 12h.01 M15 12h.01 M9 18h.01 M15 18h.01',
   more: 'M5 12h.01 M12 12h.01 M19 12h.01',
