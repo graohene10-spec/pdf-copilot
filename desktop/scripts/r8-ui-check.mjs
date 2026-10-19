@@ -163,10 +163,11 @@ try {
   assert.equal(await page.locator('.pdf-photos').count(), 0);
   await page.locator('.sidebar-bottom .icon-button').click();
   await until(async () => await page.locator('.pdf-photos canvas').count() > 0, 'Switching to dark adds the colour layer to the painted page.');
+  const scrollTo = async top => { await page.evaluate(top => { document.querySelector('.pdf-scroll').scrollTop = top; }, top); await page.waitForTimeout(2500); };
+  await scrollTo(2000); await scrollTo(0);
   const readbacks = await page.evaluate(() => window.__readbacks);
   assert.ok(readbacks > 0 && readbacks <= 4, `Only tiny thumbnails are read, once per image (${readbacks}).`);
-  await page.evaluate(() => document.querySelector('.pdf-scroll').scrollTop += 2000); await page.waitForTimeout(800);
-  await page.evaluate(() => document.querySelector('.pdf-scroll').scrollTop = 0); await page.waitForTimeout(1500);
+  await scrollTo(2000); await scrollTo(0);
   assert.ok(await page.locator('.pdf-photos canvas').count() > 0);
   assert.equal(await page.evaluate(() => window.__readbacks), readbacks, 'Revisited pages reuse the cached classification.');
   checks.push(`Dark-mode photo protection reads no pixels in light theme; in dark theme it classifies images from ${readbacks} tiny thumbnails once, during idle time, and reuses the result.`);
