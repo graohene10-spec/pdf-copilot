@@ -68,7 +68,9 @@ async function settled() {
   const deadline = Date.now() + 15000;
   while (Date.now() < deadline) {
     const value = await metrics();
-    const key = value && [value.page, value.scale, value.width, value.available, value.top].join(':');
+    // A panel's final fit renders after its spring ends; a page still being re-rendered or springing is not settled.
+    const busy = await page.evaluate(() => Boolean(document.querySelector('.pdf-reader .page-slot.pdf-preview')) || Boolean(document.querySelector('.pdf-reader .pdf-scroll')?.getAnimations().length));
+    const key = value && !busy && [value.page, value.scale, value.width, value.available, value.top].join(':');
     stable = key && key === last ? stable + 1 : 0;
     last = key;
     if (value && stable >= 6) return value;
