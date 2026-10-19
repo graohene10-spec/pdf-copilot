@@ -1,5 +1,6 @@
 // Attaches one SVG markup layer to each rendered page slot of a continuous
-// PDF viewer and turns pointer input into hand-drawn strokes.
+// PDF viewer (or each block of a Markdown document, through an adapter with
+// the same `views` / `sizes` shape) and turns pointer input into hand-drawn strokes.
 //
 // The viewer creates page slots per document and recycles canvases as the
 // rendered window moves, so layers follow its live views reactively through a
@@ -95,6 +96,7 @@ export class InkLayers {
 
   undo() { this.cancelGesture(); return this.store?.undo() ?? null }
   clearPage(page: number) { this.cancelGesture(); return this.store?.clearPage(page) ?? false }
+  clearAll() { this.cancelGesture(); return this.store?.clearAll() ?? false }
 
   private storeChanged(page: number | null) {
     this.status = this.store?.error || ''

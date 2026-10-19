@@ -4,7 +4,7 @@ import InkIcon from './InkIcon.vue'
 import { INK_COLORS, type InkMode, type InkTool } from '../../reader/ink/model.ts'
 import { useSettings, shortcutLabel, type ShortcutAction } from '../../settings'
 
-const props = defineProps<{ mode: InkMode; colors: Record<InkTool, string>; lastTool: InkTool; canUndo: boolean; pageHasInk: boolean; status?: string }>()
+const props = defineProps<{ mode: InkMode; colors: Record<InkTool, string>; lastTool: InkTool; canUndo: boolean; pageHasInk: boolean; status?: string; clearLabel?: string }>()
 const emit = defineEmits<{ mode: [value: InkMode]; color: [value: string]; undo: []; clear: []; close: [] }>()
 const tools: { mode: InkMode; label: string; tip: string }[] = [
   { mode: 'pen', label: '笔', tip: '笔：随手写字、画圈' },
@@ -34,7 +34,7 @@ const keyFor = (mode: InkMode) => { const action = SHORTCUT[mode]; const binding
     <span class="ink-separator" aria-hidden="true" />
     <div class="ink-group">
       <button type="button" class="ink-tool" aria-label="撤销" data-tip="撤销" data-tip-key="Ctrl + Z" :disabled="!canUndo" @click="emit('undo')"><InkIcon name="undo" /></button>
-      <button type="button" class="ink-tool" aria-label="清除本页" data-tip="清除本页标记（可撤销）" :disabled="!pageHasInk" @click="emit('clear')"><InkIcon name="clear" /></button>
+      <button type="button" class="ink-tool" :aria-label="clearLabel ? '清除全部标记' : '清除本页'" :data-tip="clearLabel || '清除本页标记（可撤销）'" :disabled="!pageHasInk" @click="emit('clear')"><InkIcon name="clear" /></button>
       <button type="button" class="ink-tool" aria-label="退出标记" data-tip="退出标记" data-tip-key="Esc" @click="emit('close')"><InkIcon name="close" /></button>
     </div>
     <p v-if="status" class="ink-status" role="status">{{ status }}</p>

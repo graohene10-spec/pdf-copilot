@@ -212,12 +212,23 @@ export function installRefraction(root: HTMLElement): () => void {
       const element = target as HTMLElement
       if (!assigned.has(element)) continue
       // 刚显示出来的弹层（提示、菜单）立即配上透镜；已有透镜的玻璃改变尺寸时才延后重算。
-      if (assigned.get(element) === null) { assign(element); continue }
+      if (assigned.get(element) === null && !document.querySelector(MOVING)) { assign(element); continue }
       // 拖动缩放面板时不逐帧重画位移图：旧图会随元素拉伸，停下片刻后再按新尺寸生成。
-      clearTimeout(pending.get(element))
-      pending.set(element, setTimeout(() => { pending.delete(element); if (!disposed && assigned.has(element) && element.isConnected) { assign(element); prune() } }, 140))
+      later(element)
     }
   })
+  // 侧栏、顶栏或面板正在弹簧伸缩时（Ctrl + B），玻璃每一帧都在变宽；这时生成位移图会让动画一顿一顿。
+  // 动画期间玻璃本来就换成了轻量的模糊，等它停下再按最终尺寸生成一次。
+  const MOVING = '.sidebar-enter-active,.sidebar-leave-active,.topbar-enter-active,.topbar-leave-active,.pane-enter-active,.pane-leave-active'
+  function later(element: HTMLElement, delay = 140) {
+    clearTimeout(pending.get(element))
+    pending.set(element, setTimeout(() => {
+      pending.delete(element)
+      if (disposed || !assigned.has(element) || !element.isConnected) return
+      if (document.querySelector(MOVING)) { later(element, 120); return }
+      assign(element); prune()
+    }, delay))
+  }
 
   function scan() {
     frame = 0
@@ -230,7 +241,13 @@ export function installRefraction(root: HTMLElement): () => void {
     for (const element of document.body.querySelectorAll<HTMLElement>(':scope > :is(' + SELECTOR + ')')) found.add(element)
     for (const element of [...assigned.keys()]) if (!found.has(element) || !element.isConnected) release(element)
     // 主题、透明度或模糊程度变化时，已有的玻璃也按新的模糊与饱和度重建滤镜。
-    for (const element of found) if (all || !assigned.has(element)) assign(element)
+    const moving = !!document.querySelector(MOVING)
+    for (const element of found) {
+      if (!all && assigned.has(element)) continue
+      // A panel springing in gets its lens once it has settled.
+      if (moving && !assigned.has(element)) { assigned.set(element, null); resize.observe(element); later(element, 120); continue }
+      assign(element)
+    }
     prune()
   }
   const schedule = () => { if (!disposed && !frame) frame = win.requestAnimationFrame(scan) }

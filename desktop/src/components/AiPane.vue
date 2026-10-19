@@ -45,6 +45,8 @@ const messageList = ref<HTMLElement>()
 const input = ref<HTMLTextAreaElement>()
 const selected = computed(() => props.context?.selection || {})
 const hasSelection = computed(() => Boolean(selected.value.text || selected.value.image))
+// Markdown has no pages: its region screenshots are named by what they are.
+const selectionLabel = computed(() => selected.value.rect?.space === 'markdown' ? '框选区域截图' : `第 ${selected.value.page} 页截图`)
 const { preferences, effectiveAppearance } = useSettings()
 const avatar = computed(() => preferences.value.assistant.avatar)
 // 每段对话的问候与占位语各固定一句，切换对话或新建时再随机挑；占位语每问一次换一句。
@@ -519,7 +521,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
       <div ref="composerField" class="composer-field" :class="{ busy, expanded: pickerOpen }" @keydown.esc="drawerEscape">
         <div class="composer-resize" role="separator" aria-orientation="horizontal" aria-label="拖动调整输入框高度" data-tip="拖动调整高度，双击恢复" @pointerdown="startResize" @pointermove="resize" @pointerup="endResize" @pointercancel="endResize" @dblclick="resetResize" />
         <div v-if="hasSelection" class="ai-selection-context">
-          <label class="selection-chip" :class="{ off: !includeSelection }"><input v-model="includeSelection" type="checkbox" :disabled="busy" :aria-label="selected.image ? `使用第 ${selected.page} 页截图` : '使用所选文字'" /><img v-if="selected.image" :src="selected.image" alt="选取的截图预览" /><span v-else class="selection-text">{{ selected.text.slice(0, 80) }}</span><small>{{ selected.image ? `第 ${selected.page} 页截图` : '所选文字' }}</small></label>
+          <label class="selection-chip" :class="{ off: !includeSelection }"><input v-model="includeSelection" type="checkbox" :disabled="busy" :aria-label="selected.image ? `使用${selectionLabel}` : '使用所选文字'" /><img v-if="selected.image" :src="selected.image" alt="选取的截图预览" /><span v-else class="selection-text">{{ selected.text.slice(0, 80) }}</span><small>{{ selected.image ? selectionLabel : selected.rect?.space === 'markdown' ? '框选区域的文字' : '所选文字' }}</small></label>
           <button class="chip-remove" data-tip="清除选区" aria-label="清除选区" @click="emit('clearSelection')"><AppIcon name="close" :size="11" /></button>
         </div>
         <div class="prompt-box">

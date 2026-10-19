@@ -7,6 +7,7 @@ type Operation =
   | { kind: 'add'; page: number; stroke: InkStroke }
   | { kind: 'erase'; page: number; removed: { stroke: InkStroke; index: number }[] }
   | { kind: 'clear'; page: number; strokes: InkStroke[] }
+  | { kind: 'clearAll'; page: null; pages: [number, InkStroke[]][] }
 export type InkListener = (page: number | null) => void
 
 const HISTORY = 200
@@ -88,9 +89,26 @@ export class InkStore {
     return true
   }
 
+  /** Remove every mark in the document (Markdown has no pages to clear one by one). */
+  clearAll() {
+    const pages = [...this.document.pages.entries()].map(([page, strokes]) => [page, [...strokes]] as [number, InkStroke[]])
+    if (!pages.length) return false
+    this.document.pages = new Map()
+    this.points = 0
+    this.record({ kind: 'clearAll', page: null, pages })
+    return true
+  }
+  get hasInk() { return this.document.pages.size > 0 }
+
   undo() {
     const operation = this.history.pop()
     if (!operation) return null
+    if (operation.kind === 'clearAll') {
+      for (const [page, strokes] of operation.pages) this.document.pages.set(page, [...strokes, ...this.strokes(page)])
+      this.points = countPoints(this.document)
+      this.changed(null)
+      return null
+    }
     const list = [...this.strokes(operation.page)]
     if (operation.kind === 'add') this.set(operation.page, list.filter(stroke => stroke !== operation.stroke))
     else if (operation.kind === 'clear') this.set(operation.page, [...operation.strokes, ...list])
@@ -114,7 +132,7 @@ export class InkStore {
     this.changed(operation.page)
   }
 
-  private changed(page: number) {
+  private changed(page: number | null) {
     this.dirty = true
     this.emit(page)
     if (!this.key || !this.storage) return

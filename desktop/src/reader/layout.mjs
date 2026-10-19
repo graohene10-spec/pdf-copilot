@@ -30,6 +30,11 @@ export function clampMarkdownContentWidth(value) {
   return Math.max(600, Math.min(1400, Number.isFinite(value) ? value : 820));
 }
 
+/** Whole-document Markdown zoom, 50%–300%. */
+export function clampMarkdownZoom(value) {
+  return Math.max(.5, Math.min(3, Number.isFinite(value) && value > 0 ? Math.round(value * 100) / 100 : 1));
+}
+
 export function readingScrollTarget(top, viewportHeight, contentHeight, direction) {
   const max = Math.max(0, contentHeight - viewportHeight);
   return Math.max(0, Math.min(max, top + direction * viewportHeight * .85));
