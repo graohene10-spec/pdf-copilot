@@ -345,15 +345,19 @@ async function refreshPickerModels() {
 watch(pickerOpen, open => {
   if (open) {
     drawerMounted.value = true
+    window.addEventListener('keydown', strayEscape, true)
     document.addEventListener('pointerdown', pickerOutside, true)
     if (settings.value.provider === 'codex' && !nativeModelInventory.value.length) void refreshPickerModels()
   } else {
     document.removeEventListener('pointerdown', pickerOutside, true)
+    window.removeEventListener('keydown', strayEscape, true)
     pickerRequest?.abort(); pickerRequest = undefined; pickerLoading.value = false
   }
 })
 watch(busy, value => { if (value) pickerOpen.value = false })
 function drawerEscape(event: KeyboardEvent) { if (!pickerOpen.value || event.defaultPrevented) return; event.preventDefault(); event.stopPropagation(); closePicker() }
+// 抽屉里的按钮在读取模型时会暂时禁用，焦点随之落回页面：这时 Esc 仍然收起抽屉。
+function strayEscape(event: KeyboardEvent) { if (event.key === 'Escape' && (document.activeElement === document.body || !document.activeElement)) drawerEscape(event) }
 function closePicker() { pickerOpen.value = false; void nextTick(() => pickerHost.value?.querySelector<HTMLElement>('.model-picker')?.focus()) }
 function historyOutside(event: PointerEvent) { if (!(event.target as Element)?.closest?.('.history-host')) historyOpen.value = false }
 watch(historyOpen, open => { if (open) document.addEventListener('pointerdown', historyOutside, true); else document.removeEventListener('pointerdown', historyOutside, true) })
@@ -427,7 +431,7 @@ onMounted(() => {
   observer = new ResizeObserver(() => updateRail())
   if (messageList.value) observer.observe(messageList.value)
 })
-onBeforeUnmount(() => { unwatch?.(); rememberScroll(); clearInterval(ticker); clearTimeout(predictTimer); predicting?.abort(); observer?.disconnect(); if (renderFrame) cancelAnimationFrame(renderFrame); pickerRequest?.abort(); document.removeEventListener('pointerdown', pickerOutside, true); document.removeEventListener('pointerdown', historyOutside, true) })
+onBeforeUnmount(() => { unwatch?.(); rememberScroll(); clearInterval(ticker); clearTimeout(predictTimer); predicting?.abort(); observer?.disconnect(); if (renderFrame) cancelAnimationFrame(renderFrame); pickerRequest?.abort(); document.removeEventListener('pointerdown', pickerOutside, true); window.removeEventListener('keydown', strayEscape, true); document.removeEventListener('pointerdown', historyOutside, true) })
 defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startConversation })
 </script>
 
