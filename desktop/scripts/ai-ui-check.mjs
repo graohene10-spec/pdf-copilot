@@ -54,7 +54,11 @@ async function open(name) {
   await page.getByRole('button', { name: `打开 ${name}`, exact: true }).click();
   // Assistant windows persist across the library; let the workspace mount before deciding to open one.
   await page.locator('.reading-workspace').waitFor();
-  await page.waitForFunction(() => !document.querySelector('.view-enter-active,.view-leave-active,.pane-enter-active'));
+  // Opening from the library runs inside a view transition whose callback waits for the next captured frame;
+  // decide only once that document is the active tab and the workspace has finished coming back.
+  await page.waitForFunction(title => !document.documentElement.dataset.viewSwitch && getComputedStyle(document.querySelector('.reading-workspace')).display !== 'none' &&
+    !!document.querySelector(`[role="tab"][aria-selected="true"][aria-label="${title}"]`) &&
+    !document.querySelector('.view-enter-active,.view-leave-active,.pane-enter-active'), name);
   if (!(await page.locator('.ai-pane').isVisible())) await page.getByRole('button', { name: '阅读助手', exact: true }).click();
   await page.locator('.ai-pane').waitFor();
 }

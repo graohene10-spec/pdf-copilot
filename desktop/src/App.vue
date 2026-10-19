@@ -1016,13 +1016,23 @@ watch([sidebarOpen, aiOpen, detailsOpen, chromeCollapsed], () => {
 // Windows inside the workspace: only assistant windows change the documents' width when they come and go.
 function panelResizeStart(element: Element, entering: boolean) { if (element.classList.contains('ai-panel')) paneResizeStart(element, entering) }
 function panelResizeEnd(element: Element, cancelled = false) { if (resizingPanels.has(element)) paneResizeEnd(element, cancelled) }
+const resizeGeneration = new WeakMap<Element, number>()
 function paneResizeStart(element: Element, entering: boolean) {
+  resizeGeneration.set(element, (resizeGeneration.get(element) || 0) + 1)
   resizingPanels.set(element, entering)
   if (pdfOnScreen() && !window.matchMedia('(max-width: 720px)').matches) for (const instance of visibleReaders()) instance.holdPanelResize?.(true, entering)
   // 关闭时面板留在原位做完收拢动画，阅读区在动画结束后才一次性展开，PDF 只重新适配一次。
   if (entering) restoreLeavingPanel(element)
 }
 function paneResizeEnd(element: Element, cancelled = false) {
+  // 动画开头那一帧很慢时（比如新面板正在生成折射贴图），Vue 的兜底计时器会在弹簧刚起步就报告结束；
+  // 等宽度真正停下再让 PDF 按最终宽度适配，否则会按半途的宽度判断“没超宽”。
+  const springing = cancelled ? [] : element.getAnimations().filter(animation => 'transitionProperty' in animation && animation.playState === 'running')
+  if (springing.length) {
+    const generation = resizeGeneration.get(element)
+    void Promise.allSettled(springing.map(animation => animation.finished)).then(() => { if (resizeGeneration.get(element) === generation) paneResizeEnd(element) })
+    return
+  }
   restoreLeavingPanel(element)
   if (resizingPanels.get(element) && !cancelled) fitAfterPanelResize = true
   resizingPanels.delete(element)
