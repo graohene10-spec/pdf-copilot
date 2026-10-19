@@ -76,7 +76,7 @@ try {
   assert.equal(await page.locator('.pdf-canvas').first().evaluate(element => getComputedStyle(element).filter), 'url("#kaizhi-pdf-dark")');
   // 照片层在浏览器空闲时才补上（滚动中不读像素），等它出现并淡入完成。
   await page.locator('.page-slot').first().locator('.pdf-photos canvas').waitFor();
-  await page.waitForFunction(() => !document.querySelector('.pdf-photos').getAnimations().length);
+  await page.waitForFunction(() => document.querySelector('.pdf-photos').getAnimations().every(animation => animation.playState === 'finished'));
   assert.equal(await page.locator('.page-slot').first().locator('.pdf-photos canvas').count(), 1, 'The colour photo gets a colour-preserving layer.');
   // Page coordinates (PDF points, 500×650) to screen.
   const slot = await page.locator('.page-slot').first().boundingBox();
