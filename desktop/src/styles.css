@@ -403,8 +403,9 @@ kbd {
   justify-content: center;
   width: 38px;
   height: 38px;
-  /* 应用徽记：扁平的一块纯色，不加高光与投影。 */
-  background: var(--brand-solid);
+  /* 应用徽记：黑底白字的打开的书与一颗星火，与应用图标一致，不随底板预设变色。 */
+  background: linear-gradient(180deg, #2a2a2a, #0a0a0a);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / .14);
   border: 0;
   border-radius: 11px;
   color: var(--brand-ink);
@@ -1606,6 +1607,39 @@ kbd {
 }
 
 .arrange-reset { width: 36px; height: 36px; }
+.sort-direction { width: 36px; height: 36px; font-size: 16px; font-weight: 600; }
+/* 排序：和视图切换一样的玻璃胶囊，文字跟着身后的明暗换墨色。 */
+.library-sort {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 10px;
+  background-color: var(--glass-1);
+  background-image: var(--glass-sheen);
+  border: 1px solid var(--glass-outline);
+  box-shadow: var(--shadow-1), var(--glass-edge);
+  border-radius: var(--r-control);
+  color: var(--control-ink);
+}
+.library-sort select {
+  appearance: none;
+  height: 100%;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.library-sort select:focus-visible { outline: 2px solid var(--accent-ring); outline-offset: 2px; }
+.library-sort option { color: var(--surface-ink); background: var(--surface); }
+/* 视图切换与排序的文字、图标跟着玻璃墨色走，深色背景上也是白色。 */
+.view-switch button, .view-switch button.selected { color: var(--ink, var(--control-ink)); }
 
 /* ---- 空状态 ---------------------------------------------------------- */
 
@@ -2632,6 +2666,14 @@ kbd {
 
 /* ---- Markdown：纸张保持实底 ------------------------------------------ */
 
+.markdown-viewport {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
 .markdown-scroll {
   overflow: auto;
   flex: 1;
@@ -2639,15 +2681,28 @@ kbd {
   padding: 30px 30px;
 }
 
+/* 框选的选框画在未缩放的这一层上，文章本身可以整页缩放。 */
+.markdown-stage { position: relative; }
+.markdown-stage.capture-mode .markdown-paper { pointer-events: none; -webkit-user-select: none; user-select: none; }
+.markdown-paper:focus { outline: none; }
+
+/* 手写标记挂在每个顶层段落上，图层向两侧伸到纸边、上下各多出一点，方便在页边写字、圈出整段。 */
+.markdown-paper > div > [data-source-line] { position: relative; }
+.markdown-paper .ink-layer { inset: auto; top: -1em; left: calc(-1 * var(--md-pad-x)); width: calc(100% + 2 * var(--md-pad-x)); height: calc(100% + 2em); }
+.markdown-paper .ink-layer.ink-multiply { mix-blend-mode: multiply; }
+:root[data-theme=dark] .markdown-paper .ink-layer { filter: none; }
+:root[data-theme=dark] .markdown-paper .ink-layer.ink-multiply { mix-blend-mode: screen; }
+
 /* GitHub 式排版：清晰的标题分隔线、灰底行内代码、带边框的表格与引用。 */
 .markdown-paper {
   --md-border: color-mix(in srgb, var(--surface-ink) 14%, transparent);
   --md-muted: color-mix(in srgb, var(--surface-ink) 62%, transparent);
   --md-fill: color-mix(in srgb, var(--surface-ink) 6%, transparent);
+  --md-pad-x: 56px;
   max-width: 880px;
   margin: 0 auto;
   background: var(--surface);
-  padding: 48px 56px 72px;
+  padding: 48px var(--md-pad-x) 72px;
   border: 1px solid var(--line-soft);
   border-radius: var(--r-lg);
   box-shadow: 0 1px 2px rgb(16 26 34 / .05), 0 16px 40px -18px rgb(16 26 34 / .22);
@@ -3411,6 +3466,7 @@ kbd {
   }
 
   .markdown-paper {
+    --md-pad-x: 35px;
     padding: 35px;
   }
 
@@ -3588,6 +3644,7 @@ kbd {
   }
 
   .markdown-paper {
+    --md-pad-x: 25px;
     padding: 27px 25px;
   }
 

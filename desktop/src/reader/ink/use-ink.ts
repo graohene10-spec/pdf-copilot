@@ -1,4 +1,4 @@
-// Vue glue for hand-drawn PDF markup: mode, tools, persistence and keys.
+// Vue glue for hand-drawn markup on PDF pages and Markdown blocks: mode, tools, persistence and keys.
 import { reactive, watch, onMounted, onDeactivated, onBeforeUnmount, type Ref } from 'vue'
 import { library } from '../../sdk'
 import { InkLayers } from './layers.ts'
@@ -12,6 +12,8 @@ export interface PdfInkOptions {
   page: Ref<number>
   capture: Ref<boolean>
   cancelCapture: () => unknown
+  /** 'document': marks hang on Markdown blocks, so "clear" and "has ink" cover the whole document. */
+  scope?: 'page' | 'document'
 }
 export type PdfInk = ReturnType<typeof usePdfInk>
 
@@ -30,8 +32,10 @@ export function usePdfInk(options: PdfInkOptions) {
 
   function refresh() {
     state.canUndo = !!store?.canUndo
-    state.pageHasInk = !!store?.strokes(options.page.value).length
+    state.pageHasInk = options.scope === 'document' ? !!store?.hasInk : !!store?.strokes(options.page.value).length
     state.status = layers?.status || store?.error || ''
+    // Markdown attaches layers only to blocks that carry marks (or near the view while drawing).
+    if (options.scope === 'document') layers?.schedule()
   }
   function openStore() {
     if (store) releaseInkStore(store)
@@ -69,7 +73,7 @@ export function usePdfInk(options: PdfInkOptions) {
     layers?.setColor(color)
   }
   function undo() { layers?.undo(); refresh() }
-  function clearPage() { layers?.clearPage(options.page.value); refresh() }
+  function clearPage() { if (options.scope === 'document') layers?.clearAll(); else layers?.clearPage(options.page.value); refresh() }
 
   function keydown(event: KeyboardEvent) {
     if (!state.enabled || event.defaultPrevented || event.isComposing) return
@@ -87,7 +91,7 @@ export function usePdfInk(options: PdfInkOptions) {
     const container = options.container.value
     if (!container) return
     layers = new InkLayers({ container, viewer: options.viewer, onChange: refresh })
-    root = container.closest('.pdf-reader')
+    root = container.closest('.reader-engine')
     root?.addEventListener('keydown', keydown)
     root?.addEventListener('pointerdown', claim, true)
     window.addEventListener('keydown', fallback, true)
@@ -106,5 +110,5 @@ export function usePdfInk(options: PdfInkOptions) {
     if (store) releaseInkStore(store)
     store = undefined
   })
-  return { state, toggle, exit, pick, setMode, setColor, undo, clearPage }
+  return { state, toggle, exit, pick, setMode, setColor, undo, clearPage, schedule: () => layers?.schedule(), hasInk: (page: number) => !!store?.strokes(page).length }
 }

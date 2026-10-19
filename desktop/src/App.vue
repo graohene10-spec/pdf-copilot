@@ -198,7 +198,31 @@ const starredCount = computed(() => documents.value.filter(doc => doc.starred).l
 const LIBRARY_ORDER_KEY = 'library.order.v1'
 const libraryOrder = ref<string[]>([])
 const byRecent = (a: Doc, b: Doc) => (b.lastOpenedAt || b.addedAt) - (a.lastOpenedAt || a.addedAt)
+// 排序方式：默认是最近阅读或自己拖好的顺序；也可以按加入时间、大小、名称、类别、阅读时间排，再点一次切换升降序。
+type SortKey = 'default' | 'added' | 'size' | 'name' | 'kind' | 'read'
+const SORTS: { key: SortKey; label: string }[] = [{ key: 'default', label: '默认排列' }, { key: 'added', label: '加入时间' }, { key: 'read', label: '阅读时间' }, { key: 'name', label: '文件名称' }, { key: 'size', label: '文件大小' }, { key: 'kind', label: '文件类别' }]
+const readSort = () => { try { const value = JSON.parse(localStorage.getItem('kaizhi.librarySort.v1') || '{}'); return { key: SORTS.some(item => item.key === value.key) ? value.key as SortKey : 'default', descending: value.descending !== false } } catch { return { key: 'default' as SortKey, descending: true } } }
+const librarySort = ref(readSort())
+watch(librarySort, value => { try { localStorage.setItem('kaizhi.librarySort.v1', JSON.stringify(value)) } catch { /* 无法保存时只在本次生效 */ } }, { deep: true })
+const collator = new Intl.Collator('zh-CN', { numeric: true, sensitivity: 'base' })
+function sortValue(a: Doc, b: Doc, key: SortKey) {
+  switch (key) {
+    case 'added': return a.addedAt - b.addedAt
+    case 'read': return (a.lastOpenedAt || 0) - (b.lastOpenedAt || 0)
+    case 'size': return a.size - b.size
+    case 'name': return collator.compare(a.name, b.name)
+    case 'kind': return collator.compare(a.kind, b.kind) || collator.compare(a.name.split('.').pop() || '', b.name.split('.').pop() || '') || collator.compare(a.name, b.name)
+    default: return 0
+  }
+}
+function chooseSort(key: SortKey) {
+  // Picking the active key again flips the direction; names and kinds start A→Z, the rest newest / largest first.
+  if (librarySort.value.key === key && key !== 'default') librarySort.value = { key, descending: !librarySort.value.descending }
+  else librarySort.value = { key, descending: !['name', 'kind'].includes(key) }
+}
 function arranged(list: Doc[]) {
+  const { key, descending } = librarySort.value
+  if (key !== 'default') return list.sort((a, b) => (descending ? -1 : 1) * sortValue(a, b, key) || byRecent(a, b))
   if (!libraryOrder.value.length || category.value === 'recent') return list.sort(byRecent)
   const rank = new Map(libraryOrder.value.map((id, index) => [id, index]))
   return list.sort((a, b) => (rank.get(a.id) ?? -1) - (rank.get(b.id) ?? -1) || byRecent(a, b))
@@ -210,7 +234,7 @@ const visibleDocuments = computed(() => {
   if (tagFilter.value) list = list.filter(doc => doc.tags.includes(tagFilter.value))
   return arranged(list)
 })
-const canArrange = computed(() => !query.value && category.value !== 'recent' && visibleDocuments.value.length > 1)
+const canArrange = computed(() => !query.value && category.value !== 'recent' && librarySort.value.key === 'default' && visibleDocuments.value.length > 1)
 const collection = ref<HTMLElement>()
 function arrangeLibrary(visible: string[]) {
   // 只在筛选结果内调整顺序：被筛掉的文档保持原来的位置。
@@ -803,9 +827,10 @@ function selectedContext(value: typeof selection.value) {
   dismissCaptureQuick()
   selection.value = value
   if (currentTab.value) currentTab.value.selection = value
-  if (value?.image) {
+  // A framed region: a PDF crop, or a Markdown region (its screenshot plus the text under it).
+  if (value?.image || value?.rect?.space === 'markdown') {
     selectionAction.value = undefined
-    if (preferences.value.pdf.quickAskOnCapture && active.value?.kind === 'pdf') {
+    if (preferences.value.pdf.quickAskOnCapture && active.value) {
       const frame = reader.value?.getCaptureFrame?.(value) || value.captureFrame
       if (frame) {
         captureQuick.value = { documentId: active.value.id, selection: value, frame, pending: false, status: '' }
@@ -1098,7 +1123,7 @@ function keydown(event: KeyboardEvent) {
   }
   if (event.repeat && !['zoomIn', 'zoomOut', 'previousPage', 'nextPage'].includes(action)) { event.preventDefault(); return }
   if (['outline', 'fitWidth', 'zoomOut', 'zoomIn', 'previousPage', 'nextPage', 'capture', 'split', 'inkPen', 'inkHighlighter', 'inkUnderline'].includes(action) && !active.value) return
-  if (['capture', 'fitWidth', 'inkPen', 'inkHighlighter', 'inkUnderline'].includes(action) && active.value?.kind !== 'pdf') return
+  if (action === 'fitWidth' && active.value?.kind !== 'pdf') return
   event.preventDefault()
   switch (action) {
     case 'import': void importDocuments(); break
@@ -1139,12 +1164,14 @@ function keydown(event: KeyboardEvent) {
 let wheelTimer: ReturnType<typeof setTimeout> | undefined
 let wheelAction: 'zoomIn' | 'zoomOut' | undefined
 let wheelTime = 0
+// Markdown zooms around the cursor; the PDF reader ignores the point.
+let wheelPoint: { x: number; y: number } | undefined
 function clearWheelZoom() { clearTimeout(wheelTimer); wheelTimer = undefined; wheelAction = undefined; wheelTime = 0 }
 function applyWheelZoom() {
   wheelTimer = undefined
   const action = wheelAction; wheelAction = undefined
   if (!action || !active.value || !reader.value || settingsOpen.value || removeTarget.value) return
-  wheelTime = performance.now(); reader.value[action]?.()
+  wheelTime = performance.now(); reader.value[action]?.(wheelPoint)
 }
 function wheel(event: WheelEvent) {
   if (captureQuick.value && !settingsOpen.value) { event.preventDefault(); return }
@@ -1156,6 +1183,7 @@ function wheel(event: WheelEvent) {
   const pane = event.target.closest<HTMLElement>('[data-pane-id]')?.dataset.paneId
   if (pane && pane !== active.value.id) focusPane(pane)
   wheelAction = action
+  wheelPoint = { x: event.clientX, y: event.clientY }
   const elapsed = performance.now() - wheelTime
   if (elapsed >= 60) { clearTimeout(wheelTimer); applyWheelZoom() }
   else if (!wheelTimer) wheelTimer = setTimeout(applyWheelZoom, 60 - elapsed)
@@ -1221,7 +1249,7 @@ onBeforeUnmount(() => { stopAutoCheck(); for (const timer of pillTimers.values()
     <Transition name="chrome-tag"><button v-if="chromeCollapsed" class="chrome-tag" data-tip="展开顶栏与侧栏" :data-tip-key="tipKey('sidebar')" aria-label="展开顶栏与侧栏" @click="expandChrome"><AppIcon name="chevron-right" :size="14" /></button></Transition>
     <Transition name="sidebar" @before-enter="paneResizeStart($event, true)" @before-leave="paneResizeStart($event, false)" @after-enter="paneResizeEnd" @after-leave="paneResizeEnd" @enter-cancelled="paneResizeEnd($event, true)" @leave-cancelled="paneResizeEnd($event, true)">
     <aside class="app-sidebar" v-if="sidebarOpen" data-glass-interactive="panel">
-      <button class="brand" @click="chooseCategory('all')" aria-label="返回文档库"><span class="brand-symbol"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 6.2c2.9-1 5.6-.6 7.7 1.1v11.4c-2.2-1.5-4.8-1.9-7.7-1.1z" fill="currentColor" /><path d="M20.5 6.2c-2.9-1-5.6-.6-7.7 1.1v11.4c2.2-1.5 4.8-1.9 7.7-1.1z" fill="currentColor" opacity=".7" /></svg></span><span>开智</span></button>
+      <button class="brand" @click="chooseCategory('all')" aria-label="返回文档库"><span class="brand-symbol"><svg width="26" height="26" viewBox="200 130 624 700" aria-hidden="true"><path d="M220 418c118-52 214-44 278 22v372c-66-56-162-66-278-24z" fill="#fff" /><path d="M804 418c-118-52-214-44-278 22v372c66-56 162-66 278-24z" fill="#fff" fill-opacity=".62" /><path d="M512 150c11 92 41 122 133 133-92 11-122 41-133 133-11-92-41-122-133-133 92-11 122-41 133-133z" fill="#fff" /></svg></span><span>开智</span></button>
       <button class="import-button" data-tip="加入 PDF / Markdown 文档" :data-tip-key="tipKey('import')" @click="importDocuments" :disabled="importing" aria-label="加入文档"><AppIcon name="plus" :size="18" />{{ importing ? '正在导入…' : '加入文档' }}<kbd v-if="preferences.shortcuts.import">{{ shortcut('import') }}</kbd></button>
       <nav v-liquid-selection="{ radius: 'var(--r-control)' }" class="workspace-nav" aria-label="文档分类">
         <button :class="{ selected: category === 'all' && !tagFilter }" @click="chooseCategory('all')"><AppIcon name="library" :size="18" />全部文档<span>{{ documents.length }}</span></button>
@@ -1257,7 +1285,7 @@ onBeforeUnmount(() => { stopAutoCheck(); for (const timer of pillTimers.values()
           <div class="library-heading"><h1>{{ currentTitle }}<span class="heading-count">{{ visibleDocuments.length }}</span></h1></div>
           <div class="library-tools">
             <div class="library-search"><AppIcon name="search" :size="17" /><input ref="search" v-model="query" @input="searchDocuments" placeholder="搜索标题、标签或已索引内容" aria-label="搜索文档" /><button v-if="query" @click="query = ''; refresh()" data-tip="清空搜索" aria-label="清空搜索"><AppIcon name="close" :size="14" /></button><kbd v-else-if="preferences.shortcuts.search">{{ shortcut('search') }}</kbd></div>
-            <button v-if="libraryOrder.length && canArrange" class="icon-button arrange-reset" @click="resetLibraryOrder" data-tip="恢复按最近阅读排列" aria-label="恢复按最近阅读排列"><AppIcon name="clock" :size="16" /></button><div v-liquid-selection class="view-switch"><button :class="{ selected: display === 'grid' }" @click="setDisplay('grid')" data-tip="卡片视图" aria-label="卡片视图"><AppIcon name="grid" :size="16" /></button><button :class="{ selected: display === 'list' }" @click="setDisplay('list')" data-tip="列表视图" aria-label="列表视图"><AppIcon name="list" :size="17" /></button></div>
+            <button v-if="libraryOrder.length && canArrange" class="icon-button arrange-reset" @click="resetLibraryOrder" data-tip="恢复按最近阅读排列" aria-label="恢复按最近阅读排列"><AppIcon name="clock" :size="16" /></button><label class="library-sort" data-tip="排序方式（再选一次切换升降序）"><AppIcon name="list" :size="15" /><select :value="librarySort.key" aria-label="排序方式" @change="chooseSort(($event.target as HTMLSelectElement).value as SortKey)"><option v-for="item in SORTS" :key="item.key" :value="item.key">{{ item.label }}</option></select></label><button v-if="librarySort.key !== 'default'" class="icon-button sort-direction" :data-tip="librarySort.descending ? '降序（点一下改为升序）' : '升序（点一下改为降序）'" :aria-label="librarySort.descending ? '降序' : '升序'" @click="chooseSort(librarySort.key)"><span aria-hidden="true">{{ librarySort.descending ? '↓' : '↑' }}</span></button><div v-liquid-selection class="view-switch"><button :class="{ selected: display === 'grid' }" @click="setDisplay('grid')" data-tip="卡片视图" aria-label="卡片视图"><AppIcon name="grid" :size="16" /></button><button :class="{ selected: display === 'list' }" @click="setDisplay('list')" data-tip="列表视图" aria-label="列表视图"><AppIcon name="list" :size="17" /></button></div>
           </div>
         </header>
         <div class="library-summary"><div><AppIcon name="book" :size="15" /><strong>{{ documents.length }}</strong><span>份文档</span></div><span class="summary-divider"></span><div><AppIcon name="star" :size="15" /><strong>{{ starredCount }}</strong><span>份收藏</span></div><span class="summary-divider"></span><div><AppIcon name="file" :size="15" /><strong>{{ totalPages }}</strong><span>页已打开文档</span></div><span v-if="!isDesktop" class="summary-note">浏览器预览</span></div>
