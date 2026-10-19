@@ -56,6 +56,12 @@ export function usePdfInk(options: PdfInkOptions) {
     if (mode !== 'eraser') state.lastTool = mode
     layers?.setMode(mode)
   }
+  /** Shortcut for one drawing tool: turns markup on with that tool, or off when it is already the active tool. */
+  function pick(tool: InkTool) {
+    if (state.enabled && state.mode === tool) { setEnabled(false); return }
+    setEnabled(true)
+    setMode(tool)
+  }
   function setColor(color: string) {
     // Picking an ink while erasing returns to the last drawing tool.
     if (state.mode === 'eraser') setMode(state.lastTool)
@@ -100,5 +106,5 @@ export function usePdfInk(options: PdfInkOptions) {
     if (store) releaseInkStore(store)
     store = undefined
   })
-  return { state, toggle, exit, setMode, setColor, undo, clearPage }
+  return { state, toggle, exit, pick, setMode, setColor, undo, clearPage }
 }

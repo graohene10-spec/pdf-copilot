@@ -111,7 +111,7 @@ try {
   await page.waitForFunction(() => !document.querySelector('.pane-enter-active'));
   assert.equal(await clear().isDisabled(), true); assert.equal(await change().isEnabled(), true);
   await change().click();
-  await pane().getByRole('button', { name: '服务商、密钥与预算', exact: true }).click();
+  await page.getByRole('button', { name: '打开设置', exact: true }).click(); await page.getByRole('dialog', { name: '设置', exact: true }).getByRole('button', { name: 'AI', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: '设置', exact: true }); await dialog.waitFor();
   await dialog.getByLabel('服务商', { exact: true }).selectOption('openai');
   await dialog.getByLabel('API 地址', { exact: true }).fill(modelOrigin + '/v1');
@@ -129,7 +129,7 @@ try {
   const stored = () => page.evaluate(() => JSON.parse(localStorage.getItem('paperdesk.ai.settings.v1') || '{}'));
   const beforePick = await stored();
   await picker.click();
-  const menu = pane().getByRole('dialog', { name: '模型与思考强度', exact: true });
+  const menu = pane().getByRole('group', { name: '模型与思考强度', exact: true });
   await menu.waitFor();
   const slider = menu.getByRole('slider', { name: '思考强度', exact: true });
   await slider.focus(); await slider.press('Home');
@@ -140,10 +140,10 @@ try {
   assert.equal(await slider.getAttribute('aria-valuetext'), '低');
   assert.match(await picker.innerText(), /低/);
   await page.keyboard.press('Escape');
-  await menu.waitFor({ state: 'detached' });
+  await menu.waitFor({ state: 'hidden' });
   assert.equal(await pane().count(), 1, 'Esc closes only the picker.');
   assert.equal(await picker.evaluate(element => document.activeElement === element), true, 'Focus returns to the picker.');
-  checks.push({ label: 'Model picker beside Send stores only model / effort and closes with Esc', afterPick });
+  checks.push({ label: 'Model drawer under the composer stores only model / effort and closes with Esc', afterPick });
 
   // Recreate a cold Codex pane without visiting Settings. The native transport is
   // replaced in this disposable browser context; no real login is inspected.
@@ -183,8 +183,8 @@ try {
   const codexBefore = await stored();
   const coldPicker = pane().getByRole('button', { name: '选择模型与思考强度', exact: true });
   await coldPicker.click();
-  const nativeMenu = pane().getByRole('dialog', { name: '模型与思考强度', exact: true });
-  const modelView = () => nativeMenu.locator('.model-name').click();
+  const nativeMenu = pane().getByRole('group', { name: '模型与思考强度', exact: true });
+  const modelView = async () => {};
   const options = () => nativeMenu.getByRole('option');
   await modelView();
   await until(() => options().count().then(count => count === 8));
@@ -213,17 +213,17 @@ try {
   await nativeMenu.getByRole('button', { name: '重新读取本机模型', exact: true }).click();
   await until(() => page.evaluate(() => window.__pickerDiscovery.pending.length === 1));
   // Esc steps back from the model list, a second Esc closes the card.
-  await page.keyboard.press('Escape'); await page.keyboard.press('Escape'); await nativeMenu.waitFor({ state: 'detached' });
+  await page.keyboard.press('Escape'); await nativeMenu.waitFor({ state: 'hidden' });
   await until(() => page.evaluate(value => window.__pickerDiscovery.disconnected > value, disconnectedBefore));
   await page.evaluate(() => { window.__pickerDiscovery.hold = false; for (const deliver of window.__pickerDiscovery.pending.splice(0)) deliver(); });
   await coldPicker.click(); await nativeMenu.waitFor(); await modelView();
   // The model list slides in after the effort view leaves.
-  await nativeMenu.locator('.models-list').waitFor(); await page.waitForTimeout(120);
+  await nativeMenu.locator('.model-chips').waitFor(); await page.waitForTimeout(120);
   assert.equal(await options().count(), 9, 'A cancelled late reply cannot replace the current inventory.');
   assert.equal(await nativeMenu.getByRole('button', { name: '重新读取本机模型', exact: true }).isEnabled(), true);
   assert.equal(await page.evaluate(() => window.__pickerDiscovery.calls.length), callsBeforeCancel + 1, 'Cancelling status lookup prevents the subsequent models lookup.');
   assert.deepEqual(await stored(), selectedNative);
-  await page.keyboard.press('Escape'); await page.keyboard.press('Escape'); await nativeMenu.waitFor({ state: 'detached' });
+  await page.keyboard.press('Escape'); await nativeMenu.waitFor({ state: 'hidden' });
   assert.equal(await coldPicker.evaluate(element => document.activeElement === element), true);
   checks.push({ label: 'Cold Codex picker discovers the full inventory without Settings; refresh adds models, failures preserve cache, Esc cancels native lookup and ignores late replies; only model/effort can change' });
   await pane().getByRole('button', { name: '关闭阅读助手', exact: true }).click(); await pane().waitFor({ state: 'detached' });

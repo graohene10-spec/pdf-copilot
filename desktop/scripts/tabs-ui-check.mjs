@@ -81,7 +81,7 @@ async function assertCaptureConsumed() {
   assert.equal(await page.locator('.ai-message img').count(), 0, 'Sent screenshots do not occupy conversation space');
 }
 async function concurrency(value) {
-  await page.getByRole('button', { name: '选择模型与思考强度', exact: true }).click(); await page.getByRole('button', { name: '服务商、密钥与预算', exact: true }).click();
+  await page.getByRole('button', { name: '打开设置', exact: true }).click(); await page.getByRole('dialog', { name: '设置', exact: true }).getByRole('button', { name: 'AI', exact: true }).click();
   await page.locator('summary').filter({hasText:'多文件提问'}).click();
   await page.getByLabel('同时运行的提问',{exact:true}).fill(String(value));
   await page.getByRole('dialog').getByRole('button',{name:'保存',exact:true}).click();
@@ -150,7 +150,7 @@ try {
   await page.locator('[data-tip="清除选区"]').click();
   report.push('Text selection never auto-opens; one click carries text and focuses composer; PDF capture auto-opens with no automatic model request');
 
-  await page.getByRole('button', { name: '选择模型与思考强度', exact: true }).click(); await page.getByRole('button', { name: '服务商、密钥与预算', exact: true }).click();
+  await page.getByRole('button', { name: '打开设置', exact: true }).click(); await page.getByRole('dialog', { name: '设置', exact: true }).getByRole('button', { name: 'AI', exact: true }).click();
   await page.getByLabel('服务商',{exact:true}).selectOption('openai');
   await page.getByLabel('API 地址',{exact:true}).fill(baseUrl);
   await page.getByLabel('API Key',{exact:true}).fill('tabs-synthetic-key');

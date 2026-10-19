@@ -16,6 +16,7 @@ import { vLiquidSelection } from './ui/liquid-selection'
 import { useReorder } from './ui/reorder'
 import { startAutoCheck, stopAutoCheck } from './ui/updater'
 import { registerCustomFonts } from './ui/custom-fonts'
+import { covers, loadCovers, setCover, imageCover, pageCover, type Cover } from './library/covers'
 const PdfReader = defineAsyncComponent(() => import('./components/PdfReader.vue'))
 const MarkdownReader = defineAsyncComponent(() => import('./components/MarkdownReader.vue'))
 const AiPane = defineAsyncComponent(() => import('./components/AiPane.vue'))
@@ -168,6 +169,11 @@ const importing = ref(false)
 const draggingFiles = ref(false)
 const opening = ref(false)
 const sidebarOpen = ref(true)
+// 全屏时把顶栏和侧栏一起收成屏幕左上角的小标签，阅读区占满整屏；点标签或按 Ctrl+B 再一起展开。
+const chromeCollapsed = ref(false)
+function collapseChrome() { chromeCollapsed.value = true; sidebarOpen.value = false }
+function expandChrome() { chromeCollapsed.value = false; sidebarOpen.value = true }
+function toggleSidebar() { if (chromeCollapsed.value) expandChrome(); else sidebarOpen.value = !sidebarOpen.value }
 const detailsOpen = ref(false)
 const removeTarget = ref<Doc | null>(null)
 const theme = ref('light')
@@ -229,6 +235,7 @@ const totalPages = computed(() => documents.value.filter(doc => doc.kind === 'pd
 
 function notify(message: string) { toast.value = message; clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.value = '', 4800) }
 const { fullscreen, fullscreenPending, toggleFullscreen, exitFullscreen } = useFullscreen(isDesktop, notify)
+watch(fullscreen, value => { if (!value && chromeCollapsed.value) expandChrome() })
 function reason(error: any) { return error?.message || String(error) }
 function size(bytes: number) { return bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB` }
 function date(value: number) {
@@ -690,6 +697,18 @@ function appContextMenu(event: MouseEvent) {
   } else if (text.trim()) {
     items.push({ label: '复制', icon: 'copy', hint: 'Ctrl+C', action: () => { void navigator.clipboard.writeText(text).catch(() => document.execCommand('copy')) } })
     if (active.value && target.closest('.reader-pane')) items.push({ label: '问阅读助手', icon: 'sparkle', action: () => openAssistant(true) })
+  } else if (!active.value && target.closest('.document-card')) {
+    const card = target.closest<HTMLElement>('.document-card')!
+    const doc = visibleDocuments.value.find(item => item.id === card.dataset.reorderId)
+    if (!doc) return
+    const cover = covers.get(sourceId(doc.id))?.kind ?? 'icon'
+    items.push({ label: '打开', icon: 'book', action: () => { void openDocument(doc) } })
+    items.push({ label: doc.starred ? '取消收藏' : '收藏', icon: 'star', action: () => { void toggleStar(doc) } })
+    // 显示封面：首页预览、自己的图片或默认图标；当前用的那一种标「当前」。
+    items.push({ label: '封面：首页预览', icon: 'doc', hint: cover === 'page' ? '当前' : undefined, separator: true, action: () => { void changeCover(doc, 'page') } })
+    items.push({ label: '封面：选择图片…', icon: 'image', hint: cover === 'image' ? '当前' : undefined, action: () => { void changeCover(doc, 'image') } })
+    items.push({ label: '封面：默认图标', icon: doc.kind === 'pdf' ? 'file' : 'markdown', hint: cover === 'icon' ? '当前' : undefined, disabled: cover === 'icon', action: () => { void changeCover(doc, 'icon') } })
+    items.push({ label: '从文档库移除', icon: 'trash', danger: true, separator: true, action: () => { removeTarget.value = doc } })
   } else if (active.value) {
     if (!aiOpen.value) items.push({ label: '打开阅读助手', icon: 'sparkle', hint: shortcut('ai'), action: () => openAssistant(true) })
     items.push({ label: '并排阅读…', icon: 'split', hint: shortcut('split'), action: () => toggleSplitPicker() })
@@ -701,6 +720,24 @@ function appContextMenu(event: MouseEvent) {
     items.push({ label: '设置', icon: 'settings', hint: shortcut('settings'), separator: true, action: () => openSettings() })
   }
   contextMenu.value = { x: event.clientX, y: event.clientY, items }
+}
+function pickImageFile(): Promise<File | null> {
+  return new Promise(resolve => {
+    const input = document.createElement('input')
+    input.type = 'file'; input.accept = 'image/png,image/jpeg,image/webp,image/gif,image/bmp'
+    input.addEventListener('change', () => resolve(input.files?.[0] ?? null), { once: true })
+    input.addEventListener('cancel', () => resolve(null), { once: true })
+    input.click()
+  })
+}
+async function changeCover(doc: Doc, kind: 'page' | 'image' | 'icon') {
+  try {
+    let cover: Cover | null = null
+    if (kind === 'image') { const file = await pickImageFile(); if (!file) return; cover = await imageCover(file) }
+    else if (kind === 'page') { notify('正在生成首页封面…'); cover = await pageCover(doc) }
+    await setCover(sourceId(doc.id), cover)
+    notify(cover ? '已更换封面。' : '已恢复默认图标。')
+  } catch (error) { notify(`更换封面失败：${reason(error)}`) }
 }
 function tabMenu(payload: { id: string; x: number; y: number }) {
   const tab = tabs.value.find(item => item.doc.id === payload.id)
@@ -918,6 +955,8 @@ function applyTheme() {
   root.style.setProperty('--glass-transparency', String(appearance.glassTransparency / 100))
   // 模糊程度 50% 是默认强度；0 不模糊，100% 为两倍。
   root.style.setProperty('--glass-blur-scale', String(appearance.glassBlur / 50))
+  root.dataset.refraction = appearance.glassRefraction ? 'on' : 'off'
+  glassContrast?.setOptions({ legibility: appearance.glassLegibility, compensation: appearance.glassCompensation, tint: appearance.glassTint })
   root.dataset.background = appearance.background ? 'custom' : 'default'
   root.dataset.backdrop = appearance.backdrop
   // Fonts: the interface font replaces the base stack; the reading font defaults to it.
@@ -971,19 +1010,29 @@ async function setMarkdownFontSize(value: number) {
    窄屏下右侧面板是浮层，不占阅读宽度。 */
 const resizingPanels = new Map<Element, boolean>()
 let fitAfterPanelResize = false
-watch([sidebarOpen, aiOpen, detailsOpen], () => {
+watch([sidebarOpen, aiOpen, detailsOpen, chromeCollapsed], () => {
   if (pdfOnScreen() && !window.matchMedia('(max-width: 720px)').matches) for (const instance of visibleReaders()) instance.holdPanelResize?.(true)
 }, { flush: 'sync' })
 // Windows inside the workspace: only assistant windows change the documents' width when they come and go.
 function panelResizeStart(element: Element, entering: boolean) { if (element.classList.contains('ai-panel')) paneResizeStart(element, entering) }
 function panelResizeEnd(element: Element, cancelled = false) { if (resizingPanels.has(element)) paneResizeEnd(element, cancelled) }
+const resizeGeneration = new WeakMap<Element, number>()
 function paneResizeStart(element: Element, entering: boolean) {
+  resizeGeneration.set(element, (resizeGeneration.get(element) || 0) + 1)
   resizingPanels.set(element, entering)
   if (pdfOnScreen() && !window.matchMedia('(max-width: 720px)').matches) for (const instance of visibleReaders()) instance.holdPanelResize?.(true, entering)
   // 关闭时面板留在原位做完收拢动画，阅读区在动画结束后才一次性展开，PDF 只重新适配一次。
   if (entering) restoreLeavingPanel(element)
 }
 function paneResizeEnd(element: Element, cancelled = false) {
+  // 动画开头那一帧很慢时（比如新面板正在生成折射贴图），Vue 的兜底计时器会在弹簧刚起步就报告结束；
+  // 等宽度真正停下再让 PDF 按最终宽度适配，否则会按半途的宽度判断“没超宽”。
+  const springing = cancelled ? [] : element.getAnimations().filter(animation => 'transitionProperty' in animation && animation.playState === 'running')
+  if (springing.length) {
+    const generation = resizeGeneration.get(element)
+    void Promise.allSettled(springing.map(animation => animation.finished)).then(() => { if (resizeGeneration.get(element) === generation) paneResizeEnd(element) })
+    return
+  }
   restoreLeavingPanel(element)
   if (resizingPanels.get(element) && !cancelled) fitAfterPanelResize = true
   resizingPanels.delete(element)
@@ -1048,8 +1097,8 @@ function keydown(event: KeyboardEvent) {
     return
   }
   if (event.repeat && !['zoomIn', 'zoomOut', 'previousPage', 'nextPage'].includes(action)) { event.preventDefault(); return }
-  if (['outline', 'fitWidth', 'zoomOut', 'zoomIn', 'previousPage', 'nextPage', 'capture', 'split'].includes(action) && !active.value) return
-  if (['capture', 'fitWidth'].includes(action) && active.value?.kind !== 'pdf') return
+  if (['outline', 'fitWidth', 'zoomOut', 'zoomIn', 'previousPage', 'nextPage', 'capture', 'split', 'inkPen', 'inkHighlighter', 'inkUnderline'].includes(action) && !active.value) return
+  if (['capture', 'fitWidth', 'inkPen', 'inkHighlighter', 'inkUnderline'].includes(action) && active.value?.kind !== 'pdf') return
   event.preventDefault()
   switch (action) {
     case 'import': void importDocuments(); break
@@ -1066,7 +1115,7 @@ function keydown(event: KeyboardEvent) {
       else if (search.value) { search.value.focus(); focusSearchPending = false }
       break
     case 'settings': openSettings(); break
-    case 'sidebar': sidebarOpen.value = !sidebarOpen.value; break
+    case 'sidebar': toggleSidebar(); break
     case 'ai': if (active.value) toggleAssistant(); break
     case 'nextTab': moveTab(1); break
     case 'previousTab': moveTab(-1); break
@@ -1079,6 +1128,10 @@ function keydown(event: KeyboardEvent) {
     case 'previousPage': reader.value?.previousPage?.(); break
     case 'nextPage': reader.value?.nextPage?.(); break
     case 'capture': reader.value?.toggleCapture?.(); break
+    // 标记工具：按一次进入标记并选中这支笔，再按同一个键退出标记。
+    case 'inkPen': reader.value?.pickInk?.('pen'); break
+    case 'inkHighlighter': reader.value?.pickInk?.('highlighter'); break
+    case 'inkUnderline': reader.value?.pickInk?.('underline'); break
     case 'aiSend': assistantFor(event.target)?.send?.(); break
     case 'aiStop': if (active.value) stopChat(active.value.id); break
   }
@@ -1139,6 +1192,7 @@ function getReaderCacheStats() {
 defineExpose({ reader, getReaderCacheStats })
 onMounted(async () => {
   glassContrast = installGlassContrast(document.getElementById('app')!)
+  glassContrast.setOptions({ legibility: effectiveAppearance.value.glassLegibility, compensation: effectiveAppearance.value.glassCompensation, tint: effectiveAppearance.value.glassTint })
   glassContrast.setBackground(appliedBackground ?? null)
   document.addEventListener('keydown', keydown)
   document.addEventListener('contextmenu', appContextMenu)
@@ -1156,13 +1210,15 @@ onMounted(async () => {
   systemTheme.addEventListener('change', applyTheme)
   try { await loadPreferences() } catch (error) { notify(`设置加载失败：${reason(error)}`) }
   await loadLibraryOrder()
+  void loadCovers()
   await refresh()
 })
 onBeforeUnmount(() => { stopAutoCheck(); for (const timer of pillTimers.values()) clearTimeout(timer); clearTimeout(enteringTimer); disposed = true; ++openEpoch; dismissCaptureQuick(); stopDropListening?.(); clearWheelZoom(); readerInstances.clear(); glassContrast?.dispose(); document.removeEventListener('keydown', keydown); document.removeEventListener('contextmenu', appContextMenu); document.removeEventListener('wheel', wheel, true); document.removeEventListener('dragenter', dragEnter); document.removeEventListener('dragover', dragOver); document.removeEventListener('dragleave', dragLeave); document.removeEventListener('drop', fileDrop); document.removeEventListener('selectionchange', selectionChanged); document.removeEventListener('scroll', dismissSelectionAction, true); document.removeEventListener('scroll', captureViewportChanged, true); window.removeEventListener('resize', dismissSelectionAction); window.removeEventListener('resize', captureViewportChanged); closeAllChats(); forgetAllPasswords(); systemTheme.removeEventListener('change', applyTheme); flushProgress(); for (const timer of indexTimers.values()) clearTimeout(timer); clearTimeout(queryTimer); clearTimeout(toastTimer) })
 </script>
 
 <template>
-  <div class="app-shell" :class="{ 'sidebar-collapsed': !sidebarOpen, 'has-reader': active }">
+  <div class="app-shell" :class="{ 'sidebar-collapsed': !sidebarOpen, 'has-reader': active, 'chrome-collapsed': chromeCollapsed }">
+    <Transition name="chrome-tag"><button v-if="chromeCollapsed" class="chrome-tag" data-tip="展开顶栏与侧栏" :data-tip-key="tipKey('sidebar')" aria-label="展开顶栏与侧栏" @click="expandChrome"><AppIcon name="chevron-right" :size="14" /></button></Transition>
     <Transition name="sidebar" @before-enter="paneResizeStart($event, true)" @before-leave="paneResizeStart($event, false)" @after-enter="paneResizeEnd" @after-leave="paneResizeEnd" @enter-cancelled="paneResizeEnd($event, true)" @leave-cancelled="paneResizeEnd($event, true)">
     <aside class="app-sidebar" v-if="sidebarOpen" data-glass-interactive="panel">
       <button class="brand" @click="chooseCategory('all')" aria-label="返回文档库"><span class="brand-symbol"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 6.2c2.9-1 5.6-.6 7.7 1.1v11.4c-2.2-1.5-4.8-1.9-7.7-1.1z" fill="currentColor" /><path d="M20.5 6.2c-2.9-1-5.6-.6-7.7 1.1v11.4c2.2-1.5 4.8-1.9 7.7-1.1z" fill="currentColor" opacity=".7" /></svg></span><span>开智</span></button>
@@ -1180,17 +1236,20 @@ onBeforeUnmount(() => { stopAutoCheck(); for (const timer of pillTimers.values()
     </Transition>
 
     <main class="app-main">
-      <header class="app-topbar" :class="{ 'with-tabs': tabs.length }" data-glass-interactive="panel">
-        <button class="icon-button sidebar-toggle" @click="sidebarOpen = !sidebarOpen" data-tip="显示 / 隐藏侧栏" :data-tip-key="tipKey('sidebar')" aria-label="切换侧栏" :aria-expanded="sidebarOpen"><AppIcon name="panel" :size="18" /></button>
+      <Transition name="topbar" @before-enter="paneResizeStart($event, true)" @before-leave="paneResizeStart($event, false)" @after-enter="paneResizeEnd" @after-leave="paneResizeEnd" @enter-cancelled="paneResizeEnd($event, true)" @leave-cancelled="paneResizeEnd($event, true)">
+      <header v-show="!chromeCollapsed" class="app-topbar" :class="{ 'with-tabs': tabs.length }" data-glass-interactive="panel">
+        <button class="icon-button sidebar-toggle" @click="toggleSidebar" data-tip="显示 / 隐藏侧栏" :data-tip-key="tipKey('sidebar')" aria-label="切换侧栏" :aria-expanded="sidebarOpen"><AppIcon name="panel" :size="18" /></button>
         <FileTabs v-if="tabs.length" :tabs="fileTabs" :active-id="active?.id" :group="group.length > 1 ? group : []" :visible="paneIds" @select="selectTab" @close="closeTab" @library="closeReader" @menu="tabMenu" @drag="tabDrag" @reorder="reorderTabs" />
         <span v-else class="breadcrumb">{{ currentTitle }}</span>
         <div class="topbar-actions">
           <template v-if="active"><button class="icon-button" :class="{ 'is-starred': active.starred }" @click="toggleStar(active)" data-tip="收藏文档" aria-label="收藏文档"><AppIcon name="star" :size="18" /></button><button class="icon-button" :class="{ active: detailsOpen }" @click="detailsOpen = !detailsOpen" data-tip="文档详情与标签" aria-label="文档详情与标签" :aria-expanded="detailsOpen"><AppIcon name="tag" :size="18" /></button><button class="icon-button split-toggle" data-split-anchor :class="{ active: splitPicker || splitView }" @click="toggleSplitPicker($event)" data-tip="并排阅读" :data-tip-key="tipKey('split')" aria-label="并排阅读" :aria-expanded="!!splitPicker"><AppIcon name="split" :size="18" /><span v-if="splitView" class="split-count">{{ paneIds.length }}</span></button><button class="ai-toggle" data-tip="阅读助手" :data-tip-key="tipKey('ai')" :class="{ active: aiOpen }" @click="toggleAssistant" :aria-expanded="aiOpen"><AppIcon name="sparkle" :size="17" />阅读助手</button></template>
           <button v-else class="icon-button" @click="toggleTheme" :data-tip="theme === 'dark' ? '切换浅色主题' : '切换深色主题'" :aria-label="theme === 'dark' ? '切换浅色主题' : '切换深色主题'"><AppIcon :name="theme === 'dark' ? 'sun' : 'moon'" :size="18" /></button>
+          <button v-if="fullscreen" class="icon-button" @click="collapseChrome" data-tip="收起顶栏与侧栏，阅读区占满屏幕" aria-label="收起顶栏与侧栏"><AppIcon name="collapse-up" :size="18" /></button>
           <button class="icon-button" @click="toggleFullscreen" :disabled="fullscreenPending" :aria-label="fullscreen ? '退出全屏' : '进入全屏'" :aria-pressed="fullscreen" :data-tip="fullscreen ? '退出全屏' : '进入全屏'" :data-tip-key="tipKey('fullscreen')"><AppIcon :name="fullscreen ? 'exit-fullscreen' : 'fullscreen'" :size="18" /></button>
           <button class="icon-button" @click="openSettings()" data-tip="设置" :data-tip-key="tipKey('settings')" aria-label="打开设置"><AppIcon name="settings" :size="18" /></button>
         </div>
       </header>
+      </Transition>
 
       <Transition name="view">
       <div v-if="!active" class="library-view" key="library" data-reorder-scroll>
@@ -1207,7 +1266,7 @@ onBeforeUnmount(() => { stopAutoCheck(); for (const timer of pillTimers.values()
         <div v-else-if="!visibleDocuments.length" class="library-empty"><div class="empty-art"><AppIcon name="book" :size="42" /></div><h2>{{ query ? '没有匹配的文档' : category === 'starred' ? '暂无收藏' : tagFilter ? '此标签下暂无文档' : '暂无文档' }}</h2><p>{{ query ? '可搜索标题、标签和已读取的文档内容。' : '点击“加入文档”添加 PDF 或 Markdown，可一次选择多个文件。' }}</p><button v-if="query" @click="query = ''; refresh()">查看全部文档</button><small>导入不会移动或修改原文件</small></div>
         <div v-else ref="collection" class="document-collection" :class="[display, { arrangeable: canArrange }]" :aria-description="canArrange ? '拖动卡片或按 Alt+方向键调整位置' : undefined">
           <article v-for="doc in visibleDocuments" :key="doc.id" class="document-card" :class="[doc.kind, { 'reorder-lifted': reorderLibrary.dragging.value === doc.id }]" :data-reorder-id="doc.id" tabindex="0" role="button" :aria-label="`打开 ${doc.name}`" @click="openDocument(doc)" @keydown.enter="openDocument(doc)" @keydown="reorderLibrary.keydown($event, doc.id)" @pointerdown="reorderLibrary.pointerdown($event, doc.id)">
-            <div class="document-cover"><div class="cover-lines"><i></i><i></i><i></i><i></i></div><div class="document-type-icon"><AppIcon :name="doc.kind === 'pdf' ? 'file' : 'markdown'" :size="display === 'list' ? 23 : 30" /></div><button class="card-star" :class="{ 'is-starred': doc.starred }" @click.stop="toggleStar(doc)" :data-tip="doc.starred ? '取消收藏' : '收藏文档'" :aria-label="doc.starred ? '取消收藏' : '收藏文档'"><AppIcon name="star" :size="17" /></button></div>
+            <div class="document-cover" :class="{ 'has-image': covers.has(sourceId(doc.id)) }"><img v-if="covers.has(sourceId(doc.id))" class="cover-image" :class="covers.get(sourceId(doc.id))!.kind" :src="covers.get(sourceId(doc.id))!.image" alt="" draggable="false" /><template v-else><div class="cover-lines"><i></i><i></i><i></i><i></i></div><div class="document-type-icon"><AppIcon :name="doc.kind === 'pdf' ? 'file' : 'markdown'" :size="display === 'list' ? 23 : 30" /></div></template><button class="card-star" :class="{ 'is-starred': doc.starred }" @click.stop="toggleStar(doc)" :data-tip="doc.starred ? '取消收藏' : '收藏文档'" :aria-label="doc.starred ? '取消收藏' : '收藏文档'"><AppIcon name="star" :size="17" /></button></div>
             <div class="document-card-body"><div class="document-card-title"><h3 :data-tip="doc.name">{{ doc.name.replace(/\.(pdf|md|markdown)$/i, '') }}</h3><span class="format-pill">{{ doc.kind === 'pdf' ? 'PDF' : 'MD' }}</span></div><p class="document-meta">{{ size(doc.size) }}<span>·</span>{{ doc.lastOpenedAt ? `阅读于 ${date(doc.lastOpenedAt)}` : `加入于 ${date(doc.addedAt)}` }}</p><div class="document-tags"><span v-for="tag in doc.tags.slice(0, 3)" :key="tag">{{ tag }}</span><span v-if="doc.tags.length > 3">+{{ doc.tags.length - 3 }}</span></div><div class="document-progress"><div><i :style="{ width: `${progressPercent(doc)}%` }"></i></div><span>{{ doc.progress ? `${progressPercent(doc)}%` : '未读' }}</span></div></div>
             <button class="card-remove icon-button" @click.stop="removeTarget = doc" data-tip="从文档库移除" aria-label="从文档库移除"><AppIcon name="trash" :size="15" /></button>
           </article>

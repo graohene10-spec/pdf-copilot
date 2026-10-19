@@ -1,7 +1,7 @@
 import { ContinuousPdfViewer as PageWindow } from '../../../extension/reader/continuous.mjs';
 import { clamp, renderPixelRatio, MAX_CANVAS_PIXELS } from '../../../extension/reader/geometry.mjs';
 import { MAX_RENDERED_PAGES } from '../../../extension/reader/scroll-layout.mjs';
-import { installDarkFilter, photoLayer, releasePhotoLayer } from './dark-pages.mjs';
+import { installDarkFilter, imageUnits, classifyImages, photoLayer, releasePhotoLayer } from './dark-pages.mjs';
 
 // Keep the former per-page resolution. A five-page desktop window and one
 // detached redraw buffer have a bounded 24M-pixel allocation. Inactive tabs
@@ -10,6 +10,8 @@ export const DESKTOP_RENDERED_PAGES = 5;
 export const DESKTOP_PAGE_PIXELS = MAX_CANVAS_PIXELS / (MAX_RENDERED_PAGES + 1);
 export const DESKTOP_CANVAS_PIXELS = DESKTOP_PAGE_PIXELS * (DESKTOP_RENDERED_PAGES + 1);
 const canceled = error => ['RenderingCancelledException', 'AbortException'].includes(error?.name);
+const darkTheme = () => document.documentElement.dataset.theme === 'dark';
+const idle = callback => (window.requestIdleCallback ? window.requestIdleCallback(callback, { timeout: 1200 }) : setTimeout(callback, 200));
 
 export class ContinuousPdfViewer extends PageWindow {
   constructor(options) {
@@ -25,6 +27,49 @@ export class ContinuousPdfViewer extends PageWindow {
     this.paintJobs = [];
     this.suspended = false;
     this.activity = 0;
+    // 每页哪些图片是照片（深色主题里保留原色）：判断一次后按页记住，缩放、翻回来都不再读像素。
+    this.photoCache = new Map();
+    // 读像素会让浏览器等显卡把活干完：正在滚动时一律推迟，停下来、空闲了再做。
+    this.lastScroll = 0;
+    options.container.addEventListener('scroll', () => { this.lastScroll = performance.now(); }, { passive: true });
+  }
+
+  setDocument(pdf) {
+    this.photoCache = new Map();
+    return super.setDocument(pdf);
+  }
+
+  /** Colour-preserving layers for the committed pages after switching to the dark theme. */
+  refreshPhotos() {
+    if (!darkTheme() || this.suspended) return;
+    for (const view of [...this.views.values()]) {
+      if (!view.disposed && view.paintedScale && !view.photosChecked) this.attachPhotos(view);
+    }
+  }
+
+  /** Puts the photo layer on a committed page: from the cache right away, otherwise classified when the browser is idle. */
+  attachPhotos(view) {
+    if (!darkTheme() || !view.imageUnits) return;
+    view.photosChecked = true;
+    const known = this.photoCache.get(view.number);
+    const show = images => {
+      releasePhotoLayer(view.photos);
+      view.photos = photoLayer(view.canvas, view.viewport, images);
+      if (view.photos) view.canvas.after(view.photos);
+    };
+    if (known) { if (!view.photos) show(known); return; }
+    if (!view.imageUnits.length) { this.photoCache.set(view.number, []); return; }
+    const canvas = view.canvas, units = view.imageUnits;
+    const run = async () => {
+      if (view.disposed || view.canvas !== canvas || !darkTheme()) { view.photosChecked = false; return; }
+      if (performance.now() - this.lastScroll < 400) { idle(run); return; }
+      const flags = await classifyImages(canvas, view.viewport, units).catch(() => null);
+      if (!flags || view.disposed || view.canvas !== canvas) { view.photosChecked = false; return; }
+      const images = units.map((unit, index) => ({ unit, photo: flags[index] }));
+      this.photoCache.set(view.number, images);
+      show(images);
+    };
+    idle(run);
   }
 
   schedule() { if (!this.suspended) super.schedule(); }
@@ -183,10 +228,13 @@ export class ContinuousPdfViewer extends PageWindow {
       buffer.canvas.height = Math.max(1, Math.floor(viewport.height * ratio));
       buffer.task = page.render({ canvasContext: buffer.canvas.getContext('2d', { alpha: false }), viewport, transform: ratio === 1 ? null : [ratio, 0, 0, ratio, 0, 0], background: 'white' });
       await buffer.task.promise;
+      // 图片位置直接取自这次渲染的操作列表（只是遍历一遍，不再向 worker 重新要），切到深色主题时就不用重画。
+      // 深色主题里这一页之前判断过就立刻贴上照片层，否则提交后在空闲时再判断；浅色主题不读任何像素。
+      const operators = buffer.task._internalRenderTask?.operatorList;
+      buffer.imageUnits = operators ? imageUnits(operators, viewport, this.pdfjs.OPS) : null;
+      const known = darkTheme() && this.photoCache.get(view.number);
+      if (known) buffer.photos = photoLayer(buffer.canvas, viewport, known);
       buffer.task = null;
-      if (!valid()) return;
-      // 深色主题里保留彩色图片原色的那一层；浅色主题下它不显示。
-      buffer.photos = await photoLayer(page, viewport, buffer.canvas, this.pdfjs.OPS).catch(() => null);
       if (!valid()) return;
       buffer.layer = new this.pdfjs.TextLayer({ textContentSource: page.streamTextContent(), container: buffer.text, viewport });
       await buffer.layer.render();
@@ -222,6 +270,8 @@ export class ContinuousPdfViewer extends PageWindow {
       view.photos = buffer.photos || null;
       if (view.photos) view.canvas.after(view.photos);
       view.viewport = viewport; view.layer = buffer.layer; view.paintedScale = scale;
+      view.imageUnits = buffer.imageUnits || null; view.photosChecked = false;
+      this.attachPhotos(view);
       view.ready = true; view.slot.classList.add('page-ready'); view.slot.classList.remove('pdf-preview');
       buffer.committed = true;
       oldLayer?.cancel(); oldCanvas.width = oldCanvas.height = 0;

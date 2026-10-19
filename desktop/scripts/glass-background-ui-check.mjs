@@ -134,7 +134,8 @@ try {
   await page.waitForFunction(() => {
     const paper = document.querySelector('#page-surface'), viewport = document.querySelector('.reading-main');
     return paper && viewport && paper.getBoundingClientRect().width <= viewport.clientWidth &&
-      paper.classList.contains('page-ready') && !paper.classList.contains('pdf-preview');
+      paper.classList.contains('page-ready') && !paper.classList.contains('pdf-preview') &&
+      !document.querySelector('.pdf-scroll')?.getAnimations().length;
   });
   const paper = page.locator('#page-surface');
   const bounds = await paper.boundingBox();

@@ -41,7 +41,12 @@ try {
   assert.equal(await page.locator('.reading-status').count(), 0);
   const pill = page.locator('.reader-pane:visible .reading-pill');
   assert.match(await pill.getAttribute('aria-label'), /阅读位置自动保存 · 第 1 \/ 4 页/);
-  await page.mouse.move(700, 450); await page.waitForTimeout(2700);
+  await page.mouse.move(700, 450);
+  // The pill stays awake 2.2 s after the last saved page change, then folds; measure once the fold has finished.
+  await page.waitForFunction(() => {
+    const pill = document.querySelector('.reader-pane:not([style*="display: none"]) .reading-pill');
+    return pill && !pill.classList.contains('awake') && pill.getBoundingClientRect().width < 48;
+  }, null, { timeout: 8000 }).catch(() => {});
   const collapsed = await pill.boundingBox();
   assert.ok(collapsed.width < 48, `Idle pill collapses to a progress ring (${collapsed.width}px).`);
   const main = await page.locator('.reading-main').boundingBox();

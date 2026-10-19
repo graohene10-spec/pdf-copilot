@@ -9,6 +9,8 @@ import { nativeModelInventory } from './native-models.ts'
 export type PredictContext = {
   document: { id: string; title: string; kind: string }
   page: number
+  /** 文档上下文开关关着时不读当前页原文，只用选区和对话。 */
+  includePage?: boolean
   selection?: string
   history: { role: string; content: string }[]
 }
@@ -52,7 +54,7 @@ export function cleanQuestion(text: string) {
 
 export function predictionKey(context: PredictContext) {
   const last = context.history.at(-1)
-  return [context.document.id, context.page, (context.selection || '').slice(0, 160), context.history.length, last?.content.length || 0].join('|')
+  return [context.document.id, context.page, context.includePage === false ? 'no-page' : 'page', (context.selection || '').slice(0, 160), context.history.length, last?.content.length || 0].join('|')
 }
 
 export async function predictQuestion(context: PredictContext, signal: AbortSignal): Promise<string> {
@@ -63,7 +65,7 @@ export async function predictQuestion(context: PredictContext, signal: AbortSign
   const apiKey = settings.provider === 'codex' ? '' : await loadApiKey(settings.provider)
   if (settings.provider !== 'codex' && !apiKey) return ''
   signal.throwIfAborted()
-  const text = await pageText(context.document, context.page).catch(() => '')
+  const text = context.includePage === false ? '' : await pageText(context.document, context.page).catch(() => '')
   signal.throwIfAborted()
   const recent = context.history.slice(-4).map(item => `${item.role === 'user' ? '读者' : '助手'}：${item.content.replace(/\s+/g, ' ').slice(0, 500)}`).join('\n')
   const prompt = [

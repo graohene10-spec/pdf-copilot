@@ -151,7 +151,8 @@ const spinner = computed(() => SPINNER_FRAMES[Math.floor(now.value / 120) % SPIN
 const GENERIC_ACTIVITY = /^(思考中|正在回答|准备上下文|AI 思考中)$/
 function activityNote(message: Message) { const text = message.activity || ''; return GENERIC_ACTIVITY.test(text) ? '' : text }
 const live = (message: Message) => Boolean(busy.value && message === messages.value.at(-1) && message.role === 'assistant' && !message.finishedAt)
-function seconds(ms: number) { return ms < 60000 ? `${Math.max(0, ms / 1000).toFixed(ms < 10000 ? 1 : 0)}s` : `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s` }
+// 用时按整秒走，小数位跳得太快反而分心。
+function seconds(ms: number) { return ms < 60000 ? `${Math.max(0, Math.floor(ms / 1000))}s` : `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s` }
 function count(value?: number) { return !value ? '0' : value < 1000 ? String(value) : `${(value / 1000).toFixed(value < 10000 ? 1 : 0)}k` }
 function elapsed(message: Message) { return seconds((message.finishedAt || now.value) - (message.startedAt || now.value)) }
 function thinkingTime(message: Message) { return seconds((message.firstTokenAt || message.finishedAt || now.value) - (message.startedAt || now.value)) }
@@ -300,7 +301,10 @@ function endResize() { if (!resizeStart) return; resizeStart = undefined; try { 
 function resetResize() { composerHeight.value = 76; try { localStorage.removeItem(COMPOSER_KEY) } catch {} }
 const EFFORT_LABELS: Record<string, string> = { '': '默认', none: '不思考', minimal: '极简', low: '低', medium: '中', high: '高', xhigh: '超高', max: '最高', ultra: '极致' }
 const pickerOpen = ref(false)
+// 模型与强度抽屉第一次拉开后保持挂载，收起时才有回弹动画。
+const drawerMounted = ref(false)
 const pickerHost = ref<HTMLElement>()
+const composerField = ref<HTMLElement>()
 const pickerLoading = ref(false)
 const pickerError = ref('')
 let pickerRequest: AbortController | undefined
@@ -320,7 +324,7 @@ function chooseModel(id: string) {
   commitChoice(id, effort)
 }
 function chooseEffort(value: string) { commitChoice(settings.value.model || '', value) }
-function pickerOutside(event: PointerEvent) { if (event.target instanceof Node && !pickerHost.value?.contains(event.target)) pickerOpen.value = false }
+function pickerOutside(event: PointerEvent) { if (event.target instanceof Node && !composerField.value?.contains(event.target)) pickerOpen.value = false }
 async function refreshPickerModels() {
   if (pickerLoading.value || settings.value.provider !== 'codex') return
   pickerError.value = ''
@@ -340,15 +344,20 @@ async function refreshPickerModels() {
 }
 watch(pickerOpen, open => {
   if (open) {
+    drawerMounted.value = true
+    window.addEventListener('keydown', strayEscape, true)
     document.addEventListener('pointerdown', pickerOutside, true)
     if (settings.value.provider === 'codex' && !nativeModelInventory.value.length) void refreshPickerModels()
   } else {
     document.removeEventListener('pointerdown', pickerOutside, true)
+    window.removeEventListener('keydown', strayEscape, true)
     pickerRequest?.abort(); pickerRequest = undefined; pickerLoading.value = false
   }
 })
 watch(busy, value => { if (value) pickerOpen.value = false })
-function moreSettings() { pickerOpen.value = false; emit('settings') }
+function drawerEscape(event: KeyboardEvent) { if (!pickerOpen.value || event.defaultPrevented) return; event.preventDefault(); event.stopPropagation(); closePicker() }
+// 抽屉里的按钮在读取模型时会暂时禁用，焦点随之落回页面：这时 Esc 仍然收起抽屉。
+function strayEscape(event: KeyboardEvent) { if (event.key === 'Escape' && (document.activeElement === document.body || !document.activeElement)) drawerEscape(event) }
 function closePicker() { pickerOpen.value = false; void nextTick(() => pickerHost.value?.querySelector<HTMLElement>('.model-picker')?.focus()) }
 function historyOutside(event: PointerEvent) { if (!(event.target as Element)?.closest?.('.history-host')) historyOpen.value = false }
 watch(historyOpen, open => { if (open) document.addEventListener('pointerdown', historyOutside, true); else document.removeEventListener('pointerdown', historyOutside, true) })
@@ -381,7 +390,6 @@ function send(question?: string) {
 }
 // ---- Predicted next question --------------------------------------------------
 const prediction = ref('')
-const composerFocused = ref(false)
 let predicting: AbortController | undefined
 let predictTimer: ReturnType<typeof setTimeout> | undefined
 let dismissed = ''
@@ -391,10 +399,21 @@ watch(() => preferences.value.assistant.predictQuestions, enabled => {
   prediction.value = ''; dismissed = ''
 }, { flush: 'sync' })
 function predictContext() {
-  return { document: { ...props.document }, page: props.context?.page || 1, selection: selected.value.text || '', history: messages.value.filter(item => item.content && !item.failed).map(item => ({ role: item.role, content: item.content })) }
+  return { document: { ...props.document }, page: props.context?.page || 1, includePage: includeDocument.value, selection: selected.value.text || '', history: messages.value.filter(item => item.content && !item.failed).map(item => ({ role: item.role, content: item.content })) }
 }
-// 有上下文（选区、对话或文档上下文开着）且输入框空着时才预判；输入、发送、换页都会取消在途请求。
-const predictable = computed(() => preferences.value.assistant.predictQuestions && !busy.value && !prompt.value && (hasSelection.value || messages.value.length > 0 || includeDocument.value) && (composerFocused.value || messages.value.length > 0))
+// 只有真正的上下文——已经有对话，或选中了文字——才预判；空白的新对话不猜。输入、发送、换页都会取消在途请求。
+const predictable = computed(() => preferences.value.assistant.predictQuestions && !busy.value && !prompt.value && (Boolean(selected.value.text) || messages.value.some(item => item.content && !item.failed)))
+// 「Tab / Enter 采用」只在前三次出现预判时提示，之后只留淡色的问题本身。
+const HINT_KEY = 'kaizhi.predictionHints.v1'
+const showHint = ref(false)
+watch(prediction, (value, previous) => {
+  if (!value) { showHint.value = false; return }
+  if (previous) return
+  let shown = 3
+  try { shown = Number(localStorage.getItem(HINT_KEY)) || 0 } catch { /* 读不到计数时不再提示 */ }
+  showHint.value = shown < 3
+  if (showHint.value) try { localStorage.setItem(HINT_KEY, String(shown + 1)) } catch { /* 私有窗口等情况下只是多提示一次 */ }
+})
 watch(() => [predictable.value, state.value.id, props.document.id, props.context?.page, selected.value.text, messages.value.length, messages.value.at(-1)?.finishedAt] as const, () => {
   clearTimeout(predictTimer); predicting?.abort(); predicting = undefined
   const context = predictContext(), key = predictionKey(context)
@@ -412,7 +431,7 @@ onMounted(() => {
   observer = new ResizeObserver(() => updateRail())
   if (messageList.value) observer.observe(messageList.value)
 })
-onBeforeUnmount(() => { unwatch?.(); rememberScroll(); clearInterval(ticker); clearTimeout(predictTimer); predicting?.abort(); observer?.disconnect(); if (renderFrame) cancelAnimationFrame(renderFrame); pickerRequest?.abort(); document.removeEventListener('pointerdown', pickerOutside, true); document.removeEventListener('pointerdown', historyOutside, true) })
+onBeforeUnmount(() => { unwatch?.(); rememberScroll(); clearInterval(ticker); clearTimeout(predictTimer); predicting?.abort(); observer?.disconnect(); if (renderFrame) cancelAnimationFrame(renderFrame); pickerRequest?.abort(); document.removeEventListener('pointerdown', pickerOutside, true); window.removeEventListener('keydown', strayEscape, true); document.removeEventListener('pointerdown', historyOutside, true) })
 defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startConversation })
 </script>
 
@@ -454,7 +473,6 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
         <div v-if="!messages.length" class="ai-welcome">
           <AssistantMark :kind="avatar.kind" :image="avatar.image" :size="56" class="ai-welcome-mark" />
           <h2 class="ai-welcome-lead" :lang="greeting.lang === 'zh' ? 'zh-CN' : 'en'">{{ greeting.text }}</h2>
-          <p v-if="greeting.source" class="ai-welcome-source">— {{ greeting.source }}</p>
         </div>
         <article v-for="message in messages" :key="message.id" class="ai-message" :class="message.role" :data-id="message.id">
           <template v-if="message.role === 'user'">
@@ -498,27 +516,30 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
     </div>
 
     <div class="ai-composer">
-      <div class="composer-field" :class="{ busy }">
+      <div ref="composerField" class="composer-field" :class="{ busy, expanded: pickerOpen }" @keydown.esc="drawerEscape">
         <div class="composer-resize" role="separator" aria-orientation="horizontal" aria-label="拖动调整输入框高度" data-tip="拖动调整高度，双击恢复" @pointerdown="startResize" @pointermove="resize" @pointerup="endResize" @pointercancel="endResize" @dblclick="resetResize" />
         <div v-if="hasSelection" class="ai-selection-context">
           <label class="selection-chip" :class="{ off: !includeSelection }"><input v-model="includeSelection" type="checkbox" :disabled="busy" :aria-label="selected.image ? `使用第 ${selected.page} 页截图` : '使用所选文字'" /><img v-if="selected.image" :src="selected.image" alt="选取的截图预览" /><span v-else class="selection-text">{{ selected.text.slice(0, 80) }}</span><small>{{ selected.image ? `第 ${selected.page} 页截图` : '所选文字' }}</small></label>
           <button class="chip-remove" data-tip="清除选区" aria-label="清除选区" @click="emit('clearSelection')"><AppIcon name="close" :size="11" /></button>
         </div>
         <div class="prompt-box">
-          <textarea ref="input" v-model="prompt" :style="{ height: `${composerHeight}px` }" :placeholder="prediction ? '' : placeholder" aria-label="向 AI 提问" :aria-describedby="prediction ? `prediction-${state.id}` : undefined" @keydown="keydown" @focus="composerFocused = true" @blur="composerFocused = false" />
+          <textarea ref="input" v-model="prompt" :style="{ height: `${composerHeight}px` }" :placeholder="prediction ? '' : placeholder" aria-label="向 AI 提问" :aria-describedby="prediction ? `prediction-${state.id}` : undefined" @keydown="keydown" />
           <!-- 预判的问题：像 Claude Code 一样以淡色出现在空输入框里，按 Tab 或回车采用。 -->
-          <p v-if="prediction && !prompt" :id="`prediction-${state.id}`" class="prompt-ghost"><span>{{ prediction }}</span><kbd>Tab</kbd><small>/</small><kbd>Enter</kbd><small>采用</small></p>
+          <p v-if="prediction && !prompt" :id="`prediction-${state.id}`" class="prompt-ghost"><span>{{ prediction }}</span><template v-if="showHint"><kbd>Tab</kbd><small>/</small><kbd>Enter</kbd><small>采用</small></template><span v-else class="visually-hidden">，按 Tab 或回车采用</span></p>
         </div>
         <div class="composer-actions">
-          <label class="context-switch" :class="{ on: includeDocument }" :data-tip="includeDocument ? '已开启：提问时附带当前页与文档检索' : '已关闭：只发送问题与选区'"><input v-model="includeDocument" type="checkbox" role="switch" :disabled="busy" aria-label="当前页上下文与文档检索" /><span class="mini-switch" aria-hidden="true"><i /></span><span>文档上下文</span></label>
+          <label class="context-switch" :class="{ on: includeDocument }" :data-tip="includeDocument ? '已开启：提问时附带当前页与文档检索' : '已关闭：只发送问题与选区'"><input v-model="includeDocument" type="checkbox" role="switch" :disabled="busy" aria-label="当前页上下文与文档检索" /><span class="context-glyph" aria-hidden="true"><AppIcon name="book" :size="14" /><i class="context-slash" /></span><span class="context-label">文档上下文</span></label>
           <span class="composer-space" />
           <span class="context-ring" :data-tip="`上下文约 ${count(contextUsed)} / ${count(contextLimit)} tokens`" aria-hidden="true" :style="{ '--ratio': contextRatio }"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5" /><circle class="ring-value" cx="10" cy="10" r="7.5" pathLength="100" /></svg></span>
           <div ref="pickerHost" class="model-picker-host">
-            <button type="button" class="model-picker" :disabled="busy" aria-haspopup="dialog" :aria-expanded="pickerOpen" aria-label="选择模型与思考强度" data-tip="模型与思考强度" @click="pickerOpen = !pickerOpen"><span class="picker-model">{{ modelLabel }}</span><span class="picker-effort">{{ EFFORT_LABELS[settings.effort || ''] || settings.effort }}</span><AppIcon name="down" :size="12" class="picker-chevron" /></button>
-            <Transition name="picker"><ModelPicker v-if="pickerOpen" :model="settings.model || ''" :effort="settings.effort || ''" :models="pickerModels" :loading="pickerLoading" :error="pickerError" :can-refresh="settings.provider === 'codex'" @model="chooseModel" @effort="chooseEffort" @refresh="refreshPickerModels" @more="moreSettings" @close="closePicker" /></Transition>
+            <button type="button" class="model-picker" :disabled="busy" :aria-expanded="pickerOpen" :aria-controls="`model-drawer-${state.id}`" aria-label="选择模型与思考强度" data-tip="模型与思考强度" @click="pickerOpen = !pickerOpen"><span class="picker-model">{{ modelLabel }}</span><span class="picker-effort">{{ EFFORT_LABELS[settings.effort || ''] || settings.effort }}</span><AppIcon name="down" :size="12" class="picker-chevron" /></button>
           </div>
           <button v-if="busy" class="send-button stop" aria-label="停止" data-tip="停止回答" @click="stop"><span class="stop-square" /></button>
           <button v-else class="send-button" :disabled="!prompt.trim()" aria-label="发送" data-tip="发送" :data-tip-key="sendShortcut || 'Enter'" @click="send()"><AppIcon name="arrow-up" :size="17" /></button>
+        </div>
+        <!-- 点模型按钮时，输入栏下沿顺势拉长，露出模型与思考强度；再点一次或按 Esc 收回。 -->
+        <div :id="`model-drawer-${state.id}`" class="composer-drawer" :class="{ open: pickerOpen }" :inert="!pickerOpen || undefined">
+          <ModelPicker v-if="drawerMounted" :model="settings.model || ''" :effort="settings.effort || ''" :models="pickerModels" :loading="pickerLoading" :error="pickerError" :can-refresh="settings.provider === 'codex'" @model="chooseModel" @effort="chooseEffort" @refresh="refreshPickerModels" @close="closePicker" />
         </div>
       </div>
     </div>
@@ -531,7 +552,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
 .ai-pane{--ink:var(--surface-ink);--control-ink:var(--ink);--secondary:var(--surface-secondary);--muted:var(--surface-muted);
   --frost:color-mix(in srgb,var(--glass-light) 70%,transparent);--frost-hover:color-mix(in srgb,var(--glass-light) 100%,transparent);--hairline:color-mix(in srgb,var(--ink) 11%,transparent);
   --bar-glass:color-mix(in srgb,var(--glass-light) 78%,transparent);
-  display:flex;flex-direction:column;height:100%;min-width:0;width:100%;background-color:var(--glass-3);background-image:var(--glass-sheen);-webkit-backdrop-filter:var(--glass-filter-3);backdrop-filter:var(--glass-filter-3);border:1px solid var(--glass-outline);border-radius:var(--r-xl);box-shadow:var(--shadow-pane),var(--glass-edge);color:var(--ink);overflow:hidden;font-family:var(--font-ui)}
+  display:flex;flex-direction:column;height:100%;min-width:0;width:100%;background-color:var(--glass-3);background-image:var(--glass-sheen);--lens-blur:var(--glass-3-blur);--lens-saturate:var(--glass-sat);-webkit-backdrop-filter:var(--refraction, var(--glass-filter-3));backdrop-filter:var(--refraction, var(--glass-filter-3));border:1px solid var(--glass-outline);border-radius:var(--r-xl);box-shadow:var(--shadow-pane),var(--glass-edge);color:var(--ink);overflow:hidden;font-family:var(--font-ui)}
 button{font:inherit;cursor:pointer;color:var(--ink)}
 button:disabled{opacity:.4;cursor:default}
 /* 磨砂扁平玻璃按钮：一层薄雾与一道细高光，没有投影。助手面板本身已做背景模糊，内部不再嵌套 backdrop-filter，
@@ -556,7 +577,7 @@ button:disabled{opacity:.4;cursor:default}
 .header-button:hover:not(:disabled){background:var(--frost);border-color:var(--hairline);color:var(--ink)}
 .task-summary{flex:0 0 auto;padding:3px 8px;border-radius:var(--r-xs);background:var(--frost);font-size:10.5px;font-weight:600;color:var(--secondary);white-space:nowrap;font-variant-numeric:tabular-nums}
 /* 弹出的对话记录与问题预览：更厚的弹层玻璃。 */
-.history-menu,.rail-preview{--ink:var(--surface-ink);--secondary:var(--surface-secondary);--muted:var(--surface-muted);background-color:var(--popup-glass);background-image:var(--popup-sheen);-webkit-backdrop-filter:blur(var(--popup-blur)) saturate(var(--glass-sat));backdrop-filter:blur(var(--popup-blur)) saturate(var(--glass-sat));border:1px solid var(--glass-outline);box-shadow:0 16px 40px -16px rgb(0 0 0 / .32),var(--glass-edge);color:var(--ink)}
+.history-menu,.rail-preview{--ink:var(--surface-ink);--secondary:var(--surface-secondary);--muted:var(--surface-muted);background-color:var(--popup-glass);background-image:var(--popup-sheen);--lens-blur:var(--popup-blur);--lens-saturate:var(--glass-sat);-webkit-backdrop-filter:var(--refraction, blur(var(--popup-blur)) saturate(var(--glass-sat)));backdrop-filter:var(--refraction, blur(var(--popup-blur)) saturate(var(--glass-sat)));border:1px solid var(--glass-outline);box-shadow:0 16px 40px -16px rgb(0 0 0 / .32),var(--glass-edge);color:var(--ink)}
 .history-menu{position:absolute;left:0;top:calc(100% + 6px);z-index:30;width:min(300px,calc(100vw - 40px));max-height:min(420px,60vh);display:flex;flex-direction:column;padding:6px;border-radius:var(--r-lg);transform-origin:20px 0}
 .history-new{display:flex;align-items:center;gap:8px;height:36px;padding:0 12px;border:0;border-radius:var(--r-control);background:color-mix(in srgb,var(--ink) 6%,transparent);box-shadow:none;font-size:13px;font-weight:600}
 .history-new:hover{background:color-mix(in srgb,var(--ink) 10%,transparent)}
@@ -607,7 +628,6 @@ button:disabled{opacity:.4;cursor:default}
    古诗没有对应的西文字形，退到宋体 / 思源宋体，仍是衬线。 */
 .ai-welcome-lead{max-width:100%;margin:0;font-family:'Anthropic Serif','Source Han Serif SC','Noto Serif CJK SC','Noto Serif SC','Songti SC','STSong','SimSun',serif;font-size:27px;font-weight:400;line-height:1.35;letter-spacing:-.012em;text-wrap:balance;font-optical-sizing:auto}
 .ai-welcome-lead:lang(zh-CN){font-size:22px;letter-spacing:.06em;line-height:1.6}
-.ai-welcome-source{margin:10px 0 0;font-family:'Anthropic Serif','Source Han Serif SC','Noto Serif CJK SC','Songti SC','SimSun',serif;font-size:12.5px;letter-spacing:.04em;color:var(--muted)}
 .ai-message{margin-bottom:22px;animation:zg-rise-in var(--dur-3) var(--ease-out) both}
 .ai-message.user{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
 .user-question{max-width:88%;padding:9px 14px;border-radius:var(--r-lg) var(--r-lg) var(--r-xs) var(--r-lg);background:color-mix(in srgb,var(--ink) 9%,transparent);border:1px solid var(--hairline);font-size:13.5px;line-height:1.75;white-space:pre-wrap;overflow-wrap:anywhere}
@@ -621,8 +641,10 @@ button:disabled{opacity:.4;cursor:default}
 .thinking:hover{background:var(--frost);color:var(--secondary)}
 .thinking-star{display:grid;place-items:center;width:14px;font-size:14px;line-height:1;color:#d97757;font-family:'Segoe UI Symbol','Apple Symbols','Noto Sans Symbols 2',var(--font-ui)}
 .thinking-label{font-weight:600;white-space:nowrap}
-.thinking.live .thinking-label{background:linear-gradient(90deg,var(--muted) 0%,var(--muted) 35%,var(--ink) 50%,var(--muted) 65%,var(--muted) 100%);background-size:250% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:think-shimmer 1.8s linear infinite}
-@keyframes think-shimmer{from{background-position:120% 0}to{background-position:-120% 0}}
+.thinking.live .thinking-label{--shimmer-base:color-mix(in srgb,var(--muted) 72%,transparent);background:linear-gradient(90deg,var(--shimmer-base) 0%,var(--shimmer-base) 38%,var(--ink) 47%,var(--ink) 53%,var(--shimmer-base) 62%,var(--shimmer-base) 100%);background-size:300% 100%;background-position:100% 0;-webkit-background-clip:text;background-clip:text;color:transparent;animation:think-shimmer 2s linear infinite}
+/* Codex 式流光：一道亮带从文字左侧扫到右侧（背景图是文字的 3 倍宽，位置 100% → 0% 让亮带自左向右穿过）。 */
+@keyframes think-shimmer{from{background-position:100% 0}to{background-position:0% 0}}
+.visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .thinking-meta{font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .thinking-chevron{opacity:.55;transition:transform var(--dur-3) var(--spring-snappy)}
 .thinking.open .thinking-chevron{transform:rotate(180deg)}
@@ -689,6 +711,7 @@ button:disabled{opacity:.4;cursor:default}
 .ai-composer{flex-shrink:0;padding:6px 10px 10px;container:composer / inline-size}
 /* 输入栏很窄时（最小窗口）芯片才允许省略文字；平时完整显示「文档上下文」，由模型按钮先让出宽度。 */
 @container composer (max-width: 300px){.context-switch{flex-shrink:1}}
+@container composer (max-width: 250px){.context-label{display:none}.context-switch{padding:0 7px}}
 .composer-field{position:relative;border:1px solid var(--hairline);border-radius:var(--r-lg);background:var(--bar-glass);box-shadow:inset 0 1px 0 var(--glass-rim-soft),0 1px 2px rgb(0 0 0 / .04);transition:border-color var(--dur-2) var(--ease-out),background var(--dur-2) var(--ease-out)}
 .composer-field:focus-within{border-color:color-mix(in srgb,var(--ink) 24%,transparent)}
 .composer-resize{position:absolute;left:50%;top:-6px;width:56px;height:12px;margin-left:-28px;cursor:ns-resize;z-index:2;touch-action:none}
@@ -717,17 +740,24 @@ textarea::placeholder{color:var(--muted);font-family:'Anthropic Serif','Source H
 .composer-space{flex:1}
 /* 文档上下文：芯片里带一枚小开关。开 = 实心墨色胶囊、圆点在右；关 = 空心描边、圆点在左。
    墨色跟随 glass-contrast 的深浅判断，所以浅色底图上是深色实心，深色底图上是浅色实心，都一眼可辨。 */
-.context-switch{position:relative;display:inline-flex;align-items:center;gap:5px;min-width:0;flex-shrink:0;height:30px;padding:0 9px 0 7px;border:1px solid var(--hairline);border-radius:var(--r-control);background:transparent;font-size:12px;font-weight:550;color:var(--muted);cursor:pointer;white-space:nowrap;transition:background var(--dur-1) var(--ease-soft),color var(--dur-1) var(--ease-soft),border-color var(--dur-1) var(--ease-soft)}
+/* 文档上下文：一枚圆角方块开关（与其他控件一样偏方）。关闭时是安静的描边小书本，图标上划一道斜线；开启时整枚胶囊带上主色的玻璃底，
+   书本与文字变成主色，斜线收起。深色、浅色主题和深浅字色的玻璃上都用同一套主色。 */
+.context-switch{--context-on:var(--accent);position:relative;display:inline-flex;align-items:center;gap:6px;min-width:0;flex-shrink:0;height:30px;padding:0 11px 0 9px;border:1px solid transparent;border-radius:var(--r-control);background:transparent;font-size:12px;font-weight:550;color:var(--muted);cursor:pointer;white-space:nowrap;transition:background var(--dur-2) var(--ease-out),border-color var(--dur-2) var(--ease-out),color var(--dur-2) var(--ease-out),box-shadow var(--dur-2) var(--ease-out),transform var(--dur-press) var(--spring-press)}
 .context-switch input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer}
-.context-switch:hover{background:var(--frost)}
-.context-switch.on{border-color:color-mix(in srgb,var(--ink) 26%,transparent);background:color-mix(in srgb,var(--ink) 9%,transparent);color:var(--ink);font-weight:650}
+.context-switch:hover{background:var(--frost);color:var(--secondary)}
+.context-switch:active{transform:scale(.96)}
+.context-switch.on{border-color:color-mix(in srgb,var(--context-on) 34%,transparent);background:color-mix(in srgb,var(--context-on) 15%,transparent);color:var(--context-on);font-weight:650;box-shadow:inset 0 1px 0 color-mix(in srgb,#fff 35%,transparent),0 3px 10px -6px color-mix(in srgb,var(--context-on) 70%,transparent)}
+.context-switch.on:hover{background:color-mix(in srgb,var(--context-on) 21%,transparent)}
 .context-switch:focus-within{box-shadow:0 0 0 2px var(--accent-ring)}
-.context-switch>span:last-child{min-width:0;overflow:hidden;text-overflow:ellipsis}
-.mini-switch{position:relative;flex-shrink:0;pointer-events:none;width:22px;height:13px;box-sizing:border-box;border:1.5px solid color-mix(in srgb,var(--ink) 42%,transparent);border-radius:var(--r-full);transition:background var(--dur-2) var(--ease-out),border-color var(--dur-2) var(--ease-out)}
-.mini-switch i{position:absolute;top:1.5px;left:2px;width:7px;height:7px;border-radius:50%;background:color-mix(in srgb,var(--ink) 50%,transparent);transition:transform var(--dur-3) var(--spring-snappy),background var(--dur-2) var(--ease-out)}
-.context-switch.on .mini-switch{border-color:var(--ink);background:var(--ink)}
-.context-switch.on .mini-switch i{transform:translateX(9px);background:color-mix(in srgb,var(--ink) 4%,var(--surface))}
-.ai-pane[data-glass-ink='light'] .context-switch.on .mini-switch i{background:rgb(20 24 30)}
+.context-glyph{position:relative;display:grid;place-items:center;flex-shrink:0;width:16px;height:16px;pointer-events:none}
+.context-glyph svg{transition:transform var(--dur-bounce) var(--spring-bouncy)}
+.context-switch.on .context-glyph svg{transform:scale(1.08)}
+.context-slash{position:absolute;left:50%;top:50%;width:19px;height:1.6px;margin:-.8px 0 0 -9.5px;border-radius:2px;background:currentColor;box-shadow:0 0 0 1.2px var(--bar-glass);transform:rotate(-45deg) scaleX(1);transition:transform var(--dur-3) var(--spring-snappy),opacity var(--dur-2) var(--ease-out)}
+.context-switch.on .context-slash{opacity:0;transform:rotate(-45deg) scaleX(0)}
+.context-label{min-width:0;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
+/* 玻璃按身后的明暗换成相反字色时，主色也换成对应的深浅，保证开启状态读得清楚。 */
+:root:not([data-theme='dark']) .ai-pane[data-glass-ink='light'] .context-switch{--context-on:color-mix(in srgb,var(--accent) 45%,#fff)}
+:root[data-theme='dark'] .ai-pane[data-glass-ink='dark'] .context-switch{--context-on:color-mix(in srgb,var(--accent) 60%,#000)}
 .context-ring{--ratio:0;display:grid;place-items:center;width:24px;height:24px;flex-shrink:0}
 .context-ring svg{width:18px;height:18px;rotate:-90deg}
 .context-ring circle{fill:none;stroke:color-mix(in srgb,var(--ink) 14%,transparent);stroke-width:2.6}
@@ -745,9 +775,13 @@ textarea::placeholder{color:var(--muted);font-family:'Anthropic Serif','Source H
 .send-button:disabled{background:var(--frost);border-color:var(--hairline);color:var(--muted);box-shadow:none;opacity:1}
 .send-button.stop{background:var(--frost-hover);border-color:var(--hairline);color:var(--ink)}
 .stop-square{width:10px;height:10px;border-radius:2px;background:currentColor}
-.picker-enter-active{transition:opacity var(--dur-2) var(--ease-out),transform var(--dur-bounce) var(--spring-snappy)}
-.picker-leave-active{transition:opacity var(--dur-1) var(--ease-out),transform var(--dur-1) var(--ease-out)}
-.picker-enter-from,.picker-leave-to{opacity:0;transform:translateY(8px) scale(.94)}
+/* 模型与强度抽屉：高度从 0 弹到内容高度（interpolate-size 让 auto 也能过渡），内容随之从上方滑入、淡入。 */
+.composer-drawer{interpolate-size:allow-keywords;height:0;overflow:hidden;padding:0 8px;opacity:0;transition:height var(--dur-bounce) var(--spring-snappy),opacity var(--dur-2) var(--ease-out)}
+.composer-drawer.open{height:auto;opacity:1}
+.composer-drawer>*{translate:0 -10px;transition:translate var(--dur-bounce) var(--spring-snappy)}
+.composer-drawer.open>*{translate:0 0}
+.composer-drawer:not(.open){visibility:hidden;transition:height var(--dur-spring) var(--spring-snappy),opacity var(--dur-1) var(--ease-out),visibility 0s linear var(--dur-spring)}
+@media(prefers-reduced-motion:reduce){.composer-drawer,.composer-drawer>*{transition:none}}
 @media(prefers-reduced-motion:reduce){.ai-message,.thinking-label,.question-editor,.prompt-ghost{animation:none!important}}
 @media(prefers-reduced-transparency:reduce),(prefers-contrast:more){.ai-messages{-webkit-mask-image:none;mask-image:none}}
 </style>

@@ -54,12 +54,16 @@ async function open(name) {
   await page.getByRole('button', { name: `打开 ${name}`, exact: true }).click();
   // Assistant windows persist across the library; let the workspace mount before deciding to open one.
   await page.locator('.reading-workspace').waitFor();
-  await page.waitForFunction(() => !document.querySelector('.view-enter-active,.view-leave-active,.pane-enter-active'));
+  // Opening from the library runs inside a view transition whose callback waits for the next captured frame;
+  // decide only once that document is the active tab and the workspace has finished coming back.
+  await page.waitForFunction(title => !document.documentElement.dataset.viewSwitch && getComputedStyle(document.querySelector('.reading-workspace')).display !== 'none' &&
+    !!document.querySelector(`[role="tab"][aria-selected="true"][aria-label="${title}"]`) &&
+    !document.querySelector('.view-enter-active,.view-leave-active,.pane-enter-active'), name);
   if (!(await page.locator('.ai-pane').isVisible())) await page.getByRole('button', { name: '阅读助手', exact: true }).click();
   await page.locator('.ai-pane').waitFor();
 }
 async function configure() {
-  await page.getByRole('button', { name: '选择模型与思考强度', exact: true }).click(); await page.getByRole('button', { name: '服务商、密钥与预算', exact: true }).click();
+  await page.getByRole('button', { name: '打开设置', exact: true }).click(); await page.getByRole('dialog', { name: '设置', exact: true }).getByRole('button', { name: 'AI', exact: true }).click();
   await page.getByLabel('服务商', { exact: true }).selectOption('openai');
   await page.getByLabel('API Key', { exact: true }).fill('fake-ui-key');
   await page.getByRole('dialog').getByRole('button', { name: '保存', exact: true }).click();

@@ -18,6 +18,31 @@
   initial-value: 0;
 }
 
+/* 光线折射滤镜（refraction.ts 按每块玻璃的尺寸写入 url(#…)，滤镜里自带模糊与饱和度）。
+   不继承：嵌在面板里的弹层用自己的透镜；没有写入时 backdrop-filter 退回普通的模糊与饱和度。 */
+@property --refraction {
+  syntax: '*';
+  inherits: false;
+}
+
+/* 实色玻璃、关闭折射或高对比度时立刻撤掉透镜（运行时随后再清理掉滤镜），不必等下一帧。 */
+:root:is([data-glass='solid'], [data-refraction='off'], [data-contrast='high']) * {
+  --refraction: initial !important;
+}
+
+/* 每块玻璃声明自己的模糊与饱和度，折射滤镜按它们生成；动效期间临时改写 backdrop-filter 也不会影响读数。 */
+@property --lens-blur {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --lens-saturate {
+  syntax: '<number> | <percentage>';
+  inherits: false;
+  initial-value: 1;
+}
+
 /* 镜面环的受光方向：静止时来自左上，光标在玻璃上时转向光标。 */
 @property --rim-angle {
   syntax: '<angle>';
@@ -249,8 +274,10 @@
   border-radius: 10px;
   background-color: var(--popup-glass);
   background-image: var(--popup-sheen);
-  -webkit-backdrop-filter: blur(var(--popup-blur)) saturate(var(--glass-sat));
-  backdrop-filter: blur(var(--popup-blur)) saturate(var(--glass-sat));
+  --lens-blur: var(--popup-blur);
+  --lens-saturate: var(--glass-sat);
+  -webkit-backdrop-filter: var(--refraction, blur(var(--popup-blur)) saturate(var(--glass-sat)));
+  backdrop-filter: var(--refraction, blur(var(--popup-blur)) saturate(var(--glass-sat)));
   box-shadow: var(--shadow-2), var(--glass-control-edge);
   color: var(--surface-ink);
   font: 500 12px/1.45 var(--font);

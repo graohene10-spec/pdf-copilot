@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 const artifacts = resolve('artifacts');
 const errors = [], remoteRequests = [], checks = [];
 let server, browser, page;
-const ready = () => page.waitForFunction(() => document.querySelector('#page-surface')?.classList.contains('page-ready') && !document.querySelector('#page-surface')?.classList.contains('pdf-preview') && !document.querySelector('.pane-enter-active,.pane-leave-active,.sidebar-enter-active,.sidebar-leave-active'));
+const ready = () => page.waitForFunction(() => document.querySelector('#page-surface')?.classList.contains('page-ready') && !document.querySelector('#page-surface')?.classList.contains('pdf-preview') && !document.querySelector('.pane-enter-active,.pane-leave-active,.sidebar-enter-active,.sidebar-leave-active') && !document.querySelector('.pdf-scroll')?.getAnimations().length);
 const shot = name => page.screenshot({ path: resolve(artifacts, name), animations: 'disabled' });
 const dialog = () => page.getByRole('dialog', { name: '设置', exact: true });
 try {

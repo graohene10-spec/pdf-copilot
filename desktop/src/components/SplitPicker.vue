@@ -60,7 +60,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', outside, true)
 </template>
 
 <style scoped>
-.split-picker{position:fixed;z-index:60;display:flex;flex-direction:column;max-height:min(440px,calc(100vh - 80px));padding:10px;border:1px solid var(--glass-outline);border-radius:var(--r-xl);background-color:var(--popup-glass);background-image:var(--popup-sheen);-webkit-backdrop-filter:blur(var(--popup-blur)) saturate(var(--glass-sat));backdrop-filter:blur(var(--popup-blur)) saturate(var(--glass-sat));box-shadow:var(--shadow-3),var(--glass-edge);color:var(--ink);animation:zg-pop-in var(--dur-bounce) var(--spring-bouncy) both}
+.split-picker{position:fixed;z-index:60;display:flex;flex-direction:column;max-height:min(440px,calc(100vh - 80px));padding:10px;border:1px solid var(--glass-outline);border-radius:var(--r-xl);background-color:var(--popup-glass);background-image:var(--popup-sheen);--lens-blur:var(--popup-blur);--lens-saturate:var(--glass-sat);-webkit-backdrop-filter:var(--refraction, blur(var(--popup-blur)) saturate(var(--glass-sat)));backdrop-filter:var(--refraction, blur(var(--popup-blur)) saturate(var(--glass-sat)));box-shadow:var(--shadow-3),var(--glass-edge);color:var(--ink);animation:zg-pop-in var(--dur-bounce) var(--spring-bouncy) both}
 header{display:flex;align-items:center;gap:10px;padding:4px 6px 10px}
 header strong{display:block;font-size:13.5px;font-weight:650}
 header small{display:block;font-size:11px;color:var(--muted);margin-top:2px}

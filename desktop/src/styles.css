@@ -266,6 +266,48 @@ kbd {
   z-index: 1;
 }
 
+/* 全屏收起顶栏与侧栏后：左侧留一道窄边给角落的小标签，其余全部给阅读区。 */
+.app-shell {
+  transition: padding-left var(--dur-bounce) var(--spring-snappy);
+}
+
+.app-shell.chrome-collapsed {
+  padding-left: 32px;
+}
+
+.chrome-tag {
+  position: absolute;
+  left: 6px;
+  top: 10px;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 64px;
+  padding: 0;
+  border: 1px solid var(--glass-outline);
+  border-radius: var(--r-full);
+  background-color: var(--glass-2);
+  background-image: var(--glass-sheen);
+  --lens-blur: var(--glass-2-blur);
+  --lens-saturate: var(--glass-sat);
+  -webkit-backdrop-filter: var(--refraction, var(--glass-filter-2));
+  backdrop-filter: var(--refraction, var(--glass-filter-2));
+  box-shadow: var(--shadow-2), var(--glass-edge);
+  color: var(--control-ink);
+  cursor: pointer;
+  transition: width var(--dur-2) var(--spring-snappy), background-color var(--dur-1) var(--ease-soft), transform var(--dur-press) var(--spring-press);
+}
+
+.chrome-tag:hover {
+  width: 24px;
+  background-color: var(--control-hover);
+}
+
+.chrome-tag:active {
+  transform: scale(.94);
+}
+
 /* 图片保持原有光色；只在文字边缘加很薄的对比度，而不蒙住整个底板。 */
 :root[data-background='custom'] :is(.app-sidebar, .app-topbar, .library-heading, .library-toolbar, .library-search, .library-summary, .document-card, .reader-tools, .document-outline, .reading-pill, .document-details, .ai-pane, .settings-dialog) {
   text-shadow: var(--glass-label-shadow);
@@ -278,8 +320,10 @@ kbd {
 }
 
 /* 底图太亮或太暗、主题墨色压不住时，glass-contrast 给这块玻璃一个最低不透明度：玻璃变厚，
-   文字仍是当前主题的颜色——深色主题里的每块玻璃都是深色的，浅色主题里都是浅色的。 */
-[data-glass-floor] {
+   文字仍是当前主题的颜色——深色主题里的每块玻璃都是深色的，浅色主题里都是浅色的。
+   「取自底图」时它还把这块玻璃的底色（--glass-rgb-*）换成身后照片的色相。两种情况都要在元素上重新组装玻璃色。 */
+[data-glass-floor],
+[data-glass-tint] {
   --glass-1: rgb(var(--glass-rgb-1) / max(var(--glass-a1), var(--glass-floor, 0)));
   --glass-2: rgb(var(--glass-rgb-2) / max(var(--glass-a2), var(--glass-floor, 0)));
   --glass-3: rgb(var(--glass-rgb-3) / max(var(--glass-a3), var(--glass-floor, 0)));
@@ -322,8 +366,10 @@ kbd {
   padding: 18px 12px 12px;
   background-color: var(--glass-1);
   background-image: var(--glass-sheen);
-  -webkit-backdrop-filter: var(--glass-filter-1);
-  backdrop-filter: var(--glass-filter-1);
+  --lens-blur: var(--glass-1-blur);
+  --lens-saturate: var(--glass-sat);
+  -webkit-backdrop-filter: var(--refraction, var(--glass-filter-1));
+  backdrop-filter: var(--refraction, var(--glass-filter-1));
   border: 1px solid var(--glass-outline);
   border-radius: var(--r-xl);
   box-shadow: var(--shadow-pane), var(--glass-edge);
@@ -597,8 +643,10 @@ kbd {
   padding: 0 9px 0 9px;
   background-color: var(--glass-1);
   background-image: var(--glass-sheen);
-  -webkit-backdrop-filter: var(--glass-filter-1);
-  backdrop-filter: var(--glass-filter-1);
+  --lens-blur: var(--glass-1-blur);
+  --lens-saturate: var(--glass-sat);
+  -webkit-backdrop-filter: var(--refraction, var(--glass-filter-1));
+  backdrop-filter: var(--refraction, var(--glass-filter-1));
   box-shadow: var(--shadow-2), var(--glass-edge);
   z-index: 4;
 }
@@ -859,8 +907,10 @@ kbd {
   gap: 10px;
   background-color: var(--glass-2);
   background-image: var(--glass-sheen);
-  -webkit-backdrop-filter: var(--glass-filter-2);
-  backdrop-filter: var(--glass-filter-2);
+  --lens-blur: var(--glass-2-blur);
+  --lens-saturate: var(--glass-sat);
+  -webkit-backdrop-filter: var(--refraction, var(--glass-filter-2));
+  backdrop-filter: var(--refraction, var(--glass-filter-2));
   border: 1px solid var(--glass-outline);
   border-radius: var(--r-control);
   flex: 1;
@@ -1038,8 +1088,10 @@ kbd {
 .document-card {
   background-color: var(--glass-2);
   background-image: var(--glass-sheen);
-  -webkit-backdrop-filter: var(--glass-filter-2);
-  backdrop-filter: var(--glass-filter-2);
+  --lens-blur: var(--glass-2-blur);
+  --lens-saturate: var(--glass-sat);
+  -webkit-backdrop-filter: var(--refraction, var(--glass-filter-2));
+  backdrop-filter: var(--refraction, var(--glass-filter-2));
   border: 1px solid var(--glass-outline);
   border-radius: var(--r-xl);
   overflow: hidden;
@@ -1084,6 +1136,38 @@ kbd {
 .markdown .document-cover {
   background: radial-gradient(ellipse at 12% 8%, rgb(255 255 255 / .9), transparent 62%), linear-gradient(150deg, #e7ebf2, #f4f6f8);
   color: var(--n-600);
+}
+
+/* 自定义封面：首页预览从页顶开始裁切，自选图片居中裁切；四周压一圈很淡的内描边，和卡片玻璃分开。 */
+.document-cover.has-image,
+.markdown .document-cover.has-image,
+:root[data-theme=dark] .document-cover.has-image {
+  background: var(--surface);
+}
+
+.cover-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 50%;
+  pointer-events: none;
+  user-select: none;
+  animation: zg-fade-in var(--dur-3) var(--ease-out) both;
+}
+
+.cover-image.page {
+  object-position: 50% 0;
+}
+
+.document-cover.has-image::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / .07), inset 0 1px 0 rgb(255 255 255 / .35);
+  pointer-events: none;
 }
 
 .document-type-icon {
@@ -1641,8 +1725,10 @@ kbd {
   gap: 10px;
   background-color: var(--glass-1);
   background-image: var(--glass-sheen);
-  -webkit-backdrop-filter: var(--glass-filter-1);
-  backdrop-filter: var(--glass-filter-1);
+  --lens-blur: var(--glass-1-blur);
+  --lens-saturate: var(--glass-sat);
+  -webkit-backdrop-filter: var(--refraction, var(--glass-filter-1));
+  backdrop-filter: var(--refraction, var(--glass-filter-1));
   border: 1px solid var(--glass-outline);
   border-radius: var(--r-bar);
   margin-bottom: 10px;
@@ -1954,8 +2040,10 @@ kbd {
   width: 248px;
   flex: 0 0 248px;
   background-color: var(--panel-solid);
-  -webkit-backdrop-filter: blur(var(--popup-blur)) saturate(var(--glass-sat));
-  backdrop-filter: blur(var(--popup-blur)) saturate(var(--glass-sat));
+  --lens-blur: var(--popup-blur);
+  --lens-saturate: var(--glass-sat);
+  -webkit-backdrop-filter: var(--refraction, blur(var(--popup-blur)) saturate(var(--glass-sat)));
+  backdrop-filter: var(--refraction, blur(var(--popup-blur)) saturate(var(--glass-sat)));
   border: 1px solid var(--glass-outline);
   border-radius: var(--r-xl);
   margin-right: 10px;
@@ -2354,8 +2442,10 @@ kbd {
   border-radius: var(--r-control);
   /* 实底胶囊：页码浮在 PDF 与任意底板图片之上，都要看得清。 */
   background-color: var(--panel-solid);
-  -webkit-backdrop-filter: blur(var(--popup-blur)) saturate(var(--glass-sat));
-  backdrop-filter: blur(var(--popup-blur)) saturate(var(--glass-sat));
+  --lens-blur: var(--popup-blur);
+  --lens-saturate: var(--glass-sat);
+  -webkit-backdrop-filter: var(--refraction, blur(var(--popup-blur)) saturate(var(--glass-sat)));
+  backdrop-filter: var(--refraction, blur(var(--popup-blur)) saturate(var(--glass-sat)));
   box-shadow: var(--shadow-2), var(--glass-edge);
   color: var(--surface-ink);
   font-size: 12px;
@@ -2496,8 +2586,10 @@ kbd {
   padding: 5px 5px 5px 15px;
   background-color: var(--glass-2);
   background-image: var(--glass-sheen);
-  -webkit-backdrop-filter: var(--glass-filter-2);
-  backdrop-filter: var(--glass-filter-2);
+  --lens-blur: var(--glass-2-blur);
+  --lens-saturate: var(--glass-sat);
+  -webkit-backdrop-filter: var(--refraction, var(--glass-filter-2));
+  backdrop-filter: var(--refraction, var(--glass-filter-2));
   border: 1px solid var(--glass-outline);
   border-radius: var(--r-bar);
   margin-top: 10px;
@@ -2744,8 +2836,10 @@ kbd {
   min-height: 0;
   background-color: var(--glass-3);
   background-image: var(--glass-sheen);
-  -webkit-backdrop-filter: var(--glass-filter-3);
-  backdrop-filter: var(--glass-filter-3);
+  --lens-blur: var(--glass-3-blur);
+  --lens-saturate: var(--glass-sat);
+  -webkit-backdrop-filter: var(--refraction, var(--glass-filter-3));
+  backdrop-filter: var(--refraction, var(--glass-filter-3));
   border: 1px solid var(--glass-outline);
   border-radius: var(--r-xl);
   z-index: var(--z-drawer);
@@ -2920,8 +3014,10 @@ kbd {
   border-radius: var(--r-lg);
   background-color: var(--popup-glass);
   background-image: var(--popup-sheen);
-  -webkit-backdrop-filter: blur(var(--popup-blur)) saturate(var(--glass-sat));
-  backdrop-filter: blur(var(--popup-blur)) saturate(var(--glass-sat));
+  --lens-blur: var(--popup-blur);
+  --lens-saturate: var(--glass-sat);
+  -webkit-backdrop-filter: var(--refraction, blur(var(--popup-blur)) saturate(var(--glass-sat)));
+  backdrop-filter: var(--refraction, blur(var(--popup-blur)) saturate(var(--glass-sat)));
   border: 1px solid var(--glass-outline);
   box-shadow: 0 14px 34px -14px rgb(0 0 0 / .3), var(--glass-edge);
   color: var(--surface-ink);
@@ -3001,8 +3097,10 @@ kbd {
   z-index: var(--z-toast);
   background-color: var(--glass-3);
   background-image: var(--glass-sheen);
-  -webkit-backdrop-filter: var(--glass-filter-3);
-  backdrop-filter: var(--glass-filter-3);
+  --lens-blur: var(--glass-3-blur);
+  --lens-saturate: var(--glass-sat);
+  -webkit-backdrop-filter: var(--refraction, var(--glass-filter-3));
+  backdrop-filter: var(--refraction, var(--glass-filter-3));
   border: 1px solid var(--glass-outline);
   box-shadow: var(--shadow-3), var(--glass-edge);
   border-radius: var(--r-bar);
@@ -3057,8 +3155,10 @@ kbd {
   max-width: 90vw;
   background-color: var(--popup-glass);
   background-image: var(--popup-sheen);
-  -webkit-backdrop-filter: blur(var(--popup-blur)) saturate(var(--glass-sat));
-  backdrop-filter: blur(var(--popup-blur)) saturate(var(--glass-sat));
+  --lens-blur: var(--popup-blur);
+  --lens-saturate: var(--glass-sat);
+  -webkit-backdrop-filter: var(--refraction, blur(var(--popup-blur)) saturate(var(--glass-sat)));
+  backdrop-filter: var(--refraction, blur(var(--popup-blur)) saturate(var(--glass-sat)));
   border: 1px solid var(--glass-outline);
   border-radius: var(--r-2xl);
   box-shadow: var(--shadow-3), var(--glass-edge);
@@ -3136,8 +3236,10 @@ kbd {
   height: 34px;
   background-color: var(--accent-glass);
   background-image: var(--glass-tint-sheen);
-  -webkit-backdrop-filter: var(--glass-filter-3);
-  backdrop-filter: var(--glass-filter-3);
+  --lens-blur: var(--glass-3-blur);
+  --lens-saturate: var(--glass-sat);
+  -webkit-backdrop-filter: var(--refraction, var(--glass-filter-3));
+  backdrop-filter: var(--refraction, var(--glass-filter-3));
   border: 1px solid transparent;
   color: var(--accent-on);
   box-shadow: var(--shadow-2), var(--glass-control-edge);
@@ -3244,6 +3346,8 @@ kbd {
 :root[data-theme=dark] .pdf-photos {
   display: block;
   filter: brightness(.86) saturate(.96);
+  /* 照片层在空闲时才补上，淡入而不是突然换色。 */
+  animation: zg-fade-in var(--dur-3) var(--ease-out) both;
 }
 
 :root[data-theme=dark] .page-slot {
