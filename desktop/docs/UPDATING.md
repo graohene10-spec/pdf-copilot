@@ -1,6 +1,8 @@
 # 升级开智
 
-当前桌面版为 [0.3.1](https://github.com/graohene10-spec/pdf-copilot/releases/tag/desktop-v0.3.1)。可以在「设置 → 更新」查看当前版本和发行形式，并点击「检查更新」。设置共有「外观、阅读、快捷键、AI、更新」五页。
+当前桌面版为 [0.4.1](https://github.com/graohene10-spec/pdf-copilot/releases/tag/desktop-v0.4.1)。可以在「设置 → 更新」查看当前版本和发行形式，并点击「检查更新」。设置共有「外观、阅读、快捷键、AI、更新」五页。
+
+升级后可在「设置 → AI → 猜你想问」打开或关闭问题推荐，保存后生效，并沿用已有的开关偏好。
 
 ## 选择升级方式
 
@@ -11,7 +13,7 @@
 | 0.2.2 及更早的安装版 | 手动下载安装一次 0.3.1 或更新的安装包，之后可在应用内一键更新 |
 | 0.3.0 及更早的免安装版 | 手动下载并替换一次 0.3.1 或更新的免安装包，之后可在应用内一键更新 |
 
-应用只提供版本号高于当前版本的更新。当前版本已是最新时，会显示「已是最新版本」。浏览器插件与桌面软件有独立版本，插件的 `v0.3.3` 等标签不代表桌面版高于 `0.3.1`。
+应用只提供版本号高于当前版本的更新。当前版本已是最新时，会显示「已是最新版本」。浏览器插件与桌面软件有独立版本，插件的 `v0.3.3` 等标签与桌面版本独立比较。
 
 ## 应用内更新
 
@@ -34,11 +36,11 @@
 
 ## 手动升级
 
-在[桌面版 0.3.1 发布页](https://github.com/graohene10-spec/pdf-copilot/releases/tag/desktop-v0.3.1)选择相应附件；以后升级可从[发布列表](https://github.com/graohene10-spec/pdf-copilot/releases)选择较新的 `desktop-v` 版本。
+在[桌面版 0.4.1 发布页](https://github.com/graohene10-spec/pdf-copilot/releases/tag/desktop-v0.4.1)选择相应附件；以后升级可从[发布列表](https://github.com/graohene10-spec/pdf-copilot/releases)选择较新的 `desktop-v` 版本。
 
-**安装版**：下载 `kaizhi_0.3.1_x64-setup.exe`，关闭开智后运行安装包，继续使用当前 Windows 账号及原安装位置即可。无需先卸载，也无需重新导入文档。
+**安装版**：下载 `kaizhi_0.4.1_x64-setup.exe`，关闭开智后运行安装包，继续使用当前 Windows 账号及原安装位置即可。无需先卸载，也无需重新导入文档。
 
-**免安装版**：下载 `kaizhi_0.3.1_x64-portable.zip`，关闭开智，解压后将 `开智-portable` 中的新文件复制到原程序文件夹并替换同名文件。保留 `开智.exe` 旁的 `native-host/` 文件夹，以及原来额外放入的个人文件。也可以解压到新目录后运行；同一 Windows 账号下仍会读取原文档库。
+**免安装版**：下载 `kaizhi_0.4.1_x64-portable.zip`，关闭开智，解压后将 `开智-portable` 中的新文件复制到原程序文件夹并替换同名文件。保留 `开智.exe` 旁的 `native-host/` 文件夹，以及原来额外放入的个人文件。也可以解压到新目录后运行；同一 Windows 账号下仍会读取原文档库。
 
 发布页同时提供完整源码、`manifest.json` 和 `SHA256SUMS.txt`。源码包用于开发，不是可直接运行的桌面程序。
 

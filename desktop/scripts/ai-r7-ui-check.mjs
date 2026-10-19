@@ -10,7 +10,7 @@ import { PLACEHOLDERS } from '../src/ai/greeting.ts';
 
 const artifacts = resolve('artifacts'), checks = [], errors = [], requests = [];
 const event = value => `data: ${JSON.stringify(value)}\n\n`;
-let release;
+let release, releasePrediction, holdPrediction = false;
 const model = createServer(async (request, response) => {
   for (const [name, value] of [['access-control-allow-origin', '*'], ['access-control-allow-headers', 'authorization,content-type'], ['access-control-allow-methods', 'POST,OPTIONS']]) response.setHeader(name, value);
   if (request.method === 'OPTIONS') { response.writeHead(204); response.end(); return; }
@@ -19,8 +19,12 @@ const model = createServer(async (request, response) => {
   response.writeHead(200, { 'content-type': 'text/event-stream' });
   if (text.includes('请预判这位读者')) {
     requests.push({ kind: 'predict', model: payload.model, reasoning: payload.reasoning });
-    response.write(event({ type: 'response.output_text.delta', delta: '“测量假设说的是什么？”\n多余的第二行' }));
-    response.write(event({ type: 'response.completed', response: { status: 'completed', output: [] } })); response.end(); return;
+    const finish = () => {
+      response.write(event({ type: 'response.output_text.delta', delta: '“测量假设说的是什么？”\n多余的第二行' }));
+      response.write(event({ type: 'response.completed', response: { status: 'completed', output: [] } })); response.end();
+    };
+    if (holdPrediction) releasePrediction = finish; else finish();
+    return;
   }
   requests.push({ kind: 'ask', model: payload.model });
   response.write(event({ type: 'response.reasoning_summary_text.delta', delta: 'Reading the measurement postulate.' }));
@@ -102,6 +106,33 @@ try {
   assert.match(await pane().locator('.prompt-ghost').innerText(), /^测量假设说的是什么？/);
   assert.deepEqual(requests.filter(item => item.kind === 'predict')[0], { kind: 'predict', model: 'gpt-5.4-mini', reasoning: { effort: 'none' } });
   await pane().locator('.ai-composer').screenshot({ path: resolve(artifacts, 'ai-r7-prediction.png') });
+  const predictionCount = () => requests.filter(item => item.kind === 'predict').length;
+  async function setPrediction(enabled) {
+    await page.getByRole('button', { name: '打开设置', exact: true }).click();
+    await dialog.getByRole('button', { name: 'AI', exact: true }).click();
+    const section = dialog.getByRole('region', { name: '猜你想问设置', exact: true });
+    await section.getByRole('checkbox', { name: '启用猜你想问', exact: true }).setChecked(enabled);
+    await dialog.getByRole('button', { name: '保存', exact: true }).click();
+    await dialog.waitFor({ state: 'detached' });
+  }
+  async function storedPrediction() {
+    return page.evaluate(async () => {
+      const { library } = await import('/src/sdk/index.ts');
+      return JSON.parse(await library.getSetting('app.preferences.v1')).assistant.predictQuestions;
+    });
+  }
+  await setPrediction(false);
+  assert.equal(await storedPrediction(), false);
+  assert.equal(await pane().locator('.prompt-ghost').count(), 0, 'Disabling clears an existing suggestion even after the composer loses focus.');
+  const beforeDisabledFocus = predictionCount();
+  await prompt.focus(); await page.waitForTimeout(1100);
+  assert.equal(predictionCount(), beforeDisabledFocus, 'Disabled suggestions issue no new requests.');
+  await page.keyboard.press('Tab');
+  assert.equal(await prompt.inputValue(), '', 'Tab cannot adopt a disabled suggestion.');
+  await setPrediction(true);
+  assert.equal(await storedPrediction(), true);
+  await prompt.focus();
+  await until(async () => await pane().locator('.prompt-ghost').count() > 0, 'Suggestions resume after enabling.');
   await page.keyboard.press('Tab');
   assert.equal(await prompt.inputValue(), '测量假设说的是什么？');
   checks.push('With document context on, the composer shows a predicted question from GPT-5.4 Mini (thinking off); Tab fills it in.');
@@ -112,11 +143,27 @@ try {
   const live = await thinking.innerText();
   assert.match(live, /[·✢✳✶✻✽]/); assert.match(live, /[A-Z][a-z]+ing…/); assert.match(live, /\d+(\.\d)?s/); assert.doesNotMatch(live, /token|思考中/i);
   await pane().locator('.ai-message.assistant').first().screenshot({ path: resolve(artifacts, 'ai-r7-thinking.png') });
+  holdPrediction = true;
+  const beforeAnswer = predictionCount();
   release();
   await pane().locator('.answer-body').waitFor();
   assert.match(await pane().locator('.thinking').first().innerText(), /^✻\s*Thought for \d/);
   assert.equal(await pane().getByText(/tokens/).count(), 0);
   checks.push(`Thinking shows "${live.replace(/\s+/g, ' ').trim()}" with a Claude Code spinner and no token count; afterwards "Thought for …".`);
+  await until(async () => predictionCount() > beforeAnswer && Boolean(releasePrediction), 'A prediction starts after the answer.');
+  await setPrediction(false);
+  releasePrediction();
+  await page.waitForTimeout(1100);
+  assert.equal(await pane().locator('.prompt-ghost').count(), 0, 'A late reply cannot restore a disabled suggestion.');
+  const beforeReload = predictionCount();
+  await page.reload();
+  assert.equal(await storedPrediction(), false, 'The disabled preference survives a reload.');
+  const assistantButton = page.getByRole('button', { name: '阅读助手', exact: true });
+  if (await assistantButton.count() && !await pane().count()) await assistantButton.click();
+  if (await pane().count()) await pane().getByRole('textbox', { name: '向 AI 提问', exact: true }).focus();
+  await page.waitForTimeout(1100);
+  assert.equal(predictionCount(), beforeReload);
+  checks.push('猜你想问 has its own AI settings switch: saving off clears existing suggestions, aborts pending requests, rejects late replies and persists across reload; saving on restores suggestions.');
   assert.deepEqual(errors, []);
   await writeFile(resolve(artifacts, 'ai-r7-ui-check.json'), JSON.stringify({ checks }, null, 2));
   console.log(checks.join('\n'));

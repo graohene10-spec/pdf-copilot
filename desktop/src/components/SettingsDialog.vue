@@ -377,8 +377,11 @@ function dialogKeydown(event: KeyboardEvent) {
               <label v-if="draft.assistant.greeting.style === 'custom'" class="greeting-custom"><span>自定义问候，每行一句</span><textarea v-model="draft.assistant.greeting.custom" :disabled="saving" :maxlength="MAX_GREETING_CHARS" rows="4" aria-label="自定义问候，每行一句" placeholder="Fancy a cup of tea?&#10;月色真美&#10;Good morning" /></label>
               <div class="greeting-preview" aria-label="问候预览"><strong :lang="greetingPreview.lang === 'zh' ? 'zh-CN' : 'en'">{{ greetingPreview.text }}</strong><small v-if="greetingPreview.source">— {{ greetingPreview.source }}</small><button type="button" class="text-action" :disabled="saving" @click="previewSeed = Math.random()">换一句</button></div>
             </div>
-            <div class="settings-group predict-setting"><label class="setting-check"><input v-model="draft.assistant.predictQuestions" type="checkbox" :disabled="saving" aria-label="输入框为空时预判下一个问题" aria-describedby="predict-help" /><span>输入框为空时预判下一个问题</span></label></div>
-            <p id="predict-help" class="settings-help">有上下文（选区、对话或文档上下文开着）时，用小模型（DeepSeek Flash、GPT-5.4 Mini，或 Codex 当前模型的最低思考强度）读一下当前页、选区和最近对话，把最可能的问题淡淡地写在输入框里：按 Tab 或回车采用，Esc 收起；输入框空着时直接按发送键也会发送它。每次预判消耗少量额度。</p>
+          </section>
+          <section v-if="ready && tab === 'ai'" class="quick-prompts-section prediction-section" aria-label="猜你想问设置">
+            <div class="quick-prompts-heading"><h3>猜你想问</h3></div>
+            <div class="settings-group"><label class="setting-check"><input v-model="draft.assistant.predictQuestions" type="checkbox" :disabled="saving" aria-label="启用猜你想问" aria-describedby="predict-help" /><span>启用猜你想问</span></label></div>
+            <p id="predict-help" class="settings-help">输入框为空时，根据当前页、选区和最近对话推荐下一个问题。按 Tab 或回车采用，Esc 收起。推荐使用当前服务商的小模型或最低思考强度，会消耗额度；关闭后停止推荐请求并清除已有建议。保存后生效。</p>
           </section>
           <section v-if="ready && tab === 'ai'" class="quick-prompts-section capture-questions-section" aria-label="框选快捷提问设置">
             <div class="quick-prompts-heading"><h3>框选快捷提问</h3><button type="button" class="text-action" :disabled="saving" @click="restoreCaptureQuestions" aria-label="恢复框选提问默认">恢复默认</button></div>
@@ -520,7 +523,6 @@ button{color:var(--control-ink)}
 .greeting-preview strong:lang(zh-CN){font-size:17px;letter-spacing:.05em}
 .greeting-preview small{font-size:11.5px;color:var(--muted)}
 .greeting-preview .text-action{margin-left:auto}
-.predict-setting{margin-top:12px}
 .avatar-grid{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}
 .avatar-option{display:flex;flex-direction:column;align-items:center;gap:6px;width:76px;height:auto;padding:8px 4px;border:1px solid transparent;border-radius:var(--r-md);background:none;box-shadow:none;font-size:11.5px;color:var(--secondary)}
 .avatar-option:hover:not(:disabled){background:var(--fill-4)}

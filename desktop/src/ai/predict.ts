@@ -56,6 +56,7 @@ export function predictionKey(context: PredictContext) {
 }
 
 export async function predictQuestion(context: PredictContext, signal: AbortSignal): Promise<string> {
+  signal.throwIfAborted()
   const key = predictionKey(context)
   if (cache.has(key)) return cache.get(key)!
   const settings: any = loadAiSettings()
@@ -73,6 +74,7 @@ export async function predictQuestion(context: PredictContext, signal: AbortSign
     recent && `[最近的对话]\n${recent}`,
   ].filter(Boolean).join('\n\n')
   const { streamChat } = await import('./providers.mjs')
+  signal.throwIfAborted()
   let reply = ''
   const local = new AbortController()
   const stop = () => local.abort()
@@ -85,6 +87,7 @@ export async function predictQuestion(context: PredictContext, signal: AbortSign
     // 读到第一行后主动停下也算成功；其他失败（没网、额度）就不显示建议。
     if (!reply || signal.aborted) throw error
   } finally { clearTimeout(timer); signal.removeEventListener('abort', stop) }
+  signal.throwIfAborted()
   const question = cleanQuestion(reply)
   if (question) remember(key, question)
   return question

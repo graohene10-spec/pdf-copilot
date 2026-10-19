@@ -4,7 +4,7 @@
 
 | 产品 | 最新正式版 | 下载与说明 |
 | --- | --- | --- |
-| 开智 Windows 桌面版 | **0.3.1** | [下载](https://github.com/graohene10-spec/pdf-copilot/releases/tag/desktop-v0.3.1) · [使用说明](desktop/README.md) · [本版更新](desktop/RELEASE_NOTES_0.3.1.md) |
+| 开智 Windows 桌面版 | **0.4.1** | [下载](https://github.com/graohene10-spec/pdf-copilot/releases/tag/desktop-v0.4.1) · [使用说明](desktop/README.md) · [本版更新](desktop/RELEASE_NOTES_0.4.1.md) |
 | PDF Copilot 浏览器扩展 | **v0.3.3** | [下载](https://github.com/graohene10-spec/pdf-copilot/releases/tag/v0.3.3) · [扩展教程](docs/USER_GUIDE.md) |
 
 ## 开智 Windows 桌面版
@@ -13,6 +13,8 @@
 - **并排与同书多开**：最多三栏并排，PDF / Markdown 可混合；同一本书可在右侧再开一份，各自浏览不同位置，共用对话与标记。
 - **PDF 手写标记**：笔、荧光笔、划线、橡皮和撤销，自动保存在本机；不改写原 PDF，当前不导出带标记的 PDF。
 - **AI 阅读助手**：OpenAI API、DeepSeek 或本机 Codex，支持选文、截图、原文检索、引用跳转、多个会话与已保存的历史对话；框选后可用自定义气泡或数字键直接提问。
+- **阅读与助手改进**：PDF 超宽时可拖动底部横向滚动条，深色滤镜保留文字与图像层次；模型卡片更紧凑，文档上下文开关更清晰，深浅主题切换后组件保持同步。
+- **猜你想问**：根据阅读位置与对话推荐下一个问题，可在「设置 → AI → 猜你想问」打开或关闭；关闭后清除建议并取消推荐请求，重启后保留选择。
 - **外观与字体**：六套底板预设、本机图片、玻璃透明度与模糊程度、助手形象；0.3.1 内置 Anthropic Serif 西文字体，也可导入自己的字体。
 - **应用内更新**：0.3.1 起安装版和免安装版均支持一键下载、校验、安装并重启。
 
@@ -20,16 +22,16 @@
 
 | 文件 | 用途 |
 | --- | --- |
-| [kaizhi_0.3.1_x64-setup.exe](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.3.1/kaizhi_0.3.1_x64-setup.exe) | Windows x64 安装版，约 7.5 MiB |
-| [kaizhi_0.3.1_x64-portable.zip](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.3.1/kaizhi_0.3.1_x64-portable.zip) | 免安装版，约 8.0 MiB；全部解压后运行 `开智-portable/开智.exe` |
-| kaizhi_0.3.1_source.zip | 完整源码，供开发者构建 |
+| [kaizhi_0.4.1_x64-setup.exe](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.4.1/kaizhi_0.4.1_x64-setup.exe) | Windows x64 安装版 |
+| [kaizhi_0.4.1_x64-portable.zip](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.4.1/kaizhi_0.4.1_x64-portable.zip) | 免安装版；全部解压后运行 `开智-portable/开智.exe` |
+| kaizhi_0.4.1_source.zip | 完整源码，供开发者构建 |
 | manifest.json / SHA256SUMS.txt | 发布清单与附件校验值 |
 
 1. 安装或解压运行，系统需有 WebView2；免安装版保留程序旁的 `native-host/` 文件夹。
 2. 点击「加入文档」、按 `Ctrl + O` 或拖入 PDF / Markdown 文件，即可阅读；包内 `samples/` 提供示例。
 3. 需要 AI 时进入「设置 → AI」：API 服务填写自己的 Key，Codex 使用本机已安装并登录的程序。打开「阅读助手」即可提问。
 
-**升级到 0.3.1**：0.3.0 安装版可在应用内升级；0.2.2 及更早安装版、0.3.0 及更早免安装版需手动下载一次。后续更新在「设置 → 更新」中检查。文档库、阅读进度、设置和已保存凭据继续沿用；免安装版的数据也保存在当前 Windows 账号的应用数据目录。
+**升级到 0.4.1**：0.3.1 及以后版本、0.3.0 安装版可在应用内升级；0.2.2 及更早安装版、0.3.0 及更早免安装版需手动下载一次。后续更新在「设置 → 更新」中检查。文档库、阅读进度、设置和已保存凭据继续沿用；免安装版的数据也保存在当前 Windows 账号的应用数据目录。
 
 [桌面使用与快捷键](desktop/README.md) · [升级与备份](desktop/docs/UPDATING.md) · [桌面隐私说明](desktop/docs/PRIVACY.md) · [源码构建与发布](desktop/docs/RELEASING.md)
 

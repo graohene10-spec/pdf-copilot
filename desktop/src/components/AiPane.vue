@@ -359,7 +359,7 @@ function stop() { stopChat(props.document.id, state.value.id) }
 function applySettings(value: any) { settings.value = value; configureRequests(value) }
 function keydown(event: KeyboardEvent) {
   const plain = !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey && !event.isComposing && event.keyCode !== 229
-  if (prediction.value && !prompt.value) {
+  if (preferences.value.assistant.predictQuestions && prediction.value && !prompt.value) {
     // Tab 或回车：采用预判的问题，放进输入框里可以再改；发送仍用发送键。
     if ((event.key === 'Tab' || event.key === 'Enter') && plain) { event.preventDefault(); prompt.value = prediction.value; return }
     if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); dismissed = predictionKey(predictContext()); prediction.value = ''; return }
@@ -368,7 +368,7 @@ function keydown(event: KeyboardEvent) {
 }
 function send(question?: string) {
   // 输入框空着而有预判的问题时，按发送键直接发送它。
-  if (question === undefined && !prompt.value.trim() && prediction.value) question = prediction.value
+  if (preferences.value.assistant.predictQuestions && question === undefined && !prompt.value.trim() && prediction.value) question = prediction.value
   const id = props.document.id
   const selection = props.context?.selection
   const usesImage = includeSelection.value && Boolean(selection?.image)
@@ -385,12 +385,17 @@ const composerFocused = ref(false)
 let predicting: AbortController | undefined
 let predictTimer: ReturnType<typeof setTimeout> | undefined
 let dismissed = ''
+watch(() => preferences.value.assistant.predictQuestions, enabled => {
+  if (enabled) return
+  clearTimeout(predictTimer); predicting?.abort(); predicting = undefined
+  prediction.value = ''; dismissed = ''
+}, { flush: 'sync' })
 function predictContext() {
   return { document: { ...props.document }, page: props.context?.page || 1, selection: selected.value.text || '', history: messages.value.filter(item => item.content && !item.failed).map(item => ({ role: item.role, content: item.content })) }
 }
 // 有上下文（选区、对话或文档上下文开着）且输入框空着时才预判；输入、发送、换页都会取消在途请求。
 const predictable = computed(() => preferences.value.assistant.predictQuestions && !busy.value && !prompt.value && (hasSelection.value || messages.value.length > 0 || includeDocument.value) && (composerFocused.value || messages.value.length > 0))
-watch(() => [predictable.value, props.document.id, props.context?.page, selected.value.text, messages.value.length, messages.value.at(-1)?.finishedAt] as const, () => {
+watch(() => [predictable.value, state.value.id, props.document.id, props.context?.page, selected.value.text, messages.value.length, messages.value.at(-1)?.finishedAt] as const, () => {
   clearTimeout(predictTimer); predicting?.abort(); predicting = undefined
   const context = predictContext(), key = predictionKey(context)
   if (!predictable.value) { if (prompt.value || busy.value) prediction.value = ''; return }
@@ -398,7 +403,7 @@ watch(() => [predictable.value, props.document.id, props.context?.page, selected
   prediction.value = ''
   predictTimer = setTimeout(() => {
     const request = new AbortController(); predicting = request
-    predictQuestion(context, request.signal).then(question => { if (predicting === request && !prompt.value && !busy.value) prediction.value = question }).catch(() => {}).finally(() => { if (predicting === request) predicting = undefined })
+    predictQuestion(context, request.signal).then(question => { if (predicting === request && !request.signal.aborted && preferences.value.assistant.predictQuestions && !prompt.value && !busy.value) prediction.value = question }).catch(() => {}).finally(() => { if (predicting === request) predicting = undefined })
   }, 700)
 }, { immediate: true })
 onMounted(() => {

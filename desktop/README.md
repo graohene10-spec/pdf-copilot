@@ -1,8 +1,8 @@
-# 开智 0.4.0
+# 开智 0.4.1
 
 开智是一款 Windows PDF / Markdown 阅读与管理工具，支持并排阅读、同书多开、本机手写标记和 AI 文档问答。界面采用可调节的液态玻璃材质，文档库、阅读进度、设置和对话记录保存在本机。
 
-[下载 0.4.0](https://github.com/graohene10-spec/pdf-copilot/releases/tag/desktop-v0.4.0) · [本版更新](RELEASE_NOTES_0.4.0.md) · [0.3.1 更新](RELEASE_NOTES_0.3.1.md) · [升级指南](docs/UPDATING.md) · [隐私与数据](docs/PRIVACY.md) · [构建与发布](docs/RELEASING.md)
+[下载 0.4.1](https://github.com/graohene10-spec/pdf-copilot/releases/tag/desktop-v0.4.1) · [本版更新](RELEASE_NOTES_0.4.1.md) · [0.4.0 更新](RELEASE_NOTES_0.4.0.md) · [升级指南](docs/UPDATING.md) · [隐私与数据](docs/PRIVACY.md) · [构建与发布](docs/RELEASING.md)
 
 ## 下载与首次使用
 
@@ -10,9 +10,9 @@
 
 | GitHub 附件 | 用途 |
 | --- | --- |
-| [kaizhi_0.4.0_x64-setup.exe](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.4.0/kaizhi_0.4.0_x64-setup.exe) | 安装版，约 7.5 MiB |
-| [kaizhi_0.4.0_x64-portable.zip](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.4.0/kaizhi_0.4.0_x64-portable.zip) | 免安装版，约 8.0 MiB；解压后运行 `开智-portable/开智.exe` |
-| kaizhi_0.4.0_source.zip | 完整源码，供开发者构建 |
+| [kaizhi_0.4.1_x64-setup.exe](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.4.1/kaizhi_0.4.1_x64-setup.exe) | Windows x64 安装版 |
+| [kaizhi_0.4.1_x64-portable.zip](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.4.1/kaizhi_0.4.1_x64-portable.zip) | 免安装版；解压后运行 `开智-portable/开智.exe` |
+| kaizhi_0.4.1_source.zip | 完整源码，供开发者构建 |
 | manifest.json / SHA256SUMS.txt | 文件清单、源码提交和附件校验值 |
 
 1. 安装程序，或将免安装 ZIP 全部解压，保留 `开智.exe` 旁的 `native-host/` 文件夹。
@@ -54,9 +54,9 @@
 
 空白对话只显示助手形象和一句问候：按当地时间随机的英文问候（如 Fancy a cup of tea?）或与时辰、读书相合的古诗，固定使用内置的 Anthropic Serif。样式可在「设置 → AI → 空白页问候」改为英文、古诗、两者或自己写的句子。输入框空着时显示一句随机的学术格言或典故作占位。
 
-普通选中文字不会自动展开助手，点击浮动的「问 AI」入口才会带入原文。开启文档上下文（芯片里的小开关：实心为开，空心为关）后，助手可读取当前页、搜索和补充有限的相关原文；支持图片的模型可接收页图或框选截图。点击发送才会准备上下文并调用服务。
+普通选中文字不会自动展开助手，点击浮动的「问 AI」入口才会带入原文。开启文档上下文（芯片里的小开关：实心为开，空心为关）后，助手可读取当前页、搜索和补充有限的相关原文；支持图片的模型可接收页图或框选截图。发送问题时准备上下文并调用服务；下述「猜你想问」会单独发起推荐请求。
 
-**问题预判**（默认开启）：有上下文（选区、已有对话或文档上下文开着）且输入框为空、获得焦点或刚答完时，开智用小模型（DeepSeek Flash、GPT-5.4 Mini，或 Codex 当前模型的最低思考强度）读取当前页的一段文字、选区和最近几轮对话，把最可能的下一个问题淡淡地写在输入框里：按 `Tab` 或回车采用，`Esc` 收起；输入框空着时直接按发送键也会发送它。可在「设置 → AI → 空白页问候」下方关闭。
+**猜你想问**（默认开启）：有上下文（选区、已有对话或文档上下文开着）且输入框为空、获得焦点或刚答完时，开智用小模型（DeepSeek Flash、GPT-5.4 Mini，或 Codex 当前模型的最低思考强度）读取当前页的一段文字、选区和最近几轮对话，把最可能的下一个问题淡淡地写在输入框里：按 `Tab` 或回车采用，`Esc` 收起；输入框空着时直接按发送键也会发送它。在「设置 → AI → 猜你想问」勾选或取消「启用猜你想问」，保存后生效。关闭后立即清除建议并取消进行中的推荐请求；该偏好在重启后保留，重新开启可恢复推荐。每次推荐会消耗模型额度。
 
 对话菜单可新建、切换和删除对话；问题可编辑后重答，回答可重新生成或从此处分支。历史记录按「这份文档 / 全部文档」查看，后者汇总仍在文档库中的文档对话。
 
@@ -81,7 +81,7 @@
 | 外观 | 主题、文档视图、六套底板预设、本机图片图库、玻璃透明度与模糊程度、界面和阅读字体 |
 | 阅读 | PDF 初始缩放、缩放步长、侧栏超宽匹配与框选行为；Markdown 字号及内容宽度 |
 | 快捷键 | 录入组合键、禁用操作、冲突检查及恢复默认 |
-| AI | 服务、模型、接口、凭据、阅读预算、并发队列、助手形象、空白页问候、问题预判及框选快捷提问 |
+| AI | 服务、模型、接口、凭据、阅读预算、并发队列、助手形象、空白页问候、猜你想问及框选快捷提问 |
 | 更新 | 当前版本、检查更新、自动检查、接收测试版 |
 
 底板提供晨雾、暮光、薄荷、薰衣草、石墨、素白六种预设，也可上传 PNG / JPEG / WebP，图库最多保留六张。玻璃透明度与模糊程度连续可调；拖动滑杆时设置窗暂时变淡，便于查看效果。深浅主题、实色、高对比度及系统减少动效设置均有对应回退。
@@ -134,7 +134,7 @@ npm test
 cargo test --release --locked --manifest-path src-tauri/Cargo.toml
 npm run desktop:build
 npm run package:desktop
-node scripts/release-assets.mjs --tag desktop-v0.4.0
+node scripts/release-assets.mjs --tag desktop-v0.4.1
 ```
 
 本机测试使用 release 配置可复用正式构建缓存；CI 当前使用默认测试配置。工具不在 PATH 时可使用 `scripts/build-windows.ps1`。本机构建产物在 `release/` 中使用中文名称；`release/github/` 中整理为上方表格的英文附件名。程序运行时可加 `package:desktop -- --staging` 先输出至 `artifacts/package-staging/`。
