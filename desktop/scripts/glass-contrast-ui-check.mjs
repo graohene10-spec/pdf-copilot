@@ -17,7 +17,8 @@ async function appearance(value) {
   await page.evaluate(async value => {
     const { useSettings } = await import('/src/settings/index.ts');
     const settings = useSettings();
-    await settings.save({ ...settings.preferences.value, appearance: { ...settings.preferences.value.appearance, ...value } });
+    // 这些检查按最强的可读性补偿（100%，即 4.8:1）来量；默认强度单独在后面验证。
+    await settings.save({ ...settings.preferences.value, appearance: { ...settings.preferences.value.appearance, glassCompensation: 100, ...value } });
   }, value);
   await settled(); await paint();
 }
@@ -51,7 +52,7 @@ async function inkByRole(selector, theme, imageInk) {
   }, { selector, theme: themeInk(theme), imageInk });
 }
 /** Text in glass components reaches 4.5:1 against the glass composited over the given image half. */
-async function glassReadable(selector, side) {
+async function glassReadable(selector, side, minimum = 4.5) {
   const samples = await page.locator(selector).evaluateAll((elements, side) => {
     const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
     const paint = canvas.getContext('2d', { willReadFrequently: true });
@@ -66,7 +67,7 @@ async function glassReadable(selector, side) {
       return { name: element.className.split(' ')[0], contrast: (Math.max(light, ink) + .05) / (Math.min(light, ink) + .05) };
     });
   }, side);
-  for (const sample of samples) { assert.ok(sample.contrast >= 4.5, `${sample.name} glass keeps 4.5:1 over the ${side} image (measured ${sample.contrast.toFixed(2)}).`); metrics.minimumGlassContrast = Math.min(metrics.minimumGlassContrast ?? Infinity, sample.contrast); }
+  for (const sample of samples) { assert.ok(sample.contrast >= minimum, `${sample.name} glass keeps ${minimum}:1 over the ${side} image (measured ${sample.contrast.toFixed(2)}).`); metrics.minimumGlassContrast = Math.min(metrics.minimumGlassContrast ?? Infinity, sample.contrast); }
 }
 async function ink(selector, value) {
   await page.waitForFunction(({ selector, value }) => [...document.querySelectorAll(selector)].length > 0 && [...document.querySelectorAll(selector)].every(element => element.getAttribute('data-glass-ink') === value), { selector, value });
@@ -195,6 +196,12 @@ try {
       assert.ok((parts(fill)[3] ?? 1) >= (parts(normalMaterial[theme])[3] ?? 1) - .001, 'Compensation may only make the glass denser.');
     }
   }
+  // The default strength (50%) thickens less and adds a faint text halo instead.
+  await appearance({ theme: 'light', glassTransparency: 83, glassCompensation: 50 });
+  await glassReadable('.app-sidebar,.app-topbar', 'black', 2.85);
+  const halo = await page.locator('.app-sidebar').evaluate(element => element.style.getPropertyValue('--glass-label-shadow'));
+  assert.match(halo, /0 0 3px/, 'Text on gently compensated glass gets a halo.');
+  checks.push('At the default 50% strength the glass is thinner (≥2.9:1) and the text gets a faint halo.');
   checks.push('White and black PNG uploads in both themes: glass keeps the theme ink and becomes denser until it reads at 4.5:1; bare text on the photo takes the image ink; selected controls preserve the same foreground color.');
 
   await appearance({ theme: 'light', glassTransparency: 50 });
