@@ -52,7 +52,7 @@ struct Release {
 }
 
 #[derive(Deserialize, Debug, Clone)]
-struct Asset { name: String, #[serde(default)] size: u64, browser_download_url: String }
+struct Asset { name: String, #[serde(default)] size: u64, browser_download_url: String, #[serde(default)] digest: Option<String> }
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -182,7 +182,15 @@ async fn get(url: Url, accept: &str) -> Result<Response> {
         else { format!("GitHub 返回了错误（HTTP {}）", status.as_u16()) })
 }
 
+/// GitHub's API lists each asset's SHA-256 (`digest: "sha256:<hex>"`) in the same response that found the
+/// release, so a network that reaches api.github.com but not the asset hosts can still verify the download.
+fn api_digest(asset: &Asset) -> Option<String> {
+    let hash = asset.digest.as_deref()?.strip_prefix("sha256:")?;
+    is_sha256(hash).then(|| hash.to_ascii_lowercase())
+}
+
 async fn installer_checksum(release: &Release, name: &str) -> Option<String> {
+    if let Some(hash) = release.assets.iter().find(|asset| asset.name == name).and_then(api_digest) { return Some(hash); }
     let asset = release.assets.iter().find(|asset| asset.name == "SHA256SUMS.txt")?;
     let url = Url::parse(&asset.browser_download_url).ok().filter(allowed_host)?;
     let data = read_limited(get(url, "application/octet-stream").await.ok()?, MAX_SUMS_BYTES).await.ok()?;
@@ -551,6 +559,16 @@ mod tests {
             assert!(open_page(url).is_err(), "{url}");
         }
         assert_eq!(truncate_notes(&"字".repeat(MAX_NOTES_CHARS + 5)).chars().count(), MAX_NOTES_CHARS + 3);
+    }
+
+    #[test]
+    fn api_digest_is_used_and_validated() {
+        let asset = |digest: Option<&str>| Asset { name: "kaizhi_0.6.0_x64-setup.exe".into(), size: 1, browser_download_url: String::new(), digest: digest.map(Into::into) };
+        let hex = "3A437F5C53B6366A868D935D732A8E7DA74F88B193A86B16DC235EAF9F4C11C6";
+        assert_eq!(api_digest(&asset(Some(&format!("sha256:{hex}")))), Some(hex.to_ascii_lowercase()));
+        assert_eq!(api_digest(&asset(Some("sha1:abc"))), None);
+        assert_eq!(api_digest(&asset(Some("sha256:xyz"))), None);
+        assert_eq!(api_digest(&asset(None)), None);
     }
 
     /// Live check against the real repository: `cargo test -- --ignored live_`.

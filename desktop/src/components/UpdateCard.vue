@@ -28,7 +28,7 @@ const progressText = computed(() => {
 })
 const hint = computed(() => {
   if (canInstall.value || !info.value) return ''
-  return '此版本没有可校验的更新包，请在发布页下载。'
+  return '暂时取不到这个版本的安装包校验信息（多半是网络连不上 GitHub 的下载服务器），可以稍后再试，或前往发布页下载。'
 })
 
 function retry() { void updater.update() }
