@@ -272,21 +272,22 @@ kbd {
 }
 
 .app-shell.chrome-collapsed {
-  padding-left: 32px;
+  padding-left: 56px;
 }
 
 .chrome-tag {
   position: absolute;
-  left: 6px;
+  /* 和阅读工具条同高、顶边对齐，像工具条左边多出来的一格。 */
+  left: 10px;
   top: 10px;
   z-index: 20;
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 64px;
+  width: 36px;
+  height: 50px;
   padding: 0;
   border: 1px solid var(--glass-outline);
-  border-radius: var(--r-full);
+  border-radius: var(--r-bar);
   background-color: var(--glass-2);
   background-image: var(--glass-sheen);
   --lens-blur: var(--glass-2-blur);
@@ -300,7 +301,6 @@ kbd {
 }
 
 .chrome-tag:hover {
-  width: 24px;
   background-color: var(--control-hover);
 }
 
@@ -1624,20 +1624,9 @@ kbd {
   border-radius: var(--r-control);
   color: var(--control-ink);
 }
-.library-sort select {
-  appearance: none;
-  height: 100%;
-  padding: 0 4px;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-  color: inherit;
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-.library-sort select:focus-visible { outline: 2px solid var(--accent-ring); outline-offset: 2px; }
-.library-sort option { color: var(--surface-ink); background: var(--surface); }
+.library-sort { font: inherit; font-size: 13px; cursor: pointer; }
+.library-sort:hover { background-color: var(--control-hover); }
+.library-sort > svg:last-child { opacity: .6; }
 /* 视图切换与排序的文字、图标跟着玻璃墨色走，深色背景上也是白色。 */
 .view-switch button, .view-switch button.selected { color: var(--ink, var(--control-ink)); }
 
@@ -2284,10 +2273,6 @@ kbd {
   transform: none;
 }
 
-.reader-panes.multi > .reader-pane {
-  padding-top: 14px;
-}
-
 /* 每个窗口顶部中央的一枚「· · ·」把手，按住拖动换位置（同 iPad 多任务）。 */
 .panel-handle {
   position: absolute;
@@ -2334,10 +2319,6 @@ kbd {
   max-width: 60vw;
   min-height: 0;
   display: flex;
-}
-
-.reader-panes.multi > .ai-panel {
-  padding-top: 14px;
 }
 
 .reader-panes.multi > .ai-panel > .panel-handle {
@@ -2777,6 +2758,10 @@ kbd {
   font-family: var(--font-mono);
   font-size: 85%;
   white-space: break-spaces;
+  overflow-wrap: anywhere;
+  /* 折行时每一段都画完整的圆角底色，不在页边被截断。 */
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
   background: var(--md-fill);
   border-radius: 6px;
 }
@@ -3795,4 +3780,13 @@ kbd {
 
 .reader-panes.multi > .reader-pane .reader-tools :is(button, input, select, label) {
   cursor: pointer;
+}
+
+/* 阅读区上下沿：页面滚到工具条下面和窗口底边时渐渐淡出，而不是一刀切断。 */
+.pdf-scroll,
+.markdown-scroll {
+  --edge-fade-top: 14px;
+  --edge-fade-bottom: 26px;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 var(--edge-fade-top), #000 calc(100% - var(--edge-fade-bottom)), transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 var(--edge-fade-top), #000 calc(100% - var(--edge-fade-bottom)), transparent 100%);
 }

@@ -191,6 +191,8 @@ export function installGlassContrast(root: HTMLElement): { setBackground(dataUrl
   let generation = 0, frame = 0, disposed = false
   let lastAppearanceKey = '', materialRevision = 0, settlement = 0
   let classShell: HTMLElement | null = null
+  let settleTimer: ReturnType<typeof setTimeout> | undefined
+  const MOVING = '.sidebar-enter-active,.sidebar-leave-active,.topbar-enter-active,.topbar-leave-active,.pane-enter-active,.pane-leave-active'
   let options: GlassOptions = { legibility: 'thicken', compensation: 50, tint: 'theme' }
   const resize = new ResizeObserver(refresh)
   const classes = new MutationObserver(refresh)
@@ -213,10 +215,13 @@ export function installGlassContrast(root: HTMLElement): { setBackground(dataUrl
     settlement++
     lastAppearanceKey = ''
     for (const element of original.keys()) restore(element)
-    resize.disconnect(); observed.clear()
+    resize.disconnect(); observed.clear(); clearTimeout(settleTimer)
   }
+  // 侧栏、顶栏或助手正在弹簧伸缩时，玻璃每一帧都在变宽；这时逐帧重算可读性会让动画一顿一顿，停下后再算一次。
   function refresh() {
-    if (!disposed && dataUrl && !frame) frame = win.requestAnimationFrame(paint)
+    if (disposed || !dataUrl || frame) return
+    if (win.document.querySelector(MOVING)) { clearTimeout(settleTimer); settleTimer = setTimeout(refresh, 120); return }
+    frame = win.requestAnimationFrame(paint)
   }
   function paint() {
     frame = 0

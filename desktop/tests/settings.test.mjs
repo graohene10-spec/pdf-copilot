@@ -238,7 +238,7 @@ test('matcher uses physical codes, exact modifiers, ignores IME, and separates A
   assert.equal(matchShortcut(key('KeyO', { ctrlKey: true, keyCode: 229 }), preferences), null)
   assert.equal(shortcutFromEvent(key('KeyO', { ctrlKey: true, altKey: true, getModifierState: value => value === 'AltGraph' })), null)
   assert.equal(matchShortcut(key('Enter', { ctrlKey: true }), preferences), null)
-  assert.equal(matchShortcut(key('Enter', { ctrlKey: true }), preferences, { scope: 'ai' }), 'aiSend')
+  assert.equal(matchShortcut(key('Enter', { ctrlKey: true }), preferences, { scope: 'ai' }), null, 'Ctrl + Enter is a newline in the composer by default')
   assert.equal(matchShortcut(key('Enter', { ctrlKey: true, shiftKey: true }), preferences, { scope: 'ai' }), 'aiStop')
   assert.equal(matchShortcut(key('KeyO', { ctrlKey: true }), preferences, { scope: 'ai' }), null)
   assert.equal(matchShortcut(key('KeyO', { ctrlKey: true, defaultPrevented: true }), preferences), null)
@@ -246,6 +246,8 @@ test('matcher uses physical codes, exact modifiers, ignores IME, and separates A
 test('all supported default actions match their own canonical shortcut', () => {
   const preferences = defaultPreferences()
   for (const { action } of SHORTCUTS) {
+    // Unbound by default: Enter sends from the composer itself.
+    if (!preferences.shortcuts[action]) continue
     const parts = preferences.shortcuts[action].split('+'), code = parts.pop()
     const modifiers = { ctrlKey: parts.includes('Ctrl'), altKey: parts.includes('Alt'), shiftKey: parts.includes('Shift'), metaKey: parts.includes('Meta') }
     if (code === 'WheelUp' || code === 'WheelDown') assert.equal(matchWheelShortcut(wheel(code === 'WheelUp' ? -120 : 120, modifiers), preferences), action)

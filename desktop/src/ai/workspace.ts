@@ -236,7 +236,9 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
     const [{ getModel, streamChat }, { streamDocumentChat, boundedHistory }] = await Promise.all([import('./providers.mjs'), import('./document-chat.mjs')])
     const apiKey = snapshot.provider === 'codex' ? '' : await loadApiKey(snapshot.provider)
     signal.throwIfAborted()
-    if (snapshot.provider !== 'codex' && !apiKey) { if (valid()) onSettings(); throw new Error('请先连接 AI 服务。') }
+    // A local OpenAI-compatible server (Ollama, LM Studio) behind 自定义接口 needs no key.
+    const keyless = snapshot.provider === 'custom' && /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/i.test(snapshot.baseUrl || '')
+    if (snapshot.provider !== 'codex' && !apiKey && !keyless) { if (valid()) onSettings(); throw new Error('请先连接 AI 服务。') }
     if (state.messages.length >= MAX_MESSAGES || state.messages.reduce((sum, message) => sum + message.content.length, question.length) > 150000) throw new Error('这段对话已经很长，请新建对话继续，以控制上下文与内存。')
     const images = selection.image ? [selection.image] : []
     if (images.reduce((sum, image) => sum + image.length, 0) > 8 * 1024 * 1024) throw new Error('所选图片过大，请重新框选较小区域。')

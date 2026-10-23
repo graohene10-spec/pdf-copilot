@@ -239,7 +239,7 @@ try {
   await quick().waitFor({ state: 'detached' }); await preview().waitFor(); await readyPdf();
   const continuedImage = await preview().getAttribute('src');
   assert.equal(calls.length, countBeforeContinue); assert.equal(await prompt().inputValue(), '保留的截图草稿 A');
-  await prompt().fill(questions[1]); await prompt().press('Control+Enter'); await preview().waitFor({ state: 'detached' });
+  await prompt().fill(questions[1]); await prompt().press('Enter'); await preview().waitFor({ state: 'detached' });
   await until(() => held.has(names[0])); assert.deepEqual(calls.at(-1).images, [continuedImage]);
   finish(0); await idle();
   checks.push('Continue opens the ordinary assistant with the exact unsent crop and existing draft; the next question sent from the composer consumes and sends that crop once.');
@@ -310,7 +310,7 @@ try {
   await quick().getByRole('button', { name: '继续到阅读助手', exact: true }).click(); await preview().waitFor();
   const retryImage = await preview().getAttribute('src');
   await configure('capture-quick-local-key');
-  await prompt().fill(questions[2]); await prompt().press('Control+Enter'); await preview().waitFor({ state: 'detached' });
+  await prompt().fill(questions[2]); await prompt().press('Enter'); await preview().waitFor({ state: 'detached' });
   await until(() => held.has(names[0])); assert.deepEqual(calls.at(-1).images, [retryImage]); finish(0); await idle();
   checks.push('Missing credentials open settings without consuming the crop; cancel returns to the choices, Continue retains the attachment, and configuring the local service later sends that exact image.');
 

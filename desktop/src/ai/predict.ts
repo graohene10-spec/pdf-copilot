@@ -18,10 +18,13 @@ export type PredictContext = {
 const cache = new Map<string, string>()
 const remember = (key: string, value: string) => { cache.delete(key); cache.set(key, value); if (cache.size > 60) cache.delete(cache.keys().next().value!) }
 
-// 小模型：DeepSeek 用 Flash、OpenAI 用 Mini，都关闭思考；Codex 用当前模型的最低思考强度。
+// 小模型：DeepSeek 用 Flash、OpenAI 用 Mini、Claude 用 Haiku（低思考），都尽量少思考；其他服务用当前模型；Codex 用当前模型的最低思考强度。
 export function fastModel(settings: any): { model: string; effort: string } {
   if (settings.provider === 'deepseek') return { model: 'deepseek-flash', effort: 'none' }
   if (settings.provider === 'openai') return { model: 'gpt-5.4-mini', effort: 'none' }
+  if (settings.provider === 'anthropic') return { model: 'claude-haiku-5-5', effort: 'low' }
+  if (settings.provider === 'glm') return { model: settings.model || 'glm-4.6', effort: 'none' }
+  if (settings.provider !== 'codex') return { model: settings.model || '', effort: '' }
   const efforts: string[] = nativeModelInventory.value.find((item: any) => item.id === (settings.model || ''))?.efforts || []
   return { model: settings.model || '', effort: ['none', 'minimal', 'low'].find(item => efforts.includes(item)) || '' }
 }

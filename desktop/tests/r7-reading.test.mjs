@@ -24,7 +24,8 @@ test('greeting styles: English salutations, classical lines with their source, b
 })
 
 test('placeholders and thinking verbs are picked deterministically', () => {
-  assert.ok(PLACEHOLDERS.includes('我来，我见，我征服。'))
+  assert.ok(PLACEHOLDERS.includes('来一个最直白、最直接、最不绕弯子的解释。'))
+  assert.ok(!PLACEHOLDERS.some(text => text.includes('第一性原理')))
   assert.equal(placeholderFor(.5), placeholderFor(.5))
   assert.ok(THINKING_VERBS.includes(thinkingVerb('message-1')))
   assert.equal(thinkingVerb('message-1'), thinkingVerb('message-1'))

@@ -237,6 +237,29 @@ function onScroll() { follow = nearBottom(); rememberScroll() }
 type Mark = { id: string; top: number; text: string; answer: string; current: boolean }
 const marks = ref<Mark[]>([])
 const hoverMark = ref<Mark | null>(null)
+// Codex 式的提问刻度：全部排在右侧中间，指针靠近时像程序坞一样逐个放大，指着的那一条最长最深。
+const tickColumn = ref<HTMLElement>()
+const tickPointer = ref<number | null>(null)
+const hoverTop = ref(0)
+const tickGap = computed(() => { const room = (messageList.value?.clientHeight || 400) - 96; return Math.max(2, Math.min(7, room / Math.max(1, marks.value.length) - 2)) })
+function tickCenters() { return [...(tickColumn.value?.querySelectorAll<HTMLElement>('.rail-mark') || [])].map(tick => tick.offsetTop + tick.offsetHeight / 2) }
+function tickGrow(index: number) {
+  if (tickPointer.value === null) return 0
+  const center = tickCenters()[index]
+  return center === undefined ? 0 : Math.max(0, 1 - Math.abs(center - tickPointer.value) / 34)
+}
+function tickHover(event: PointerEvent) {
+  const column = tickColumn.value
+  if (!column) return
+  const y = event.clientY - column.getBoundingClientRect().top
+  tickPointer.value = y
+  const centers = tickCenters()
+  let nearest = -1, best = Infinity
+  centers.forEach((center, index) => { const distance = Math.abs(center - y); if (distance < best) { best = distance; nearest = index } })
+  if (nearest >= 0 && best <= Math.max(8, tickGap.value + 4)) { hoverMark.value = marks.value[nearest]; hoverTop.value = column.offsetTop + centers[nearest] } else hoverMark.value = null
+}
+function tickLeave() { tickPointer.value = null; hoverMark.value = null }
+function tickFocus(mark: Mark, event: FocusEvent) { const tick = event.target as HTMLElement; hoverMark.value = mark; hoverTop.value = (tickColumn.value?.offsetTop || 0) + tick.offsetTop + tick.offsetHeight / 2 }
 // 右侧导航条代替滚动条：细滑块表示当前视口，刻度是每一轮提问。
 const thumb = ref({ top: 0, height: 1, visible: false })
 function updateRail() {
@@ -376,18 +399,27 @@ function keydown(event: KeyboardEvent) {
     if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); dismissed = predictionKey(predictContext()); prediction.value = ''; return }
   }
   if (event.key === 'Enter' && plain && !props.sendShortcut) { event.preventDefault(); void send() }
+  // 默认回车发送；Ctrl + Enter（或 Shift + Enter）换行。
+  else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && !props.sendShortcut && !event.isComposing) {
+    event.preventDefault()
+    const field = event.target as HTMLTextAreaElement
+    const start = field.selectionStart ?? prompt.value.length, end = field.selectionEnd ?? start
+    prompt.value = prompt.value.slice(0, start) + '\n' + prompt.value.slice(end)
+    void nextTick(() => { field.selectionStart = field.selectionEnd = start + 1 })
+  }
 }
 function send(question?: string) {
   // 输入框空着而有预判的问题时，按发送键直接发送它。
   if (preferences.value.assistant.predictQuestions && question === undefined && !prompt.value.trim() && prediction.value) question = prediction.value
   const id = props.document.id
   const selection = props.context?.selection
-  const usesImage = includeSelection.value && Boolean(selection?.image)
+  // 发出去的选区就算交给了 AI：输入框上方的选区随之清空，改在问题气泡下面显示。
+  const usesSelection = includeSelection.value && Boolean(selection?.image || selection?.text)
   const consumeCapture = props.consumeCapture
   follow = true
   return sendChat({ ...props.document }, { ...props.context }, () => { if (id === props.document.id) emit('settings') }, () => {
     // The request can be accepted after this pane closes or switches files.
-    if (usesImage) consumeCapture?.({ documentId: id, selection })
+    if (usesSelection) consumeCapture?.({ documentId: id, selection })
   }, question, { conversationId: state.value.id })
 }
 // ---- Predicted next question --------------------------------------------------
@@ -484,20 +516,26 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
             </div>
             <template v-else>
               <div class="user-question">{{ message.content }}</div>
+              <div v-if="message.ask?.text || message.images?.length || message.ask?.includeDocument" class="sent-context" aria-label="随问题发送的上下文">
+                <img v-for="(image, index) in (message.images || []).slice(0, 2)" :key="index" :src="image" alt="随问题发送的图片" />
+                <span v-if="message.ask?.text" class="sent-quote" :title="message.ask.text">“{{ message.ask.text.slice(0, 60) }}{{ message.ask.text.length > 60 ? '…' : '' }}”</span>
+                <span v-if="message.ask?.includeDocument" class="sent-doc"><AppIcon name="book" :size="11" />{{ document.kind === 'pdf' ? `文档 · 第 ${message.ask.page || 1} 页` : '文档' }}</span>
+              </div>
               <div class="question-actions"><button class="meta-button" :disabled="busy && message.id === lastQuestionId" aria-label="编辑问题" data-tip="编辑后重新回答" @click="startEdit(message)"><AppIcon name="edit" :size="13" /></button><button class="meta-button" aria-label="复制问题" data-tip="复制" @click="copy(message.content)"><AppIcon name="copy" :size="13" /></button></div>
             </template>
           </template>
           <template v-else>
-            <button v-if="live(message) || message.reasoning" class="thinking" :class="{ live: live(message), open: expanded.has(message.id) }" :aria-expanded="expanded.has(message.id)" @click="toggleReasoning(message.id)">
+            <button v-if="live(message) || message.reasoning || message.sources.length" class="thinking" :class="{ live: live(message), open: expanded.has(message.id) }" :aria-expanded="expanded.has(message.id)" @click="toggleReasoning(message.id)">
               <span class="thinking-star" aria-hidden="true">{{ live(message) ? spinner : '✻' }}</span>
               <span class="thinking-label">{{ live(message) ? `${thinkingVerb(message.id)}…` : `Thought for ${thinkingTime(message)}` }}</span>
               <span v-if="live(message)" class="thinking-meta">{{ elapsed(message) }}<template v-if="activityNote(message)"> · {{ activityNote(message) }}</template></span>
-              <AppIcon v-if="message.reasoning" class="thinking-chevron" name="down" :size="12" />
+              <AppIcon v-if="message.reasoning || message.sources.length" class="thinking-chevron" name="down" :size="12" />
             </button>
             <p v-if="live(message) && !expanded.has(message.id) && lastThought(message)" class="thinking-direction">{{ lastThought(message) }}</p>
             <div v-if="message.reasoning && expanded.has(message.id)" class="reasoning-body">{{ message.reasoning }}</div>
+            <!-- 参考原文收在 Thinking 里：点开思考过程时一起列出，平时不占地方。 -->
+            <div v-if="message.sources.length && expanded.has(message.id)" class="source-list"><p class="source-heading">参考原文 · {{ message.sources.length }} 段</p><button v-for="source in message.sources" :key="source.sourceId" @click="jump(source)"><span>{{ source.line ? `第 ${source.line} 行` : `第 ${source.page} 页` }}</span><small>{{ source.text }}</small></button></div>
             <div v-if="message.content" v-answer="message" class="answer-body" />
-            <details v-if="message.sources.length" class="source-list"><summary>参考原文 · {{ message.sources.length }} 段</summary><button v-for="source in message.sources" :key="source.sourceId" @click="jump(source)"><span>{{ source.line ? `第 ${source.line} 行` : `第 ${source.page} 页` }}</span><small>{{ source.text }}</small></button></details>
             <div v-if="!live(message)" class="answer-meta">
               <button v-if="message.content" class="meta-button" aria-label="复制回答" data-tip="复制回答" @click="copy(message.content)"><AppIcon name="copy" :size="13" /></button>
               <button class="meta-button" :disabled="busy && isLastAnswer(message)" aria-label="重新生成" :data-tip="isLastAnswer(message) ? '重新生成' : '在新分支中重新生成'" @click="regenerate(message)"><AppIcon name="retry" :size="13" /></button>
@@ -512,9 +550,11 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
       </div>
       <div v-show="thumb.visible" class="scroll-rail" :class="{ marked: marks.length }" aria-label="问题导航" @pointerdown="railDown" @pointermove="railMove" @pointerup="railUp" @pointercancel="railUp">
         <span class="rail-thumb" :style="{ top: `calc(8px + ${thumb.top} * (100% - 16px))`, height: `calc(${thumb.height} * (100% - 16px))` }" aria-hidden="true" />
-        <button v-for="mark in marks" :key="mark.id" class="rail-mark" :class="{ current: mark.current }" :style="{ top: `calc(8px + ${mark.top} * (100% - 16px))` }" :aria-label="`跳到问题：${mark.text.slice(0, 30)}`" @click="goToMark(mark)" @pointerenter="hoverMark = mark" @pointerleave="hoverMark = null" @focus="hoverMark = mark" @blur="hoverMark = null" />
       </div>
-      <Transition name="rail-pop"><div v-if="hoverMark" class="rail-preview" :style="{ top: `clamp(52px, calc(8px + ${hoverMark.top} * (100% - 16px)), calc(100% - 52px))` }"><strong>{{ hoverMark.text }}</strong><p v-if="hoverMark.answer">{{ hoverMark.answer }}</p></div></Transition>
+      <div v-if="marks.length" ref="tickColumn" class="rail-ticks" :class="{ hovering: tickPointer !== null }" :style="{ gap: `${tickGap}px` }" aria-label="问题导航" @pointermove="tickHover" @pointerleave="tickLeave">
+        <button v-for="(mark, index) in marks" :key="mark.id" class="rail-mark" :class="{ current: mark.current, hot: hoverMark?.id === mark.id }" :style="{ '--grow': tickGrow(index) }" :aria-label="`跳到问题：${mark.text.slice(0, 30)}`" @click="goToMark(mark)" @focus="tickFocus(mark, $event)" @blur="hoverMark = null" />
+      </div>
+      <Transition name="rail-pop"><div v-if="hoverMark" class="rail-preview" :style="{ top: `clamp(56px, ${hoverTop}px, calc(100% - 56px))` }"><strong>{{ hoverMark.text }}</strong><p v-if="hoverMark.answer">{{ hoverMark.answer }}</p></div></Transition>
     </div>
 
     <div class="ai-composer">
@@ -579,7 +619,7 @@ button:disabled{opacity:.4;cursor:default}
 .header-button:hover:not(:disabled){background:var(--frost);border-color:var(--hairline);color:var(--ink)}
 .task-summary{flex:0 0 auto;padding:3px 8px;border-radius:var(--r-xs);background:var(--frost);font-size:10.5px;font-weight:600;color:var(--secondary);white-space:nowrap;font-variant-numeric:tabular-nums}
 /* 弹出的对话记录与问题预览：更厚的弹层玻璃。 */
-.history-menu,.rail-preview{--ink:var(--surface-ink);--secondary:var(--surface-secondary);--muted:var(--surface-muted);background-color:var(--popup-glass);background-image:var(--popup-sheen);--lens-blur:var(--popup-blur);--lens-saturate:var(--glass-sat);-webkit-backdrop-filter:var(--refraction, blur(var(--popup-blur)) saturate(var(--glass-sat)));backdrop-filter:var(--refraction, blur(var(--popup-blur)) saturate(var(--glass-sat)));border:1px solid var(--glass-outline);box-shadow:0 16px 40px -16px rgb(0 0 0 / .32),var(--glass-edge);color:var(--ink)}
+.history-menu{--ink:var(--surface-ink);--secondary:var(--surface-secondary);--muted:var(--surface-muted);background-color:var(--popup-glass);background-image:var(--popup-sheen);--lens-blur:var(--popup-blur);--lens-saturate:var(--glass-sat);-webkit-backdrop-filter:var(--refraction, blur(var(--popup-blur)) saturate(var(--glass-sat)));backdrop-filter:var(--refraction, blur(var(--popup-blur)) saturate(var(--glass-sat)));border:1px solid var(--glass-outline);box-shadow:0 16px 40px -16px rgb(0 0 0 / .32),var(--glass-edge);color:var(--ink)}
 .history-menu{position:absolute;left:0;top:calc(100% + 6px);z-index:30;width:min(300px,calc(100vw - 40px));max-height:min(420px,60vh);display:flex;flex-direction:column;padding:6px;border-radius:var(--r-lg);transform-origin:20px 0}
 .history-new{display:flex;align-items:center;gap:8px;height:36px;padding:0 12px;border:0;border-radius:var(--r-control);background:color-mix(in srgb,var(--ink) 6%,transparent);box-shadow:none;font-size:13px;font-weight:600}
 .history-new:hover{background:color-mix(in srgb,var(--ink) 10%,transparent)}
@@ -614,11 +654,14 @@ button:disabled{opacity:.4;cursor:default}
 .scroll-rail{position:absolute;right:3px;top:6px;bottom:6px;width:14px;z-index:5;cursor:default;touch-action:none}
 .rail-thumb{position:absolute;right:5px;width:3px;min-height:18px;border-radius:2px;background:color-mix(in srgb,var(--ink) 18%,transparent);transition:width var(--dur-2) var(--spring-snappy),right var(--dur-2) var(--spring-snappy),background var(--dur-1) var(--ease-soft)}
 .scroll-rail:hover .rail-thumb{right:4px;width:5px;background:color-mix(in srgb,var(--ink) 28%,transparent)}
-.rail-mark{position:absolute;right:2px;width:9px;height:2px;padding:0;border:0;border-radius:1px;background:color-mix(in srgb,var(--ink) 40%,transparent);box-shadow:none;transform:translateY(-50%);transition:width var(--dur-2) var(--spring-snappy),background var(--dur-1) var(--ease-soft)}
-.rail-mark::before{content:'';position:absolute;inset:-5px -3px}
-.rail-mark:hover,.rail-mark:focus-visible{width:13px;background:var(--ink);outline:none}
-.rail-mark.current{width:12px;background:var(--accent)}
-.rail-preview{position:absolute;right:22px;z-index:6;width:min(260px,calc(100% - 44px));padding:10px 12px;border-radius:var(--r-md);transform:translateY(-50%);pointer-events:none}
+.rail-ticks{position:absolute;right:9px;top:50%;z-index:6;display:flex;flex-direction:column;align-items:flex-end;max-height:calc(100% - 96px);padding:8px 0 8px 22px;transform:translateY(-50%)}
+.rail-mark{position:relative;flex-shrink:0;width:calc(10px + 16px * var(--grow,0));height:2px;padding:0;border:0;border-radius:1px;background:color-mix(in srgb,var(--ink) calc(26% + 44% * var(--grow,0)),transparent);box-shadow:none;transition:width .18s var(--spring-snappy),background var(--dur-1) var(--ease-soft)}
+.rail-mark::before{content:'';position:absolute;inset:-4px -4px -4px -22px}
+.rail-mark.hot,.rail-mark:focus-visible{width:30px;background:var(--ink);outline:none}
+.rail-mark.current{background:var(--accent)}
+.rail-ticks:not(.hovering) .rail-mark.current{width:14px}
+/* 悬停卡片用实底（浅色主题白、深色主题深灰），不用玻璃。 */
+.rail-preview{position:absolute;right:46px;z-index:7;width:min(300px,calc(100% - 64px));padding:12px 14px;border-radius:var(--r-lg);background:var(--surface);border:1px solid var(--line-soft);box-shadow:0 18px 44px -18px rgb(0 0 0 / .32),0 2px 6px rgb(0 0 0 / .06);color:var(--surface-ink);--ink:var(--surface-ink);--muted:var(--surface-muted);transform:translateY(-50%);pointer-events:none}
 .rail-preview strong{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:12.5px;font-weight:600;line-height:1.5}
 .rail-preview p{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;margin:6px 0 0;font-size:11.5px;line-height:1.55;color:var(--muted)}
 .rail-pop-enter-active{transition:opacity var(--dur-1) var(--ease-out),translate var(--dur-2) var(--spring-snappy)}
@@ -669,7 +712,7 @@ button:disabled{opacity:.4;cursor:default}
 .answer-body :deep(hr){border:0;border-top:1px solid var(--hairline);margin:1.4em 0}
 .answer-body :deep(a){color:var(--ink);text-decoration:underline;text-decoration-color:color-mix(in srgb,var(--ink) 35%,transparent);text-underline-offset:3px}
 .answer-body :deep(strong){font-weight:650}
-.answer-body :deep(code){font-family:var(--font-mono);font-size:.84em;padding:.12em .38em;border-radius:5px;background:color-mix(in srgb,var(--ink) 8%,transparent);border:1px solid var(--hairline)}
+.answer-body :deep(code){font-family:var(--font-mono);font-size:.84em;padding:.12em .38em;border-radius:5px;background:color-mix(in srgb,var(--ink) 8%,transparent);border:1px solid var(--hairline);overflow-wrap:anywhere;-webkit-box-decoration-break:clone;box-decoration-break:clone}
 .answer-body :deep(.answer-code-block){--ink:var(--surface-ink);margin:0 0 1em;border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden;background:var(--surface-2);color:var(--surface-ink)}
 .answer-body :deep(.answer-code-head){display:flex;align-items:center;justify-content:space-between;height:30px;padding:0 6px 0 12px;font-family:var(--font-ui);font-size:11px;color:var(--surface-muted);border-bottom:1px solid var(--line-soft)}
 .answer-body :deep(.answer-copy){height:22px;padding:0 8px;border:0;border-radius:6px;background:none;box-shadow:none;font-size:11px;color:var(--surface-muted)}
@@ -692,11 +735,12 @@ button:disabled{opacity:.4;cursor:default}
 .answer-body :deep(.inline-citation){display:inline-flex;align-items:center;height:20px;margin:0 2px;padding:0 7px;border:1px solid var(--hairline);border-radius:var(--r-xs);background:var(--frost);box-shadow:none;font-family:var(--font-ui);font-size:11px;font-weight:600;color:var(--secondary);vertical-align:1px}
 .answer-body :deep(.inline-citation:hover){background:var(--frost-hover);color:var(--ink)}
 .source-list{margin:8px 0 4px;font-size:12px}
-.source-list summary{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:var(--r-control);cursor:pointer;color:var(--secondary);font-weight:600;list-style:none}
-.source-list summary::-webkit-details-marker{display:none}
-.source-list summary::before{content:'';width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg);transition:transform var(--dur-3) var(--spring-snappy)}
-.source-list[open] summary::before{transform:rotate(45deg)}
-.source-list summary:hover{background:var(--frost)}
+.source-heading{margin:4px 0 0;font-size:11.5px;font-weight:650;color:var(--secondary)}
+/* 问题气泡下面：这一问一起发给 AI 的截图、所选文字与文档。 */
+.sent-context{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:5px;max-width:88%;margin:5px 0 0 auto}
+.sent-context img{width:38px;height:28px;object-fit:cover;border-radius:6px;border:1px solid var(--hairline)}
+.sent-context span{display:inline-flex;align-items:center;gap:4px;max-width:100%;height:24px;padding:0 9px;overflow:hidden;border-radius:var(--r-sm);background:var(--frost);border:1px solid var(--hairline);color:var(--secondary);font-size:11.5px;white-space:nowrap;text-overflow:ellipsis}
+.sent-context .sent-quote{display:block;line-height:22px}
 .source-list button{display:block;width:100%;margin-top:6px;padding:8px 11px;border:1px solid var(--hairline);border-radius:var(--r-md);background:var(--frost);box-shadow:none;text-align:left}
 .source-list button:hover{background:var(--frost-hover)}
 .source-list span{font-size:11px;font-weight:650;color:var(--ink)}

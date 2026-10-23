@@ -6,7 +6,7 @@ pub struct Credentials { directory: PathBuf }
 impl Credentials {
     pub fn new(directory: PathBuf) -> Self { Self { directory } }
     fn path(&self, provider: &str) -> Result<PathBuf> {
-        if !["openai","deepseek","codex"].contains(&provider) { return Err("AI 服务名称无效".into()); }
+        if !["openai","deepseek","codex","anthropic","kimi","glm","qwen","custom"].contains(&provider) { return Err("AI 服务名称无效".into()); }
         Ok(self.directory.join(format!("{provider}.bin")))
     }
     pub fn get(&self, provider: &str) -> Result<Option<String>> {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
-import { PROVIDERS, getProvider, getNativeModels, getNativeStatus } from '../ai/providers.mjs'
+import { PROVIDERS, PROTOCOLS, getProvider, getNativeModels, getNativeStatus } from '../ai/providers.mjs'
 import { nativeModelInventory, registerNativeModelInventory } from '../ai/native-models'
 import { loadAiSettings, loadApiKey, saveAiSettings } from '../ai/settings.mjs'
 import { DOCUMENT_LIMIT_FIELDS } from '../../../extension/common/document-limits.mjs'
@@ -28,7 +28,7 @@ const requestFields = [
   { key: 'codex', label: '其中 Codex 同时运行数', min: 1, max: 2 },
   { key: 'queued', label: '最多等待的提问', min: 0, max: 16 },
 ]
-const efforts = computed<string[]>(() => model.value?.efforts || ['', 'none', 'low', 'medium', 'high', 'xhigh', 'max'])
+const efforts = computed<string[]>(() => model.value?.efforts || (settings.value.provider === 'kimi' || settings.value.provider === 'qwen' ? [] : ['', 'none', 'low', 'medium', 'high', 'xhigh', 'max']))
 let keyEpoch = 0
 let disposed = false
 let modelRequest: AbortController | undefined
@@ -38,6 +38,7 @@ watch(() => settings.value.provider, async (value, previous) => {
     settings.value.baseUrl = next?.baseUrl || ''
     settings.value.model = next?.defaultModel || next?.models[0]?.id || ''
     settings.value.effort = next?.models[0]?.defaultEffort || ''
+    if (next?.custom) settings.value.protocol ||= 'chat'
   }
   const epoch = ++keyEpoch
   keyLoading.value = true
@@ -96,10 +97,11 @@ defineExpose({ save, hasChanges: () => edited.value })
     <div v-if="!embedded" class="settings-heading"><strong>AI 设置</strong><button class="text-button" @click="emit('close')">返回</button></div>
     <label>服务商<select v-model="settings.provider" aria-label="服务商"><option v-for="item in PROVIDERS" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
     <template v-if="settings.provider !== 'codex'">
-      <label>API 地址<input v-model="settings.baseUrl" aria-label="API 地址" type="url" placeholder="https://api.example.com/v1" /></label>
+      <label v-if="provider?.custom">接口协议<select v-model="settings.protocol" aria-label="接口协议"><option v-for="item in PROTOCOLS" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
+      <label>API 地址<input v-model="settings.baseUrl" aria-label="API 地址" type="url" :placeholder="provider?.custom ? 'https://openrouter.ai/api/v1 或 http://localhost:11434/v1' : 'https://api.example.com/v1'" /></label>
       <label>API Key<input v-model="key" aria-label="API Key" type="password" autocomplete="off" placeholder="仅供所选服务商使用" /></label>
       <label class="check"><input v-model="settings.rememberKey" type="checkbox" /> 在这台电脑记住密钥</label>
-      <p class="settings-note">桌面版使用 Windows 加密保存。浏览器预览的密钥只保留在本次页面会话。</p>
+      <p class="settings-note">桌面版使用 Windows 加密保存。浏览器预览的密钥只保留在本次页面会话。<template v-if="provider?.custom"> 本机服务（Ollama、LM Studio）可以不填密钥。</template></p>
     </template>
     <template v-else>
       <p class="settings-note">沿用本机 Codex 的登录，无需填写 API Key。需要已安装并登录 Codex CLI。</p>

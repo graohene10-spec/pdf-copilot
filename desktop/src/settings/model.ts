@@ -1,7 +1,7 @@
 import { normalizeBackground, backgroundErrors, type BackgroundImage } from './background.ts'
 import { defaultQuickPrompts, normalizeQuickPrompts, quickPromptErrors, defaultCaptureQuestions, normalizeCaptureQuestions, captureQuestionErrors, type QuickPrompt, type QuickPrompts } from './quick-prompts.ts'
 
-export type ShortcutAction = 'import' | 'search' | 'find' | 'fullscreen' | 'settings' | 'sidebar' | 'ai' | 'outline' | 'capture' | 'fitWidth' | 'zoomOut' | 'zoomIn' | 'previousPage' | 'nextPage' | 'aiSend' | 'aiStop' | 'nextTab' | 'previousTab' | 'closeTab' | 'split' | 'inkPen' | 'inkHighlighter' | 'inkUnderline'
+export type ShortcutAction = 'import' | 'search' | 'find' | 'fullscreen' | 'settings' | 'sidebar' | 'ai' | 'outline' | 'capture' | 'fitWidth' | 'zoomOut' | 'zoomIn' | 'previousPage' | 'nextPage' | 'aiSend' | 'aiStop' | 'nextTab' | 'previousTab' | 'closeTab' | 'split' | 'inkPen' | 'inkHighlighter' | 'inkUnderline' | 'bookmark' | 'bookmarkPrev' | 'bookmarkNext'
 /** The assistant's mark on its empty screen: a built-in glyph or the user's own image (GIF/APNG/WebP animate). */
 export type AssistantAvatar = { kind: AvatarKind; image: string | null }
 export type AvatarKind = 'crab' | 'claude' | 'chatgpt' | 'deepseek' | 'custom'
@@ -94,15 +94,17 @@ export const SHORTCUTS: { action: ShortcutAction; label: string }[] = [
   { action: 'nextTab', label: '下一个文件标签' }, { action: 'previousTab', label: '上一个文件标签' }, { action: 'closeTab', label: '关闭当前文件标签' },
   { action: 'split', label: '并排阅读' },
   { action: 'inkPen', label: '标记：钢笔' }, { action: 'inkHighlighter', label: '标记：荧光笔' }, { action: 'inkUnderline', label: '标记：下划线' },
+  { action: 'bookmark', label: '在当前位置加书签' }, { action: 'bookmarkPrev', label: '跳到上一个书签' }, { action: 'bookmarkNext', label: '跳到下一个书签' },
 ]
 export const DEFAULT_SHORTCUTS: Readonly<Record<ShortcutAction, string>> = Object.freeze({
   import: 'Ctrl+KeyO', search: 'Ctrl+KeyK', settings: 'Ctrl+Comma', sidebar: 'Ctrl+KeyB',
   find: 'Ctrl+KeyF', fullscreen: 'F11',
   ai: 'Ctrl+Shift+Digit7', outline: 'Ctrl+Shift+KeyO', capture: 'Alt+Shift+KeyS', fitWidth: 'Ctrl+Digit0',
   zoomOut: 'Ctrl+WheelDown', zoomIn: 'Ctrl+WheelUp', previousPage: 'Alt+ArrowUp', nextPage: 'Alt+ArrowDown',
-  aiSend: 'Ctrl+Enter', aiStop: 'Ctrl+Shift+Enter',
+  aiSend: '', aiStop: 'Ctrl+Shift+Enter',
   nextTab: 'Ctrl+Tab', previousTab: 'Ctrl+Shift+Tab', closeTab: 'Ctrl+KeyW', split: 'Ctrl+Backslash',
   inkPen: 'Alt+Digit1', inkHighlighter: 'Alt+Digit2', inkUnderline: 'Alt+Digit3',
+  bookmark: 'Alt+KeyB', bookmarkPrev: 'Ctrl+ArrowUp', bookmarkNext: 'Ctrl+ArrowDown',
 })
 const LEGACY_GLASS: Record<string, number> = { clear: 85, balanced: 70, rich: 30, solid: 0 }
 export const MAX_GALLERY = 6
@@ -212,6 +214,8 @@ export function normalizePreferences(value: unknown, legacyTheme?: string | null
     defaults.shortcuts.zoomIn = DEFAULT_SHORTCUTS.zoomIn
     defaults.shortcuts.zoomOut = DEFAULT_SHORTCUTS.zoomOut
   }
+  // 回车直接发送、Ctrl + Enter 换行成了默认：旧默认的 Ctrl + Enter 发送随之取消。
+  if (defaults.shortcuts.aiSend === 'Ctrl+Enter') defaults.shortcuts.aiSend = ''
   for (const { action } of SHORTCUTS) if (!['zoomIn', 'zoomOut'].includes(action) && /Wheel(?:Up|Down)$/.test(defaults.shortcuts[action])) defaults.shortcuts[action] = DEFAULT_SHORTCUTS[action]
   if (shortcutConflicts(defaults.shortcuts).length) defaults.shortcuts = { ...DEFAULT_SHORTCUTS }
   return defaults

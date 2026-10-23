@@ -76,14 +76,14 @@ try {
   assert.equal(await page.locator('.model-card').count(), 0, 'No popup card.');
   assert.equal(await page.getByRole('button', { name: '服务商、密钥与预算', exact: true }).count(), 0, 'Provider, keys and budget live in Settings only.');
   assert.ok(await drawer.getByRole('option').count() >= 1, 'Models are listed as chips in the drawer.');
-  const fill = await drawer.locator('.effort-fill').evaluate(element => getComputedStyle(element).backgroundImage);
-  assert.equal(fill, 'none', 'The effort fill is a neutral tint, not a blue gradient.');
-  const slider = drawer.getByRole('slider', { name: '思考强度', exact: true });
-  const trackBox = await drawer.locator('.effort-track').boundingBox();
-  await page.mouse.move(trackBox.x + 4, trackBox.y + trackBox.height / 2); await page.mouse.down();
-  assert.equal(await drawer.locator('.effort-track.dragging').count(), 1, 'Pressing the slider turns the knob into a glass lens.');
-  await page.mouse.move(trackBox.x + trackBox.width - 2, trackBox.y + trackBox.height / 2, { steps: 5 }); await pane().screenshot({ path: resolve(artifacts, 'ai-r8-drawer.png') }); await page.mouse.up();
-  assert.equal(await slider.getAttribute('aria-valuenow'), await slider.getAttribute('aria-valuemax'));
+  // Effort is a segmented control: every level is named, a glass thumb slides under the chosen one.
+  const levels = drawer.getByRole('radiogroup', { name: '思考强度', exact: true }).getByRole('radio');
+  assert.ok(await levels.count() >= 3, 'Each effort level is a named segment.');
+  await levels.last().click();
+  await page.waitForFunction(() => document.querySelector('.effort-segments [role=radio]:last-of-type')?.getAttribute('aria-checked') === 'true');
+  await page.waitForTimeout(500); await pane().screenshot({ path: resolve(artifacts, 'ai-r8-drawer.png') });
+  const thumb = await drawer.locator('.effort-thumb').boundingBox(), last = await levels.last().boundingBox();
+  assert.ok(Math.abs(thumb.x + thumb.width / 2 - (last.x + last.width / 2)) < 4, 'The glass thumb sits under the chosen level.');
   await page.keyboard.press('Escape'); await drawer.waitFor({ state: 'hidden' });
   const closed = await field.boundingBox();
   assert.ok(Math.abs(closed.height - before.height) < 2, 'Esc folds the drawer back.');
@@ -122,7 +122,7 @@ try {
 
   // 5. Thinking line: spinner glyph, an English verb with a left-to-right shimmer, whole-second time, no token count.
   await prompt.fill('测量假设是什么？');
-  await page.keyboard.press('Control+Enter');
+  await page.keyboard.press('Enter');
   const thinking = pane().locator('.thinking.live'); await thinking.waitFor();
   await page.waitForTimeout(1300);
   const live = await thinking.innerText();
@@ -190,7 +190,7 @@ try {
   // A late reply cannot bring back a suggestion once the switch is off.
   holdPrediction = true;
   const beforeAnswer = predictionCount();
-  await page.keyboard.press('Control+Enter');
+  await page.keyboard.press('Enter');
   await pane().locator('.thinking.live').waitFor();
   release();
   await until(async () => await pane().locator('.answer-body').count() >= 2, 'The second answer arrives.');

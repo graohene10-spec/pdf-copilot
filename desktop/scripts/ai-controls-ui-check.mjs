@@ -70,7 +70,7 @@ async function storedPreferences() {
 }
 async function ask(question) {
   await prompt().fill(question);
-  await prompt().press('Control+Enter');
+  await prompt().press('Enter');
 }
 function finish(name) {
   const response = held.get(name); assert.ok(response); held.delete(name);
@@ -154,7 +154,7 @@ try {
   await configure();
 
   await prompt().fill(`${names[0]}：概括当前内容的核心观点。`);
-  await prompt().evaluate(field => { for (const _ of [0, 1]) field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', ctrlKey: true, bubbles: true })); });
+  await prompt().evaluate(field => { for (const _ of [0, 1]) field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true })); });
   await until(() => held.has(names[0]));
   assert.equal(calls.length, 1); assert.ok(calls[0].text.startsWith(`${names[0]}：概括当前内容的核心观点。`));
   assert.equal(await prompt().inputValue(), '');
@@ -175,7 +175,7 @@ try {
   assert.equal(attachmentRejection.consumed, false); assert.equal(attachmentRejection.draft, '另一个未发送草稿'); assert.equal(attachmentRejection.messageCount, 0); assert.match(attachmentRejection.status, /队列已满/);
   checks.push('Questions across files share the global concurrency and waiting limits; a rejected question keeps its draft and unsent capture.');
   finish(names[0]); await until(() => held.has(names[1]));
-  await prompt().press('Control+Enter');
+  await prompt().press('Enter');
   await pane().locator('.ai-status').filter({ hasText: '队列第 1 位' }).waitFor();
   finish(names[1]); await until(() => held.has(names[2])); finish(names[2]);
   await pane().locator('.ai-status').filter({ hasText: '回答完成' }).waitFor();

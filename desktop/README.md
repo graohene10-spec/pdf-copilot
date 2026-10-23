@@ -17,7 +17,7 @@
 
 1. 安装程序，或将免安装 ZIP 全部解压，保留 `开智.exe` 旁的 `native-host/` 文件夹。
 2. 点击左栏「加入文档」、按 `Ctrl + O`，或把多个 PDF / MD / Markdown 文件拖入窗口。也可先打开包内 `samples/` 中的示例。
-3. 在「设置 → AI」连接服务：OpenAI / DeepSeek 填写自己的 API Key；Codex 使用同一 Windows 账号下已安装并登录的本机 Codex。
+3. 在「设置 → AI」连接服务：DeepSeek、OpenAI、Claude（Anthropic）、Kimi、智谱 GLM、通义千问填写自己的 API Key；也可以选「自定义接口」，填 API 地址、模型名称并选协议（OpenAI 兼容 / OpenAI Responses / Anthropic Messages），本机的 Ollama、LM Studio 不用密钥；Codex 使用同一 Windows 账号下已安装并登录的本机 Codex。
 4. 打开文档，点击「阅读助手」，输入问题并发送。需要结合当前页和原文检索时，开启输入区的文档上下文选项。
 
 安装版与免安装版共用当前 Windows 账号的应用数据目录。「免安装」指无需运行安装程序，文档库并不随程序文件夹一起迁移；备份与更换电脑请看[数据说明](docs/PRIVACY.md)。
@@ -53,7 +53,7 @@
 
 ## AI 问答与对话记录
 
-支持 OpenAI API、DeepSeek 和本机 Codex。回答流式显示，可停止、复制、跳转原文引用；思考时显示 Claude Code 式的转动星标、带从左到右流光的英文动词（Thinking… / Cogitating… 等）和按整秒走的用时，展开可看完整思路，不显示 token 计数；回答中的公式和 Mermaid 图表可排版显示。点输入区的模型按钮，输入栏下沿会拉长露出模型胶囊和思考强度滑杆（再点一次或按 Esc 收回）；服务、密钥与预算在「设置 → AI」；输入区右侧的圆环显示当前对话的上下文占用。
+支持 DeepSeek、OpenAI、Claude、Kimi、智谱 GLM、通义千问、自定义接口和本机 Codex。默认回车发送、`Ctrl + Enter` 换行；发出的问题下方会列出一起交给 AI 的截图、所选文字和文档页码；参考原文收在回答上方的 Thinking 里，点开才显示。回答流式显示，可停止、复制、跳转原文引用；思考时显示 Claude Code 式的转动星标、带从左到右流光的英文动词（Thinking… / Cogitating… 等）和按整秒走的用时，展开可看完整思路，不显示 token 计数；回答中的公式和 Mermaid 图表可排版显示。点输入区的模型按钮，输入栏下沿会拉长露出模型胶囊和分段式的思考强度选择（再点一次或按 Esc 收回）；服务、密钥与预算在「设置 → AI」；输入区右侧的圆环显示当前对话的上下文占用。
 
 空白对话只显示助手形象和一句问候：按当地时间随机的英文问候（如 Fancy a cup of tea?）或与时辰、读书相合的古诗（不显示出处），固定使用内置的 Anthropic Serif。样式可在「设置 → AI → 空白页问候」改为英文、古诗、两者或自己写的句子。输入框空着时显示一句随机的学术格言或典故作占位。
 
@@ -162,3 +162,8 @@ PDF 缩放或侧栏适配时，旧画面保留，新位图在后台准备后整�
 支持本地 Windows x64 文档管理与阅读，单文件上限为 PDF 256 MiB、Markdown 16 MiB；扫描 PDF 的正文检索依赖已有文字层。PDF 标记与阅读状态独立保存在本机；正文编辑、标准 PDF 批注写回及带笔迹 PDF 导出尚未提供。第三方主题 / 前端插件执行入口尚未提供。
 
 源代码与第三方资源说明见 [LICENSE](../LICENSE)、[THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)。
+
+
+## 书签
+
+按 `Alt + B` 在当前位置加书签，阅读区右侧细条上出现一枚浅色小标记：左键跳过去，`Ctrl + ↑ / ↓` 跳到当前位置之前 / 之后最近的书签，右键命名或删除（命名后标记旁显示文字）。PDF 与 Markdown 都支持，书签保存在本机文档库，同一本书的副本共用。

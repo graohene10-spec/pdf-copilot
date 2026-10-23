@@ -5,9 +5,11 @@
  */
 import MarkdownIt from 'markdown-it'
 import { installMarkdownMath } from '../components/markdown-math'
+import { installCjkEmphasis } from '../components/markdown-cjk'
 
 const markdown = new MarkdownIt({ html: false, linkify: true, breaks: true, typographer: false })
 installMarkdownMath(markdown)
+installCjkEmphasis(markdown)
 
 const escape = (value: string) => value.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]!))
 const DIAGRAM_LANGUAGES = new Set(['mermaid', 'flowchart', 'sequence', 'mmd'])
