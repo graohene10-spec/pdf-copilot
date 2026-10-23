@@ -39,25 +39,9 @@ export function greetingFor(date: Date, random = Math.random(), style: GreetingS
 
 export function customLines(text: string) { return text.split(/\r?\n/).map(line => line.trim()).filter(Boolean).slice(0, 60) }
 
-// 输入框空着时的占位语：学术严谨的提问习惯，或一句典故、格言。
-// 输入框的提示语：正常一点、幽默一点，像同学之间随口说的话。
-export const PLACEHOLDERS = [
-  '这段到底在说啥？用人话讲一遍。',
-  '来一个最直白、最直接、最不绕弯子的解释。',
-  '这个公式，能不能先别推导，先说它想干嘛？',
-  '假装我是个聪明但没上过这门课的人。',
-  '这一页的重点是什么？三句话以内。',
-  '举个生活里的例子吧，越接地气越好。',
-  '这里有坑吗？考试会怎么考？',
-  '把这一段翻译成中文，再解释一下。',
-  '我看懂了每个字，但连起来不懂。',
-  '你这个 AI 蠢得要命，语无伦次，老子要退钱。（先认真回答这一段）',
-  '先建立唯一基线，再做可追溯备份，先进行最小改动，跑一轮烟测，检查 89 个门禁是否通过……算了，先解释这页。',
-  '这个结论是怎么来的？哪一步最关键？',
-  '帮我出三道题检验一下我到底懂没懂。',
-  '和上一章讲的有什么关系？',
-]
-export function placeholderFor(random = Math.random()) { return pick(PLACEHOLDERS, random) }
+// 输入框的提示语：先清空，等用户写好自己的一批再放回来；没有提示语时输入框留白。
+export const PLACEHOLDERS: string[] = []
+export function placeholderFor(random = Math.random()) { return PLACEHOLDERS.length ? pick(PLACEHOLDERS, random) : '' }
 
 // 思考时的动词，学 Claude Code：每段回答随机一个，配上省略号。
 export const THINKING_VERBS = ['Thinking', 'Pondering', 'Contemplating', 'Ruminating', 'Musing', 'Deliberating', 'Mulling', 'Cogitating', 'Reflecting', 'Considering', 'Reasoning', 'Puzzling', 'Percolating', 'Brewing', 'Synthesizing', 'Untangling', 'Distilling', 'Deciphering']
@@ -68,3 +52,20 @@ export function thinkingVerb(seed: string) {
 }
 /** Claude Code 的转动星标：六个字形来回循环。 */
 export const SPINNER_FRAMES = ['·', '✢', '✳', '✶', '✻', '✽', '✻', '✶', '✳', '✢']
+/** 思考时的转动符号有好几种，每段回答随机用一种。 */
+export const SPINNERS = [
+  SPINNER_FRAMES,
+  ['✶', '✸', '✹', '✺', '✹', '✸'],
+  ['·', '✧', '✦', '✧'],
+  ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'],
+  ['⣾', '⣽', '⣻', '⢿', '⡿', '⣟', '⣯', '⣷'],
+  ['◐', '◓', '◑', '◒'],
+  ['◜', '◠', '◝', '◞', '◡', '◟'],
+  ['∙', '•', '●', '•'],
+  ['❋', '✺', '✹', '✸', '✷', '✶', '✷', '✸', '✹', '✺'],
+]
+export function spinnerFor(seed: string) {
+  let hash = 7
+  for (const char of seed) hash = (hash * 33 + char.charCodeAt(0)) >>> 0
+  return SPINNERS[hash % SPINNERS.length]!
+}

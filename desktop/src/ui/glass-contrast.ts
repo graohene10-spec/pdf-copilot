@@ -24,7 +24,7 @@ const SHADOWS: Record<Ink, { plain: string; halo: string }> = {
 }
 const TEXT_REGIONS = '.breadcrumb,.library-search>kbd,.library-summary>div,.library-summary>.summary-note,.library-list-heading>span,.library-empty>h2,.library-empty>p,.library-empty>small,.document-card-title h3,.document-meta,.document-progress>span'
 // Tabs take the top bar's ink rather than their own: per-tab sampling could leave one tab dark on a dark bar.
-const TARGETS = '.ai-pane,.app-sidebar,.app-topbar,.library-heading,.library-search,.view-switch,.library-sort,.sort-direction,.arrange-reset,.library-summary,.library-toolbar,.library-list-heading,.library-empty,.document-card,.reader-tools,.document-details,' + TEXT_REGIONS
+const TARGETS = '.bookmark-rail,.ai-pane,.app-sidebar,.app-topbar,.library-heading,.library-search,.view-switch,.library-sort,.sort-direction,.arrange-reset,.library-summary,.library-toolbar,.library-list-heading,.library-empty,.document-card,.reader-tools,.document-details,' + TEXT_REGIONS
 const EXCLUDED = '.answer-code-block,.answer-diagram,.history-menu,.rail-preview,.model-card,.question-editor,.document-collection.list,.settings-backdrop,.dialog-backdrop,.settings-dialog,.confirm-dialog,.markdown-paper,.pdf-scroll,.message-content,.document-cover,.user-question,.ai-selection-context,.message-code,.message-math,.source-pill'
 
 function luminance(rgb: RGB): number {
@@ -192,6 +192,7 @@ export function installGlassContrast(root: HTMLElement): { setBackground(dataUrl
   let lastAppearanceKey = '', materialRevision = 0, settlement = 0
   let classShell: HTMLElement | null = null
   let settleTimer: ReturnType<typeof setTimeout> | undefined
+  let lastPaint = -Infinity
   const MOVING = '.sidebar-enter-active,.sidebar-leave-active,.topbar-enter-active,.topbar-leave-active,.pane-enter-active,.pane-leave-active'
   let options: GlassOptions = { legibility: 'thicken', compensation: 50, tint: 'theme' }
   const resize = new ResizeObserver(refresh)
@@ -220,11 +221,13 @@ export function installGlassContrast(root: HTMLElement): { setBackground(dataUrl
   // 侧栏、顶栏或助手正在弹簧伸缩时，玻璃每一帧都在变宽；这时逐帧重算可读性会让动画一顿一顿，停下后再算一次。
   function refresh() {
     if (disposed || !dataUrl || frame) return
-    if (win.document.querySelector(MOVING)) { clearTimeout(settleTimer); settleTimer = setTimeout(refresh, 120); return }
+    // 动画期间最多每 200 ms 重算一次：刚出现的面板立刻拿到正确的字色和底色，又不逐帧计算。
+    if (win.document.querySelector(MOVING) && win.performance.now() - lastPaint < 200) { clearTimeout(settleTimer); settleTimer = setTimeout(refresh, 120); return }
     frame = win.requestAnimationFrame(paint)
   }
   function paint() {
     frame = 0
+    lastPaint = win.performance.now()
     if (disposed) return
     const appearance = document.documentElement.dataset
     const disabled = transparency.matches || contrast.matches || appearance.contrast === 'high' || appearance.glass === 'solid' || (options.legibility === 'off' && options.tint === 'theme')

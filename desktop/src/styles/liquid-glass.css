@@ -270,15 +270,11 @@
   max-height: min(180px, calc(100vh - 16px));
   overflow: hidden;
   padding: 5px 9px 5px 11px;
-  border: 1px solid var(--glass-outline);
+  border: 1px solid var(--line-soft);
   border-radius: 10px;
-  background-color: var(--popup-glass);
-  background-image: var(--popup-sheen);
-  --lens-blur: var(--popup-blur);
-  --lens-saturate: var(--glass-sat);
-  -webkit-backdrop-filter: var(--refraction, blur(var(--popup-blur)) saturate(var(--glass-sat)));
-  backdrop-filter: var(--refraction, blur(var(--popup-blur)) saturate(var(--glass-sat)));
-  box-shadow: var(--shadow-2), var(--glass-control-edge);
+  /* 近乎实底：不管背后是深色底图还是浅色页面，提示文字都按主题墨色清楚显示。 */
+  background-color: color-mix(in srgb, var(--surface) 96%, transparent);
+  box-shadow: var(--shadow-2);
   color: var(--surface-ink);
   font: 500 12px/1.45 var(--font);
   text-shadow: none;
