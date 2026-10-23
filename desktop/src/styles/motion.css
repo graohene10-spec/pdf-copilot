@@ -466,3 +466,37 @@
 .capture-focus-leave-to {
   opacity: 0;
 }
+
+/* ---- 阅读助手开关：宽度跟侧栏一样弹簧收放，左边的阅读区每一帧跟着让位 ---------- */
+/* 以前助手在原位缩小、淡出，结束时阅读区才一下子变宽，看起来“卡一下”。现在面板本身的宽度（连同间距）
+   从 0 弹到目标宽度或收回 0，内容保持原宽度只被裁掉；PDF 在动画期间停住，结束后从旧大小弹性缩放到新位置。 */
+.reader-panes > .ai-panel.pane-enter-active {
+  overflow: hidden;
+  transition: opacity var(--dur-2) var(--ease-out),
+              transform var(--dur-bounce) var(--spring-snappy),
+              width var(--dur-bounce) var(--spring-snappy),
+              min-width var(--dur-bounce) var(--spring-snappy),
+              margin var(--dur-bounce) var(--spring-snappy);
+}
+
+.reader-panes > .ai-panel.pane-leave-active {
+  overflow: hidden;
+  transition: opacity var(--dur-3) var(--ease-out),
+              transform var(--dur-spring) var(--ease-pane),
+              filter var(--dur-3) var(--ease-out),
+              width var(--dur-spring) var(--ease-pane),
+              min-width var(--dur-spring) var(--ease-pane),
+              margin var(--dur-spring) var(--ease-pane);
+}
+
+.reader-panes > .ai-panel:is(.pane-enter-from, .pane-leave-to) {
+  width: 0 !important;
+  min-width: 0;
+  margin-left: -10px;
+  transform: translateX(10px) scale(.97);
+}
+
+.reader-panes > .ai-panel:is(.pane-enter-active, .pane-leave-active) > * {
+  flex-shrink: 0;
+  min-width: var(--panel-width, 360px);
+}

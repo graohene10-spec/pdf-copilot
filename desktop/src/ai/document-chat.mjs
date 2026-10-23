@@ -1,4 +1,4 @@
-import { buildPayload, streamTurn, streamChat, getModel } from './providers.mjs';
+import { buildPayload, streamTurn, streamChat, getModel, protocolOf } from './providers.mjs';
 import { DOCUMENT_INSTRUCTIONS, toolsForVision, validateToolCall } from '../../../extension/common/document-tools.mjs';
 import { normalizeDocumentLimits, MODEL_STATE_CHARACTERS } from '../../../extension/common/document-limits.mjs';
 import { streamNativeDocument } from './native.mjs';
@@ -29,6 +29,8 @@ export async function streamDocumentChat(options, document, seed) {
     try { return await streamNativeDocument({ ...common, tools, pdfLimits, onTool: (name, args) => document.tool(name, args), onProgress: options.onProgress }); }
     catch (error) { if (error.code !== 'PDF_TOOLS_UNAVAILABLE') throw error; options.onProgress?.('当前 Codex 使用兼容检索模式…'); return plannedChat(common, document, seed); }
   }
+  // Responses keeps typed input items; chat and Claude share the chat-format history (converted for Claude per request).
+  const responses = protocolOf(options.provider, options.protocol) === 'responses';
   let input = buildPayload(common).input, wireMessages = buildPayload(common).messages?.slice(1), count = limits.calls - remaining.calls;
   for (let round = 0; round <= limits.rounds; round++) {
     options.signal?.throwIfAborted(); options.onProgress?.('AI 思考中…');
@@ -41,7 +43,7 @@ export async function streamDocumentChat(options, document, seed) {
     }
     if (!result.calls.length) return;
     if (!activeTools) throw new Error('模型超过本题 PDF 阅读上限。');
-    if (options.provider === 'openai') input.push(...result.output);
+    if (responses) input.push(...result.output);
     else wireMessages.push(result.message);
     for (const call of result.calls) {
       let value;
@@ -52,7 +54,7 @@ export async function streamDocumentChat(options, document, seed) {
         value = await document.tool(call.name, args);
       } catch (error) { options.signal?.throwIfAborted(); value = { error: error.message }; }
       const { dataUrl, ...text } = value;
-      if (options.provider === 'openai') input.push({ type: 'function_call_output', call_id: call.id, output: dataUrl ? [{ type: 'input_text', text: JSON.stringify(text) }, { type: 'input_image', image_url: dataUrl, detail: 'high' }] : JSON.stringify(text) });
+      if (responses) input.push({ type: 'function_call_output', call_id: call.id, output: dataUrl ? [{ type: 'input_text', text: JSON.stringify(text) }, { type: 'input_image', image_url: dataUrl, detail: 'high' }] : JSON.stringify(text) });
       else {
         wireMessages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(text) });
         if (dataUrl) wireMessages.push({ role: 'user', content: [{ type: 'text', text: 'PDF 工具返回的图片证据：' + JSON.stringify(text.evidence || []) }, { type: 'image_url', image_url: { url: dataUrl, detail: 'original' } }] });

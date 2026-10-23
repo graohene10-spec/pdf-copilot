@@ -611,6 +611,24 @@ function getViewState() {
   return { page: number, fraction: (container.value.scrollTop - viewer.stack.offsetTop - viewer.offsets[number - 1]) / viewer.heights[number - 1], scale: fitMode ? null : viewer.displayScale, outlineOpen: outlineOpen.value, search: { query: searchQuery.value, current: Math.max(0, searchCurrent.value) } }
 }
 
+// ---- 书签：位置是页码 + 页内比例；在右侧细条上的位置是它在整本书滚动范围里的比例。
+function getBookmarkPosition() {
+  const view = getViewState()
+  return view ? { page: view.page, fraction: Math.max(0, Math.min(1, view.fraction || 0)) } : undefined
+}
+function bookmarkRatio(position: { page?: number; fraction?: number }) {
+  const index = Math.max(0, (position.page || 1) - 1), fraction = position.fraction || 0
+  if (!active || !viewer?.pdf || !container.value || viewer.offsets?.[index] === undefined) return Math.min(1, (index + fraction) / Math.max(1, total.value || 1))
+  const top = viewer.stack.offsetTop + viewer.offsets[index] + fraction * viewer.heights[index]
+  return Math.max(0, Math.min(1, top / Math.max(1, container.value.scrollHeight)))
+}
+function goToBookmark(position: { page?: number; fraction?: number }) {
+  if (!active || !viewer?.pdf || !container.value) return
+  const index = Math.max(0, Math.min((total.value || 1) - 1, (position.page || 1) - 1))
+  if (viewer.offsets?.[index] === undefined) { void goToPage(index + 1); return }
+  container.value.scrollTo({ top: viewer.stack.offsetTop + viewer.offsets[index] + (position.fraction || 0) * viewer.heights[index], behavior: 'smooth' })
+}
+
 function collectedText() { return [...indexedText.entries()].sort(([a], [b]) => a - b).map(([n, text]) => `第 ${n} 页\n${text}`).join('\n\n') }
 function suspend() {
   if (!active) return
@@ -657,7 +675,7 @@ async function resume() {
 }
 onActivated(resume)
 onDeactivated(suspend)
-defineExpose({ goToPage, getPage: () => page.value, getPdf: () => pdf, isSuspended: () => !active, clearSelection: () => viewer?.clearOverlays(), getCaptureFrame, getCaptureElements, zoomIn, zoomOut, fitWidth, nextPage, previousPage, toggleOutline, toggleCapture, cancelCapture, toggleInk: ink.toggle, exitInk: ink.exit, pickInk: ink.pick, focusSearch, clearSearch, getDisplayScale: () => scale.value, getViewState, holdPanelResize, suspend, resume, getCacheStats: () => viewer?.getCacheStats() })
+defineExpose({ goToPage, getPage: () => page.value, getPdf: () => pdf, isSuspended: () => !active, clearSelection: () => viewer?.clearOverlays(), getCaptureFrame, getCaptureElements, zoomIn, zoomOut, fitWidth, nextPage, previousPage, toggleOutline, toggleCapture, cancelCapture, toggleInk: ink.toggle, exitInk: ink.exit, pickInk: ink.pick, focusSearch, clearSearch, getDisplayScale: () => scale.value, getViewState, getBookmarkPosition, bookmarkRatio, goToBookmark, holdPanelResize, suspend, resume, getCacheStats: () => viewer?.getCacheStats() })
 </script>
 
 <template>

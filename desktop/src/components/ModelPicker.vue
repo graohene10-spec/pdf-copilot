@@ -7,29 +7,12 @@ import AppIcon from './AppIcon.vue'
 type Model = { id: string; name: string; efforts?: string[]; defaultEffort?: string }
 const props = defineProps<{ model: string; effort: string; models: Model[]; loading?: boolean; error?: string; canRefresh?: boolean }>()
 const emit = defineEmits<{ model: [id: string]; effort: [value: string]; refresh: []; close: [] }>()
-const EFFORT_LABELS: Record<string, string> = { '': '默认', none: '关闭思考', minimal: '极简', low: '低', medium: '中', high: '高', xhigh: '超高', max: '最高', ultra: '极致' }
+const EFFORT_LABELS: Record<string, string> = { '': '默认', none: '关', minimal: '极简', low: '低', medium: '中', high: '高', xhigh: '超高', max: '最高', ultra: '极致' }
 const chips = ref<HTMLElement>()
-const track = ref<HTMLElement>()
-const dragging = ref(false)
 const current = computed(() => props.models.find(item => item.id === props.model))
 const steps = computed(() => ['', ...(current.value?.efforts || ['none', 'low', 'medium', 'high', 'xhigh']).filter(Boolean)])
 const index = computed(() => Math.max(0, steps.value.indexOf(props.effort)))
-const fraction = computed(() => steps.value.length > 1 ? index.value / (steps.value.length - 1) : 0)
 const label = (value: string) => EFFORT_LABELS[value] ?? value
-function pick(clientX: number) {
-  const box = track.value?.getBoundingClientRect()
-  if (!box) return
-  const ratio = Math.min(1, Math.max(0, (clientX - box.left - 11) / Math.max(1, box.width - 22)))
-  const next = steps.value[Math.round(ratio * (steps.value.length - 1))]
-  if (next !== props.effort) emit('effort', next)
-}
-function down(event: PointerEvent) {
-  (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
-  dragging.value = true
-  pick(event.clientX)
-}
-function move(event: PointerEvent) { if ((event.currentTarget as HTMLElement).hasPointerCapture(event.pointerId)) pick(event.clientX) }
-function up() { dragging.value = false }
 function key(event: KeyboardEvent) {
   const delta = event.key === 'ArrowRight' || event.key === 'ArrowUp' ? 1 : event.key === 'ArrowLeft' || event.key === 'ArrowDown' ? -1 : 0
   if (event.key === 'Home' || event.key === 'End') { event.preventDefault(); emit('effort', steps.value[event.key === 'Home' ? 0 : steps.value.length - 1]); return }
@@ -72,14 +55,12 @@ onMounted(() => chips.value?.querySelector<HTMLElement>('[aria-selected="true"]'
     </div>
     <div class="drawer-row">
       <span class="drawer-label">思考</span>
-      <!-- 液态玻璃滑杆：细槽、半透明填充；拖动时滑块变成一枚透明的玻璃透镜。 -->
-      <div ref="track" class="effort-track" :class="{ dragging }" role="slider" tabindex="0" aria-label="思考强度" :aria-valuemin="0" :aria-valuemax="steps.length - 1" :aria-valuenow="index" :aria-valuetext="label(effort)" :style="{ '--fill': fraction }" @pointerdown="down" @pointermove="move" @pointerup="up" @pointercancel="up" @lostpointercapture="up" @keydown="key">
-        <span class="effort-groove" aria-hidden="true"><span class="effort-fill" /></span>
-        <span class="effort-ticks" aria-hidden="true"><b v-for="(step, i) in steps" :key="step || 'default'" :class="{ passed: i <= index }" /></span>
-        <span class="effort-knob" aria-hidden="true" />
+      <!-- 分段选择：每一档直接写出名字，选中的那一档下面滑过一块玻璃；档位越高，旁边的强度格亮得越多。 -->
+      <div class="effort-segments" role="radiogroup" aria-label="思考强度" :style="{ '--count': steps.length, '--index': index }" @keydown="key">
+        <span class="effort-thumb" aria-hidden="true" />
+        <button v-for="(step, i) in steps" :key="step || 'default'" type="button" role="radio" :aria-checked="i === index" :tabindex="i === index ? 0 : -1" :class="{ on: i === index }" :data-tip="step ? undefined : '使用模型默认强度'" @click="emit('effort', step)">{{ label(step) }}</button>
       </div>
-      <strong :key="effort" class="effort-name">{{ label(effort) }}</strong>
-      <button type="button" class="drawer-icon" data-tip="恢复默认强度" aria-label="恢复默认强度" :disabled="!effort" @click="emit('effort', '')"><AppIcon name="reset" :size="13" /></button>
+      <span class="effort-meter" aria-hidden="true" :title="label(effort)"><i v-for="bar in 4" :key="bar" :class="{ lit: index > 0 && bar <= Math.ceil(index / Math.max(1, steps.length - 1) * 4) }" /></span>
     </div>
     <p v-if="error" class="drawer-status" role="status">{{ error }}</p>
   </div>
@@ -101,18 +82,18 @@ button{font:inherit;color:inherit;cursor:pointer}
 .drawer-icon{display:grid;place-items:center;flex-shrink:0;width:26px;height:26px;padding:0;border:0;border-radius:var(--r-xs);background:none;box-shadow:none;color:var(--muted)}
 .drawer-icon:hover:not(:disabled){background:var(--frost);color:var(--ink)}
 .drawer-icon:disabled{opacity:.35;cursor:default}
-.effort-name{flex:0 0 auto;min-width:42px;font-size:12px;font-weight:600;color:var(--secondary);text-align:right;font-variant-numeric:tabular-nums;animation:zg-fade-in var(--dur-2) var(--ease-out) both}
-/* 滑杆：26px 高的操作区里一道 6px 细槽；填充是半透明墨色。 */
-.effort-track{--fill:0;position:relative;flex:1;min-width:80px;height:26px;margin-left:6px;cursor:pointer;touch-action:none;outline:none;border-radius:var(--r-full)}
-.effort-track:focus-visible{box-shadow:0 0 0 2px var(--accent-ring)}
-.effort-groove{position:absolute;left:0;right:0;top:50%;height:6px;margin-top:-3px;border-radius:var(--r-full);background:color-mix(in srgb,var(--ink) 10%,transparent);box-shadow:inset 0 1px 2px rgb(0 0 0 / .12),0 1px 0 var(--glass-rim-soft);overflow:hidden}
-.effort-fill{position:absolute;inset:0 auto 0 0;width:calc(11px + (100% - 22px) * var(--fill));border-radius:inherit;background:color-mix(in srgb,var(--ink) 46%,transparent);transition:width var(--dur-smooth) var(--spring-snappy)}
-.effort-ticks{position:absolute;inset:0 9px;display:flex;align-items:center;justify-content:space-between;pointer-events:none}
-.effort-ticks b{width:4px;height:4px;border-radius:50%;background:color-mix(in srgb,var(--ink) 28%,transparent)}
-.effort-ticks b.passed{background:color-mix(in srgb,var(--glass-light, #fff) 90%,transparent)}
-/* 滑块：静止时是一枚带高光的白色玻璃胶囊；按住拖动时放大、变清透，像透镜一样透出下面的细槽。 */
-.effort-knob{position:absolute;top:50%;left:calc((100% - 22px) * var(--fill));width:22px;height:16px;margin-top:-8px;border-radius:var(--r-full);background:linear-gradient(180deg,rgb(255 255 255 / .98),rgb(244 246 248 / .94));box-shadow:0 1px 4px rgb(0 0 0 / .22),0 0 0 .5px rgb(0 0 0 / .1),inset 0 1px 0 #fff;transition:left var(--dur-smooth) var(--spring-snappy),scale var(--dur-bounce) var(--spring-bouncy),background var(--dur-2) var(--ease-out),box-shadow var(--dur-2) var(--ease-out)}
-.effort-track.dragging .effort-knob{scale:1.35 1.3;background:rgb(255 255 255 / .16);-webkit-backdrop-filter:blur(.6px) saturate(1.8) brightness(1.08);backdrop-filter:blur(.6px) saturate(1.8) brightness(1.08);box-shadow:0 4px 12px -2px rgb(0 0 0 / .28),inset 0 0 0 1px rgb(255 255 255 / .7),inset 1px 1px 0 rgb(255 255 255 / .9),inset -1px -1px 2px rgb(0 0 0 / .08)}
+/* 思考强度：一排分段，选中的一档下面是一块随弹簧滑动的玻璃；右侧四格信号条表示当前强度。 */
+.effort-segments{--count:5;--index:0;position:relative;display:grid;grid-template-columns:repeat(var(--count),1fr);flex:1;min-width:0;height:28px;padding:2px;border-radius:var(--r-sm);background:color-mix(in srgb,var(--ink) 6%,transparent);box-shadow:inset 0 1px 2px rgb(0 0 0 / .08)}
+.effort-thumb{position:absolute;top:2px;bottom:2px;left:calc(2px + (100% - 4px) / var(--count) * var(--index));width:calc((100% - 4px) / var(--count));border-radius:calc(var(--r-sm) - 2px);background:var(--frost-hover);background-image:linear-gradient(180deg,rgb(255 255 255 / .55),rgb(255 255 255 / .15));box-shadow:0 1px 4px -1px rgb(0 0 0 / .22),inset 0 0 0 .5px var(--hairline),inset 0 1px 0 var(--glass-rim-soft);transition:left var(--dur-smooth) var(--spring-snappy)}
+.effort-segments button{position:relative;z-index:1;min-width:0;height:100%;padding:0 2px;border:0;border-radius:calc(var(--r-sm) - 2px);background:none;box-shadow:none;font-size:11.5px;font-weight:550;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:color var(--dur-1) var(--ease-soft),transform var(--dur-press) var(--spring-press)}
+.effort-segments button:hover:not(.on){color:var(--ink)}
+.effort-segments button:active{transform:scale(.94)}
+.effort-segments button.on{color:var(--ink);font-weight:650}
+.effort-segments button:focus-visible{outline:none;box-shadow:0 0 0 2px var(--accent-ring)}
+.effort-meter{display:flex;align-items:flex-end;gap:2px;flex:0 0 auto;height:14px;margin:0 4px 0 2px}
+.effort-meter i{width:3px;border-radius:1px;background:color-mix(in srgb,var(--ink) 16%,transparent);transition:background var(--dur-2) var(--ease-out)}
+.effort-meter i:nth-child(1){height:5px}.effort-meter i:nth-child(2){height:8px}.effort-meter i:nth-child(3){height:11px}.effort-meter i:nth-child(4){height:14px}
+.effort-meter i.lit{background:var(--accent)}
 .drawer-status{margin:0 0 2px 36px;font-size:11px;color:var(--muted)}
-@media(prefers-reduced-motion:reduce){.effort-fill,.effort-knob,.model-chips button{transition:none}.model-chips{scroll-behavior:auto}}
+@media(prefers-reduced-motion:reduce){.effort-thumb,.model-chips button{transition:none}.model-chips{scroll-behavior:auto}}
 </style>

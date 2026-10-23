@@ -4,6 +4,7 @@ import MarkdownIt from 'markdown-it'
 import 'katex/dist/katex.min.css'
 import { installMarkdownMath } from './markdown-math'
 import { installGithubFlavor } from './markdown-github'
+import { installCjkEmphasis } from './markdown-cjk'
 import { library } from '../sdk'
 import { clampMarkdownFontSize, clampMarkdownContentWidth, clampMarkdownZoom, readingScrollTarget } from '../reader/layout.mjs'
 import { markdownTextIndex, markdownSearchRanges, markdownSearchHighlighter } from '../reader/markdown-search'
@@ -62,6 +63,7 @@ const transientMarkers = new Set<() => void>()
 const markdown = new MarkdownIt({ html: false, linkify: true, typographer: true })
 installMarkdownMath(markdown)
 installGithubFlavor(markdown)
+installCjkEmphasis(markdown)
 function selectedText() {
   if (!active) return
   const selection = window.getSelection()
@@ -250,6 +252,16 @@ function inkSchedule() { ink.schedule() }
 watch(raw, value => { if (value) ink.exit() })
 function toggleInk() { if (raw.value) raw.value = false; ink.toggle() }
 
+// ---- 书签：位置就是整篇的滚动比例 ----
+function getBookmarkPosition() { return active && rendered ? { progress: Math.max(0, Math.min(1, getViewState().progress)) } : undefined }
+function bookmarkRatio(position: { progress?: number }) { return Math.max(0, Math.min(1, position.progress ?? 0)) }
+function goToBookmark(position: { progress?: number }) {
+  const view = scroll.value
+  if (!active || !view) return
+  if (raw.value) raw.value = false
+  view.scrollTo({ top: Math.max(0, view.scrollHeight - view.clientHeight) * (position.progress ?? 0), behavior: 'smooth' })
+}
+
 async function focusSearch() { if (active) { await nextTick(); searchControl.value?.focus() } }
 async function renderDocument() {
   const targetProgress = rendered ? getViewState().progress : cachedProgress
@@ -369,7 +381,7 @@ async function resume() {
 }
 onActivated(resume)
 onDeactivated(suspend)
-defineExpose({ goToPage, goToHeading, isSuspended: () => !active, zoomIn, zoomOut, resetZoom, getZoom: () => zoom.value, toggleOutline, nextPage, previousPage, focusSearch, clearSearch, toggleCapture, cancelCapture, getCaptureFrame, getCaptureElements, clearSelection, toggleInk, exitInk: ink.exit, pickInk: ink.pick, getPage: () => currentLine, getFontSize: () => displayFontSize.value, getViewState, suspend, resume, getCacheStats: () => ({ suspended: !active, pages: 0, pixels: 0 }) })
+defineExpose({ goToPage, goToHeading, isSuspended: () => !active, zoomIn, zoomOut, resetZoom, getZoom: () => zoom.value, toggleOutline, nextPage, previousPage, focusSearch, clearSearch, toggleCapture, cancelCapture, getCaptureFrame, getCaptureElements, clearSelection, toggleInk, exitInk: ink.exit, pickInk: ink.pick, getPage: () => currentLine, getFontSize: () => displayFontSize.value, getViewState, getBookmarkPosition, bookmarkRatio, goToBookmark, suspend, resume, getCacheStats: () => ({ suspended: !active, pages: 0, pixels: 0 }) })
 </script>
 
 <template>
