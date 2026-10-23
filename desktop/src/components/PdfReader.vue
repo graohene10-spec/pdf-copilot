@@ -442,26 +442,40 @@ function getCaptureFrame(selection: { page: number; image?: string; rect?: any }
 /* Freeze before Vue changes the panel layout, then commit one fitted frame. */
 // 面板（侧栏、顶栏、阅读助手）弹簧伸缩或拖动助手宽度时，阅读区每一帧跟着变：适应宽度时整摞页面按实时宽度缩放，
 // 阅读位置钉在视口顶端；动画结束后按最终宽度排版、重画一次。不再先冻住画面、结束时再跳过去。
-let follow: { frame: number; origin: number } | undefined
-function followFrame() {
-  if (!follow) return
+let follow: { observer: ResizeObserver; origin: number; overflow: string } | undefined
+// ResizeObserver 在每一帧排版之后、绘制之前回调：缩放和面板宽度在同一帧生效，不会落后一帧来回抖。
+function followLayout() {
   const stack = viewer?.stack as HTMLElement | undefined
-  if (stack && viewer?.displayScale && active) {
-    const ratio = fitMode ? viewer.getFitScale(readingWidth()) / viewer.displayScale : 1
-    stack.style.transformOrigin = `50% ${follow.origin}px`
-    stack.style.transform = Math.abs(ratio - 1) > .0005 ? `scale(${ratio})` : ''
-  }
-  follow.frame = requestAnimationFrame(followFrame)
+  if (!follow || !stack || !viewer?.displayScale || !active) return
+  const ratio = fitMode ? viewer.getFitScale(readingWidth()) / viewer.displayScale : 1
+  if (Math.abs(ratio - 1) <= .0005) { stack.style.transform = ''; return }
+  // 页面在整摞里居中，整摞又至少和阅读区一样宽：以当前页的左缘为原点缩放，再把它平移到最终排版时的位置
+  // （比阅读区窄就居中，否则贴着左内边距），结束时提交真正的排版不会横向跳。
+  const element = container.value!, slot = (viewer.active?.slot || stack.firstElementChild) as HTMLElement | null
+  if (!slot) return
+  const style = getComputedStyle(element)
+  const left = parseFloat(style.paddingLeft) || 0, room = element.clientWidth - left - (parseFloat(style.paddingRight) || 0)
+  // 加了 transform 的整摞会成为页面的 offsetParent，两种情况都换算成「页面在整摞里的位置」。
+  const inStack = slot.offsetParent === stack ? slot.offsetLeft : slot.offsetLeft - stack.offsetLeft
+  const shift = left + Math.max(0, (room - slot.offsetWidth * ratio) / 2) - (stack.offsetLeft + inStack - element.scrollLeft)
+  stack.style.transformOrigin = `${inStack}px ${follow.origin}px`
+  stack.style.transform = `translateX(${shift}px) scale(${ratio})`
 }
 function startFollow() {
   if (follow || !viewer?.stack || !container.value) return
   releaseViewport()
-  follow = { frame: 0, origin: Math.max(0, container.value.scrollTop - viewer.stack.offsetTop) }
-  followFrame()
+  const element = container.value
+  follow = { observer: new ResizeObserver(followLayout), origin: Math.max(0, element.scrollTop - viewer.stack.offsetTop), overflow: element.style.overflowX }
+  // 动画中旧宽度的页面比阅读区宽，不让横向滚动条闪一下。
+  element.style.overflowX = 'hidden'
+  follow.observer.observe(element)
+  if (viewportHost.value) follow.observer.observe(viewportHost.value)
+  followLayout()
 }
 function stopFollow() {
   if (!follow) return false
-  cancelAnimationFrame(follow.frame)
+  follow.observer.disconnect()
+  if (container.value) container.value.style.overflowX = follow.overflow
   follow = undefined
   const stack = viewer?.stack as HTMLElement | undefined
   if (stack) { stack.style.transform = ''; stack.style.transformOrigin = '' }

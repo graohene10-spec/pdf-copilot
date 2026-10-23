@@ -64,6 +64,17 @@ try {
   await page.mouse.up();
   checks.push('Dragging the transparency / blur sliders removes the settings veil and its blur, so the glass change is visible.');
 
+  // 边缘高光：默认 50%，滑杆实时改变全局强度。
+  const highlight = dialog.getByLabel('边缘高光', { exact: true });
+  assert.equal(await highlight.inputValue(), '50');
+  const level = () => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--glass-highlight').trim());
+  assert.equal(await level(), '0.5');
+  await highlight.evaluate(input => { input.value = '100'; input.dispatchEvent(new Event('input', { bubbles: true })); });
+  await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue('--glass-highlight').trim() === '1');
+  await highlight.evaluate(input => { input.value = '50'; input.dispatchEvent(new Event('input', { bubbles: true })); });
+  assert.equal(await level(), '0.5');
+  checks.push('The edge highlight defaults to 50% of the old strength and its slider previews live.');
+
   const swatches = dialog.getByRole('radiogroup', { name: '底板', exact: true }).getByRole('radio');
   const before = await swatches.evaluateAll(items => items.findIndex(item => item.getAttribute('aria-checked') === 'true'));
   const other = before === 0 ? 1 : 0;
@@ -124,6 +135,9 @@ try {
 
   await ticks.nth(1).hover();
   const preview = pane.locator('.rail-preview'); await preview.waitFor();
+  await ticks.nth(1).evaluate(tick => new Promise(done => { const check = () => getComputedStyle(tick, '::after').width === '30px' ? done() : setTimeout(check, 50); check(); setTimeout(done, 3000); }));
+  const hot = await ticks.nth(1).evaluate(tick => ({ live: tick.hasAttribute('data-glass-live'), width: getComputedStyle(tick, '::after').width, opacity: getComputedStyle(tick, '::after').opacity, ring: getComputedStyle(tick, '::before').content }));
+  assert.ok(!hot.live && hot.width === '30px' && hot.opacity === '1' && hot.ring === 'none', `The hovered tick stays visible with no glass ring (${JSON.stringify(hot)}).`);
   await preview.getByRole('button', { name: '钉住这一问', exact: true }).click();
   await page.waitForFunction(() => document.querySelectorAll('.ai-pane .rail-mark.pinned').length === 1);
   await preview.getByRole('button', { name: '取消钉住', exact: true }).waitFor();

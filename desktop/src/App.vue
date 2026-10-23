@@ -1047,6 +1047,8 @@ function applyTheme() {
   root.style.setProperty('--glass-transparency', String(appearance.glassTransparency / 100))
   // 模糊程度 50% 是默认强度；0 不模糊，100% 为两倍。
   root.style.setProperty('--glass-blur-scale', String(appearance.glassBlur / 50))
+  // 边缘高光 100% 是以前的强度，默认 50%。
+  root.style.setProperty('--glass-highlight', String(appearance.glassHighlight / 100))
   root.dataset.refraction = appearance.glassRefraction ? 'on' : 'off'
   glassContrast?.setOptions({ legibility: appearance.glassLegibility, compensation: appearance.glassCompensation, tint: appearance.glassTint })
   root.dataset.background = appearance.background ? 'custom' : 'default'

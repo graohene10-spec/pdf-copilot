@@ -216,7 +216,8 @@
               flex-basis var(--dur-bounce) var(--spring-snappy),
               width var(--dur-bounce) var(--spring-snappy),
               margin-right var(--dur-bounce) var(--spring-snappy),
-              padding var(--dur-bounce) var(--spring-snappy);
+              padding var(--dur-bounce) var(--spring-snappy),
+              border-width var(--dur-bounce) var(--spring-snappy);
   transform-origin: 0 0;
   will-change: opacity, transform;
 }
@@ -229,7 +230,8 @@
               flex-basis var(--dur-spring) var(--ease-pane),
               width var(--dur-spring) var(--ease-pane),
               margin-right var(--dur-spring) var(--ease-pane),
-              padding var(--dur-spring) var(--ease-pane);
+              padding var(--dur-spring) var(--ease-pane),
+              border-width var(--dur-spring) var(--ease-pane);
   transform-origin: 0 4%;
   will-change: opacity, transform;
 }
@@ -253,6 +255,15 @@
   margin-right: -10px;
   padding-left: 0;
   padding-right: 0;
+}
+
+/* styles.css 里 .app-sidebar 自带左右内边距和边框，优先级相同又排在后面，会把上面的 0 顶回去：
+   侧栏只能缩到 26px，动画结束时才一下子消失，阅读区跟着跳 26px。这里提高优先级，一起收到 0。 */
+.app-sidebar:is(.sidebar-enter-from, .sidebar-leave-to) {
+  padding-left: 0;
+  padding-right: 0;
+  border-left-width: 0;
+  border-right-width: 0;
 }
 
 /* 内容按展开后的宽度排版，侧栏变窄时只被裁掉，不会挤成一列。 */
