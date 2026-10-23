@@ -68,6 +68,28 @@ onMounted(async () => {
 // 拖动透明度/模糊滑杆时，设置窗与遮罩几乎完全淡出，直接看到界面实时变化；松手恢复。
 const peeking = ref(false)
 function peek(on: boolean) { peeking.value = on }
+// 换底板时先把整个界面换成新场景给你看：设置窗让开，底部一条「采用 / 不采用」；不采用就退回原来的底板。
+type Scene = { backdrop: BackdropPreset; background: BackgroundImage | null }
+const scenePreview = ref<Scene | null>(null)
+const sceneAccept = ref<HTMLButtonElement>()
+function previewScene(apply: () => void) {
+  const appearance = draft.value.appearance
+  const before: Scene = { backdrop: appearance.backdrop, background: appearance.background }
+  apply()
+  if (appearance.backdrop === before.backdrop && appearance.background?.dataUrl === before.background?.dataUrl) return
+  scenePreview.value = before
+  void nextTick(() => sceneAccept.value?.focus())
+}
+function acceptScene() { scenePreview.value = null; void nextTick(() => dialog.value?.focus()) }
+function rejectScene() {
+  const scene = scenePreview.value
+  if (!scene) return
+  draft.value.appearance.backdrop = scene.backdrop
+  draft.value.appearance.background = scene.background
+  scenePreview.value = null
+  void nextTick(() => dialog.value?.focus())
+}
+function sceneKeydown(event: KeyboardEvent) { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); rejectScene() } }
 watch(() => draft.value.appearance, value => {
   if (ready.value && !disposed && !closing) shared.previewAppearance(value)
 }, { deep: true, flush: 'sync' })
@@ -97,7 +119,7 @@ async function chooseBackground(event: Event) {
     const existing = gallery.find(item => item.dataUrl === background.dataUrl)
     if (!existing && gallery.length >= MAX_GALLERY) { imageError.value = `图库最多保存 ${MAX_GALLERY} 张图片，请先删除一张。`; return }
     if (!existing) gallery.push(background)
-    draft.value.appearance.background = existing || background
+    previewScene(() => { draft.value.appearance.background = existing || background })
   } catch (cause: any) {
     if (!disposed && !closing && request === imageRequest) imageError.value = cause.message || String(cause)
   } finally {
@@ -111,7 +133,7 @@ function restoreBackground() {
 function chooseGalleryImage(image: BackgroundImage) {
   if (saving.value) return
   imageRequest++; importingImage.value = false; imageError.value = ''
-  draft.value.appearance.background = image
+  previewScene(() => { draft.value.appearance.background = image })
 }
 function removeGalleryImage(image: BackgroundImage) {
   if (saving.value) return
@@ -167,8 +189,7 @@ function removeFont(id: string) {
 }
 function chooseBackdrop(id: BackdropPreset) {
   if (saving.value) return
-  restoreBackground()
-  draft.value.appearance.backdrop = id
+  previewScene(() => { restoreBackground(); draft.value.appearance.backdrop = id })
 }
 function switchTab(value: Tab) { tab.value = value; if (value === 'ai') aiVisited.value = true; recording.value = null; captureError.value = ''; composingLabel.value = null; status.value = '' }
 type PromptList = 'quickPrompts' | 'captureQuestions'
@@ -283,7 +304,8 @@ function dialogKeydown(event: KeyboardEvent) {
 </script>
 
 <template>
-  <div class="settings-backdrop" :class="{ peeking }" @click.self="close" @pointerup="peek(false)" @pointercancel="peek(false)">
+  <div class="settings-backdrop" :class="{ peeking, scene: scenePreview }" @click.self="!scenePreview && close()" @pointerup="peek(false)" @pointercancel="peek(false)">
+    <Transition name="scene-bar"><div v-if="scenePreview" class="scene-bar" role="dialog" aria-label="预览新底板" @keydown="sceneKeydown"><span>新底板效果预览</span><button type="button" class="scene-reject" @click="rejectScene">不采用</button><button ref="sceneAccept" type="button" class="scene-accept" @click="acceptScene">采用</button></div></Transition>
     <section ref="dialog" class="settings-dialog" data-glass-interactive="panel" role="dialog" aria-modal="true" aria-labelledby="settings-title" tabindex="-1" @keydown="dialogKeydown">
       <header class="dialog-header"><h2 id="settings-title">设置</h2><button class="settings-close" :disabled="saving" @click="close" aria-label="关闭设置"><AppIcon name="close" :size="18" /></button></header>
       <div class="settings-body">
@@ -319,7 +341,7 @@ function dialogKeydown(event: KeyboardEvent) {
                 </div>
                 <button v-if="draft.appearance.gallery.length < MAX_GALLERY" type="button" class="backdrop-swatch custom-swatch" :style="{ '--i': draft.appearance.gallery.length }" aria-label="添加图片到图库" :disabled="saving || importingImage" @click="imageInput?.click()"><span class="swatch-art"><AppIcon name="plus" :size="20" /></span><span class="swatch-label">{{ importingImage ? '处理中…' : '添加图片' }}</span></button>
               </div>
-              <div v-if="draft.appearance.background" class="background-heading"><img class="background-current" :src="draft.appearance.background.dataUrl" alt="底板图片预览" /><span class="background-name" :data-tip="draft.appearance.background.name">{{ draft.appearance.background.name }}</span><button type="button" :disabled="saving || importingImage" @click="imageInput?.click()">替换图片</button><button type="button" :disabled="saving || importingImage" @click="restoreBackground" aria-label="恢复默认底板">改用预设</button></div>
+              <div v-if="draft.appearance.background" class="background-heading"><img class="background-current" :src="draft.appearance.background.dataUrl" alt="底板图片预览" /><span class="background-name" :data-tip="draft.appearance.background.name">{{ draft.appearance.background.name }}</span><button type="button" :disabled="saving || importingImage" @click="imageInput?.click()">替换图片</button><button type="button" :disabled="saving || importingImage" @click="previewScene(restoreBackground)" aria-label="恢复默认底板">改用预设</button></div>
               <div v-else class="background-heading"><span class="background-name">选择预设，或从图库挑一张图片</span><button type="button" :disabled="saving || importingImage" @click="imageInput?.click()">{{ importingImage ? '正在处理…' : '选择图片' }}</button></div>
               <input ref="imageInput" class="background-file" type="file" accept="image/png,image/jpeg,image/webp" tabindex="-1" aria-label="底板图片文件" @change="chooseBackground" />
               <p v-if="imageError" class="settings-error" role="status">{{ imageError }}</p>
@@ -417,8 +439,21 @@ function dialogKeydown(event: KeyboardEvent) {
 
 <style scoped>
 /* 设置为一张悬浮的厚玻璃；内容按 iOS 的内嵌圆角分组排列，表单保持稳定对比度。 */
-.settings-backdrop{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--canvas-deep) 22%,transparent);z-index:80;padding:25px;transition:background var(--dur-2) var(--ease-out)}
-.settings-backdrop.peeking{background:transparent}
+.settings-backdrop{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--canvas-deep) 22%,transparent);z-index:80;padding:25px;transition:background var(--dur-2) var(--ease-out),backdrop-filter var(--dur-2) var(--ease-out)}
+.settings-backdrop.peeking,.settings-backdrop.scene{background:transparent;-webkit-backdrop-filter:none;backdrop-filter:none}
+/* 按下滑杆的那一刻就撤掉模糊，不等过渡。 */
+.settings-backdrop.peeking{transition:background var(--dur-1) var(--ease-out)}
+.settings-backdrop.scene .settings-dialog{opacity:0;transform:scale(.97);pointer-events:none;transition:opacity var(--dur-2) var(--ease-out),transform var(--dur-2) var(--ease-out)}
+.scene-bar{position:absolute;left:50%;bottom:32px;z-index:3;display:flex;align-items:center;gap:8px;padding:7px 7px 7px 18px;border:1px solid var(--line-soft);border-radius:999px;background:color-mix(in srgb,var(--surface) 95%,transparent);box-shadow:0 18px 50px -16px rgb(0 0 0 / .45),0 2px 6px rgb(0 0 0 / .1);color:var(--surface-ink);font-size:13px;font-weight:600;transform:translateX(-50%)}
+.scene-bar span{margin-right:8px}
+.scene-bar button{height:34px;padding:0 18px;border-radius:999px;font-size:13px;font-weight:600;box-shadow:none}
+.scene-reject{border:1px solid var(--line-soft);background:transparent;color:var(--surface-ink)}
+.scene-reject:hover:not(:disabled){background:color-mix(in srgb,var(--surface-ink) 7%,transparent);color:var(--surface-ink)}
+.scene-accept{border:0;background:var(--surface-ink);color:var(--surface)}
+.scene-accept:hover:not(:disabled){background:color-mix(in srgb,var(--surface-ink) 86%,var(--surface));color:var(--surface)}
+.scene-bar-enter-active{transition:opacity var(--dur-2) var(--ease-out),translate var(--dur-bounce) var(--spring-snappy)}
+.scene-bar-leave-active{transition:opacity var(--dur-1) var(--ease-out),translate var(--dur-1) var(--ease-out)}
+.scene-bar-enter-from,.scene-bar-leave-to{opacity:0;translate:0 14px}
 .settings-backdrop.peeking .settings-dialog{opacity:.14;transition:opacity var(--dur-2) var(--ease-out)}
 .settings-backdrop.peeking .transparency-row{position:relative;z-index:2}
 .settings-dialog{position:relative;width:780px;max-width:100%;height:648px;max-height:90vh;background-color:var(--popup-glass);background-image:var(--popup-sheen);--lens-blur:var(--popup-blur);--lens-saturate:var(--glass-sat);-webkit-backdrop-filter:var(--refraction, blur(var(--popup-blur)) saturate(var(--glass-sat)));backdrop-filter:var(--refraction, blur(var(--popup-blur)) saturate(var(--glass-sat)));border:1px solid var(--glass-outline);border-radius:var(--r-2xl);box-shadow:0 30px 90px -20px color-mix(in srgb,var(--canvas-deep) 30%,rgb(0 0 0 / .35)),var(--shadow-3),var(--glass-edge);display:flex;flex-direction:column;color:var(--ink);overflow:hidden;transform-origin:50% 60%}

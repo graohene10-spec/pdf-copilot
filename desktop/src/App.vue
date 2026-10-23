@@ -12,6 +12,7 @@ import { retainReaderEntries } from './reader/cache-policy.mjs'
 import { installGlassContrast } from './ui/glass-contrast'
 import { restoreLeavingPanel } from './ui/panel-transition'
 import BookmarkRail from './components/BookmarkRail.vue'
+import ClaudeBurst from './components/ClaudeBurst.vue'
 import { bookmarks, loadBookmarks, addBookmark, removeBookmark, renameBookmark, neighbour, type BookmarkPosition } from './library/bookmarks'
 import { useFullscreen } from './ui/fullscreen'
 import { vLiquidSelection } from './ui/liquid-selection'
@@ -581,9 +582,13 @@ function addBookmarkHere(id = active.value?.id) {
   if (!addBookmark(sourceId(id), position)) { notify('这本书的书签已经很多了，请先删掉一些。'); return }
   bookmarkTick.value++
 }
+// 平滑滚动还没停下时再按 Ctrl + ↑ / ↓：以正在去的那个书签为当前位置，接着往下一个跳，不必等上一次滚完。
+let bookmarkTarget: { id: string; ratio: number; until: number } | undefined
 function jumpBookmark(id: string, markId: string) {
   const mark = bookmarks.get(sourceId(id))?.find(item => item.id === markId)
   if (!mark) return
+  const instance = readerInstances.get(id)
+  bookmarkTarget = instance?.bookmarkRatio ? { id, ratio: instance.bookmarkRatio(mark.position), until: performance.now() + 900 } : undefined
   if (active.value?.id !== id && paneVisible(id)) focusPane(id)
   readerInstances.get(id)?.goToBookmark?.(mark.position)
 }
@@ -593,7 +598,8 @@ function stepBookmark(direction: 1 | -1) {
   const here = instance.getBookmarkPosition()
   if (!here) return
   const list = (bookmarks.get(sourceId(id)) || []).map(mark => ({ id: mark.id, ratio: instance.bookmarkRatio(mark.position) }))
-  const next = neighbour(list, instance.bookmarkRatio(here), direction)
+  const moving = bookmarkTarget && bookmarkTarget.id === id && performance.now() < bookmarkTarget.until
+  const next = neighbour(list, moving ? bookmarkTarget!.ratio : instance.bookmarkRatio(here), direction)
   if (next) jumpBookmark(id, next.id)
 }
 function bookmarkMenu(id: string, markId: string, event: MouseEvent) {
@@ -660,13 +666,19 @@ function startWidthDrag(event: PointerEvent, key: string) {
   widthDrag = { key, x: event.clientX, width: bounds?.width || panel.width, side }
   ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
   document.documentElement.classList.add('resizing-panels')
+  // 拖动助手宽度时，PDF 跟着手实时缩放，松手后再按最终宽度重画一次。
+  if (pdfOnScreen()) for (const instance of visibleReaders()) instance.holdPanelResize?.(true)
 }
 function moveWidthDrag(event: PointerEvent) {
   if (!widthDrag) return
   const panel = aiPanels.value.find(item => item.key === widthDrag!.key)
   if (panel) panel.width = Math.round(Math.min(Math.max(300, window.innerWidth * .6), Math.max(300, widthDrag.width + (event.clientX - widthDrag.x) * widthDrag.side)))
 }
-function endWidthDrag() { if (!widthDrag) return; widthDrag = undefined; document.documentElement.classList.remove('resizing-panels') }
+function endWidthDrag() {
+  if (!widthDrag) return
+  widthDrag = undefined; document.documentElement.classList.remove('resizing-panels')
+  if (!resizingPanels.size) for (const instance of visibleReaders()) instance.holdPanelResize?.(false, false)
+}
 // ---- Dragging windows to rearrange (lift, others slide aside) ---------------
 let panelDrag: { key: string; element: HTMLElement; grab: number; startX: number; startY: number; moved: boolean; pointer: number } | undefined
 const draggingPanel = ref<string>()
@@ -1328,7 +1340,7 @@ onBeforeUnmount(() => { stopAutoCheck(); for (const timer of pillTimers.values()
         <FileTabs v-if="tabs.length" :tabs="fileTabs" :active-id="active?.id" :group="group.length > 1 ? group : []" :visible="paneIds" @select="selectTab" @close="closeTab" @library="closeReader" @menu="tabMenu" @drag="tabDrag" @reorder="reorderTabs" />
         <span v-else class="breadcrumb">{{ currentTitle }}</span>
         <div class="topbar-actions">
-          <template v-if="active"><button class="icon-button" :class="{ 'is-starred': active.starred }" @click="toggleStar(active)" data-tip="收藏文档" aria-label="收藏文档"><AppIcon name="star" :size="18" /></button><button class="icon-button" :class="{ active: detailsOpen }" @click="detailsOpen = !detailsOpen" data-tip="文档详情与标签" aria-label="文档详情与标签" :aria-expanded="detailsOpen"><AppIcon name="tag" :size="18" /></button><button class="icon-button split-toggle" data-split-anchor :class="{ active: splitPicker || splitView }" @click="toggleSplitPicker($event)" data-tip="并排阅读" :data-tip-key="tipKey('split')" aria-label="并排阅读" :aria-expanded="!!splitPicker"><AppIcon name="split" :size="18" /><span v-if="splitView" class="split-count">{{ paneIds.length }}</span></button><button class="ai-toggle" data-tip="阅读助手" :data-tip-key="tipKey('ai')" :class="{ active: aiOpen }" @click="toggleAssistant" :aria-expanded="aiOpen"><AppIcon name="sparkle" :size="17" />阅读助手</button></template>
+          <template v-if="active"><button class="icon-button" :class="{ 'is-starred': active.starred }" @click="toggleStar(active)" data-tip="收藏文档" aria-label="收藏文档"><AppIcon name="star" :size="18" /></button><button class="icon-button" :class="{ active: detailsOpen }" @click="detailsOpen = !detailsOpen" data-tip="文档详情与标签" aria-label="文档详情与标签" :aria-expanded="detailsOpen"><AppIcon name="tag" :size="18" /></button><button class="icon-button split-toggle" data-split-anchor :class="{ active: splitPicker || splitView }" @click="toggleSplitPicker($event)" data-tip="并排阅读" :data-tip-key="tipKey('split')" aria-label="并排阅读" :aria-expanded="!!splitPicker"><AppIcon name="split" :size="18" /><span v-if="splitView" class="split-count">{{ paneIds.length }}</span></button><button class="ai-toggle" data-tip="阅读助手" :data-tip-key="tipKey('ai')" :class="{ active: aiOpen }" @click="toggleAssistant" :aria-expanded="aiOpen"><ClaudeBurst :size="17" />阅读助手</button></template>
           <button v-else class="icon-button" @click="toggleTheme" :data-tip="theme === 'dark' ? '切换浅色主题' : '切换深色主题'" :aria-label="theme === 'dark' ? '切换浅色主题' : '切换深色主题'"><AppIcon :name="theme === 'dark' ? 'sun' : 'moon'" :size="18" /></button>
           <button class="icon-button" @click="collapseChrome" data-tip="收起顶栏与侧栏，阅读区占满窗口" aria-label="收起顶栏与侧栏"><AppIcon name="collapse-up" :size="18" /></button>
           <button class="icon-button" @click="toggleFullscreen" :disabled="fullscreenPending" :aria-label="fullscreen ? '退出全屏' : '进入全屏'" :aria-pressed="fullscreen" :data-tip="fullscreen ? '退出全屏' : '进入全屏'" :data-tip-key="tipKey('fullscreen')"><AppIcon :name="fullscreen ? 'exit-fullscreen' : 'fullscreen'" :size="18" /></button>

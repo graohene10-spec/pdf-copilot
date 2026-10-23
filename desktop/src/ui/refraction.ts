@@ -14,7 +14,7 @@
 const SELECTOR = [
   '.app-sidebar', '.app-topbar', '.library-search', '.document-card', '.reader-tools', '.document-outline', '.reading-pill',
   '.selection-context', '.document-details', '.answer-notice', '.toast-message', '.confirm-dialog', '.selection-ask',
-  '.glass-tooltip', '.context-menu', '.ai-pane', '.history-menu', '.rail-preview', '.settings-dialog', '.split-picker',
+  '.glass-tooltip', '.context-menu', '.ai-pane', '.rail-preview', '.settings-dialog', '.split-picker',
   '.update-card', '.ink-palette', '.capture-thinking', '.thought-bubble', '.capture-quick-footer button', '.chrome-tag',
 ].join(',')
 const NS = 'http://www.w3.org/2000/svg'
@@ -212,7 +212,7 @@ export function installRefraction(root: HTMLElement): () => void {
       const element = target as HTMLElement
       if (!assigned.has(element)) continue
       // 刚显示出来的弹层（提示、菜单）立即配上透镜；已有透镜的玻璃改变尺寸时才延后重算。
-      if (assigned.get(element) === null && !document.querySelector(MOVING)) { assign(element); continue }
+      if (assigned.get(element) === null) { assign(element); continue }
       // 拖动缩放面板时不逐帧重画位移图：旧图会随元素拉伸，停下片刻后再按新尺寸生成。
       later(element)
     }
@@ -241,13 +241,8 @@ export function installRefraction(root: HTMLElement): () => void {
     for (const element of document.body.querySelectorAll<HTMLElement>(':scope > :is(' + SELECTOR + ')')) found.add(element)
     for (const element of [...assigned.keys()]) if (!found.has(element) || !element.isConnected) release(element)
     // 主题、透明度或模糊程度变化时，已有的玻璃也按新的模糊与饱和度重建滤镜。
-    const moving = !!document.querySelector(MOVING)
-    for (const element of found) {
-      if (!all && assigned.has(element)) continue
-      // A panel springing in gets its lens once it has settled.
-      if (moving && !assigned.has(element)) { assigned.set(element, null); resize.observe(element); later(element, 120); continue }
-      assign(element)
-    }
+    // 新出现的玻璃（侧栏、助手）立刻配上透镜，弹出时和弹出后是同一块材质；只有尺寸变化的重建才等动画停下。
+    for (const element of found) if (all || !assigned.has(element)) assign(element)
     prune()
   }
   const schedule = () => { if (!disposed && !frame) frame = win.requestAnimationFrame(scan) }

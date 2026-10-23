@@ -3782,11 +3782,9 @@ kbd {
   cursor: pointer;
 }
 
-/* 阅读区上下沿：页面滚到工具条下面和窗口底边时渐渐淡出，而不是一刀切断。 */
+/* 阅读区上沿：页面滚到工具条下面时很快地淡出（一小段），下沿正常铺满到底。 */
 .pdf-scroll,
 .markdown-scroll {
-  --edge-fade-top: 14px;
-  --edge-fade-bottom: 26px;
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 var(--edge-fade-top), #000 calc(100% - var(--edge-fade-bottom)), transparent 100%);
-  mask-image: linear-gradient(to bottom, transparent 0, #000 var(--edge-fade-top), #000 calc(100% - var(--edge-fade-bottom)), transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 7px);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 7px);
 }

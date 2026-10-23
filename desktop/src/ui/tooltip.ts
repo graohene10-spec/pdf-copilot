@@ -56,6 +56,10 @@ export function installTooltips(root: HTMLElement): () => void {
     const shortcut = element.dataset.tipKey || ''
     key.textContent = shortcut
     key.hidden = !shortcut
+    // 和所指控件用同一种文字颜色（含底图上的自适应墨色与光晕）。
+    const style = win.getComputedStyle(element)
+    tip.style.setProperty('--tip-ink', style.getPropertyValue('--control-ink').trim() || style.color)
+    tip.style.setProperty('--tip-shadow', style.getPropertyValue('--glass-label-shadow').trim() || 'none')
     const swap = shown
     tip.hidden = false
     if (!swap) tip.classList.remove('visible')

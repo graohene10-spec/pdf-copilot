@@ -10,6 +10,8 @@ export type Message = {
   startedAt?: number; firstTokenAt?: number; finishedAt?: number; usage?: Usage; activity?: string; stopped?: boolean
   /** How a question was asked, so it can be regenerated or edited the same way. */
   ask?: { includeDocument: boolean; selectionOnly?: boolean; page?: number; text?: string }
+  /** 钉住的提问在右侧导航刻度旁多一个圆点。 */
+  pinned?: boolean
 }
 type Request = { controller: AbortController; phase: string }
 export type ChatState = {
@@ -111,6 +113,13 @@ function noticeFinished(state: ChatState, documentTitle: string) {
 export function chatPhase(documentId: string) {
   const entry = documents.get(documentId)
   return entry?.list.find(item => item.request)?.request?.phase || ''
+}
+/** 钉住或取消钉住一问，跟着对话一起保存。 */
+export function pinMessage(documentId: string, conversationId: string, messageId: string, pinned: boolean) {
+  const message = chatState(documentId, conversationId).messages.find(item => item.id === messageId)
+  if (!message) return
+  message.pinned = pinned || undefined
+  schedulePersist(documentId)
 }
 export function configureRequests(settings: any) { scheduler.configure(settings.requestLimits) }
 export function stopChat(documentId: string, conversationId?: string) {

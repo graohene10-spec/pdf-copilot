@@ -3,13 +3,13 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, defineAsync
 import 'katex/dist/katex.min.css'
 import { getProvider, getNativeModels, getNativeStatus } from '../ai/providers.mjs'
 import { nativeModelInventory, registerNativeModelInventory } from '../ai/native-models'
-import { chatState, sendChat, stopChat, configureRequests, taskSummary, conversations, activeConversationId, selectConversation, newConversation, deleteConversation, loadConversations, conversationTokens, contextWindow, branchConversation, resendQuestion, watchConversation, allConversations, type Message, type ChatState } from '../ai/workspace'
+import { chatState, sendChat, stopChat, configureRequests, taskSummary, conversations, activeConversationId, selectConversation, newConversation, deleteConversation, loadConversations, conversationTokens, contextWindow, branchConversation, resendQuestion, watchConversation, allConversations, pinMessage, type Message, type ChatState } from '../ai/workspace'
 import { renderMarkdown, renderDiagrams } from '../ai/render'
 import { loadAiSettings, saveModelChoice } from '../ai/settings.mjs'
 import { useSettings } from '../settings'
 import AppIcon from './AppIcon.vue'
 import AssistantMark from './AssistantMark.vue'
-import { greetingFor, placeholderFor, thinkingVerb, SPINNER_FRAMES } from '../ai/greeting'
+import { greetingFor, placeholderFor, thinkingVerb, spinnerFor } from '../ai/greeting'
 import { predictQuestion, predictionKey } from '../ai/predict'
 const ModelPicker = defineAsyncComponent(() => import('./ModelPicker.vue'))
 
@@ -148,7 +148,8 @@ watch(busy, value => {
   if (value) ticker = setInterval(() => { now.value = Date.now() }, 120)
   now.value = Date.now()
 }, { immediate: true })
-const spinner = computed(() => SPINNER_FRAMES[Math.floor(now.value / 120) % SPINNER_FRAMES.length])
+// 每段回答随机用一种转动符号（按回答的 id 选，重绘时不会换）。
+function spinner(message: Message) { const frames = spinnerFor(message.id); return frames[Math.floor(now.value / 120) % frames.length] }
 // 进度里只保留有信息量的状态（排队、读文档、查原文）；「思考中 / 正在回答」由英文动词表达。
 const GENERIC_ACTIVITY = /^(思考中|正在回答|准备上下文|AI 思考中)$/
 function activityNote(message: Message) { const text = message.activity || ''; return GENERIC_ACTIVITY.test(text) ? '' : text }
@@ -234,14 +235,15 @@ watch(() => [conversationId.value, messages.value.length, messages.value.at(-1)?
   scheduleScroll()
 })
 function onScroll() { follow = nearBottom(); rememberScroll() }
-type Mark = { id: string; top: number; text: string; answer: string; current: boolean }
+type Mark = { id: string; top: number; text: string; answer: string; current: boolean; pinned: boolean }
 const marks = ref<Mark[]>([])
 const hoverMark = ref<Mark | null>(null)
 // Codex 式的提问刻度：全部排在右侧中间，指针靠近时像程序坞一样逐个放大，指着的那一条最长最深。
 const tickColumn = ref<HTMLElement>()
 const tickPointer = ref<number | null>(null)
 const hoverTop = ref(0)
-const tickGap = computed(() => { const room = (messageList.value?.clientHeight || 400) - 96; return Math.max(2, Math.min(7, room / Math.max(1, marks.value.length) - 2)) })
+// 每条刻度占一整格、格与格首尾相接，指针在两条之间也落在某一条上，没有点不到的空隙。
+const tickSlot = computed(() => { const room = (messageList.value?.clientHeight || 400) - 96; return Math.max(4, Math.min(10, room / Math.max(1, marks.value.length))) })
 function tickCenters() { return [...(tickColumn.value?.querySelectorAll<HTMLElement>('.rail-mark') || [])].map(tick => tick.offsetTop + tick.offsetHeight / 2) }
 function tickGrow(index: number) {
   if (tickPointer.value === null) return 0
@@ -256,9 +258,20 @@ function tickHover(event: PointerEvent) {
   const centers = tickCenters()
   let nearest = -1, best = Infinity
   centers.forEach((center, index) => { const distance = Math.abs(center - y); if (distance < best) { best = distance; nearest = index } })
-  if (nearest >= 0 && best <= Math.max(8, tickGap.value + 4)) { hoverMark.value = marks.value[nearest]; hoverTop.value = column.offsetTop + centers[nearest] } else hoverMark.value = null
+  clearTimeout(previewTimer)
+  if (nearest >= 0) { hoverMark.value = marks.value[nearest]; hoverTop.value = column.offsetTop + centers[nearest] } else hoverMark.value = null
 }
-function tickLeave() { tickPointer.value = null; hoverMark.value = null }
+// 离开刻度后卡片多留一会儿，指针能移到卡片上点「钉住」。
+let previewTimer: ReturnType<typeof setTimeout> | undefined
+function tickLeave() { tickPointer.value = null; hidePreviewSoon() }
+function hidePreviewSoon() { clearTimeout(previewTimer); previewTimer = setTimeout(() => { hoverMark.value = null }, 220) }
+function keepPreview() { clearTimeout(previewTimer) }
+function togglePin(mark: Mark) {
+  mark.pinned = !mark.pinned
+  pinMessage(props.document.id, conversationId.value, mark.id, mark.pinned)
+  updateRail()
+  hoverMark.value = marks.value.find(item => item.id === mark.id) || null
+}
 function tickFocus(mark: Mark, event: FocusEvent) { const tick = event.target as HTMLElement; hoverMark.value = mark; hoverTop.value = (tickColumn.value?.offsetTop || 0) + tick.offsetTop + tick.offsetHeight / 2 }
 // 右侧导航条代替滚动条：细滑块表示当前视口，刻度是每一轮提问。
 const thumb = ref({ top: 0, height: 1, visible: false })
@@ -275,7 +288,7 @@ function updateRail() {
   marks.value = users.map((element, index) => {
     const message = messages.value.find(item => item.id === element.dataset.id)
     const answer = messages.value[messages.value.indexOf(message!) + 1]
-    return { id: element.dataset.id || '', top: element.offsetTop / height, text: message?.content || '', answer: plainText(answer?.content || '').slice(0, 140), current: index === current }
+    return { id: element.dataset.id || '', top: element.offsetTop / height, text: message?.content || '', answer: plainText(answer?.content || '').slice(0, 140), current: index === current, pinned: Boolean(message?.pinned) }
   })
 }
 // 预览里不显示 Markdown、公式与引用标记的源码。
@@ -285,7 +298,9 @@ function plainText(source: string) {
 function goToMark(mark: Mark) {
   follow = false
   hoverMark.value = null
-  messageList.value?.querySelector<HTMLElement>(`.ai-message.user[data-id="${CSS.escape(mark.id)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  // 只滚动对话列表本身：scrollIntoView 在最后一问滚不到顶时会去滚外层容器，把整个窗格挤乱。
+  const list = messageList.value, target = list?.querySelector<HTMLElement>(`.ai-message.user[data-id="${CSS.escape(mark.id)}"]`)
+  if (list && target) list.scrollTo({ top: Math.min(list.scrollHeight - list.clientHeight, Math.max(0, target.offsetTop - 12)), behavior: 'smooth' })
 }
 let railDrag: { offset: number; rail: HTMLElement } | undefined
 function railRatio(event: PointerEvent, rail: HTMLElement) { const box = rail.getBoundingClientRect(); return (event.clientY - box.top - 8) / Math.max(1, box.height - 16) }
@@ -526,7 +541,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
           </template>
           <template v-else>
             <button v-if="live(message) || message.reasoning || message.sources.length" class="thinking" :class="{ live: live(message), open: expanded.has(message.id) }" :aria-expanded="expanded.has(message.id)" @click="toggleReasoning(message.id)">
-              <span class="thinking-star" aria-hidden="true">{{ live(message) ? spinner : '✻' }}</span>
+              <span class="thinking-star" aria-hidden="true">{{ live(message) ? spinner(message) : '✻' }}</span>
               <span class="thinking-label">{{ live(message) ? `${thinkingVerb(message.id)}…` : `Thought for ${thinkingTime(message)}` }}</span>
               <span v-if="live(message)" class="thinking-meta">{{ elapsed(message) }}<template v-if="activityNote(message)"> · {{ activityNote(message) }}</template></span>
               <AppIcon v-if="message.reasoning || message.sources.length" class="thinking-chevron" name="down" :size="12" />
@@ -551,10 +566,13 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
       <div v-show="thumb.visible" class="scroll-rail" :class="{ marked: marks.length }" aria-label="问题导航" @pointerdown="railDown" @pointermove="railMove" @pointerup="railUp" @pointercancel="railUp">
         <span class="rail-thumb" :style="{ top: `calc(8px + ${thumb.top} * (100% - 16px))`, height: `calc(${thumb.height} * (100% - 16px))` }" aria-hidden="true" />
       </div>
-      <div v-if="marks.length" ref="tickColumn" class="rail-ticks" :class="{ hovering: tickPointer !== null }" :style="{ gap: `${tickGap}px` }" aria-label="问题导航" @pointermove="tickHover" @pointerleave="tickLeave">
-        <button v-for="(mark, index) in marks" :key="mark.id" class="rail-mark" :class="{ current: mark.current, hot: hoverMark?.id === mark.id }" :style="{ '--grow': tickGrow(index) }" :aria-label="`跳到问题：${mark.text.slice(0, 30)}`" @click="goToMark(mark)" @focus="tickFocus(mark, $event)" @blur="hoverMark = null" />
+      <div v-if="marks.length" ref="tickColumn" class="rail-ticks" :class="{ hovering: tickPointer !== null }" :style="{ '--slot': `${tickSlot}px` }" aria-label="问题导航" @pointermove="tickHover" @pointerleave="tickLeave">
+        <button v-for="(mark, index) in marks" :key="mark.id" class="rail-mark" :class="{ current: mark.current, hot: hoverMark?.id === mark.id, pinned: mark.pinned }" :style="{ '--grow': tickGrow(index) }" :aria-label="`跳到问题：${mark.text.slice(0, 30)}`" @click="goToMark(mark)" @focus="tickFocus(mark, $event)" @blur="hidePreviewSoon" />
       </div>
-      <Transition name="rail-pop"><div v-if="hoverMark" class="rail-preview" :style="{ top: `clamp(56px, ${hoverTop}px, calc(100% - 56px))` }"><strong>{{ hoverMark.text }}</strong><p v-if="hoverMark.answer">{{ hoverMark.answer }}</p></div></Transition>
+      <Transition name="rail-pop"><div v-if="hoverMark" class="rail-preview" :style="{ top: `clamp(56px, ${hoverTop}px, calc(100% - 56px))` }" @pointerenter="keepPreview" @pointerleave="hidePreviewSoon">
+        <button type="button" class="rail-pin" :class="{ on: hoverMark.pinned }" :aria-pressed="hoverMark.pinned" :aria-label="hoverMark.pinned ? '取消钉住' : '钉住这一问'" :data-tip="hoverMark.pinned ? '取消钉住' : '钉住这一问'" @click="togglePin(hoverMark)"><AppIcon name="pin" :size="13" /></button>
+        <strong>{{ hoverMark.text }}</strong><p v-if="hoverMark.answer">{{ hoverMark.answer }}</p>
+      </div></Transition>
     </div>
 
     <div class="ai-composer">
@@ -619,14 +637,15 @@ button:disabled{opacity:.4;cursor:default}
 .header-button:hover:not(:disabled){background:var(--frost);border-color:var(--hairline);color:var(--ink)}
 .task-summary{flex:0 0 auto;padding:3px 8px;border-radius:var(--r-xs);background:var(--frost);font-size:10.5px;font-weight:600;color:var(--secondary);white-space:nowrap;font-variant-numeric:tabular-nums}
 /* 弹出的对话记录与问题预览：更厚的弹层玻璃。 */
-.history-menu{--ink:var(--surface-ink);--secondary:var(--surface-secondary);--muted:var(--surface-muted);background-color:var(--popup-glass);background-image:var(--popup-sheen);--lens-blur:var(--popup-blur);--lens-saturate:var(--glass-sat);-webkit-backdrop-filter:var(--refraction, blur(var(--popup-blur)) saturate(var(--glass-sat)));backdrop-filter:var(--refraction, blur(var(--popup-blur)) saturate(var(--glass-sat)));border:1px solid var(--glass-outline);box-shadow:0 16px 40px -16px rgb(0 0 0 / .32),var(--glass-edge);color:var(--ink)}
+/* 对话记录用实底（和提问预览卡一样），不透出后面的对话文字。 */
+.history-menu{--ink:var(--surface-ink);--control-ink:var(--surface-ink);--secondary:var(--surface-secondary);--muted:var(--surface-muted);background:var(--surface);border:1px solid var(--line-soft);box-shadow:0 18px 44px -18px rgb(0 0 0 / .36),0 2px 6px rgb(0 0 0 / .08);color:var(--ink)}
 .history-menu{position:absolute;left:0;top:calc(100% + 6px);z-index:30;width:min(300px,calc(100vw - 40px));max-height:min(420px,60vh);display:flex;flex-direction:column;padding:6px;border-radius:var(--r-lg);transform-origin:20px 0}
 .history-new{display:flex;align-items:center;gap:8px;height:36px;padding:0 12px;border:0;border-radius:var(--r-control);background:color-mix(in srgb,var(--ink) 6%,transparent);box-shadow:none;font-size:13px;font-weight:600}
 .history-new:hover{background:color-mix(in srgb,var(--ink) 10%,transparent)}
 .history-label{margin:12px 10px 6px;font-size:11px;font-weight:600;color:var(--muted)}
 .history-scope{display:grid;grid-template-columns:1fr 1fr;gap:2px;margin:8px 0 4px;padding:2px;border-radius:var(--r-control);background:color-mix(in srgb,var(--ink) 6%,transparent)}
 .history-scope button{height:28px;padding:0;border:0;border-radius:calc(var(--r-control) - 2px);background:none;box-shadow:none;font-size:12px;font-weight:600;color:var(--muted)}
-.history-scope button[aria-selected='true']{background:var(--popup-glass);color:var(--ink);box-shadow:0 1px 3px rgb(0 0 0 / .1)}
+.history-scope button[aria-selected='true']{background:color-mix(in srgb,var(--ink) 10%,var(--surface));color:var(--ink);box-shadow:0 1px 3px rgb(0 0 0 / .1)}
 .history-switch{display:flex;flex-wrap:wrap;gap:4px;padding:0 4px}
 .history-switch .history-label{width:100%;margin:10px 6px 2px}
 .history-switch button{max-width:100%;height:28px;padding:0 10px;border:1px solid var(--hairline);border-radius:var(--r-sm);background:none;box-shadow:none;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -654,14 +673,23 @@ button:disabled{opacity:.4;cursor:default}
 .scroll-rail{position:absolute;right:3px;top:6px;bottom:6px;width:14px;z-index:5;cursor:default;touch-action:none}
 .rail-thumb{position:absolute;right:5px;width:3px;min-height:18px;border-radius:2px;background:color-mix(in srgb,var(--ink) 18%,transparent);transition:width var(--dur-2) var(--spring-snappy),right var(--dur-2) var(--spring-snappy),background var(--dur-1) var(--ease-soft)}
 .scroll-rail:hover .rail-thumb{right:4px;width:5px;background:color-mix(in srgb,var(--ink) 28%,transparent)}
-.rail-ticks{position:absolute;right:9px;top:50%;z-index:6;display:flex;flex-direction:column;align-items:flex-end;max-height:calc(100% - 96px);padding:8px 0 8px 22px;transform:translateY(-50%)}
-.rail-mark{position:relative;flex-shrink:0;width:calc(10px + 16px * var(--grow,0));height:2px;padding:0;border:0;border-radius:1px;background:color-mix(in srgb,var(--ink) calc(26% + 44% * var(--grow,0)),transparent);box-shadow:none;transition:width .18s var(--spring-snappy),background var(--dur-1) var(--ease-soft)}
-.rail-mark::before{content:'';position:absolute;inset:-4px -4px -4px -22px}
-.rail-mark.hot,.rail-mark:focus-visible{width:30px;background:var(--ink);outline:none}
-.rail-mark.current{background:var(--accent)}
-.rail-ticks:not(.hovering) .rail-mark.current{width:14px}
+.rail-ticks{position:absolute;right:5px;top:50%;z-index:6;display:flex;flex-direction:column;align-items:flex-end;max-height:calc(100% - 96px);padding:6px 0;transform:translateY(-50%)}
+/* 按钮是整格热区（宽 44px、高一格），看得见的刻度是里面的细线；只用黑白两色。 */
+.rail-mark{position:relative;flex-shrink:0;display:flex;align-items:center;justify-content:flex-end;width:44px;height:var(--slot,8px);padding:0 4px 0 0;border:0;border-radius:0;background:transparent;box-shadow:none;cursor:pointer}
+.rail-mark::after{content:'';display:block;width:calc(10px + 16px * var(--grow,0));height:2px;border-radius:1px;background:color-mix(in srgb,var(--ink) calc(24% + 46% * var(--grow,0)),transparent);transition:width .18s var(--spring-snappy),background var(--dur-1) var(--ease-soft)}
+.rail-mark.hot::after,.rail-mark:focus-visible::after{width:30px;background:var(--ink)}
+.rail-mark:focus-visible{outline:none}
+.rail-mark:hover:not(:disabled){background:transparent;box-shadow:none}
+.rail-mark.current::after{background:color-mix(in srgb,var(--ink) 82%,transparent)}
+.rail-ticks:not(.hovering) .rail-mark.current::after{width:16px}
+/* 钉住的提问：刻度左边一个小圆点。 */
+.rail-mark.pinned::before{content:'';position:absolute;right:calc(18px + 16px * var(--grow,0));top:50%;width:4px;height:4px;margin-top:-2px;border-radius:50%;background:var(--ink);transition:right .18s var(--spring-snappy)}
+.rail-mark.pinned.hot::before{right:38px}
 /* 悬停卡片用实底（浅色主题白、深色主题深灰），不用玻璃。 */
-.rail-preview{position:absolute;right:46px;z-index:7;width:min(300px,calc(100% - 64px));padding:12px 14px;border-radius:var(--r-lg);background:var(--surface);border:1px solid var(--line-soft);box-shadow:0 18px 44px -18px rgb(0 0 0 / .32),0 2px 6px rgb(0 0 0 / .06);color:var(--surface-ink);--ink:var(--surface-ink);--muted:var(--surface-muted);transform:translateY(-50%);pointer-events:none}
+.rail-preview{position:absolute;right:50px;z-index:7;width:min(300px,calc(100% - 64px));padding:12px 38px 12px 14px;border-radius:var(--r-lg);background:var(--surface);border:1px solid var(--line-soft);box-shadow:0 18px 44px -18px rgb(0 0 0 / .32),0 2px 6px rgb(0 0 0 / .06);color:var(--surface-ink);--ink:var(--surface-ink);--muted:var(--surface-muted);transform:translateY(-50%)}
+.rail-pin{position:absolute;top:8px;right:8px;display:grid;place-items:center;width:24px;height:24px;padding:0;border:0;border-radius:7px;background:transparent;color:var(--muted);cursor:pointer;transition:background var(--dur-1) var(--ease-soft),color var(--dur-1) var(--ease-soft)}
+.rail-pin:hover{background:color-mix(in srgb,var(--ink) 8%,transparent);color:var(--ink)}
+.rail-pin.on{color:var(--ink);background:color-mix(in srgb,var(--ink) 10%,transparent)}
 .rail-preview strong{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:12.5px;font-weight:600;line-height:1.5}
 .rail-preview p{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;margin:6px 0 0;font-size:11.5px;line-height:1.55;color:var(--muted)}
 .rail-pop-enter-active{transition:opacity var(--dur-1) var(--ease-out),translate var(--dur-2) var(--spring-snappy)}

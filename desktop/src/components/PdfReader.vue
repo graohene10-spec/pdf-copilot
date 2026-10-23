@@ -300,7 +300,7 @@ function releaseCommitWaiters() {
   for (const finish of panelCommitWaiters) finish()
 }
 function preparePanelLayout() {
-  if (!active || prepareScheduled) return
+  if (!active || prepareScheduled || follow) return
   prepareScheduled = true
   const current = epoch
   void nextTick(() => {
@@ -440,24 +440,51 @@ function getCaptureFrame(selection: { page: number; image?: string; rect?: any }
   return { left, top, width: right - left, height: bottom - top }
 }
 /* Freeze before Vue changes the panel layout, then commit one fitted frame. */
+// 面板（侧栏、顶栏、阅读助手）弹簧伸缩或拖动助手宽度时，阅读区每一帧跟着变：适应宽度时整摞页面按实时宽度缩放，
+// 阅读位置钉在视口顶端；动画结束后按最终宽度排版、重画一次。不再先冻住画面、结束时再跳过去。
+let follow: { frame: number; origin: number } | undefined
+function followFrame() {
+  if (!follow) return
+  const stack = viewer?.stack as HTMLElement | undefined
+  if (stack && viewer?.displayScale && active) {
+    const ratio = fitMode ? viewer.getFitScale(readingWidth()) / viewer.displayScale : 1
+    stack.style.transformOrigin = `50% ${follow.origin}px`
+    stack.style.transform = Math.abs(ratio - 1) > .0005 ? `scale(${ratio})` : ''
+  }
+  follow.frame = requestAnimationFrame(followFrame)
+}
+function startFollow() {
+  if (follow || !viewer?.stack || !container.value) return
+  releaseViewport()
+  follow = { frame: 0, origin: Math.max(0, container.value.scrollTop - viewer.stack.offsetTop) }
+  followFrame()
+}
+function stopFollow() {
+  if (!follow) return false
+  cancelAnimationFrame(follow.frame)
+  follow = undefined
+  const stack = viewer?.stack as HTMLElement | undefined
+  if (stack) { stack.style.transform = ''; stack.style.transformOrigin = '' }
+  return true
+}
 function holdPanelResize(held: boolean, fitOverflow = false) {
   if (!active) return
   if (held && !panelResizeHeld && !outlineResizeHeld) suppressPanelFit = false
   panelResizeHeld = held
   if (fitOverflow && props.sidebarFitEnabled && !suppressPanelFit) pendingPanelFit = true
   clearTimeout(layoutTimer)
-  if (held) {
-    freezeViewport()
-    // before-enter runs before insertion. Adjust once more after Vue has
-    // patched the final-width panel, before the browser can paint that frame.
-    void nextTick(positionFrozenViewport)
-    preparePanelLayout()
+  if (held) { viewer?.cancelDeferredZoom?.(); startFollow(); return }
+  const followed = stopFollow()
+  if (followed && fitMode && !outlineResizeHeld && viewer?.pdf && !loading.value) {
+    // 画面已经按最终宽度缩放到位：在同一帧里换成真正的排版（位置不变），再重画清晰的页面。
+    const target = viewer.getFitScale(readingWidth())
+    pendingPanelFit = false; suppressPanelFit = false
+    lastAvailableWidth = readingWidth()
+    releaseCommitWaiters()
+    if (Math.abs(target - viewer.displayScale) > .000001) void renderZoom(target)
+    return
   }
-  if (!held) {
-    positionFrozenViewport()
-    if (fitOverflow && props.sidebarFitEnabled && !suppressPanelFit) pendingPanelFit = true
-    finishPanelLayout()
-  }
+  finishPanelLayout()
 }
 function holdOutlineResize(held: boolean, fitOverflow = false) {
   if (!active) return
@@ -603,7 +630,7 @@ watch(() => props.data, () => { if (viewer) load() })
 watch(() => props.initialZoom, value => { if (active && !loading.value && viewer?.pdf) void zoom(value === 'fit' ? null : value) })
 watch(() => props.fitRequest, requestPanelFit)
 watch(() => props.sidebarFitEnabled, enabled => { if (!enabled) pendingPanelFit = false; else requestPanelFit() })
-onBeforeUnmount(() => { themeWatch?.disconnect(); stopSearch(); removeSearchHighlights(); active = false; ++activation; ++epoch; clearTimeout(layoutTimer); observer?.disconnect(); releaseViewport(); viewer?.reset(); releaseCommitWaiters(); for (const clear of transientMarkers) clear(); task?.destroy() })
+onBeforeUnmount(() => { stopFollow(); themeWatch?.disconnect(); stopSearch(); removeSearchHighlights(); active = false; ++activation; ++epoch; clearTimeout(layoutTimer); observer?.disconnect(); releaseViewport(); viewer?.reset(); releaseCommitWaiters(); for (const clear of transientMarkers) clear(); task?.destroy() })
 function getViewState() {
   if (!active) return cachedView
   if (loading.value || !viewer?.pdf || !container.value) return undefined
@@ -632,6 +659,7 @@ function goToBookmark(position: { page?: number; fraction?: number }) {
 function collectedText() { return [...indexedText.entries()].sort(([a], [b]) => a - b).map(([n, text]) => `第 ${n} 页\n${text}`).join('\n\n') }
 function suspend() {
   if (!active) return
+  stopFollow()
   cachedView = getViewState()
   stopSearch(); removeSearchHighlights()
   active = false; ++activation; ++renderRevision

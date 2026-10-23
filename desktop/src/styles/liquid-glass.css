@@ -279,9 +279,10 @@
   -webkit-backdrop-filter: var(--refraction, blur(var(--popup-blur)) saturate(var(--glass-sat)));
   backdrop-filter: var(--refraction, blur(var(--popup-blur)) saturate(var(--glass-sat)));
   box-shadow: var(--shadow-2), var(--glass-control-edge);
-  color: var(--surface-ink);
+  /* 文字颜色跟着所指控件走（tooltip.ts 写入 --tip-ink）：深色底图上控件文字变白，提示也变白。 */
+  color: var(--tip-ink, var(--surface-ink));
   font: 500 12px/1.45 var(--font);
-  text-shadow: none;
+  text-shadow: var(--tip-shadow, none);
   overflow-wrap: anywhere;
   pointer-events: none;
   opacity: 0;
@@ -309,7 +310,8 @@
   padding: 1px 7px;
   border-radius: 6px;
   background: var(--fill-3);
-  color: var(--surface-muted);
+  color: inherit;
+  opacity: .72;
   font: 600 11px/1.5 var(--font);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
