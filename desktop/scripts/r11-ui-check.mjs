@@ -1,5 +1,5 @@
 // Round 11 (7.0): the question rail (contiguous slots, black/white ticks, no layout blowup, pin + dot),
-// the solid history menu, the blank composer placeholder, the calm reader search field, and the settings
+// the solid history menu, the approved composer placeholders, the calm reader search field, and the settings
 // dialog getting out of the way while glass sliders move or a new backdrop is previewed (采用 / 不采用).
 import { chromium } from 'playwright';
 import { createServer as createViteServer } from 'vite';
@@ -7,6 +7,7 @@ import { createServer } from 'node:http';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import assert from 'node:assert/strict';
+import { PLACEHOLDERS } from '../src/ai/greeting.ts';
 
 const artifacts = resolve('artifacts'), checks = [], errors = [];
 const event = value => `data: ${JSON.stringify(value)}\n\n`;
@@ -36,6 +37,20 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   await page.route(/^https?:\/\//, route => { const url = route.request().url(); return url.startsWith(origin) || url.startsWith(modelOrigin) ? route.continue() : route.abort(); });
   await page.goto(origin);
+
+  // ---- Tooltips take the same ink as the control they describe (white on dark glass) -------------------------
+  for (const theme of ['light', 'dark']) {
+    if (theme === 'dark') { await page.locator('[data-tip="切换深色主题"]').first().click(); await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark'); await page.mouse.move(640, 600); }
+    const control = page.getByRole('button', { name: '加入文档', exact: true });
+    await control.hover();
+    await page.locator('.glass-tooltip.visible').waitFor();
+    const [tipInk, controlInk] = await page.evaluate(() => [getComputedStyle(document.querySelector('.glass-tooltip')).color, getComputedStyle(document.querySelector('.app-sidebar')).getPropertyValue('--control-ink').trim()]);
+    const probe = await page.evaluate(color => { const element = document.createElement('i'); element.style.color = color; document.body.append(element); const value = getComputedStyle(element).color; element.remove(); return value; }, controlInk);
+    assert.equal(tipInk, probe, `${theme}: the tooltip uses the control's ink (${tipInk} vs ${probe}).`);
+    await page.mouse.move(640, 600); await page.locator('.glass-tooltip.visible').waitFor({ state: 'detached' }).catch(() => {});
+  }
+  await page.locator('[data-tip="切换浅色主题"]').first().click(); await page.waitForFunction(() => document.documentElement.dataset.theme === 'light');
+  checks.push('Tooltips are glass again and their text follows the ink of the control they describe, in light and dark.');
 
   // ---- Settings: sliders clear the blur; a new backdrop is previewed with 采用 / 不采用 ----------------------
   await page.getByRole('button', { name: '打开设置', exact: true }).click();
@@ -85,7 +100,7 @@ try {
   const pane = page.locator('.ai-pane:visible');
   const prompt = pane.getByRole('textbox', { name: '向 AI 提问', exact: true }); await prompt.waitFor();
   await pane.getByRole('switch', { name: '当前页上下文与文档检索', exact: true }).uncheck();
-  assert.equal(await prompt.getAttribute('placeholder'), '', 'The composer placeholder is blank until new lines are written.');
+  assert.ok(PLACEHOLDERS.includes(await prompt.getAttribute('placeholder')), 'The composer placeholder is one of the approved lines.');
   for (const job of ['问题一', '问题二', '问题三', '问题四']) {
     await prompt.fill(job); await prompt.press('Enter');
     await page.waitForFunction(count => document.querySelectorAll('.ai-pane .ai-message.assistant').length === count && !document.querySelector('.ai-pane [aria-label="停止"]'), ['问题一', '问题二', '问题三', '问题四'].indexOf(job) + 1);

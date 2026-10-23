@@ -14,7 +14,7 @@
 const SELECTOR = [
   '.app-sidebar', '.app-topbar', '.library-search', '.document-card', '.reader-tools', '.document-outline', '.reading-pill',
   '.selection-context', '.document-details', '.answer-notice', '.toast-message', '.confirm-dialog', '.selection-ask',
-  '.context-menu', '.ai-pane', '.rail-preview', '.settings-dialog', '.split-picker',
+  '.glass-tooltip', '.context-menu', '.ai-pane', '.rail-preview', '.settings-dialog', '.split-picker',
   '.update-card', '.ink-palette', '.capture-thinking', '.thought-bubble', '.capture-quick-footer button', '.chrome-tag',
 ].join(',')
 const NS = 'http://www.w3.org/2000/svg'

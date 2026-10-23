@@ -270,14 +270,19 @@
   max-height: min(180px, calc(100vh - 16px));
   overflow: hidden;
   padding: 5px 9px 5px 11px;
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--glass-outline);
   border-radius: 10px;
-  /* 近乎实底：不管背后是深色底图还是浅色页面，提示文字都按主题墨色清楚显示。 */
-  background-color: color-mix(in srgb, var(--surface) 96%, transparent);
-  box-shadow: var(--shadow-2);
-  color: var(--surface-ink);
+  background-color: var(--popup-glass);
+  background-image: var(--popup-sheen);
+  --lens-blur: var(--popup-blur);
+  --lens-saturate: var(--glass-sat);
+  -webkit-backdrop-filter: var(--refraction, blur(var(--popup-blur)) saturate(var(--glass-sat)));
+  backdrop-filter: var(--refraction, blur(var(--popup-blur)) saturate(var(--glass-sat)));
+  box-shadow: var(--shadow-2), var(--glass-control-edge);
+  /* 文字颜色跟着所指控件走（tooltip.ts 写入 --tip-ink）：深色底图上控件文字变白，提示也变白。 */
+  color: var(--tip-ink, var(--surface-ink));
   font: 500 12px/1.45 var(--font);
-  text-shadow: none;
+  text-shadow: var(--tip-shadow, none);
   overflow-wrap: anywhere;
   pointer-events: none;
   opacity: 0;
@@ -305,7 +310,8 @@
   padding: 1px 7px;
   border-radius: 6px;
   background: var(--fill-3);
-  color: var(--surface-muted);
+  color: inherit;
+  opacity: .72;
   font: 600 11px/1.5 var(--font);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;

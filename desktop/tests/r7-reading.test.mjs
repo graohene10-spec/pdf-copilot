@@ -23,10 +23,18 @@ test('greeting styles: English salutations, classical lines with their source, b
   for (const hour of [0, 4, 5, 8, 9, 12, 13, 14, 17, 18, 20, 22, 23]) for (const style of ['english', 'poetry']) assert.ok(greetingFor(at(hour), .5, style).text)
 })
 
+test('every classical line ends with a full stop (or a question mark)', () => {
+  for (let hour = 0; hour < 24; hour++) for (const random of [.01, .2, .4, .6, .8, .99]) {
+    const { text } = greetingFor(at(hour), random, 'poetry')
+    assert.match(text, /[。？]$/, text)
+  }
+})
+
 test('placeholders and thinking verbs are picked deterministically', () => {
-  // 提示语等用户自己写，眼下为空：输入框留白。
-  assert.deepEqual(PLACEHOLDERS, [])
-  assert.equal(placeholderFor(.5), '')
+  assert.equal(PLACEHOLDERS.length, 14)
+  assert.ok(PLACEHOLDERS.includes('来一个最直白、最直接、最不绕弯子的解释。'))
+  assert.ok(PLACEHOLDERS.includes(placeholderFor(.5)))
+  assert.equal(placeholderFor(.5), placeholderFor(.5))
   assert.ok(THINKING_VERBS.includes(thinkingVerb('message-1')))
   assert.equal(thinkingVerb('message-1'), thinkingVerb('message-1'))
   assert.deepEqual(SPINNER_FRAMES.slice(0, 6), ['·', '✢', '✳', '✶', '✻', '✽'])
