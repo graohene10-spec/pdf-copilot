@@ -6,7 +6,7 @@ import { createServer } from 'node:http';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import assert from 'node:assert/strict';
-import { PLACEHOLDERS } from '../src/ai/greeting.ts';
+import { PLACEHOLDERS, SPINNERS } from '../src/ai/greeting.ts';
 
 const artifacts = resolve('artifacts'), checks = [], errors = [], requests = [];
 const event = value => `data: ${JSON.stringify(value)}\n\n`;
@@ -58,7 +58,8 @@ try {
   assert.doesNotMatch(welcome.text, /—\s*\S+《/);
   assert.ok(await page.evaluate(async () => { await document.fonts.ready; return document.fonts.check('27px "Anthropic Serif"'); }), 'The bundled Anthropic Serif is loaded.');
   const placeholder = await pane().getByRole('textbox', { name: '向 AI 提问', exact: true }).getAttribute('placeholder');
-  assert.ok(PLACEHOLDERS.includes(placeholder), `Placeholder is one of the scholarly lines: ${placeholder}`);
+  // 提示语清空、等新文案时输入框留白；有提示语时必须是列表里的一句。
+  assert.ok(PLACEHOLDERS.length ? PLACEHOLDERS.includes(placeholder) : placeholder === '', `Placeholder comes from the list (or is blank): ${placeholder}`);
   await pane().screenshot({ path: resolve(artifacts, 'ai-r7-welcome.png') });
   checks.push(`Empty assistant shows only the mark and a greeting set in Anthropic Serif (${welcome.text.split('\n')[0]}); the input placeholder is "${placeholder}".`);
 
@@ -126,7 +127,7 @@ try {
   const thinking = pane().locator('.thinking.live'); await thinking.waitFor();
   await page.waitForTimeout(1300);
   const live = await thinking.innerText();
-  assert.match(live, /[·✢✳✶✻✽]/); assert.match(live, /[A-Z][a-z]+ing…/); assert.match(live, /\b\d+s\b/); assert.doesNotMatch(live, /\d\.\ds|token|思考中/i);
+  assert.ok(SPINNERS.flat().includes(live.split('\n')[0].trim()), `The spinner is one of the variants: ${live}`); assert.match(live, /[A-Z][a-z]+ing…/); assert.match(live, /\b\d+s\b/); assert.doesNotMatch(live, /\d\.\ds|token|思考中/i);
   const shimmer = await pane().locator('.thinking.live .thinking-label').evaluate(element => {
     const animation = element.getAnimations().find(item => item.animationName?.startsWith('think-shimmer'));
     const frames = animation?.effect.getKeyframes() || [];

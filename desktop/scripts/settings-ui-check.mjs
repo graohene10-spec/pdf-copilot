@@ -13,6 +13,13 @@ const report = [], errors = [], remoteRequests = [];
 let server, browser, context, page;
 let fileChoosers = 0;
 const settings = () => page.getByRole('dialog', { name: '设置', exact: true });
+// 换底板时先预览新场景，点「采用」后设置窗回来。
+async function acceptScene() {
+  const bar = page.getByRole('dialog', { name: '预览新底板', exact: true });
+  if (!await bar.count()) return;
+  await bar.getByRole('button', { name: '采用', exact: true }).click();
+  await bar.waitFor({ state: 'detached' });
+}
 const shot = name => page.screenshot({ path: resolve(folder, name), fullPage: true, animations: 'disabled' });
 async function storedPreferences() {
   return page.evaluate(async () => {
@@ -156,6 +163,7 @@ try {
   await setTransparency(61);
   await settings().getByLabel('底板图片文件', { exact: true }).setInputFiles(upload);
   await settings().getByAltText('底板图片预览', { exact: true }).waitFor();
+  await acceptScene();
   await settings().getByAltText('底板图片预览', { exact: true }).evaluate(image => image.decode());
   assert.equal(await page.locator('html').getAttribute('data-background'), 'custom');
   assert.deepEqual(await storedPreferences(), beforeWallpaper);
@@ -169,6 +177,7 @@ try {
   await setTransparency(61);
   await settings().getByLabel('底板图片文件', { exact: true }).setInputFiles(upload);
   await settings().getByAltText('底板图片预览', { exact: true }).waitFor();
+  await acceptScene();
   await save();
   const wallpaper = await storedPreferences();
   assert.equal(wallpaper.appearance.background.name, upload.name);
@@ -186,6 +195,7 @@ try {
   assert.deepEqual(await storedPreferences(), wallpaper);
   assert.equal(await settings().getByAltText('底板图片预览', { exact: true }).getAttribute('src'), wallpaper.appearance.background.dataUrl);
   await settings().getByRole('button', { name: '恢复默认底板', exact: true }).click();
+  await acceptScene();
   assert.equal(await page.locator('html').getAttribute('data-background'), 'default');
   assert.deepEqual(await storedPreferences(), wallpaper);
   await settings().press('Escape');
@@ -196,6 +206,7 @@ try {
   await openSettings();
   await setTransparency(92);
   await settings().getByRole('button', { name: '恢复默认底板', exact: true }).click();
+  await acceptScene();
   await page.evaluate(async () => {
     const { library } = await import('/src/sdk/index.ts');
     window.__settingsOriginalSave = library.setSetting;
@@ -223,6 +234,7 @@ try {
   await materialTransparency(61);
   await openSettings();
   await settings().getByRole('button', { name: '恢复默认底板', exact: true }).click();
+  await acceptScene();
   await setTransparency(70);
   await save();
   await page.reload({ waitUntil: 'domcontentloaded' });

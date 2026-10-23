@@ -10,6 +10,13 @@ const artifacts = resolve('artifacts');
 const checks = [], errors = [], remoteRequests = [];
 let server, browser, page;
 const dialog = () => page.getByRole('dialog', { name: '设置', exact: true });
+// 换底板时先预览新场景，点「采用」后设置窗回来。
+async function acceptScene() {
+  const bar = page.getByRole('dialog', { name: '预览新底板', exact: true });
+  if (!await bar.count()) return;
+  await bar.getByRole('button', { name: '采用', exact: true }).click();
+  await bar.waitFor({ state: 'detached' });
+}
 const slider = () => dialog().getByRole('slider', { name: '玻璃透明度', exact: true });
 const prefs = () => page.evaluate(async () => {
   const { library } = await import('/src/sdk/index.ts');
@@ -29,6 +36,7 @@ async function choose(buffer, name = '背景测试.png', mimeType = 'image/png')
   await dialog().getByRole('button', { name: /^(选择图片|替换图片)$/ }).click();
   await (await pending).setFiles({ name, mimeType, buffer });
   await page.waitForFunction(() => ![...document.querySelectorAll('.background-heading button')].some(button => button.textContent.includes('正在处理')));
+  await acceptScene();
 }
 async function shot(name) {
   await page.mouse.move(1435, 935); await page.waitForTimeout(200);
@@ -155,10 +163,11 @@ try {
   assert.ok(await dialog().evaluate(element => element.scrollWidth <= element.clientWidth + 1));
   assert.ok(await dialog().getByRole('button', { name: '保存', exact: true }).isVisible());
   await dialog().getByRole('button', { name: '恢复默认底板', exact: true }).click();
+  await acceptScene();
   await page.waitForFunction(() => document.documentElement.dataset.background === 'default');
   await closeSettings();
   assert.equal(await page.locator('html').getAttribute('data-background'), 'custom');
-  await openSettings(); await dialog().getByRole('button', { name: '恢复默认底板', exact: true }).click(); await closeSettings(true);
+  await openSettings(); await dialog().getByRole('button', { name: '恢复默认底板', exact: true }).click(); await acceptScene(); await closeSettings(true);
   assert.equal(JSON.parse(await prefs()).appearance.background, null);
   await page.reload(); await page.waitForFunction(() => document.documentElement.dataset.background === 'default');
   assert.equal(await page.locator('html').evaluate(element => element.style.getPropertyValue('--custom-workspace-image')), '');
