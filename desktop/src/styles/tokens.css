@@ -130,17 +130,19 @@
   --glass-outline: rgb(28 40 48 / .13);
   /* 镜面环色标：由各玻璃的 ::before 按自身受光角度（--rim-angle）组装成渐变。 */
   --rim-stops:
-    rgb(255 255 255 / .98), rgb(255 255 255 / .55) 16%, rgb(255 255 255 / .14) 40%,
-    rgb(255 255 255 / .08) 60%, rgb(255 255 255 / .46) 86%, rgb(255 255 255 / .86);
+    rgb(255 255 255 / calc(.98 * var(--glass-highlight))), rgb(255 255 255 / calc(.55 * var(--glass-highlight))) 16%, rgb(255 255 255 / calc(.14 * var(--glass-highlight))) 40%,
+    rgb(255 255 255 / calc(.08 * var(--glass-highlight))) 60%, rgb(255 255 255 / calc(.46 * var(--glass-highlight))) 86%, rgb(255 255 255 / calc(.86 * var(--glass-highlight)));
   --glass-light: rgb(255 255 255 / .62);
   --glass-light-soft: rgb(240 250 255 / .16);
   --glass-reflection: 1;
+  /* 玻璃边缘高光（镜面环与内侧亮边）的强度：设置里「边缘高光」/100，默认 50%。 */
+  --glass-highlight: .5;
   --glass-label-shadow: 0 1px 1px rgb(255 255 255 / .16);
 
   /* 内侧镜面高光：沿圆角的左上亮弧与右下回光，加一圈柔和内辉光，
      模拟厚玻璃的折射亮边。内阴影随圆角弯曲，也不额外占用合成层。 */
-  --glass-edge: inset 1px 1px 0 rgb(255 255 255 / .62), inset -1px -1px 0 rgb(255 255 255 / .26), inset 0 0 0 1px rgb(255 255 255 / .1), inset 0 0 18px rgb(255 255 255 / .16);
-  --glass-control-edge: inset 1px 1px 0 rgb(255 255 255 / .78), inset -1px -1px 0 rgb(255 255 255 / .32), inset 0 0 10px rgb(255 255 255 / .14);
+  --glass-edge: inset 1px 1px 0 rgb(255 255 255 / calc(.62 * var(--glass-highlight))), inset -1px -1px 0 rgb(255 255 255 / calc(.26 * var(--glass-highlight))), inset 0 0 0 1px rgb(255 255 255 / calc(.1 * var(--glass-highlight))), inset 0 0 18px rgb(255 255 255 / calc(.16 * var(--glass-highlight)));
+  --glass-control-edge: inset 1px 1px 0 rgb(255 255 255 / calc(.78 * var(--glass-highlight))), inset -1px -1px 0 rgb(255 255 255 / calc(.32 * var(--glass-highlight))), inset 0 0 10px rgb(255 255 255 / calc(.14 * var(--glass-highlight)));
   --glass-control-shadow: 0 1px 2px rgb(16 26 34 / .06), 0 4px 12px -4px rgb(16 26 34 / .16), var(--glass-control-edge);
   --glass-hover-shadow: 0 2px 4px rgb(16 26 34 / .06), 0 10px 22px -8px rgb(16 26 34 / .24), var(--glass-control-edge);
   --glass-pressed-shadow: 0 1px 2px rgb(16 26 34 / .05), inset 0 1px 3px rgb(18 24 34 / .1), inset 0 -1px 0 var(--glass-rim-soft);
@@ -266,13 +268,13 @@
   --glass-rim-soft: rgb(238 244 252 / .14);
   --glass-outline: rgb(0 0 0 / .42);
   --rim-stops:
-    rgb(238 244 252 / .5), rgb(238 244 252 / .2) 18%, rgb(238 244 252 / .05) 42%,
-    rgb(238 244 252 / .03) 60%, rgb(238 244 252 / .14) 86%, rgb(238 244 252 / .32);
+    rgb(238 244 252 / calc(.5 * var(--glass-highlight))), rgb(238 244 252 / calc(.2 * var(--glass-highlight))) 18%, rgb(238 244 252 / calc(.05 * var(--glass-highlight))) 42%,
+    rgb(238 244 252 / calc(.03 * var(--glass-highlight))) 60%, rgb(238 244 252 / calc(.14 * var(--glass-highlight))) 86%, rgb(238 244 252 / calc(.32 * var(--glass-highlight)));
   --glass-light: rgb(238 244 252 / .24);
   --glass-light-soft: rgb(200 214 236 / .06);
   --glass-label-shadow: 0 1px 1px rgb(0 0 0 / .2);
-  --glass-edge: inset 1px 1px 0 rgb(238 244 252 / .17), inset -1px -1px 0 rgb(238 244 252 / .06), inset 0 -2px 4px rgb(0 0 0 / .2), inset 0 0 18px rgb(255 255 255 / .03);
-  --glass-control-edge: inset 1px 1px 0 rgb(238 244 252 / .22), inset -1px -1px 0 rgb(238 244 252 / .07), inset 0 -1px 2px rgb(0 0 0 / .26);
+  --glass-edge: inset 1px 1px 0 rgb(238 244 252 / calc(.17 * var(--glass-highlight))), inset -1px -1px 0 rgb(238 244 252 / calc(.06 * var(--glass-highlight))), inset 0 -2px 4px rgb(0 0 0 / .2), inset 0 0 18px rgb(255 255 255 / calc(.03 * var(--glass-highlight)));
+  --glass-control-edge: inset 1px 1px 0 rgb(238 244 252 / calc(.22 * var(--glass-highlight))), inset -1px -1px 0 rgb(238 244 252 / calc(.07 * var(--glass-highlight))), inset 0 -1px 2px rgb(0 0 0 / .26);
   --glass-control-shadow: 0 1px 2px rgb(0 0 0 / .26), 0 5px 14px -5px rgb(0 0 0 / .5), var(--glass-control-edge);
   --glass-hover-shadow: 0 2px 4px rgb(0 0 0 / .24), 0 12px 24px -8px rgb(0 0 0 / .56), var(--glass-control-edge);
   --glass-pressed-shadow: 0 1px 2px rgb(0 0 0 / .2), inset 0 1px 3px rgb(0 0 0 / .32), inset 0 -1px 0 var(--glass-rim-soft);

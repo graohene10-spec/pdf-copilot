@@ -107,3 +107,11 @@ test('the shell no longer uses GPU canvases for lens maps or cover encoding', as
   assert.match(viewer, /const known = darkTheme\(\) &&/)
   assert.doesNotMatch(viewer, /getOperatorList\(/)
 })
+
+test('edge highlight defaults to half strength and is clamped', () => {
+  assert.equal(defaultPreferences().appearance.glassHighlight, 50)
+  assert.equal(normalizePreferences({ appearance: { glassHighlight: 140 } }).appearance.glassHighlight, 100)
+  assert.equal(normalizePreferences({ appearance: { glassHighlight: 20 } }).appearance.glassHighlight, 20)
+  assert.equal(normalizePreferences({ appearance: {} }).appearance.glassHighlight, 50)
+  assert.ok(preferenceErrors({ ...defaultPreferences(), appearance: { ...defaultPreferences().appearance, glassHighlight: 101 } }).some(error => error.includes('边缘高光')))
+})

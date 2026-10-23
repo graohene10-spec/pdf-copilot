@@ -62,7 +62,7 @@
   pointer-events: none;
   background:
     radial-gradient(circle var(--rim-spot, 46px) at var(--glass-x, 50%) var(--glass-y, 0%),
-      rgb(255 255 255 / var(--rim-spot-alpha, .95)), transparent),
+      rgb(255 255 255 / calc(var(--rim-spot-alpha, .95) * var(--glass-highlight, .5))), transparent),
     linear-gradient(var(--rim-angle), var(--rim-stops));
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;

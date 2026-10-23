@@ -8,7 +8,7 @@
 const CONTROL = [
   '[data-glass-interactive]:not([data-glass-interactive="panel"])',
   '.file-tab',
-  'button:not(.brand):not(.text-action):not([role="tab"]):not(.close-tab):not(.pdf-link)',
+  'button:not(.brand):not(.text-action):not([role="tab"]):not(.close-tab):not(.pdf-link):not(.rail-mark)',
 ].join(',')
 const PANEL = [
   '[data-glass-interactive="panel"]', '.app-sidebar', '.app-topbar',
