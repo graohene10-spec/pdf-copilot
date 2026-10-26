@@ -1,6 +1,6 @@
 # 发布开智桌面版
 
-桌面发布使用 `desktop-v<版本>` 标签，例如 `desktop-v0.3.1`。浏览器插件的 `v0.3.3` 等标签有独立版本，不触发桌面构建。用户升级方式见[升级指南](UPDATING.md)。
+桌面发布使用 `desktop-v<版本>` 标签，例如 `desktop-v0.7.1`。浏览器插件的 `v0.3.3` 等标签有独立版本，不触发桌面构建。用户升级方式见[升级指南](UPDATING.md)。
 
 ## 版本与提交
 
@@ -16,7 +16,7 @@
 
 CI 与打包脚本检查 `package.json`、Tauri 配置和 `Cargo.toml` 三处主版本，锁文件也应随依赖工具更新并提交。仓库根目录的 `package.json` 属于浏览器插件，不跟随桌面版本修改。
 
-正式版使用 `0.3.1` 这类 SemVer 版本；测试版可使用 `0.3.1-beta.1`。更新程序按 SemVer 比较版本，`beta.10` 高于 `beta.2`，同一版本的正式版高于预发布版。
+正式版使用 `0.7.1` 这类 SemVer 版本；测试版可使用 `0.7.1-beta.1`。更新程序按 SemVer 比较版本，`beta.10` 高于 `beta.2`，同一版本的正式版高于预发布版。
 
 同时编写 `desktop/RELEASE_NOTES_<版本>.md`。自动发布使用此文件作为 Release 正文，应用内更新卡片也显示该正文；没有说明文件时使用 GitHub 生成的提交列表。完整源码 ZIP 来自构建时的 Git 提交，因此版本、说明和实现都应先提交。
 
@@ -26,7 +26,7 @@ CI 与打包脚本检查 `package.json`、Tauri 配置和 `Cargo.toml` 三处主
 
 - **推送到 `main`**：读取 `desktop/package.json` 的版本。对应标签不存在时，在本次提交创建 `desktop-v<版本>` 标签并继续构建、发布；已有该标签时跳过。因此，已发布版本的普通文档更新不会重新打包；尚未打标签的版本，即使这次只改文档，也会发布。
 - **推送 `desktop-v*` 标签**：检出该标签并构建。标签必须与标签所指提交中的桌面版本完全一致。
-- **Actions 手动运行**：选择 “Desktop release”，填写已推送的标签，例如 `desktop-v0.3.1`。
+- **Actions 手动运行**：选择 “Desktop release”，填写已推送的标签，例如 `desktop-v0.7.1`。
 
 通常将版本修改、实现和更新说明一并合入 `main` 即可，无需另行手动打标签。若选择手动打标签，先确认标签尚不存在，并将它指向已完成的发布提交；不要将已发布标签移到其他提交。
 
@@ -44,17 +44,17 @@ CI 与打包脚本检查 `package.json`、Tauri 配置和 `Cargo.toml` 三处主
 
 ## 发布附件
 
-以 `0.3.1` 为例，`release/github/` 包含五个文件：
+以 `0.7.1` 为例，`release/github/` 包含五个文件：
 
 | 文件 | 用途 |
 | --- | --- |
-| `kaizhi_0.3.1_x64-setup.exe` | Windows x64 安装版；安装版应用内更新使用此文件 |
-| `kaizhi_0.3.1_x64-portable.zip` | Windows x64 免安装版；免安装版应用内更新使用此文件 |
-| `kaizhi_0.3.1_source.zip` | `git archive` 生成的完整源码 |
+| `kaizhi_0.7.1_x64-setup.exe` | Windows x64 安装版；安装版应用内更新使用此文件 |
+| `kaizhi_0.7.1_x64-portable.zip` | Windows x64 免安装版；免安装版应用内更新使用此文件 |
+| `kaizhi_0.7.1_source.zip` | `git archive` 生成的完整源码 |
 | `manifest.json` | 文件大小、SHA-256、源码提交与标签 |
 | `SHA256SUMS.txt` | 四个附件的 SHA-256，采用 `<sha256>  <文件名>` 格式 |
 
-安装包名称须以 `_x64-setup.exe` 结尾，免安装包名称须以 `_x64-portable.zip` 结尾，并使用脚本生成的 ASCII 文件名。相应附件必须在 `SHA256SUMS.txt` 中有校验值，应用才提供直接更新；附件缺失或校验信息不可用时，应用提供「前往下载页」。修改附件后须一并更新清单和校验文件。
+安装包名称须以 `_x64-setup.exe` 结尾，免安装包名称须以 `_x64-portable.zip` 结尾，并使用脚本生成的 ASCII 文件名。发布时同时提供 `SHA256SUMS.txt`。0.6.1 起，更新器优先读取 GitHub API 为附件生成的 `sha256:` 摘要，API 无有效摘要时再读取校验文件；对应附件或两种校验信息都不可用时，应用提供下载页入口。修改附件后须一并更新清单和校验文件。
 
 仍在准备的 Release 可保存为 Draft。更新程序忽略 Draft，只读取本仓库 `desktop-v` 标签下已发布、版本高于当前程序的桌面版本。
 
@@ -74,7 +74,7 @@ npm test
 cargo test --release --manifest-path src-tauri/Cargo.toml
 npm run desktop:build
 npm run package:desktop
-node scripts/release-assets.mjs --tag desktop-v0.3.1
+node scripts/release-assets.mjs --tag desktop-v0.7.1
 ```
 
 请逐步确认命令成功后继续；上述版本示例需与当前源码版本一致。`prepare-assets.mjs` 会复制 PDF 离线资源及 `PdfCopilotHost.exe`，必须先于首次 Rust 测试或构建。版本修改后，Cargo 命令会同步本地包的锁文件版本，应将更新后的锁文件提交后再整理最终源码包。
@@ -87,7 +87,7 @@ node scripts/release-assets.mjs --tag desktop-v0.3.1
 
 `0.3.1` 起，安装版与免安装版点击「立即更新」后自动下载、校验、安装并重启，无需再次确认安装。安装版静默运行 NSIS 安装程序；免安装版解压已校验的 ZIP，替换所在文件夹中包内的程序文件，保留额外文件，并在下次启动清理旧程序副本。文档库、设置与凭据沿用原应用数据目录。
 
-更新请求使用系统代理与 HTTPS，仅接受本仓库的桌面发布附件。下载失败、取消或 SHA-256 不符时清理临时文件；免安装版替换失败时回滚已替换的文件。下载时可取消，失败后可重试。安装及自动重启前，用户应完成正在进行的操作；未发送草稿和进行中的请求不属于升级保留范围。
+更新请求使用系统代理与 HTTPS，仅接受本仓库的桌面发布附件。0.6.1 起优先使用 GitHub API 中的附件摘要验证 SHA-256，无有效摘要时回退到同次发布的 `SHA256SUMS.txt`；取得有效摘要后，下载完成仍须核对文件哈希。下载失败、取消或 SHA-256 不符时清理临时文件；免安装版替换失败时回滚已替换的文件。下载时可取消，失败后可重试。安装及自动重启前，用户应完成正在进行的操作；未发送草稿和进行中的请求不属于升级保留范围。
 
 自动检查默认在每次启动约 8 秒后进行，之后每 6 小时检查一次，可在「设置 → 更新」关闭；测试版默认不接收。升级起点、手动替换方法、跳过版本与故障处理见[升级指南](UPDATING.md)。
 

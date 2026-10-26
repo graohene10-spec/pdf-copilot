@@ -4,35 +4,36 @@
 
 | 产品 | 最新正式版 | 下载与说明 |
 | --- | --- | --- |
-| 开智 Windows 桌面版 | **0.5.0** | [下载](https://github.com/graohene10-spec/pdf-copilot/releases/tag/desktop-v0.5.0) · [使用说明](desktop/README.md) · [本版更新](desktop/RELEASE_NOTES_0.5.0.md) |
+| 开智 Windows 桌面版 | **0.7.1** | [下载](https://github.com/graohene10-spec/pdf-copilot/releases/tag/desktop-v0.7.1) · [使用说明](desktop/README.md) · [本版更新](desktop/RELEASE_NOTES_0.7.1.md) |
 | PDF Copilot 浏览器扩展 | **v0.3.3** | [下载](https://github.com/graohene10-spec/pdf-copilot/releases/tag/v0.3.3) · [扩展教程](docs/USER_GUIDE.md) |
 
 ## 开智 Windows 桌面版
 
 - **阅读与管理**：PDF / Markdown 文档库、标签、收藏、阅读进度、文档内搜索和全屏；可把多个文件拖入窗口加入文档库。
 - **并排与同书多开**：最多三栏并排，PDF / Markdown 可混合；同一本书可在右侧再开一份，各自浏览不同位置，共用对话与标记。
-- **PDF 手写标记**：笔、荧光笔、划线、橡皮和撤销，自动保存在本机；不改写原 PDF，当前不导出带标记的 PDF。
-- **AI 阅读助手**：DeepSeek、OpenAI、Claude、Kimi、智谱 GLM、通义千问、自定义接口（桌面版）或本机 Codex，支持选文、截图、原文检索、引用跳转、多个会话与已保存的历史对话；框选后可用自定义气泡或数字键直接提问。
-- **液态玻璃**：玻璃边缘带真正的光线折射（凸透镜般弯折身后画面，小块玻璃有淡淡色散）；透明度拉满时弹层也通透；图片底板上的「泛白」可在「设置 → 外观 → 玻璃可读性」调补偿方式、强度和玻璃底色。
-- **阅读与助手**：模型与思考强度从输入栏下沿拉出；文档上下文改为书本胶囊；思考动词带从左到右的流光、用时按整秒；猜你想问只在已有对话或选区时出现。PDF 快速滚动不再卡顿，超宽时可拖动底部横向滚动条。
-- **工作区**：全屏时顶栏与侧栏可一起收成角落小标签，`Ctrl + B` 弹性展开；书目右键可更换封面（首页预览 / 自选图片 / 默认图标）；标记工具快捷键 `Alt + 1 / 2 / 3`。
-- **外观与字体**：六套底板预设、本机图片、玻璃透明度与模糊程度、助手形象；0.3.1 内置 Anthropic Serif 西文字体，也可导入自己的字体。
-- **应用内更新**：0.3.1 起安装版和免安装版均支持一键下载、校验、安装并重启。
+- **框选与标记**：PDF 和 Markdown 均支持框选提问、钢笔、荧光笔、划线、橡皮和撤销；Markdown 框选同时提供截图与原文，标记随段落布局调整，自动保存在本机。
+- **书签与缩放**：`Alt + B` 添加书签，`Ctrl + ↑ / ↓` 跳转，右键命名或删除；Markdown 支持整篇缩放，PDF 超宽时可拖动底部横向滚动条。
+- **AI 服务**：DeepSeek、OpenAI、Claude、Kimi、智谱 GLM、通义千问、自定义接口或本机 Codex，支持选文、截图、原文检索、引用跳转、多个会话和历史对话；框选后可用自定义气泡或数字键直接提问。
+- **阅读助手**：默认回车发送、`Ctrl + Enter` 换行；模型与分段式思考强度从输入栏下沿展开，问题附带的截图与原文显示在问题下方，右侧导航可跳转和钉住问题。“猜你想问”可在「设置 → AI」开关。
+- **液态玻璃**：透明度、模糊程度与边缘高光连续可调，支持光线折射、可读性补偿和底图取色；切换底板可先预览整个界面，再选择采用或还原。
+- **工作区与文档库**：侧栏和助手收放时，PDF 随阅读区连续缩放；普通窗口和全屏均可收起顶栏与左栏。文档库支持多种排序和自定义封面。
+- **外观与字体**：六套底板预设、本机图片与助手形象，内置 Anthropic Serif 西文字体，也可导入自己的字体。
+- **应用内更新**：安装版和免安装版支持下载、SHA-256 校验、安装并重启；新版优先使用 GitHub 接口提供的附件摘要。
 
 ### 下载与开始阅读
 
 | 文件 | 用途 |
 | --- | --- |
-| [kaizhi_0.5.0_x64-setup.exe](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.5.0/kaizhi_0.5.0_x64-setup.exe) | Windows x64 安装版 |
-| [kaizhi_0.5.0_x64-portable.zip](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.5.0/kaizhi_0.5.0_x64-portable.zip) | 免安装版；全部解压后运行 `开智-portable/开智.exe` |
-| kaizhi_0.5.0_source.zip | 完整源码，供开发者构建 |
+| [kaizhi_0.7.1_x64-setup.exe](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.7.1/kaizhi_0.7.1_x64-setup.exe) | Windows x64 安装版 |
+| [kaizhi_0.7.1_x64-portable.zip](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.7.1/kaizhi_0.7.1_x64-portable.zip) | 免安装版；全部解压后运行 `开智-portable/开智.exe` |
+| [kaizhi_0.7.1_source.zip](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.7.1/kaizhi_0.7.1_source.zip) | 完整源码，供开发者构建 |
 | manifest.json / SHA256SUMS.txt | 发布清单与附件校验值 |
 
 1. 安装或解压运行，系统需有 WebView2；免安装版保留程序旁的 `native-host/` 文件夹。
 2. 点击「加入文档」、按 `Ctrl + O` 或拖入 PDF / Markdown 文件，即可阅读；包内 `samples/` 提供示例。
 3. 需要 AI 时进入「设置 → AI」：API 服务填写自己的 Key，Codex 使用本机已安装并登录的程序。打开「阅读助手」即可提问。
 
-**升级到 0.5.0**：0.3.1 及以后版本、0.3.0 安装版可在应用内升级；0.2.2 及更早安装版、0.3.0 及更早免安装版需手动下载一次。后续更新在「设置 → 更新」中检查。文档库、阅读进度、设置和已保存凭据继续沿用；免安装版的数据也保存在当前 Windows 账号的应用数据目录。
+**升级到 0.7.1**：0.3.1 及以后版本、0.3.0 安装版可在应用内升级；旧版若提示缺少校验信息，可手动下载本版。0.2.2 及更早安装版、0.3.0 及更早免安装版需手动升级。文档库、阅读进度、设置和已保存凭据继续沿用；免安装版的数据也保存在当前 Windows 账号的应用数据目录。具体步骤见[升级指南](desktop/docs/UPDATING.md)。
 
 [桌面使用与快捷键](desktop/README.md) · [升级与备份](desktop/docs/UPDATING.md) · [桌面隐私说明](desktop/docs/PRIVACY.md) · [源码构建与发布](desktop/docs/RELEASING.md)
 
