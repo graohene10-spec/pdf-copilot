@@ -2,7 +2,7 @@
 //
 // Markdown 不是画在画布上的，截图靠把相交的段落连同计算后的样式、用到的网页字体和本地图片
 // 一起克隆进 SVG <foreignObject>，再画到画布上。网络图片取不到像素，换成同样大小的灰底占位。
-import { cropImage } from '../../../extension/reader/selection.mjs'
+import { cropImageAsync } from './crop'
 
 export interface Box { left: number; top: number; width: number; height: number }
 
@@ -164,7 +164,7 @@ export async function captureRegion(article: HTMLElement, region: Box, zoom = 1)
   context.fillStyle = paper.backgroundColor || '#fff'
   context.fillRect(0, 0, canvas.width, canvas.height)
   context.drawImage(image, 0, 0, canvas.width, canvas.height)
-  try { return cropImage(canvas, { x: 0, y: 0, width: canvas.width, height: canvas.height }, canvas.width, canvas.height) }
+  try { return await cropImageAsync(canvas, { x: 0, y: 0, width: canvas.width, height: canvas.height }, canvas.width, canvas.height) }
   catch { return null }
   finally { canvas.width = canvas.height = 0 }
 }

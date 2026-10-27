@@ -162,7 +162,7 @@ async function state(index) {
     return { draft: value.draft, status: value.status, phase: value.request?.phase || '', images: value.messages.filter(item => item.role === 'user').map(item => item.images || []), users: value.messages.filter(item => item.role === 'user').length };
   }, ids[index]);
 }
-async function accepted() { await quick().waitFor({ state: 'detached' }); await prompt().waitFor(); await preview().waitFor({ state: 'detached' }); assert.equal(await pane().locator('.ai-message img').count(), 0); }
+async function accepted() { await quick().waitFor({ state: 'detached' }); await prompt().waitFor(); await preview().waitFor({ state: 'detached' }); assert.deepEqual([...new Set(await pane().locator('.ai-message img').evaluateAll(images => images.map(image => image.alt)))].filter(alt => alt !== '随问题发送的图片'), [], 'Only the sent-context thumbnail under the question shows the screenshot.'); }
 function finish(index) { const response = held.get(names[index]); assert.ok(response); held.delete(names[index]); response.end(event({ type: 'response.completed', response: { status: 'completed', output: [] } })); }
 async function idle() { await until(() => page.evaluate(async () => { const { taskSummary } = await import('/src/ai/workspace.ts'); return taskSummary.running === 0 && taskSummary.queued === 0; }), 'All local requests finish'); }
 
@@ -209,9 +209,10 @@ try {
   assert.equal(await page.locator('.pdf-reader:visible .reader-zoom button[data-tip="适应宽度"]').innerText(), first.scale, 'No sidebar resize occurs at crop completion.');
   assert.deepEqual((await quick().locator('.capture-quick-buttons button').allTextContents()).map(value => value.trim()), labels);
   assert.equal(await quick().getByRole('button', { name: '继续到阅读助手', exact: true }).isVisible(), true);
-  await page.waitForTimeout(650); // focus ring settles from its entrance scale
+  // focus ring settles from its entrance scale (the one-shot entrance animation, not the glow)
+  await page.locator('.capture-quick-hole').evaluate(hole => Promise.all(hole.getAnimations().filter(animation => animation.effect?.getTiming().iterations === 1).map(animation => animation.finished)));
   const hole = await page.locator('.capture-quick-hole').boundingBox(); assert.ok(hole);
-  for (const key of ['x', 'y', 'width', 'height']) assert.ok(Math.abs(hole[key] - first.rectangle[key]) <= 3, `The undimmed hole follows the real mouse crop (${key}).`);
+  for (const key of ['x', 'y', 'width', 'height']) assert.ok(Math.abs(hole[key] - first.rectangle[key]) <= 3, `The undimmed hole follows the real mouse crop (${key}): ${JSON.stringify({ hole, rectangle: first.rectangle })}`);
   const panel = await quick().locator('.capture-quick-actions').boundingBox();
   assert.ok(panel.x >= 0 && panel.y >= 0 && panel.x + panel.width <= 1440 && panel.y + panel.height <= 960, 'Quick actions stay inside the viewport.');
   const samples = [{ x: first.rectangle.x + first.rectangle.width / 2, y: first.rectangle.y + first.rectangle.height / 2 }, { x: first.rectangle.x + first.rectangle.width / 2, y: first.rectangle.y + first.rectangle.height + 64 }];
@@ -260,12 +261,18 @@ try {
   await page.evaluate(() => window.getSelection()?.removeAllRanges());
   checks.push('Escape cancels only the screenshot choice and leaves fullscreen active; ordinary text selection never opens screenshot choices or the sidebar.');
 
-  await crop(2); await page.setViewportSize({ width: 1416, height: 936 });
-  await quick().waitFor({ state: 'detached' }); await readyPdf();
-  await openAssistant(); await preview().waitFor(); const resizedImage = await preview().getAttribute('src'); assert.match(resizedImage, /^data:image\/png/);
+  // 窗口尺寸变化（全屏切换就是这样）后卡片跟着选区走，不再消失；从卡片继续到阅读助手，截图仍在。
+  await crop(2); const before = await quick().locator('.capture-quick-hole').boundingBox();
+  await page.setViewportSize({ width: 1416, height: 936 }); await readyPdf();
+  await page.waitForTimeout(400); assert.equal(await quick().count(), 1, 'The quick-ask card survives a window resize.');
+  const after = await quick().locator('.capture-quick-hole').boundingBox(); assert.ok(after && before, 'The focus hole is drawn.');
+  await quick().getByRole('button', { name: '继续到阅读助手', exact: true }).click(); await quick().waitFor({ state: 'detached' }); await prompt().waitFor(); await readyPdf();
+  await preview().waitFor(); const resizedImage = await preview().getAttribute('src'); assert.match(resizedImage, /^data:image\/png/);
   await closeAssistant();
-  await select(1); await crop(1); await page.setViewportSize({ width: 1440, height: 960 }); await quick().waitFor({ state: 'detached' });
-  await openAssistant(); await preview().waitFor(); const otherImage = await preview().getAttribute('src'); await closeAssistant();
+  await select(1); await crop(1); await page.setViewportSize({ width: 1440, height: 960 }); await readyPdf();
+  await page.waitForTimeout(400); assert.equal(await quick().count(), 1, 'The card stays through the second resize too.');
+  await quick().getByRole('button', { name: '继续到阅读助手', exact: true }).click(); await quick().waitFor({ state: 'detached' }); await prompt().waitFor(); await readyPdf();
+  await preview().waitFor(); const otherImage = await preview().getAttribute('src'); await closeAssistant();
   await select(0); await crop(1);
   const raceCount = calls.length;
   await page.evaluate(({ label, name }) => {
