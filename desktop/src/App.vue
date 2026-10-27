@@ -155,6 +155,7 @@ const selection = shallowRef<DocumentSelection>()
 type CaptureQuick = { documentId: string; selection: DocumentSelection; frame: CaptureFrame; pending: boolean; status: string; ownedRequest?: ReturnType<typeof chatState>['request'] }
 const captureQuick = shallowRef<CaptureQuick>()
 let captureQuickFrame = 0
+let captureQuickMissing = 0
 let captureQuickResize: ResizeObserver | undefined
 let captureQuickMutation: MutationObserver | undefined
 const captureQuickBusy = computed(() => Boolean(captureQuick.value && (captureQuick.value.pending || chatState(sourceId(captureQuick.value.documentId)).request)))
@@ -918,36 +919,43 @@ function dismissCaptureQuick(clear = false) {
   if (current?.pending && current.ownedRequest && chatState(sourceId(current.documentId)).request === current.ownedRequest) stopChat(sourceId(current.documentId))
   if (clear && current && active.value?.id === current.documentId && toRaw(selection.value) === toRaw(current.selection)) clearSelection()
 }
+function checkCaptureQuick() {
+  captureQuickFrame = 0
+  const current = captureQuick.value
+  if (!current) return
+  if (active.value?.id !== current.documentId || toRaw(selection.value) !== toRaw(current.selection)) { dismissCaptureQuick(); return }
+  // Settings covers the capture without changing the underlying attachment.
+  if (settingsOpen.value) return
+  const frame = reader.value?.getCaptureFrame?.(current.selection)
+  // 页面重画、重新排版的一两帧里拿不到位置：稍等再看，确实移出视野（或选区没了）才收起。
+  if (!frame) {
+    captureQuickMissing ||= performance.now()
+    if (performance.now() - captureQuickMissing > 400) dismissCaptureQuick(); else scheduleCaptureCheck()
+    return
+  }
+  captureQuickMissing = 0
+  // 排版或窗口尺寸变了（全屏切换、重绘、面板开合）：卡片跟着选区走，而不是直接消失。
+  if ([frame.left, frame.top, frame.width, frame.height].some((value, index) => Math.abs(value - [current.frame.left, current.frame.top, current.frame.width, current.frame.height][index]) > .5)) captureQuick.value = { ...current, frame }
+}
+function scheduleCaptureCheck() { if (!captureQuickFrame) captureQuickFrame = requestAnimationFrame(checkCaptureQuick) }
 function monitorCaptureQuick() {
+  captureQuickMissing = 0
   if (captureQuickFrame) cancelAnimationFrame(captureQuickFrame)
   captureQuickFrame = 0
   captureQuickResize?.disconnect(); captureQuickMutation?.disconnect()
-  const check = () => {
-    captureQuickFrame = 0
-    const current = captureQuick.value
-    if (!current) return
-    if (active.value?.id !== current.documentId || toRaw(selection.value) !== toRaw(current.selection)) { dismissCaptureQuick(); return }
-    // Settings covers the capture without changing the underlying attachment.
-    if (!settingsOpen.value) {
-      const frame = reader.value?.getCaptureFrame?.(current.selection)
-      if (!frame || [frame.left, frame.top, frame.width, frame.height].some((value, index) => Math.abs(value - [current.frame.left, current.frame.top, current.frame.width, current.frame.height][index]) > .5)) { dismissCaptureQuick(); return }
-    }
-  }
-  const schedule = () => { if (!captureQuickFrame) captureQuickFrame = requestAnimationFrame(check) }
-  captureQuickResize = new ResizeObserver(schedule)
+  captureQuickResize = new ResizeObserver(scheduleCaptureCheck)
   const elements: HTMLElement[] = reader.value?.getCaptureElements?.(captureQuick.value?.selection) || []
   const slot = elements.find(element => element.matches('.page-slot'))
   for (const element of [document.querySelector('.reading-main'), ...elements]) if (element) captureQuickResize.observe(element)
   if (slot) {
-    captureQuickMutation = new MutationObserver(schedule)
+    captureQuickMutation = new MutationObserver(scheduleCaptureCheck)
     captureQuickMutation.observe(slot, { childList: true, attributes: true, subtree: true, attributeFilter: ['style', 'class', 'width', 'height'] })
   }
-  schedule()
+  scheduleCaptureCheck()
 }
-function captureViewportChanged(event?: Event) {
-  if (event?.target instanceof Element && event.target.closest('.capture-quick-actions,.settings-dialog')) return
-  dismissCaptureQuick()
-}
+// 窗口尺寸变化（包括全屏切换）、正文滚动（包括重新排版时程序设置的滚动位置）：都只重新定位卡片，
+// 选区真的移出视野时由上面的检查收起。
+function captureViewportChanged() { if (captureQuick.value) scheduleCaptureCheck() }
 function continueCaptureQuick() { dismissCaptureQuick(); openAssistant(true) }
 async function askCaptureQuick(question: string) {
   const current = captureQuick.value
