@@ -14,7 +14,7 @@ const checks = [], errors = [], externalRequests = [], forbiddenCalls = [], bloc
 const cleanup = {}, skipped = [];
 const defaults = [
   { label: '梳理核心观点', question: '概括当前内容的核心观点，并说明它与整篇文档的关系。' },
-  { label: '解释概念与公式', question: '解释当前页中的关键概念与公式，引用原文依据。' },
+  { label: '解释概念与公式', question: '解释当前页中的关键概念与公式。' },
   { label: '查找假设与局限', question: '找出文档中的主要假设、适用条件与局限。' },
 ];
 const custom = ['一', '二', '三'].map((suffix, index) => ({

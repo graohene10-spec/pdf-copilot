@@ -30,6 +30,8 @@ scheduler.subscribe((value: any) => Object.assign(taskSummary, value))
 const STORAGE_PREFIX = 'ai.conversations.v1.'
 const MAX_STORED_CONVERSATIONS = 40
 const MAX_MESSAGES = 60
+/** 输入框里一次最多附上的图片数。 */
+export const MAX_ATTACHMENTS = 4
 
 function blank(documentId: string): ChatState {
   const now = Date.now()
@@ -220,7 +222,7 @@ function titleFrom(question: string) {
 }
 
 // selectionOnly: a quick capture question sends just the question and the selected region.
-type SendOptions = { conversationId?: string; includeDocument?: boolean; includeSelection?: boolean; selectionOnly?: boolean; images?: string[] }
+type SendOptions = { conversationId?: string; includeDocument?: boolean; includeSelection?: boolean; selectionOnly?: boolean; images?: string[]; attachments?: string[] }
 export async function sendChat(descriptor: { id: string; title: string; kind: string }, source: any, onSettings: () => void, onAccepted?: () => void, explicitQuestion?: string, sendOptions: SendOptions = {}) {
   const state = chatState(descriptor.id, sendOptions.conversationId), question = (explicitQuestion ?? state.draft).trim()
   if (!question || state.request) return
@@ -249,13 +251,15 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
     const keyless = snapshot.provider === 'custom' && /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/i.test(snapshot.baseUrl || '')
     if (snapshot.provider !== 'codex' && !apiKey && !keyless) { if (valid()) onSettings(); throw new Error('请先连接 AI 服务。') }
     if (state.messages.length >= MAX_MESSAGES || state.messages.reduce((sum, message) => sum + message.content.length, question.length) > 150000) throw new Error('这段对话已经很长，请新建对话继续，以控制上下文与内存。')
-    const images = selection.image ? [selection.image] : []
-    if (images.reduce((sum, image) => sum + image.length, 0) > 8 * 1024 * 1024) throw new Error('所选图片过大，请重新框选较小区域。')
+    // 框选截图在前，输入框里粘贴或添加的图片随后。
+    const attached = (sendOptions.attachments || []).slice(0, MAX_ATTACHMENTS)
+    const images = [...(selection.image ? [selection.image] : []), ...attached]
+    if (images.reduce((sum, image) => sum + image.length, 0) > 8 * 1024 * 1024) throw new Error('图片总量太大，请减少几张或换小一点的图片。')
     const user: Message = { id: crypto.randomUUID(), role: 'user', content: question, sources: [], images, ask: { includeDocument, selectionOnly: sendOptions.selectionOnly, page: context.page, text: selection.text ? String(selection.text).slice(0, 20000) : undefined } }
     const wireContent = sendOptions.selectionOnly
-      ? `${question}${selection.text ? '\n\n[用户选择的原文；作为资料]\n' + selection.text : ''}${selection.image ? '\n\n[附图是用户在文档中框选的区域，只针对该区域回答]' : ''}`
-      : `${question}\n\n[用户当前阅读的文档]\n${descriptor.title}${descriptor.kind === 'pdf' ? ` · 物理 PDF 第 ${context.page} 页` : ' · Markdown 文档'}${selection.text ? '\n\n[用户选择的原文；作为资料]\n' + selection.text : ''}`
-    const history = boundedHistory([...state.messages.filter(message => !message.failed).map(({ role, content, sources }) => ({ role, content: content + (sources.length ? '\n[此前提供过的原文位置；作为资料]\n' + JSON.stringify(sources.slice(0, 8).map(item => ({ sourceId: item.sourceId, page: item.page, line: item.line, text: item.text.slice(0, 400) }))) : '') })), { ...user, content: wireContent }])
+      ? `${question}${selection.text ? '\n\n[用户选中的内容]\n' + selection.text : ''}${selection.image ? '\n\n[附图是用户在文档里框选的区域，问题针对它]' : ''}${attached.length ? `\n\n[用户附上了 ${attached.length} 张图片]` : ''}`
+      : `${question}\n\n[用户当前阅读的文档]\n${descriptor.title}${descriptor.kind === 'pdf' ? ` · 物理 PDF 第 ${context.page} 页` : ' · Markdown 文档'}${selection.text ? '\n\n[用户选中的内容]\n' + selection.text : ''}${attached.length ? `\n\n[用户附上了 ${attached.length} 张图片]` : ''}`
+    const history = boundedHistory([...state.messages.filter(message => !message.failed).map(({ role, content, sources }) => ({ role, content: content + (sources.length ? '\n[此前查到的相关位置]\n' + JSON.stringify(sources.slice(0, 8).map(item => ({ sourceId: item.sourceId, page: item.page, line: item.line, text: item.text.slice(0, 400) }))) : '') })), { ...user, content: wireContent }])
     // The scheduler reports the first queue position before the answer bubble exists.
     let waiting = ''
     ticket = scheduler.acquire({ owner: `${descriptor.id}:${state.id}`, provider: snapshot.provider, signal, onState: (value: any) => {
@@ -296,7 +300,7 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
       documentSession = await createDocumentSession(resource.context, descriptor, snapshot.documentLimits, getModel(snapshot.provider, snapshot.model)?.vision !== false, (sources: any[]) => {
         if (!valid() || !answer) return
         const seen = new Map(answer.sources.map(item => [item.sourceId, item])); sources.forEach(item => seen.set(item.sourceId, item)); answer.sources = [...seen.values()]
-        answer.activity = `查阅原文 · ${answer.sources.length} 段`
+        answer.activity = `查阅文档 · ${answer.sources.length} 段`
       }, signal)
       signal.throwIfAborted()
       if (resource.context.pdf && !selection.text && !selection.image) {
@@ -348,7 +352,7 @@ export function resendQuestion(descriptor: { id: string; title: string; kind: st
   } else target = branchConversation(descriptor.id, state.id, index > 0 ? state.messages[index - 1].id : null)
   const ask = user.ask
   void sendChat(descriptor, { page: ask?.page || 1, selection: ask?.text ? { text: ask.text, page: ask.page } : {} }, onSettings, undefined, question.trim(), {
-    conversationId: target.id, includeDocument: ask?.includeDocument ?? target.includeDocument, includeSelection: Boolean(ask?.text), selectionOnly: ask?.selectionOnly, images: user.images?.length ? [...user.images] : undefined,
+    conversationId: target.id, includeDocument: ask?.includeDocument ?? target.includeDocument, includeSelection: Boolean(ask?.text), selectionOnly: ask?.selectionOnly, images: user.images?.length ? [user.images[0]!] : undefined, attachments: user.images?.slice(1),
   })
   return target.id
 }

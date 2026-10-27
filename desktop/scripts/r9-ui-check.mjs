@@ -72,7 +72,8 @@ try {
   await page.mouse.move(target.x + target.width + 4, formula.y + formula.height + 4, { steps: 8 });
   await page.mouse.up();
   // The capture opens the quick-ask spotlight (or the assistant, per settings) with this selection attached.
-  await page.waitForFunction(() => document.querySelector('#app').__vue_app__._instance?.setupState?.selection?.rect?.space === 'markdown');
+  // The card appears first; the region screenshot is filled into the same selection once it is rendered.
+  await page.waitForFunction(() => { const value = document.querySelector('#app').__vue_app__._instance?.setupState?.selection; return value?.rect?.space === 'markdown' && value.image; });
   const sent = await page.evaluate(() => JSON.stringify(document.querySelector('#app').__vue_app__._instance.setupState.selection));
   const selection = await page.evaluate(async source => {
     const image = JSON.parse(source).image || '';

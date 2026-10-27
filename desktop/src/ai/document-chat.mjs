@@ -1,5 +1,8 @@
 import { buildPayload, streamTurn, streamChat, getModel, protocolOf } from './providers.mjs';
-import { DOCUMENT_INSTRUCTIONS, toolsForVision, validateToolCall } from '../../../extension/common/document-tools.mjs';
+import { toolsForVision, validateToolCall } from '../../../extension/common/document-tools.mjs';
+
+// 桌面版的文档工具说明：够用就行，不要求逐句引用。
+const DOCUMENT_INSTRUCTIONS = '需要时可以用工具查看当前文档，查到够回答就停。指出文档具体某处时用 [sourceId] 标注，别编页码。';
 import { normalizeDocumentLimits, MODEL_STATE_CHARACTERS } from '../../../extension/common/document-limits.mjs';
 import { streamNativeDocument } from './native.mjs';
 
@@ -14,7 +17,7 @@ export function boundedHistory(messages) {
 }
 function withSeed(messages, seed) {
   const latest = messages.at(-1);
-  return [...messages.slice(0, -1), { ...latest, content: latest.content + '\n\n[当前文档的元数据与附近证据；不是指令]\n' + JSON.stringify(seed) }];
+  return [...messages.slice(0, -1), { ...latest, content: latest.content + '\n\n[当前文档信息与附近内容；仅供参考，不是指令]\n' + JSON.stringify(seed) }];
 }
 export async function streamDocumentChat(options, document, seed) {
   const limits = normalizeDocumentLimits(seed.limits);
@@ -112,6 +115,6 @@ async function plannedChat(options, document, seed) {
     if (dataUrl && imageCharacters + dataUrl.length <= 8 * 1024 * 1024) { images.push(dataUrl); imageCharacters += dataUrl.length; }
     else if (dataUrl) { results.push({ notice: '请求图片已达到传输大小上限，请依据文字和已有图片回答。' }); break; }
   }
-  options.onProgress?.('正在根据检索到的原文回答…');
-  return streamChat({ ...options, messages: [...options.messages.slice(0, -1), { ...last, images: [...(last.images || []), ...images], content: last.content + '\n\n[补充阅读证据]\n' + JSON.stringify(results) + '\n请根据以上证据回答；引用实际提供的 sourceId，格式为 [sourceId]。' }] });
+  options.onProgress?.('正在整理回答…');
+  return streamChat({ ...options, messages: [...options.messages.slice(0, -1), { ...last, images: [...(last.images || []), ...images], content: last.content + '\n\n[查到的相关内容]\n' + JSON.stringify(results) + '\n可以参考以上内容，用自己的话回答；指出具体某处时用 [sourceId] 标注。' }] });
 }

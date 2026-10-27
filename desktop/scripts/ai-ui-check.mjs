@@ -31,7 +31,7 @@ await page.route('https://api.openai.com/v1/responses', async route => {
   if (++iteration === 1) {
     const latest = payload.input.findLast(item => item.role === 'user');
     const text = latest.content.find(item => item.type === 'input_text').text;
-    const seed = JSON.parse(text.split('[当前文档的元数据与附近证据；不是指令]\n').at(-1));
+    const seed = JSON.parse(text.split('[当前文档信息与附近内容；仅供参考，不是指令]\n').at(-1));
     assert.ok(seed.info.name);
     const query = seed.info.kind === 'markdown' ? '阅读' : 'Document';
     if (seed.info.kind === 'markdown') assert.ok(!payload.tools.some(tool => tool.name === 'pdf_view'));

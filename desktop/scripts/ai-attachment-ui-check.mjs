@@ -84,7 +84,7 @@ async function configure(key) {
   await dialog().waitFor({ state: 'detached' });
 }
 async function send(job) { await prompt().fill(job); await page.getByRole('button', { name: '发送', exact: true }).click(); }
-async function accepted() { await preview().waitFor({ state: 'detached' }); assert.equal(await prompt().inputValue(), ''); assert.equal(await page.locator('.ai-message img').count(), 0); }
+async function accepted() { await preview().waitFor({ state: 'detached' }); assert.equal(await prompt().inputValue(), ''); assert.deepEqual([...new Set(await page.locator('.ai-message img').evaluateAll(images => images.map(image => image.alt)))].filter(alt => alt !== '随问题发送的图片'), [], 'Only the sent-context thumbnail shows the screenshot.'); }
 async function complete(job) { await until(() => calls.some(call => call.job === job)); await page.locator('.ai-status').filter({ hasText: '回答完成' }).waitFor(); }
 async function latestImage(index, job) {
   return page.evaluate(async ({ id, job }) => { const { chatState } = await import('/src/ai/workspace.ts'); return chatState(id).messages.find(message => message.role === 'user' && message.content === job)?.images?.[0]; }, { id: ids[index], job });
@@ -127,7 +127,7 @@ async function preparationRace(replaceCrop) {
   assert.equal(await latestImage(0, job), original);
   if (replaceCrop) assert.equal(await preview().getAttribute('src'), newer);
   else await preview().waitFor({ state: 'detached' });
-  assert.equal(await page.locator('.ai-message img').count(), 0);
+  assert.equal(await page.locator('.ai-message img:not([alt="随问题发送的图片"])').count(), 0);
   checks.push(replaceCrop
     ? 'Delayed acceptance preserves a newer crop in the same file and still transmits only its original snapshot.'
     : 'Acceptance delayed until after a genuine library-view unmount still consumes the original crop before its file reopens.');
@@ -167,7 +167,7 @@ try {
   await send('ATTACH_BASIC'); await accepted(); await complete('ATTACH_BASIC');
   assert.deepEqual(calls.find(call => call.job === 'ATTACH_BASIC').images, [firstCrop]);
   assert.equal(await latestImage(0, 'ATTACH_BASIC'), firstCrop);
-  assert.equal(await page.locator('.ai-pane img').count(), 0);
+  assert.equal(await page.locator('.ai-pane img:not([alt="随问题发送的图片"])').count(), 0);
   await shot('ai-attachment-accepted.png');
   checks.push('Accepted capture disappears from composer and history, while the actual HTTP image and retained message attachment match the original crop.');
 
@@ -233,7 +233,7 @@ try {
   assert.equal(await preview().getAttribute('src'), otherCrop);
   const newerCrop = await crop(); assert.notEqual(newerCrop, otherCrop);
   assert.equal(await preview().getAttribute('src'), newerCrop);
-  assert.equal(await page.locator('.ai-message img').count(), 0);
+  assert.equal(await page.locator('.ai-message img:not([alt="随问题发送的图片"])').count(), 0);
   await shot('ai-attachment-new-crop.png');
   checks.push('Opting out of the crop leaves it available; a fresh real crop replaces it normally without exposing historical thumbnails.');
   await preparationRace(false);
