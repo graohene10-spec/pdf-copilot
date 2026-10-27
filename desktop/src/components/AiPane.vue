@@ -3,7 +3,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, defineAsync
 import 'katex/dist/katex.min.css'
 import { getProvider, getNativeModels, getNativeStatus } from '../ai/providers.mjs'
 import { nativeModelInventory, registerNativeModelInventory } from '../ai/native-models'
-import { chatState, sendChat, stopChat, configureRequests, taskSummary, conversations, activeConversationId, selectConversation, newConversation, deleteConversation, loadConversations, conversationTokens, contextWindow, branchConversation, resendQuestion, watchConversation, allConversations, pinMessage, type Message, type ChatState } from '../ai/workspace'
+import { chatState, sendChat, stopChat, configureRequests, taskSummary, conversations, activeConversationId, selectConversation, newConversation, deleteConversation, loadConversations, conversationTokens, contextWindow, branchConversation, resendQuestion, watchConversation, allConversations, pinMessage, MAX_ATTACHMENTS, type Message, type ChatState } from '../ai/workspace'
 import { renderMarkdown, renderDiagrams } from '../ai/render'
 import { loadAiSettings, saveModelChoice } from '../ai/settings.mjs'
 import { useSettings } from '../settings'
@@ -11,6 +11,7 @@ import AppIcon from './AppIcon.vue'
 import AssistantMark from './AssistantMark.vue'
 import { greetingFor, placeholderFor, thinkingVerb, spinnerFor } from '../ai/greeting'
 import { predictQuestion, predictionKey } from '../ai/predict'
+import { cropImageAsync } from '../reader/crop'
 const ModelPicker = defineAsyncComponent(() => import('./ModelPicker.vue'))
 
 const props = defineProps<{ document: { id: string; title: string; kind: string }; context: any; sendShortcut?: string; consumeCapture?: (value: { documentId: string; selection: any }) => void; conversationId?: string; draggable?: boolean
@@ -43,7 +44,8 @@ const title = computed(() => state.value.title || '新对话')
 const history = computed(() => conversations(props.document.id).filter(item => item.messages.length || item.id === conversationId.value))
 const messageList = ref<HTMLElement>()
 const input = ref<HTMLTextAreaElement>()
-const selected = computed(() => props.context?.selection || {})
+// 浅拷贝：截图晚到时同一个选区对象被补上 image，拷贝能让依赖它的显示跟着刷新。
+const selected = computed(() => ({ ...(props.context?.selection || {}) }))
 const hasSelection = computed(() => Boolean(selected.value.text || selected.value.image))
 // Markdown has no pages: its region screenshots are named by what they are.
 const selectionLabel = computed(() => selected.value.rect?.space === 'markdown' ? '框选区域截图' : `第 ${selected.value.page} 页截图`)
@@ -402,7 +404,8 @@ function closePicker() { pickerOpen.value = false; void nextTick(() => pickerHos
 function historyOutside(event: PointerEvent) { if (!(event.target as Element)?.closest?.('.history-host')) historyOpen.value = false }
 watch(historyOpen, open => { if (open) document.addEventListener('pointerdown', historyOutside, true); else document.removeEventListener('pointerdown', historyOutside, true) })
 
-watch(() => props.context?.selection, selection => { includeSelection.value = Boolean(selection?.text || selection?.image) }, { immediate: true })
+// 框选截图可能晚一点才编码好（同一个选区对象补上 image），到时也自动勾上。
+watch([() => props.context?.selection, () => Boolean(props.context?.selection?.image)], ([selection]) => { includeSelection.value = Boolean(selection?.text || selection?.image) }, { immediate: true })
 function focusPrompt() { void nextTick(() => input.value?.focus()) }
 function stop() { stopChat(props.document.id, state.value.id) }
 function applySettings(value: any) { settings.value = value; configureRequests(value) }
@@ -423,6 +426,47 @@ function keydown(event: KeyboardEvent) {
     void nextTick(() => { field.selectionStart = field.selectionEnd = start + 1 })
   }
 }
+// ---- 输入框附图：Ctrl+V 粘贴、拖进输入框，或点「添加图片」；随问题一起发出，发出后清空 ----
+const attachments = ref<string[]>([])
+const attachInput = ref<HTMLInputElement>()
+const imageFiles = (files?: FileList | null) => [...(files || [])].filter(file => file.type.startsWith('image/'))
+async function imageToDataUrl(file: Blob) {
+  const bitmap = await createImageBitmap(file)
+  const canvas = document.createElement('canvas')
+  canvas.width = bitmap.width; canvas.height = bitmap.height
+  canvas.getContext('2d')!.drawImage(bitmap, 0, 0); bitmap.close()
+  // 与框选截图同一套处理：长边压到 1600 像素以内，后台编码成 PNG。
+  try { return await cropImageAsync(canvas, { x: 0, y: 0, width: canvas.width, height: canvas.height }, canvas.width, canvas.height) }
+  finally { canvas.width = canvas.height = 0 }
+}
+function attachNote(text: string) { state.value.status = text; state.value.error = true }
+async function addImages(files: File[]) {
+  for (const file of files) {
+    if (attachments.value.length >= MAX_ATTACHMENTS) { attachNote(`一次最多附 ${MAX_ATTACHMENTS} 张图片。`); return }
+    try { attachments.value = [...attachments.value, await imageToDataUrl(file)] }
+    catch { attachNote(`无法读取图片「${file.name || '粘贴的图片'}」。`) }
+  }
+}
+function pasteImages(event: ClipboardEvent) {
+  const files = imageFiles(event.clipboardData?.files)
+  if (files.length) { event.preventDefault(); void addImages(files) }
+}
+function dragImages(event: DragEvent) {
+  if (![...(event.dataTransfer?.types || [])].includes('Files')) return
+  event.preventDefault(); event.stopPropagation()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
+}
+function dropImages(event: DragEvent) {
+  const files = imageFiles(event.dataTransfer?.files)
+  if (!files.length) return
+  event.preventDefault(); event.stopPropagation(); void addImages(files)
+}
+function pickImages(event: Event) {
+  const input = event.target as HTMLInputElement
+  const files = imageFiles(input.files); input.value = ''
+  void addImages(files)
+}
+function removeAttachment(index: number) { attachments.value = attachments.value.filter((_, item) => item !== index) }
 function send(question?: string) {
   // 输入框空着而有预判的问题时，按发送键直接发送它。
   if (preferences.value.assistant.predictQuestions && question === undefined && !prompt.value.trim() && prediction.value) question = prediction.value
@@ -431,11 +475,13 @@ function send(question?: string) {
   // 发出去的选区就算交给了 AI：输入框上方的选区随之清空，改在问题气泡下面显示。
   const usesSelection = includeSelection.value && Boolean(selection?.image || selection?.text)
   const consumeCapture = props.consumeCapture
+  const sentImages = [...attachments.value]
   follow = true
   return sendChat({ ...props.document }, { ...props.context }, () => { if (id === props.document.id) emit('settings') }, () => {
     // The request can be accepted after this pane closes or switches files.
     if (usesSelection) consumeCapture?.({ documentId: id, selection })
-  }, question, { conversationId: state.value.id })
+    if (sentImages.length) attachments.value = attachments.value.filter(image => !sentImages.includes(image))
+  }, question, { conversationId: state.value.id, attachments: sentImages })
 }
 // ---- Predicted next question --------------------------------------------------
 const prediction = ref('')
@@ -532,7 +578,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
             <template v-else>
               <div class="user-question">{{ message.content }}</div>
               <div v-if="message.ask?.text || message.images?.length || message.ask?.includeDocument" class="sent-context" aria-label="随问题发送的上下文">
-                <img v-for="(image, index) in (message.images || []).slice(0, 2)" :key="index" :src="image" alt="随问题发送的图片" />
+                <img v-for="(image, index) in (message.images || []).slice(0, 5)" :key="index" :src="image" alt="随问题发送的图片" />
                 <span v-if="message.ask?.text" class="sent-quote" :title="message.ask.text">“{{ message.ask.text.slice(0, 60) }}{{ message.ask.text.length > 60 ? '…' : '' }}”</span>
                 <span v-if="message.ask?.includeDocument" class="sent-doc"><AppIcon name="book" :size="11" />{{ document.kind === 'pdf' ? `文档 · 第 ${message.ask.page || 1} 页` : '文档' }}</span>
               </div>
@@ -576,18 +622,23 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
     </div>
 
     <div class="ai-composer">
-      <div ref="composerField" class="composer-field" :class="{ busy, expanded: pickerOpen }" @keydown.esc="drawerEscape">
+      <div ref="composerField" class="composer-field" :class="{ busy, expanded: pickerOpen }" @keydown.esc="drawerEscape" @dragover="dragImages" @drop="dropImages">
         <div class="composer-resize" role="separator" aria-orientation="horizontal" aria-label="拖动调整输入框高度" data-tip="拖动调整高度，双击恢复" @pointerdown="startResize" @pointermove="resize" @pointerup="endResize" @pointercancel="endResize" @dblclick="resetResize" />
         <div v-if="hasSelection" class="ai-selection-context">
           <label class="selection-chip" :class="{ off: !includeSelection }"><input v-model="includeSelection" type="checkbox" :disabled="busy" :aria-label="selected.image ? `使用${selectionLabel}` : '使用所选文字'" /><img v-if="selected.image" :src="selected.image" alt="选取的截图预览" /><span v-else class="selection-text">{{ selected.text.slice(0, 80) }}</span><small>{{ selected.image ? selectionLabel : selected.rect?.space === 'markdown' ? '框选区域的文字' : '所选文字' }}</small></label>
           <button class="chip-remove" data-tip="清除选区" aria-label="清除选区" @click="emit('clearSelection')"><AppIcon name="close" :size="11" /></button>
         </div>
+        <div v-if="attachments.length" class="ai-attachments" aria-label="附上的图片">
+          <span v-for="(image, index) in attachments" :key="image.slice(-48) + index" class="attachment"><img :src="image" alt="附上的图片" /><button type="button" class="chip-remove" :aria-label="`移除第 ${index + 1} 张图片`" data-tip="移除这张图片" @click="removeAttachment(index)"><AppIcon name="close" :size="11" /></button></span>
+        </div>
         <div class="prompt-box">
-          <textarea ref="input" v-model="prompt" :style="{ height: `${composerHeight}px` }" :placeholder="prediction ? '' : placeholder" aria-label="向 AI 提问" :aria-describedby="prediction ? `prediction-${state.id}` : undefined" @keydown="keydown" />
+          <textarea ref="input" v-model="prompt" @paste="pasteImages" :style="{ height: `${composerHeight}px` }" :placeholder="prediction ? '' : placeholder" aria-label="向 AI 提问" :aria-describedby="prediction ? `prediction-${state.id}` : undefined" @keydown="keydown" />
           <!-- 预判的问题：像 Claude Code 一样以淡色出现在空输入框里，按 Tab 或回车采用。 -->
           <p v-if="prediction && !prompt" :id="`prediction-${state.id}`" class="prompt-ghost"><span>{{ prediction }}</span><template v-if="showHint"><kbd>Tab</kbd><small>/</small><kbd>Enter</kbd><small>采用</small></template><span v-else class="visually-hidden">，按 Tab 或回车采用</span></p>
         </div>
         <div class="composer-actions">
+          <button type="button" class="attach-button" :disabled="busy || attachments.length >= MAX_ATTACHMENTS" aria-label="添加图片" data-tip="添加图片（也可以 Ctrl+V 粘贴或拖进来）" @click="attachInput?.click()"><AppIcon name="image" :size="16" /></button>
+          <input ref="attachInput" class="attach-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple tabindex="-1" aria-hidden="true" @change="pickImages" />
           <label class="context-switch" :class="{ on: includeDocument }" :data-tip="includeDocument ? '已开启：提问时附带当前页与文档检索' : '已关闭：只发送问题与选区'"><input v-model="includeDocument" type="checkbox" role="switch" :disabled="busy" aria-label="当前页上下文与文档检索" /><span class="context-glyph" aria-hidden="true"><AppIcon name="book" :size="14" /><i class="context-slash" /></span><span class="context-label">文档上下文</span></label>
           <span class="composer-space" />
           <span class="context-ring" :data-tip="`上下文约 ${count(contextUsed)} / ${count(contextLimit)} tokens`" aria-hidden="true" :style="{ '--ratio': contextRatio }"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5" /><circle class="ring-value" cx="10" cy="10" r="7.5" pathLength="100" /></svg></span>
@@ -810,6 +861,13 @@ textarea::placeholder{color:var(--muted);font-family:'Anthropic Serif','Source H
 .selection-chip small{flex-shrink:0;font-size:11px;color:var(--muted)}
 .chip-remove{display:grid;place-items:center;width:22px;height:22px;margin-top:8px;padding:0;border:0;border-radius:var(--r-xs);background:var(--frost);box-shadow:none}
 .chip-remove:hover{background:var(--frost-hover)}
+.ai-attachments{display:flex;flex-wrap:wrap;gap:10px;padding:12px 12px 0}
+.attachment{position:relative;display:block}
+.attachment img{display:block;width:56px;height:42px;border:1px solid var(--hairline);border-radius:var(--r-sm);object-fit:cover;background:#fff}
+.attachment .chip-remove{position:absolute;top:-7px;right:-7px;width:18px;height:18px;margin:0;border-radius:50%;background:var(--surface);box-shadow:0 1px 3px rgb(0 0 0 / .25)}
+.attach-button{display:grid;place-items:center;flex-shrink:0;width:30px;height:30px;padding:0;border:0;border-radius:var(--r-control);background:transparent;box-shadow:none;color:var(--muted)}
+.attach-button:hover:not(:disabled){background:var(--frost-hover);color:var(--ink)}
+.attach-file{display:none}
 .composer-actions{display:flex;align-items:center;gap:6px;min-width:0;padding:4px 8px 8px}
 .composer-space{flex:1}
 /* 文档上下文：芯片里带一枚小开关。开 = 实心墨色胶囊、圆点在右；关 = 空心描边、圆点在左。

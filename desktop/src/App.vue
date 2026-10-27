@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, shallowRef, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick, defineAsyncComponent, toRaw } from 'vue'
+import { ref, shallowRef, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick, defineAsyncComponent, toRaw, triggerRef } from 'vue'
 import { library, isDesktop, importDroppedDocuments } from './sdk'
 import type { Doc } from './sdk/types'
 import AppIcon from './components/AppIcon.vue'
@@ -31,7 +31,7 @@ const { preferences, effectiveAppearance, load: loadPreferences, save: savePrefe
 
 const documents = ref<Doc[]>([])
 type CaptureFrame = { left: number; top: number; width: number; height: number }
-type DocumentSelection = { text: string; page: number; image?: string; rect?: any; captureFrame?: CaptureFrame }
+type DocumentSelection = { text: string; page: number; image?: string; imagePending?: Promise<string>; rect?: any; captureFrame?: CaptureFrame }
 type OpenTab = { doc: Doc; view?: any; selection?: DocumentSelection }
 const tabs = ref<OpenTab[]>([])
 const active = ref<Doc | null>(null)
@@ -893,8 +893,17 @@ function selectedContext(value: typeof selection.value) {
   dismissCaptureQuick()
   selection.value = value
   if (currentTab.value) currentTab.value.selection = value
+  // 截图在后台编码：好了补进同一个选区，再通知界面刷新（卡片和输入框上方的截图预览）。
+  if (value?.imagePending) {
+    const pending = value
+    void pending.imagePending!.then(image => {
+      if (toRaw(selection.value) !== toRaw(pending)) return
+      if (!image && !pending.text) { clearSelection(); notify('这块区域没有可以交给助手的内容，请换个地方框选。'); return }
+      triggerRef(selection)
+    }, () => { if (toRaw(selection.value) === toRaw(pending)) clearSelection() })
+  }
   // A framed region: a PDF crop, or a Markdown region (its screenshot plus the text under it).
-  if (value?.image || value?.rect?.space === 'markdown') {
+  if (value?.image || value?.imagePending || value?.rect?.space === 'markdown') {
     selectionAction.value = undefined
     if (preferences.value.pdf.quickAskOnCapture && active.value) {
       const frame = reader.value?.getCaptureFrame?.(value) || value.captureFrame
@@ -966,6 +975,11 @@ async function askCaptureQuick(question: string) {
   const doc = { id: sourceId(tabId), title: active.value.name, kind: active.value.kind }
   const context = { page: current.selection.page, selection: current.selection }
   current.pending = true; current.status = '准备提问…'; captureQuick.value = { ...current }
+  // 卡片是在截图编码完成之前弹出的：点得很快时先等截图好。
+  if (current.selection.imagePending) {
+    await current.selection.imagePending.catch(() => '')
+    if (toRaw(captureQuick.value?.selection) !== toRaw(current.selection)) return
+  }
   // A quick question is about the framed region only: it sends the screenshot,
   // without the page context, document search or earlier references.
   let accepted = false
@@ -1173,7 +1187,8 @@ function keydown(event: KeyboardEvent) {
   if (event.key === 'Escape') {
     if (settingsOpen.value) { settingsOpen.value = false; event.preventDefault() }
     else if (splitPicker.value) { splitPicker.value = undefined; event.preventDefault() }
-    else if (captureQuick.value) { dismissCaptureQuick(true); event.preventDefault() }
+    // 收起卡片但保留截图：之后自己在阅读助手里提问，截图仍在输入框上方。
+    else if (captureQuick.value) { dismissCaptureQuick(); event.preventDefault() }
     else if (removeTarget.value) { removeTarget.value = null; event.preventDefault() }
     else if (detailsOpen.value) { detailsOpen.value = false; event.preventDefault() }
     else if (reader.value?.cancelCapture?.()) event.preventDefault()
@@ -1289,7 +1304,11 @@ async function listenForFileDrop() {
       const value = event.payload
       if (value.type === 'enter') draggingFiles.value = value.paths.some(path => /\.(pdf|md|markdown)$/i.test(path))
       else if (value.type === 'leave') draggingFiles.value = false
-      else if (value.type === 'drop') void dropDocuments(value.paths)
+      // 桌面版拖放只给文件路径：图片请走阅读助手的「添加图片」或粘贴，不当成文档导入。
+      else if (value.type === 'drop') {
+        if (value.paths.length && value.paths.every(path => /\.(png|jpe?g|webp|gif)$/i.test(path))) { draggingFiles.value = false; notify('图片请在阅读助手里点「添加图片」，或复制后在输入框 Ctrl+V 粘贴。') }
+        else void dropDocuments(value.paths)
+      }
     })
     if (disposed) unlisten(); else stopDropListening = unlisten
   } catch (error) { notify(`文件拖入暂不可用：${reason(error)}`) }
@@ -1416,7 +1435,7 @@ onBeforeUnmount(() => { stopAutoCheck(); for (const timer of pillTimers.values()
     <ContextMenu v-if="contextMenu" :x="contextMenu.x" :y="contextMenu.y" :items="contextMenu.items" @close="contextMenu = undefined" />
     <div v-if="tabDrop" class="tab-drop-zone" :style="{ left: `${tabDrop.left}px`, top: `${tabDrop.top}px`, width: `${tabDrop.width}px`, height: `${tabDrop.height}px` }"><span>{{ tabDrop.side === 'left' ? '放在左侧' : '放在右侧' }}</span></div>
     <SplitPicker v-if="splitPicker && active" :anchor="splitPicker" :candidates="splitCandidates" :full="paneIds.length >= MAX_PANES" :limit="MAX_PANES" @pick="openBeside" @close="splitPicker = undefined" />
-    <Transition name="capture-focus"><CaptureQuickPrompt v-if="captureQuick && !settingsOpen" :frame="captureQuick.frame" :prompts="preferences.assistant.captureQuestions" :busy="captureQuickBusy" :status="captureQuickStatus" @ask="askCaptureQuick" @continue="continueCaptureQuick" @cancel="dismissCaptureQuick(true)" /></Transition>
+    <Transition name="capture-focus"><CaptureQuickPrompt v-if="captureQuick && !settingsOpen" :frame="captureQuick.frame" :prompts="preferences.assistant.captureQuestions" :busy="captureQuickBusy" :status="captureQuickStatus" @ask="askCaptureQuick" @continue="continueCaptureQuick" @cancel="dismissCaptureQuick()" /></Transition>
     <div v-if="draggingFiles" class="file-drop-overlay" aria-live="polite"><div class="file-drop-target"><AppIcon name="plus" :size="32" /><strong>加入文档库</strong><span>松开以加入 PDF / Markdown 文档</span></div></div>
     <button v-if="selectionAction && selection?.text && !aiOpen && active" class="selection-ask" :style="{ left: selectionAction.left + 'px', top: selectionAction.top + 'px' }" @mousedown.prevent @click="openAssistant(true)" aria-label="用所选文字向 AI 提问"><AppIcon name="sparkle" :size="14" />问 AI</button>
     <UpdateCard v-if="!settingsOpen" />

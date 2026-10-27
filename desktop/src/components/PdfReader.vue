@@ -31,7 +31,7 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   ready: [value: { pdf: any; page: number }]
   progress: [value: { page: number; pageCount: number; progress: number }]
-  selection: [value: { text: string; page: number; image?: string; rect?: any; captureFrame?: { left: number; top: number; width: number; height: number } }]
+  selection: [value: { text: string; page: number; image?: string; imagePending?: Promise<string>; rect?: any; captureFrame?: { left: number; top: number; width: number; height: number } }]
   text: [value: string]
   error: [value: string]
 }>()
@@ -414,14 +414,14 @@ function cancelCapture() {
 }
 const ink = usePdfInk({ container, viewer: () => viewer, documentId: () => props.documentId, page, capture, cancelCapture })
 const hscroll = useHorizontalScroll(container)
-function getCaptureElements(selection: { page: number; image?: string }) {
-  if (!active || !selection?.image) return []
+function getCaptureElements(selection: { page: number; image?: string; imagePending?: Promise<string> }) {
+  if (!active || !(selection?.image || selection?.imagePending)) return []
   const view = viewer?.views?.get(selection.page)
   if (!view || view.disposed) return []
   return [viewportHost.value, container.value, view.slot, view.canvas].filter((element): element is HTMLElement => !!element?.isConnected)
 }
-function getCaptureFrame(selection: { page: number; image?: string; rect?: any }) {
-  if (!active || !selection?.image || selection.rect?.space !== 'pdf-points') return
+function getCaptureFrame(selection: { page: number; image?: string; imagePending?: Promise<string>; rect?: any }) {
+  if (!active || !(selection?.image || selection?.imagePending) || selection.rect?.space !== 'pdf-points') return
   const rect = selection.rect
   if (![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite) || rect.width <= 0 || rect.height <= 0) return
   const view = viewer?.views?.get(selection.page)
@@ -625,15 +625,14 @@ onMounted(async () => {
       const [x1, y1] = view.viewport.convertToPdfPoint(rect.x, rect.y)
       const [x2, y2] = view.viewport.convertToPdfPoint(rect.x + rect.width, rect.y + rect.height)
       const area = { x: Math.min(x1, x2), y: Math.min(y1, y2), width: Math.abs(x2 - x1), height: Math.abs(y2 - y1), space: 'pdf-points' }
-      // 选区立刻拷下来，编码在后台进行：松手时界面不卡，框线留到图片就绪、提问卡片弹出的那一刻。
+      // 选区立刻发出去，提问卡片马上弹出；截图在后台编码，好了再补进同一个选区（imagePending 期间位置照常可算）。
       const current = epoch
-      const finish = () => { if (active && current === epoch) { capture.value = false; viewer.capture(false) } }
-      cropImageAsync(view.canvas, rect, view.viewport.width, view.viewport.height).then(image => {
-        if (!active || current !== epoch || view.disposed) return
-        const selected = { text: '', page: view.number, image, rect: area }
-        emit('selection', { ...selected, captureFrame: getCaptureFrame(selected) })
-        finish()
-      }, (reason: any) => { finish(); if (active && current === epoch) emit('error', reason?.message || '无法截取选区。') })
+      const selected: { text: string; page: number; image: string; rect: any; imagePending?: Promise<string>; captureFrame?: any } = { text: '', page: view.number, image: '', rect: area }
+      selected.imagePending = cropImageAsync(view.canvas, rect, view.viewport.width, view.viewport.height).then(image => { selected.image = image; delete selected.imagePending; return image })
+      selected.imagePending.catch((reason: any) => { if (active && current === epoch) emit('error', reason?.message || '无法截取选区。') })
+      selected.captureFrame = getCaptureFrame(selected)
+      emit('selection', selected)
+      capture.value = false; viewer.capture(false)
     },
     onDestination: destination,
     onSelectionPending() {},

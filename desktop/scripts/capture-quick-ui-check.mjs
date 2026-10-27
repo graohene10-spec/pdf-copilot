@@ -46,7 +46,7 @@ const model = createServer(async (request, response) => {
     }, { ids, image: images[0] });
     const name = names[owner]; assert.ok(name, 'Document identity is captured before asynchronous preparation.');
     // A capture bubble sends only its question and the region; questions typed or picked in the assistant keep the document context.
-    const selectionOnly = text.includes('[附图是用户在文档中框选的区域');
+    const selectionOnly = text.includes('[附图是用户在文档里框选的区域');
     if (selectionOnly) assert.equal(names.some(value => text.includes(value)), false, 'A quick capture question does not send the document title.');
     const question = questions.find(value => text.startsWith(value)); assert.ok(question, 'The custom prompt is sent verbatim.');
     assert.equal(images.length, 1, 'The current crop is sent exactly once.');
@@ -250,7 +250,8 @@ try {
   await page.waitForFunction(() => !!document.fullscreenElement); await readyPdf();
   await crop(1); await page.keyboard.press('Escape'); await quick().waitFor({ state: 'detached' });
   assert.equal(await page.evaluate(() => !!document.fullscreenElement), true);
-  assert.equal(await page.locator('.selection-context').count(), 0); assert.equal(await pane().count(), 0);
+  // Esc 只收起卡片，截图留着，之后可以自己去阅读助手里问。
+  assert.equal(await page.locator('.selection-context').count(), 1, 'Escape keeps the screenshot.'); assert.equal(await pane().count(), 0);
   await page.getByRole('button', { name: '退出全屏', exact: true }).click(); await page.waitForFunction(() => !document.fullscreenElement); await readyPdf();
   const text = activeSurface().locator('.textLayer span').filter({ hasText: 'Selectable ordinary text' }).first();
   const textBox = await text.boundingBox(); assert.ok(textBox);
@@ -259,7 +260,7 @@ try {
   await until(() => page.evaluate(() => !!window.getSelection()?.toString().trim()), 'Real PDF text selection');
   assert.equal(await quick().count(), 0); assert.equal(await pane().count(), 0);
   await page.evaluate(() => window.getSelection()?.removeAllRanges());
-  checks.push('Escape cancels only the screenshot choice and leaves fullscreen active; ordinary text selection never opens screenshot choices or the sidebar.');
+  checks.push('Escape closes only the quick-ask card (the screenshot stays) and leaves fullscreen active; ordinary text selection never opens screenshot choices or the sidebar.');
 
   // 窗口尺寸变化（全屏切换就是这样）后卡片跟着选区走，不再消失；从卡片继续到阅读助手，截图仍在。
   await crop(2); const before = await quick().locator('.capture-quick-hole').boundingBox();

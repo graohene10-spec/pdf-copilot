@@ -31,7 +31,7 @@ const model = createServer(async (request, response) => {
     const user = payload.input.findLast(item => item.role === 'user');
     const text = user.content.find(item => item.type === 'input_text').text;
     const job = text.match(/JOB_[A-Z]_\d+/)?.[0]; assert.ok(job);
-    const seed = JSON.parse(text.split('[当前文档的元数据与附近证据；不是指令]\n').at(-1));
+    const seed = JSON.parse(text.split('[当前文档信息与附近内容；仅供参考，不是指令]\n').at(-1));
     const imageHashes = user.content.filter(item => item.type === 'input_image').map(item => createHash('sha256').update(item.image_url).digest('hex'));
     calls.push({ job, name: seed.info.name, page: seed.info.currentPage, tools: !!payload.tools?.length, imageHashes });
     response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store' });
@@ -78,7 +78,7 @@ async function capture() {
 }
 async function assertCaptureConsumed() {
   await page.locator('.ai-selection-context').waitFor({ state: 'detached' });
-  assert.equal(await page.locator('.ai-message img').count(), 0, 'Sent screenshots do not occupy conversation space');
+  assert.equal(await page.locator('.ai-message img:not([alt="随问题发送的图片"])').count(), 0, 'Sent screenshots only appear as the thumbnail under the question');
 }
 async function concurrency(value) {
   await page.getByRole('button', { name: '打开设置', exact: true }).click(); await page.getByRole('dialog', { name: '设置', exact: true }).getByRole('button', { name: 'AI', exact: true }).click();

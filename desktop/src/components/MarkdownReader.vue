@@ -20,7 +20,7 @@ const props = withDefaults(defineProps<{ data: Uint8Array; documentId: string; i
 const emit = defineEmits<{
   ready: [value: { text: string; headings: { title: string; id: string; level: number }[] }]
   progress: [value: { page: number; pageCount: number; progress: number }]
-  selection: [value: { text: string; page: number; image?: string; rect?: MarkdownRect; captureFrame?: { left: number; top: number; width: number; height: number } }]
+  selection: [value: { text: string; page: number; image?: string; imagePending?: Promise<string>; rect?: MarkdownRect; captureFrame?: { left: number; top: number; width: number; height: number } }]
   text: [value: string]
   error: [value: string]
   fontSizeChange: [value: number]
@@ -203,12 +203,11 @@ async function captured(rect: { x: number; y: number; width: number; height: num
   const first = [...article.querySelectorAll<HTMLElement>('[data-source-line]')].find(block => { const box = block.getBoundingClientRect(); return box.bottom > region.top && box.top < region.top + region.height })
   const page = Number(first?.dataset.sourceLine) || currentLine
   const text = regionText(article, region)
-  const current = activation
-  const image = await captureRegion(article, region, scale).catch(() => null)
-  if (!active || current !== activation) return
-  if (!image && !text) { emit('error', '这块区域没有可以交给助手的内容，请换个地方框选。'); return }
-  const selected = { text, page, image: image || undefined, rect: frame }
-  emit('selection', { ...selected, captureFrame: getCaptureFrame(selected) })
+  // 选区立刻发出去，提问卡片马上弹出；区域截图（较慢）好了再补进同一个选区。
+  const selected: { text: string; page: number; image: string; rect: MarkdownRect; imagePending?: Promise<string>; captureFrame?: any } = { text, page, image: '', rect: frame }
+  selected.imagePending = captureRegion(article, region, scale).catch(() => null).then(image => { selected.image = image || ''; delete selected.imagePending; return selected.image })
+  selected.captureFrame = getCaptureFrame(selected)
+  emit('selection', selected)
 }
 function getCaptureFrame(selection: { image?: string; rect?: any }) {
   const rect = selection?.rect
