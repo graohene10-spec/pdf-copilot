@@ -194,7 +194,8 @@ export function installRefraction(root: HTMLElement): () => void {
   function assign(element: HTMLElement) {
     if (!assigned.has(element)) { assigned.set(element, null); resize.observe(element) }
     const style = win.getComputedStyle(element)
-    const shape = shapeOf(element, style)
+    // 样式里撤掉了实时模糊的玻璃（预设底板上的大面板）不做折射。
+    const shape = style.backdropFilter === 'none' ? null : shapeOf(element, style)
     const material = materialOf(style)
     const key = shape ? lensKey(shape, material) : null
     const current = assigned.get(element)
@@ -254,7 +255,7 @@ export function installRefraction(root: HTMLElement): () => void {
   mutations.observe(root, { childList: true, subtree: true })
   mutations.observe(document.body, { childList: true })
   const appearance = new MutationObserver(scheduleAll)
-  appearance.observe(document.documentElement, { attributes: true, attributeFilter: ['data-refraction', 'data-glass', 'data-contrast', 'data-theme', 'style'] })
+  appearance.observe(document.documentElement, { attributes: true, attributeFilter: ['data-refraction', 'data-glass', 'data-contrast', 'data-theme', 'data-background', 'data-style', 'style'] })
   for (const query of [transparency, contrast]) query.addEventListener('change', scheduleAll)
   schedule()
 

@@ -25,9 +25,19 @@
   inherits: false;
 }
 
-/* 实色玻璃、关闭折射或高对比度时立刻撤掉透镜（运行时随后再清理掉滤镜），不必等下一帧。 */
-:root:is([data-glass='solid'], [data-refraction='off'], [data-contrast='high']) * {
+/* 实色玻璃、关闭折射或高对比度时立刻撤掉透镜（运行时随后再清理掉滤镜），不必等下一帧。
+   图片底板上身后内容正在滚动或流式输出时（data-glass-motion，见 glass-motion.ts）也临时撤掉，模糊照旧。 */
+:root:is([data-glass='solid'], [data-refraction='off'], [data-contrast='high'], [data-glass-motion]) * {
   --refraction: initial !important;
+}
+
+/* 预设底板是一片柔和的光斑渐变，静止不动：侧栏、顶栏、工具条、阅读助手和文档库这些大块玻璃身后只有它，
+   实时模糊与折射几乎看不出区别，却要在页面每次重绘时整块重算（软件合成下一帧就要几十毫秒）。
+   这些面板直接用玻璃的底色与高光；用图片底板时恢复完整的实时模糊与折射。
+   压在正文上的玻璃（页码胶囊、菜单、弹窗、提示）始终保留实时模糊。 */
+:root[data-style='glass'][data-background='default'] :is(.app-sidebar, .app-topbar, .reader-tools, .ai-pane, .document-card, .library-heading, .library-search, .library-summary, .library-toolbar, .view-switch, .library-sort, .sort-direction, .arrange-reset, .summary-note, .topbar-actions, .tab-library) {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
 }
 
 /* 每块玻璃声明自己的模糊与饱和度，折射滤镜按它们生成；动效期间临时改写 backdrop-filter 也不会影响读数。 */

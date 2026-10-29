@@ -5,6 +5,7 @@ import { getProvider, getNativeModels, getNativeStatus } from '../ai/providers.m
 import { nativeModelInventory, registerNativeModelInventory } from '../ai/native-models'
 import { chatState, sendChat, stopChat, configureRequests, taskSummary, conversations, activeConversationId, selectConversation, newConversation, deleteConversation, loadConversations, conversationTokens, contextWindow, branchConversation, resendQuestion, watchConversation, allConversations, pinMessage, MAX_ATTACHMENTS, type Message, type ChatState } from '../ai/workspace'
 import { renderMarkdown, renderDiagrams } from '../ai/render'
+import { nudgeGlassMotion } from '../ui/glass-motion'
 import { loadAiSettings, saveModelChoice } from '../ai/settings.mjs'
 import { useSettings } from '../settings'
 import AppIcon from './AppIcon.vue'
@@ -202,6 +203,8 @@ function renderAnswer(element: HTMLElement, message: Message) {
 }
 // Streaming answers re-render at most every 90ms; markdown and KaTeX stay cheap.
 function scheduleRender(element: HTMLElement, message: Message) {
+  // 流式输出时对话区每 90ms 重排一次：图片底板上的玻璃先撤掉折射透镜，停下再装回。
+  if (!message.finishedAt) nudgeGlassMotion()
   if (message.finishedAt || !renderTimers.has(element)) {
     clearTimeout(renderTimers.get(element)); renderTimers.delete(element)
     renderAnswer(element, message)

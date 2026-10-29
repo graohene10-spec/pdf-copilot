@@ -7,11 +7,18 @@ import { onBeforeUnmount, onMounted, reactive, type Ref } from 'vue'
 export function useHorizontalScroll(container: Ref<HTMLElement | undefined>) {
   const bar = reactive({ visible: false, left: 0, width: 100, dragging: false })
   let frame = 0, timer: ReturnType<typeof setTimeout> | undefined, drag: { offset: number; track: HTMLElement } | undefined
-  let limitKey = '', limit = 0
+  let limitKey = '', limit = 0, settle: ReturnType<typeof setTimeout> | undefined
   // 预留的竖向滚动条槽会让 scrollWidth − clientWidth 比真正能滚到的位置多出几像素：尺寸变了就实测一次最右端。
-  function maximum(element: HTMLElement) {
+  // 侧栏、助手弹簧伸缩时尺寸每帧都在变，实测（来回设 scrollLeft）会逼浏览器逐帧重排：这期间先用估算值，停下后再实测。
+  function maximum(element: HTMLElement, exact = false) {
     const key = `${element.scrollWidth}x${element.clientWidth}`
-    if (key !== limitKey) { const keep = element.scrollLeft; element.scrollLeft = 1e7; limit = element.scrollLeft; element.scrollLeft = keep; limitKey = key }
+    if (key === limitKey) return limit
+    if (!exact) {
+      clearTimeout(settle)
+      settle = setTimeout(() => { settle = undefined; if (container.value) { maximum(container.value, true); measure() } }, 160)
+      return Math.max(0, element.scrollWidth - element.clientWidth)
+    }
+    const keep = element.scrollLeft; element.scrollLeft = 1e7; limit = element.scrollLeft; element.scrollLeft = keep; limitKey = key
     return limit
   }
   let resize: ResizeObserver | undefined, mutations: MutationObserver | undefined
@@ -31,7 +38,7 @@ export function useHorizontalScroll(container: Ref<HTMLElement | undefined>) {
   function scrollTo(percent: number) {
     const element = container.value
     if (!element) return
-    element.scrollLeft = Math.max(0, Math.min(1, percent / Math.max(1e-6, 100 - bar.width))) * maximum(element)
+    element.scrollLeft = Math.max(0, Math.min(1, percent / Math.max(1e-6, 100 - bar.width))) * maximum(element, true)
   }
   function down(event: PointerEvent) {
     if (event.button !== 0) return
@@ -59,6 +66,6 @@ export function useHorizontalScroll(container: Ref<HTMLElement | undefined>) {
     mutations.observe(element, { childList: true })
     watchStack()
   })
-  onBeforeUnmount(() => { container.value?.removeEventListener('scroll', update); resize?.disconnect(); mutations?.disconnect(); if (frame) cancelAnimationFrame(frame); clearTimeout(timer) })
+  onBeforeUnmount(() => { container.value?.removeEventListener('scroll', update); resize?.disconnect(); mutations?.disconnect(); if (frame) cancelAnimationFrame(frame); clearTimeout(timer); clearTimeout(settle) })
   return { bar, update, down, move, up }
 }

@@ -13,6 +13,7 @@ import { installGlassContrast } from './ui/glass-contrast'
 import { restoreLeavingPanel } from './ui/panel-transition'
 import BookmarkRail from './components/BookmarkRail.vue'
 import ClaudeBurst from './components/ClaudeBurst.vue'
+import { nudgeGlassMotion } from './ui/glass-motion'
 import { bookmarks, loadBookmarks, addBookmark, removeBookmark, clearBookmarks, renameBookmark, neighbour, type BookmarkPosition } from './library/bookmarks'
 import { useFullscreen } from './ui/fullscreen'
 import { vLiquidSelection } from './ui/liquid-selection'
@@ -1202,7 +1203,7 @@ watch(reader, value => {
 watch(search, value => {
   if (value && focusSearchPending) { value.focus(); focusSearchPending = false }
 })
-watch(settingsOpen, value => { if (!value && captureQuick.value) monitorCaptureQuick() })
+watch(settingsOpen, value => { nudgeGlassMotion(560); if (!value && captureQuick.value) monitorCaptureQuick() })
 watch(() => preferences.value.pdf.quickAskOnCapture, value => { if (!value) dismissCaptureQuick() })
 
 function keydown(event: KeyboardEvent) {
