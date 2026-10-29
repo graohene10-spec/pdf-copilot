@@ -57,12 +57,14 @@ try {
   const dialog = page.getByRole('dialog', { name: '设置', exact: true });
   await dialog.getByLabel('玻璃透明度', { exact: true }).waitFor();
   const backdrop = page.locator('.settings-backdrop');
-  assert.notEqual(await backdrop.evaluate(element => getComputedStyle(element).backdropFilter), 'none', 'The settings veil blurs the app normally.');
+  // 0.8.3 起遮罩只压暗、不模糊（全屏实时模糊太卡）；拖动滑杆时连压暗也撤掉。
+  const veil = () => backdrop.evaluate(element => getComputedStyle(element).backgroundColor)
+  assert.notEqual(await veil(), 'rgba(0, 0, 0, 0)', 'The settings veil dims the app normally.');
   const slider = await dialog.getByLabel('玻璃透明度', { exact: true }).boundingBox();
   await page.mouse.move(slider.x + slider.width / 2, slider.y + slider.height / 2); await page.mouse.down();
-  await page.waitForFunction(() => getComputedStyle(document.querySelector('.settings-backdrop')).backdropFilter === 'none', null, { timeout: 2000 });
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('.settings-backdrop')).backgroundColor === 'rgba(0, 0, 0, 0)', null, { timeout: 2000 });
   await page.mouse.up();
-  checks.push('Dragging the transparency / blur sliders removes the settings veil and its blur, so the glass change is visible.');
+  checks.push('Dragging the transparency / blur sliders removes the settings veil, so the glass change is visible.');
 
   // 边缘高光：默认 50%，滑杆实时改变全局强度。
   const highlight = dialog.getByLabel('边缘高光', { exact: true });

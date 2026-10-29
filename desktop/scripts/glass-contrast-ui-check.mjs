@@ -34,6 +34,9 @@ async function upload(image, name) {
   await (await chooser).setFiles({ name, mimeType: 'image/png', buffer: image });
   await dialog().getByAltText('底板图片预览', { exact: true }).waitFor();
   await page.waitForFunction(() => ![...document.querySelectorAll('.background-heading button')].some(button => button.textContent.includes('正在处理')));
+  // 换了底板会先全屏预览，点「采用」回到设置再保存。
+  const scene = page.getByRole('dialog', { name: '预览新底板', exact: true });
+  if (await scene.waitFor({ timeout: 3000 }).then(() => true, () => false)) await scene.getByRole('button', { name: '采用', exact: true }).click();
   await dialog().getByRole('button', { name: '保存', exact: true }).click();
   await dialog().waitFor({ state: 'detached' });
   await settled();

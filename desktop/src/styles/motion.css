@@ -61,8 +61,8 @@
 
 /* 从下方带一点模糊升起，用于卡片、列表等成组出现的元素。 */
 @keyframes zg-settle-in {
-  from { opacity: 0; transform: translateY(12px) scale(.98); filter: blur(4px); }
-  to { opacity: 1; transform: none; filter: none; }
+  from { opacity: 0; transform: translateY(12px) scale(.98); }
+  to { opacity: 1; transform: none; }
 }
 
 /* 数字翻动：页码变化时新数字从下方滚入。 */
@@ -84,8 +84,7 @@
 
 .pane-leave-active {
   transition: opacity var(--dur-3) var(--ease-out),
-              transform var(--dur-3) var(--ease-pane),
-              filter var(--dur-3) var(--ease-out);
+              transform var(--dur-3) var(--ease-pane);
   transform-origin: 100% 6%;
   will-change: opacity, transform;
 }
@@ -95,11 +94,10 @@
   transform: translate(14px, -8px) scale(.9);
 }
 
-/* 关闭：向右上角收拢、轻微失焦再淡出，在原位置完成。 */
+/* 关闭：向右上角收拢再淡出，在原位置完成。不再叠加失焦：整块面板逐帧模糊在软件合成下很贵。 */
 .pane-leave-to {
   opacity: 0;
   transform: translate(18px, -6px) scale(.88);
-  filter: blur(3px);
 }
 
 .pane-enter-to,
@@ -182,27 +180,13 @@
   transform: translateY(12px) scale(.88);
 }
 
-/* 遮罩的模糊从 0 渐入，而不是突然出现。 */
-.dialog-backdrop,
-.settings-backdrop {
-  -webkit-backdrop-filter: blur(8px) saturate(130%);
-  backdrop-filter: blur(8px) saturate(130%);
-}
-
+/* 遮罩只压暗、不模糊：铺满整个窗口的实时模糊在弹窗出现的每一帧都要重算，是打开设置时卡顿的主要来源。
+   弹窗自己的玻璃仍会模糊它身后的内容。 */
 .dialog-enter-active.dialog-backdrop,
 .dialog-leave-active.dialog-backdrop,
 .dialog-enter-active.settings-backdrop,
 .dialog-leave-active.settings-backdrop {
-  transition: opacity var(--dur-3) var(--ease-out),
-              backdrop-filter var(--dur-3) var(--ease-out);
-}
-
-.dialog-enter-from.dialog-backdrop,
-.dialog-leave-to.dialog-backdrop,
-.dialog-enter-from.settings-backdrop,
-.dialog-leave-to.settings-backdrop {
-  -webkit-backdrop-filter: blur(0px);
-  backdrop-filter: blur(0px);
+  transition: opacity var(--dur-3) var(--ease-out);
 }
 
 /* ---- 侧栏：宽度弹簧收放，阅读区跟着平滑变宽 / 变窄 ------------------ */
@@ -226,7 +210,6 @@
   overflow: hidden;
   transition: opacity var(--dur-3) var(--ease-out),
               transform var(--dur-spring) var(--ease-pane),
-              filter var(--dur-3) var(--ease-out),
               flex-basis var(--dur-spring) var(--ease-pane),
               width var(--dur-spring) var(--ease-pane),
               margin-right var(--dur-spring) var(--ease-pane),
@@ -249,7 +232,6 @@
 .sidebar-leave-to {
   opacity: 0;
   transform: translateX(-14px) scale(.94);
-  filter: blur(3px);
   flex-basis: 0 !important;
   width: 0 !important;
   margin-right: -10px;
@@ -494,7 +476,6 @@
   overflow: hidden;
   transition: opacity var(--dur-3) var(--ease-out),
               transform var(--dur-spring) var(--ease-pane),
-              filter var(--dur-3) var(--ease-out),
               width var(--dur-spring) var(--ease-pane),
               min-width var(--dur-spring) var(--ease-pane),
               margin var(--dur-spring) var(--ease-pane);

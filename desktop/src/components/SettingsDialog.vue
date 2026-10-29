@@ -376,7 +376,7 @@ function dialogKeydown(event: KeyboardEvent) {
             <input ref="fontInput" class="background-file" type="file" multiple accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2" tabindex="-1" aria-label="字体文件" @change="chooseFonts" />
             <p v-if="fontStatus" class="settings-help" role="status">{{ fontStatus }}</p>
             <p class="settings-help">阅读字体用于 Markdown 正文与阅读助手的回答；PDF 保持原排版。Anthropic Serif 已随应用内置；也可以导入其他字体文件，只保存在本机。</p>
-            <p v-if="draft.appearance.style === 'glass'" class="settings-help">透明度仅影响侧栏、工具栏与面板，正文保持实色。系统开启「减少透明度」时自动使用实色。</p>
+            <p v-if="draft.appearance.style === 'glass'" class="settings-help">透明度仅影响侧栏、工具栏与面板，正文保持实色。系统开启「减少透明度」时自动使用实色。为了流畅：用预设底板时，侧栏、顶栏、阅读助手等大面板身后只有柔和的渐变，直接用玻璃底色、不做实时模糊（看不出差别）；模糊与折射作用在弹窗、菜单和页码胶囊上。用图片底板时所有玻璃完整生效，内容滚动或输出时折射会短暂停一下。</p>
             <p v-else-if="draft.appearance.style === 'sketch'" class="settings-help">铅笔草稿的界面文字用龙藏体手写；回答字体只用于阅读助手的回答，Markdown 正文仍用阅读字体。手写字体均随应用内置（SIL OFL）。</p>
             <p v-else class="settings-help">暖色极简用 Anthropic Serif 排标题与回答，界面用无衬线字；玻璃、底板等设置只在液态玻璃下生效。</p>
           </template>
@@ -457,7 +457,7 @@ function dialogKeydown(event: KeyboardEvent) {
 
 <style scoped>
 /* 设置为一张悬浮的厚玻璃；内容按 iOS 的内嵌圆角分组排列，表单保持稳定对比度。 */
-.settings-backdrop{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--canvas-deep) 22%,transparent);z-index:80;padding:25px;transition:background var(--dur-2) var(--ease-out),backdrop-filter var(--dur-2) var(--ease-out)}
+.settings-backdrop{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgb(16 20 26 / .2);z-index:80;padding:25px;transition:background var(--dur-2) var(--ease-out)}
 .settings-backdrop.peeking,.settings-backdrop.scene{background:transparent;-webkit-backdrop-filter:none;backdrop-filter:none}
 /* 按下滑杆的那一刻就撤掉模糊，不等过渡。 */
 .settings-backdrop.peeking{transition:background var(--dur-1) var(--ease-out)}
