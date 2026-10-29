@@ -72,7 +72,7 @@ export const BACKDROPS: { id: BackdropPreset; label: string }[] = [
 export interface AppPreferences {
   version: 3
   appearance: { theme: ThemePreference; libraryView: 'grid' | 'list'; glassTransparency: number; glassBlur: number; glassHighlight: number; glassRefraction: boolean; glassLegibility: GlassLegibility; glassCompensation: number; glassTint: GlassTint; backdrop: BackdropPreset; background: BackgroundImage | null; gallery: BackgroundImage[]; uiFont: string; readingFont: string; customFonts: CustomFont[] }
-  pdf: { initialZoom: 'fit-width' | number; zoomStep: number; fitOnPanelOverflow: boolean; openAssistantOnCapture: boolean; quickAskOnCapture: boolean }
+  pdf: { initialZoom: 'fit-width' | number; zoomStep: number; fitOnPanelOverflow: boolean; openAssistantOnCapture: boolean; quickAskOnCapture: boolean; pageLayout: 'single' | 'spread'; coverAlone: boolean }
   markdown: { fontSize: number; contentWidth: number }
   assistant: { quickPrompts: QuickPrompts; captureQuestions: QuickPrompt[]; avatar: AssistantAvatar; greeting: AssistantGreeting; predictQuestions: boolean }
   updates: UpdatePreferences
@@ -110,7 +110,7 @@ const LEGACY_GLASS: Record<string, number> = { clear: 85, balanced: 70, rich: 30
 export const MAX_GALLERY = 6
 export function defaultPreferences(): AppPreferences {
   return { version: 3, appearance: { theme: 'system', libraryView: 'grid', glassTransparency: 70, glassBlur: 50, glassHighlight: 50, glassRefraction: true, glassLegibility: 'thicken', glassCompensation: 50, glassTint: 'theme', backdrop: 'mist', background: null, gallery: [], uiFont: 'system', readingFont: 'anthropic', customFonts: [] },
-    pdf: { initialZoom: 'fit-width', zoomStep: 15, fitOnPanelOverflow: true, openAssistantOnCapture: true, quickAskOnCapture: true },
+    pdf: { initialZoom: 'fit-width', zoomStep: 15, fitOnPanelOverflow: true, openAssistantOnCapture: true, quickAskOnCapture: true, pageLayout: 'single', coverAlone: false },
     markdown: { fontSize: 17, contentWidth: 840 }, assistant: { quickPrompts: defaultQuickPrompts(), captureQuestions: defaultCaptureQuestions(), avatar: { kind: 'crab', image: null }, greeting: { style: 'mixed', custom: '' }, predictQuestions: true }, updates: { autoCheck: true, prerelease: false }, shortcuts: { ...DEFAULT_SHORTCUTS } }
 }
 const modifierOrder = ['Ctrl', 'Alt', 'Shift', 'Meta']
@@ -204,6 +204,9 @@ export function normalizePreferences(value: unknown, legacyTheme?: string | null
   defaults.pdf.zoomStep = range(pdf.zoomStep, 5, 50, defaults.pdf.zoomStep)
   defaults.pdf.fitOnPanelOverflow = typeof pdf.fitOnPanelOverflow === 'boolean' ? pdf.fitOnPanelOverflow : defaults.pdf.fitOnPanelOverflow
   defaults.pdf.openAssistantOnCapture = typeof pdf.openAssistantOnCapture === 'boolean' ? pdf.openAssistantOnCapture : true
+  // 页面视图：单页连续滚动，或像打开的书一样左右两页；双页时可让封面单独占一页。
+  defaults.pdf.pageLayout = pdf.pageLayout === 'spread' ? 'spread' : 'single'
+  defaults.pdf.coverAlone = pdf.coverAlone === true
   // 版本 3 起框选后默认弹出快捷提问；旧版本里的「关闭」是当时的默认值，升级时改为开启。
   const legacyQuickAsk = input.version === undefined || input.version === 1 || input.version === 2
   defaults.pdf.quickAskOnCapture = typeof pdf.quickAskOnCapture === 'boolean' && !legacyQuickAsk ? pdf.quickAskOnCapture : true
@@ -259,6 +262,7 @@ export function preferenceErrors(value: AppPreferences): string[] {
   if (typeof value.pdf.fitOnPanelOverflow !== 'boolean') errors.push('自动适应选项无效。')
   if (typeof value.pdf.openAssistantOnCapture !== 'boolean') errors.push('框选提问选项无效。')
   if (typeof value.pdf.quickAskOnCapture !== 'boolean') errors.push('框选快捷提问选项无效。')
+  if (!['single', 'spread'].includes(value.pdf.pageLayout) || typeof value.pdf.coverAlone !== 'boolean') errors.push('页面视图选项无效。')
   for (const { action, label } of SHORTCUTS) {
     if (normalizeShortcut(value.shortcuts[action]) === null) errors.push(`${label}：请选择 F11 或带 Ctrl、Alt、Meta 的按键组合，并避开浏览器保留快捷键。`)
     if (!['zoomIn', 'zoomOut'].includes(action) && /Wheel(?:Up|Down)$/.test(value.shortcuts[action])) errors.push(`${label}：滚轮组合只用于放大和缩小。`)
