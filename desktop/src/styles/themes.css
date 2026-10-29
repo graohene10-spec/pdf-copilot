@@ -1078,7 +1078,7 @@
 :root[data-style='sketch'] .ai-pane::after {
   content: '';
   position: absolute;
-  top: -16px;
+  top: 2px;
   left: 6px;
   width: 26px;
   height: 52px;
@@ -1097,19 +1097,26 @@
 :root[data-style='sketch'] .ai-body,
 :root[data-style='sketch'] .ai-composer { position: relative; }
 
-:root[data-style='sketch'] .ai-messages {
-  padding-left: 40px;
+/* 横线与红色页边线画在整页纸上（从头到底都有），不随对话滚动，也不在上下边缘淡出。 */
+:root[data-style='sketch'] .ai-pane {
+  background-color: var(--paper);
   background-image:
-    linear-gradient(transparent 29px, rgb(110 140 190 / .28) 29px, rgb(110 140 190 / .28) 30px),
-    linear-gradient(90deg, transparent 24px, rgb(200 85 61 / .4) 24px, rgb(200 85 61 / .4) 25.5px, transparent 25.5px);
-  background-size: 100% 30px, 100% 100%;
-  background-attachment: local, scroll;
+    linear-gradient(90deg, transparent 24px, rgb(200 85 61 / .4) 24px, rgb(200 85 61 / .4) 25.5px, transparent 25.5px),
+    linear-gradient(transparent 29px, rgb(110 140 190 / .28) 29px, rgb(110 140 190 / .28) 30px);
+  background-size: 100% 100%, 100% 30px;
 }
 
-:root[data-style='sketch'][data-theme='dark'] .ai-messages {
+:root[data-style='sketch'][data-theme='dark'] .ai-pane {
   background-image:
-    linear-gradient(transparent 29px, rgb(150 170 210 / .14) 29px, rgb(150 170 210 / .14) 30px),
-    linear-gradient(90deg, transparent 24px, rgb(238 138 112 / .35) 24px, rgb(238 138 112 / .35) 25.5px, transparent 25.5px);
+    linear-gradient(90deg, transparent 24px, rgb(238 138 112 / .35) 24px, rgb(238 138 112 / .35) 25.5px, transparent 25.5px),
+    linear-gradient(transparent 29px, rgb(150 170 210 / .14) 29px, rgb(150 170 210 / .14) 30px);
+}
+
+:root[data-style='sketch'] .ai-messages {
+  padding-left: 40px;
+  background: transparent;
+  -webkit-mask-image: none;
+  mask-image: none;
 }
 
 :root[data-style='sketch'] .answer-body {
@@ -1120,35 +1127,53 @@
 :root[data-style='sketch'] .answer-body :is(p, ul, ol) { margin-top: 0; margin-bottom: 0; }
 
 :root[data-style='sketch'] .ai-header {
-  margin: 4px 10px 0 34px;
-  background: transparent;
+  margin: 12px 14px 4px 38px;
+  padding: 0 6px 0 4px;
+  background: var(--paper);
   border-color: transparent;
+  border-radius: 0;
   box-shadow: none;
+  rotate: -.6deg;
 }
 
-:root[data-style='sketch'] .ai-header :is(.header-button, .drag-grip) {
-  position: relative;
-  border-color: transparent;
-  background: transparent;
-  overflow: visible;
-}
-
-/* 头部的按钮各自用铅笔圈起来，一眼看得出哪些能点。 */
-:root[data-style='sketch'] .ai-header :is(.header-button, .drag-grip)::before {
+/* 头部像笔记里用笔框起来的重点：一个手画的矩形，外面再描一道没对齐的淡框。 */
+:root[data-style='sketch'] .ai-header::before,
+:root[data-style='sketch'] .ai-header::after {
   content: '';
   position: absolute;
-  inset: 1px;
-  border: 1.5px solid var(--pencil);
-  border-radius: 50% 46% 52% 44%;
-  filter: url(#sk-pencil);
-  opacity: .8;
   pointer-events: none;
+  border-radius: 3px 6px 2px 5px / 5px 2px 6px 3px;
 }
 
-:root[data-style='sketch'] .ai-header .drag-grip { width: 24px; opacity: 1; }
-:root[data-style='sketch'] .ai-header .drag-grip::before { border-radius: 40% 46% 42% 48% / 22% 20% 24% 18%; }
-:root[data-style='sketch'] .ai-header :is(.header-button, .drag-grip):hover::before { opacity: 1; background: var(--sticky); z-index: -1; }
-:root[data-style='sketch'] .ai-header .header-button:disabled::before { opacity: .35; }
+:root[data-style='sketch'] .ai-header::before {
+  inset: 0;
+  border: 1.8px solid var(--pencil);
+  filter: url(#sk-pencil);
+}
+
+:root[data-style='sketch'] .ai-header::after {
+  inset: 3px -4px -3px 2px;
+  border: 1.2px solid var(--pencil-soft);
+  filter: url(#sk-pencil-b);
+  rotate: .8deg;
+}
+
+:root[data-style='sketch'] .ai-header > * { position: relative; z-index: 1; }
+
+/* 框里的按钮不再各自画圈；指上去时才用黄色荧光笔涂一下。 */
+:root[data-style='sketch'] .ai-header :is(.header-button, .drag-grip) {
+  border-color: transparent;
+  background: transparent;
+  border-radius: 40% 46% 42% 48%;
+}
+
+:root[data-style='sketch'] .ai-header :is(.header-button, .drag-grip):hover:not(:disabled) {
+  background: rgb(255 226 120 / .6);
+  border-color: transparent;
+}
+
+:root[data-style='sketch'] .ai-header .close-assistant { margin-left: 2px; }
+:root[data-style='sketch'] .ai-header .conversation-title { background: transparent; }
 
 :root[data-style='sketch'] .ai-header :is(h2, strong, .ai-title) {
   font-family: 'Long Cang', 'Caveat', cursive;
@@ -1248,9 +1273,10 @@
   box-sizing: content-box;
   z-index: 3;
   border: 2px solid var(--red-pencil);
-  border-radius: 46% 54% 42% 58% / 60% 48% 52% 40%;
+  border-radius: 4px 8px 3px 7px / 7px 3px 8px 4px;
   background: transparent;
-  filter: url(#sk-pencil-b);
+  filter: url(#sk-pencil);
+  rotate: -.4deg;
 }
 
 /* 分屏时选中的那栏：工具条下面一道红笔划线，没选中的那栏淡一些；不再套一圈圆角红框。 */
