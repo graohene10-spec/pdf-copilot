@@ -5,7 +5,7 @@ import AssistantMark from './AssistantMark.vue'
 import { greetingFor } from '../ai/greeting'
 import { importFontFiles, forgetFontFile, registerCustomFonts } from '../ui/custom-fonts'
 import { vLiquidSelection } from '../ui/liquid-selection'
-import { useSettings, defaultPreferences, normalizePreferences, preferenceErrors, importBackgroundImage, defaultCaptureQuestions, newCaptureQuestion, quickPromptLabelLength, limitQuickPromptLabel, QUICK_PROMPT_LABEL_LIMIT, QUICK_PROMPT_QUESTION_LIMIT, CAPTURE_QUESTION_MIN, CAPTURE_QUESTION_MAX, BACKDROPS, AVATARS, GREETING_STYLES, GLASS_LEGIBILITY, GLASS_TINTS, MAX_GREETING_CHARS, MAX_CUSTOM_FONTS, fontChoices, MAX_AVATAR_CHARS, validAvatarImage, UI_FONTS, READING_FONTS, MAX_GALLERY, SHORTCUTS, DEFAULT_SHORTCUTS, shortcutLabel, shortcutFromEvent, shortcutFromWheelEvent, type AppPreferences, type BackdropPreset, type BackgroundImage, type ShortcutAction } from '../settings'
+import { useSettings, defaultPreferences, normalizePreferences, preferenceErrors, importBackgroundImage, defaultCaptureQuestions, newCaptureQuestion, quickPromptLabelLength, limitQuickPromptLabel, QUICK_PROMPT_LABEL_LIMIT, QUICK_PROMPT_QUESTION_LIMIT, CAPTURE_QUESTION_MIN, CAPTURE_QUESTION_MAX, BACKDROPS, UI_STYLES, SKETCH_ANSWER_FONTS, AVATARS, GREETING_STYLES, GLASS_LEGIBILITY, GLASS_TINTS, MAX_GREETING_CHARS, MAX_CUSTOM_FONTS, fontChoices, MAX_AVATAR_CHARS, validAvatarImage, UI_FONTS, READING_FONTS, MAX_GALLERY, SHORTCUTS, DEFAULT_SHORTCUTS, shortcutLabel, shortcutFromEvent, shortcutFromWheelEvent, type AppPreferences, type BackdropPreset, type BackgroundImage, type ShortcutAction } from '../settings'
 
 type Tab = 'appearance' | 'reading' | 'shortcuts' | 'ai' | 'updates'
 const props = withDefaults(defineProps<{ initialTab?: Tab }>(), { initialTab: 'appearance' })
@@ -156,6 +156,7 @@ onMounted(() => { installed.value = Object.fromEntries([...UI_FONTS, ...READING_
 const uiFontChoices = computed(() => fontChoices(UI_FONTS, draft.value.appearance.customFonts))
 const readingFontChoices = computed(() => fontChoices(READING_FONTS, draft.value.appearance.customFonts))
 const uiFontStack = computed(() => uiFontChoices.value.find(item => item.id === draft.value.appearance.uiFont)?.stack)
+const sketchAnswerStack = computed(() => SKETCH_ANSWER_FONTS.find(item => item.id === draft.value.appearance.sketchAnswerFont)?.stack || readingFontStack.value)
 const readingFontStack = computed(() => readingFontChoices.value.find(item => item.id === draft.value.appearance.readingFont)?.stack || uiFontStack.value)
 // 导入字体文件：只存进本机文档库，不随应用分发；导入后立即可在两个字体选项里选到。
 const fontInput = ref<HTMLInputElement>()
@@ -314,14 +315,27 @@ function dialogKeydown(event: KeyboardEvent) {
           <p v-if="!ready" class="settings-help">{{ status || '正在读取设置…' }}</p>
           <template v-else-if="tab === 'appearance'">
             <h3>外观</h3>
+            <div class="style-grid" role="radiogroup" aria-label="界面风格">
+              <button v-for="(item, index) in UI_STYLES" :key="item.id" type="button" role="radio" class="style-card" :class="`style-${item.id}`" :style="{ '--i': index }" :aria-checked="draft.appearance.style === item.id" :aria-label="`${item.label}风格`" :disabled="saving" @click="draft.appearance.style = item.id">
+                <span class="style-art" aria-hidden="true"><i class="art-side"></i><i class="art-page"></i><i class="art-pane"></i><span class="swatch-check"><AppIcon name="check" :size="12" /></span></span>
+                <span class="style-name">{{ item.label }}</span><small>{{ item.hint }}</small>
+              </button>
+            </div>
             <div class="settings-group">
             <label class="setting-row"><span>主题</span><select v-model="draft.appearance.theme" :disabled="saving" aria-label="主题"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></label>
             <label class="setting-row"><span>默认文档视图</span><select v-model="draft.appearance.libraryView" :disabled="saving" aria-label="默认文档视图"><option value="grid">卡片</option><option value="list">列表</option></select></label>
+            <template v-if="draft.appearance.style === 'glass'">
             <div class="setting-row transparency-row"><label for="glass-transparency">玻璃透明度</label><div class="transparency-control"><input id="glass-transparency" v-model.number="draft.appearance.glassTransparency" :style="{ '--value': draft.appearance.glassTransparency }" :disabled="saving" type="range" min="0" max="100" step="1" aria-label="玻璃透明度" @pointerdown="peek(true)" @keydown="peek(false)" :aria-valuetext="`${draft.appearance.glassTransparency}%`" /><output for="glass-transparency">{{ draft.appearance.glassTransparency }}%</output><span class="slider-endpoints" aria-hidden="true"><span>实色</span><span>清透</span></span></div></div>
             <div class="setting-row transparency-row"><label for="glass-blur">模糊程度</label><div class="transparency-control"><input id="glass-blur" v-model.number="draft.appearance.glassBlur" :style="{ '--value': draft.appearance.glassBlur }" :disabled="saving || draft.appearance.glassTransparency === 0" type="range" min="0" max="100" step="1" aria-label="模糊程度" @pointerdown="peek(true)" @keydown="peek(false)" :aria-valuetext="`${draft.appearance.glassBlur}%`" /><output for="glass-blur">{{ draft.appearance.glassBlur }}%</output><span class="slider-endpoints" aria-hidden="true"><span>清晰</span><span>朦胧</span></span></div></div>
             <div class="setting-row transparency-row"><label for="glass-highlight">边缘高光</label><div class="transparency-control"><input id="glass-highlight" v-model.number="draft.appearance.glassHighlight" :style="{ '--value': draft.appearance.glassHighlight }" :disabled="saving || draft.appearance.glassTransparency === 0" type="range" min="0" max="100" step="1" aria-label="边缘高光" @pointerdown="peek(true)" @keydown="peek(false)" :aria-valuetext="`${draft.appearance.glassHighlight}%`" /><output for="glass-highlight">{{ draft.appearance.glassHighlight }}%</output><span class="slider-endpoints" aria-hidden="true"><span>柔和</span><span>明亮</span></span></div></div>
             <label class="setting-check"><input v-model="draft.appearance.glassRefraction" type="checkbox" :disabled="saving || draft.appearance.glassTransparency === 0" aria-label="光线折射" /><span>光线折射：玻璃边缘像透镜一样弯折身后的画面</span></label>
+            </template>
+            <template v-else-if="draft.appearance.style === 'sketch'">
+              <label class="setting-row"><span>回答字体</span><select v-model="draft.appearance.sketchAnswerFont" :disabled="saving" aria-label="回答字体"><option v-for="item in SKETCH_ANSWER_FONTS" :key="item.id" :value="item.id">{{ item.label }}</option></select></label>
+              <p class="answer-font-preview" :style="{ fontFamily: sketchAnswerStack }">换别的形状也行，定律照样成立——只是没法算。Gauss 1835</p>
+            </template>
             </div>
+            <template v-if="draft.appearance.style === 'glass'">
             <h3 class="section-heading">玻璃可读性</h3>
             <div class="settings-group glass-legibility">
               <label class="setting-row"><span>补偿方式</span><select v-model="draft.appearance.glassLegibility" :disabled="saving || draft.appearance.glassTransparency === 0" aria-label="可读性补偿方式"><option v-for="item in GLASS_LEGIBILITY" :key="item.id" :value="item.id">{{ item.label }}</option></select></label>
@@ -348,6 +362,7 @@ function dialogKeydown(event: KeyboardEvent) {
               <p v-if="imageError" class="settings-error" role="status">{{ imageError }}</p>
               <p class="settings-help">每套底板带一套协调的主色与徽记颜色；图片底板沿用当前预设的主色。图库最多 {{ MAX_GALLERY }} 张，切换预设不会删除图片。支持 PNG、JPEG、WebP，图片保存在本机。</p>
             </div>
+            </template>
             <h3 class="section-heading">字体</h3>
             <div class="settings-group">
               <label class="setting-row"><span>界面字体</span><select v-model="draft.appearance.uiFont" :disabled="saving" aria-label="界面字体"><option v-for="item in uiFontChoices" :key="item.id" :value="item.id">{{ item.label }}{{ installed[item.id] === false ? '（未安装）' : '' }}</option></select></label>
@@ -361,7 +376,9 @@ function dialogKeydown(event: KeyboardEvent) {
             <input ref="fontInput" class="background-file" type="file" multiple accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2" tabindex="-1" aria-label="字体文件" @change="chooseFonts" />
             <p v-if="fontStatus" class="settings-help" role="status">{{ fontStatus }}</p>
             <p class="settings-help">阅读字体用于 Markdown 正文与阅读助手的回答；PDF 保持原排版。Anthropic Serif 已随应用内置；也可以导入其他字体文件，只保存在本机。</p>
-            <p class="settings-help">透明度仅影响侧栏、工具栏与面板，正文保持实色。系统开启「减少透明度」时自动使用实色。</p>
+            <p v-if="draft.appearance.style === 'glass'" class="settings-help">透明度仅影响侧栏、工具栏与面板，正文保持实色。系统开启「减少透明度」时自动使用实色。</p>
+            <p v-else-if="draft.appearance.style === 'sketch'" class="settings-help">铅笔草稿的界面文字用龙藏体手写；回答字体只用于阅读助手的回答，Markdown 正文仍用阅读字体。手写字体均随应用内置（SIL OFL）。</p>
+            <p v-else class="settings-help">暖色极简用 Anthropic Serif 排标题与回答，界面用无衬线字；玻璃、底板等设置只在液态玻璃下生效。</p>
           </template>
           <template v-else-if="tab === 'reading'">
             <h3>PDF</h3>
@@ -533,6 +550,38 @@ button{color:var(--control-ink)}
 .backdrop-swatch:focus-visible .swatch-art{outline:2px solid var(--accent);outline-offset:3px}
 .custom-swatch .swatch-art{background:var(--fill-3);border-style:dashed}
 .custom-swatch[aria-checked='true'] .swatch-art{border-style:solid}
+.style-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:0 0 14px}
+.style-card{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:0;height:auto;padding:0;border:0;background:transparent;box-shadow:none;color:var(--control-ink);text-align:left;cursor:pointer;animation:zg-settle-in var(--dur-smooth) var(--spring-smooth) both;animation-delay:calc(var(--i, 0) * 35ms)}
+.style-card:disabled{cursor:default;opacity:.6}
+.style-card:hover:not(:disabled){background:transparent;border-color:transparent}
+.style-art{position:relative;display:block;width:100%;aspect-ratio:16/9;margin-bottom:6px;overflow:hidden;border-radius:var(--r-md);border:1px solid var(--line);transition:transform var(--dur-spring) var(--spring-snappy),box-shadow var(--dur-2) var(--ease-out)}
+.style-art i{position:absolute;display:block}
+.style-art .art-side{left:7%;top:12%;bottom:12%;width:22%}
+.style-art .art-page{left:35%;top:16%;bottom:0;width:30%}
+.style-art .art-pane{right:7%;top:12%;bottom:12%;width:24%}
+.style-glass .style-art{background:var(--bd-mist)}
+.style-glass .style-art i{border-radius:7px;background:rgb(255 255 255 / .55);box-shadow:inset 0 1px 0 rgb(255 255 255 / .9),0 0 0 .5px rgb(30 40 60 / .14),0 4px 10px -4px rgb(30 40 60 / .3)}
+.style-glass .style-art .art-page{background:#fff;border-radius:2px}
+.style-warm .style-art{background:#f5f0e8}
+.style-warm .style-art i{background:#fffdf9;border:1px solid rgb(31 30 29 / .15);border-radius:6px}
+.style-warm .style-art .art-page{border-radius:2px}
+.style-warm .style-art .art-pane::after{content:'';position:absolute;left:18%;right:18%;top:22%;height:2px;border-radius:2px;background:#d97757}
+.style-sketch .style-art{background-color:#efe9db;background-image:linear-gradient(rgb(120 140 170 / .16) 1px,transparent 1px),linear-gradient(90deg,rgb(120 140 170 / .16) 1px,transparent 1px);background-size:8px 8px}
+.style-sketch .style-art i{background:#fbf8f0;border:1.2px solid #2e2d2a;border-radius:4px 6px 3px 7px;box-shadow:2px 3px 0 rgb(46 45 42 / .14)}
+.style-sketch .style-art .art-side{transform:rotate(-2deg)}
+.style-sketch .style-art .art-page{transform:rotate(1.4deg);border-width:0;box-shadow:2px 3px 6px -2px rgb(60 50 30 / .4)}
+.style-sketch .style-art .art-pane{transform:rotate(-1deg);background:#fff2a8}
+.style-sketch .style-art .art-side::before{content:'';position:absolute;top:-4px;left:28%;width:44%;height:7px;background:rgb(226 206 140 / .85);transform:rotate(-4deg)}
+.style-name{font-size:13px;font-weight:600;white-space:nowrap}
+.style-card small{font-size:11.5px;color:var(--surface-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.style-card:hover:not(:disabled) .style-art{transform:translateY(-2px);box-shadow:var(--shadow-2)}
+.style-card:active:not(:disabled) .style-art{transform:scale(.97)}
+.style-card .swatch-check{position:absolute;right:6px;bottom:6px}
+.style-card[aria-checked='true'] .style-art{box-shadow:0 0 0 2px var(--surface),0 0 0 4px var(--accent),var(--shadow-1)}
+.style-card[aria-checked='true'] .swatch-check{opacity:1;scale:1}
+.style-card:focus-visible{outline:none}
+.style-card:focus-visible .style-art{outline:2px solid var(--accent);outline-offset:3px}
+.answer-font-preview{margin:2px 0 4px;padding:10px 12px;border-radius:var(--r-sm);background:var(--fill-4);font-size:17px;line-height:1.6;color:var(--surface-ink)}
 :root[data-theme='dark'] .swatch-bar{background:rgb(255 255 255 / .14)}
 .background-heading{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:14px}
 .background-current{width:44px;height:30px;border-radius:7px;object-fit:cover;border:1px solid var(--glass-outline)}

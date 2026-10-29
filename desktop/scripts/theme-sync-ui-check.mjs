@@ -40,6 +40,7 @@ try {
   await (await pick).setFiles({ name: 'photo.png', mimeType: 'image/png', buffer: photo });
   await dialog.getByAltText('底板图片预览', { exact: true }).waitFor();
   await page.waitForFunction(() => ![...document.querySelectorAll('.background-heading button')].some(button => button.textContent.includes('正在处理')));
+  await page.getByRole('dialog', { name: '预览新底板', exact: true }).getByRole('button', { name: '采用', exact: true }).click();
   await dialog.getByRole('button', { name: '保存', exact: true }).click(); await dialog.waitFor({ state: 'detached' });
   await page.getByRole('button', { name: '阅读助手', exact: true }).click(); await page.locator('.ai-pane').waitFor(); await settled(); await page.waitForTimeout(600);
 
