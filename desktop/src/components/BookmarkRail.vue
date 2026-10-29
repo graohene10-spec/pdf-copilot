@@ -1,11 +1,11 @@
 <script setup lang="ts">
 // 阅读区右侧的书签细条：每个书签一枚白色磨砂玻璃标记（深色芯、深色细边），白纸和深色底上都看得清，位置对应它在整本书里的地方。
-// 左键跳过去，右键命名或删除；命名后标记左边带上文字，没名字时只是一枚标记。
+// 左键跳过去，右键命名、删除或一次删掉全部；选中标记按 Delete 也能删。命名后标记左边带上文字，没名字时只是一枚标记。
 import { nextTick, ref, watch } from 'vue'
 
 type Mark = { id: string; name: string; ratio: number; hint: string }
 const props = defineProps<{ marks: Mark[]; editing?: string | null }>()
-const emit = defineEmits<{ jump: [id: string]; menu: [id: string, event: MouseEvent]; rename: [id: string, name: string]; cancel: [] }>()
+const emit = defineEmits<{ jump: [id: string]; menu: [id: string, event: MouseEvent]; rename: [id: string, name: string]; remove: [id: string]; cancel: [] }>()
 const field = ref<HTMLInputElement[]>()
 const draft = ref('')
 watch(() => props.editing, async id => {
@@ -27,7 +27,7 @@ function key(event: KeyboardEvent, id: string) {
     <TransitionGroup name="bookmark">
       <div v-for="mark in marks" :key="mark.id" class="bookmark" :class="{ named: mark.name, editing: editing === mark.id }" :style="{ top: `${mark.ratio * 100}%` }">
         <input v-if="editing === mark.id" ref="field" v-model="draft" class="bookmark-field" maxlength="40" placeholder="给书签起个名字" aria-label="书签名称" @keydown="key($event, mark.id)" @blur="commit(mark.id)" />
-        <button v-else type="button" class="bookmark-hit" :aria-label="mark.name ? `书签：${mark.name}` : `书签 · ${mark.hint}`" :data-tip="mark.name ? undefined : `${mark.hint} · 右键命名或删除`" @click="emit('jump', mark.id)" @contextmenu.prevent.stop="emit('menu', mark.id, $event)">
+        <button v-else type="button" class="bookmark-hit" :aria-label="mark.name ? `书签：${mark.name}` : `书签 · ${mark.hint}`" :data-tip="mark.name ? undefined : `${mark.hint} · 右键命名或删除`" @click="emit('jump', mark.id)" @keydown.delete.prevent="emit('remove', mark.id)" @contextmenu.prevent.stop="emit('menu', mark.id, $event)">
           <span v-if="mark.name" class="bookmark-label">{{ mark.name }}</span>
           <i class="bookmark-tick" aria-hidden="true" />
         </button>

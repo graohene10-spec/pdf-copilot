@@ -737,19 +737,6 @@
 }
 
 /* 阅读助手开关：一张黄色便利贴。 */
-:root[data-style='sketch'] .ai-toggle {
-  background-color: var(--sticky);
-  background-image: none;
-  border-color: var(--pencil);
-  rotate: -1.5deg;
-}
-
-:root[data-style='sketch'] .ai-toggle.active,
-:root[data-style='sketch'] .topbar-actions .ai-toggle:is(.active, :hover):not(:disabled) {
-  background-color: var(--sticky);
-  border-color: var(--pencil);
-  rotate: 1deg;
-}
 
 /* 封面：像夹在本子里的旧照片。 */
 :root[data-style='sketch'] .document-cover {
@@ -975,14 +962,25 @@
 }
 
 :root[data-style='sketch'] .topbar-actions .ai-toggle,
-:root[data-style='sketch'] .topbar-actions .ai-toggle:is(.active, :hover):not(:disabled) {
-  height: 40px;
+:root[data-style='sketch'] .topbar-actions .ai-toggle:hover:not(:disabled) {
+  position: relative;
+  height: 38px;
   padding: 0 16px;
-  background-color: var(--sticky);
+  background-color: var(--paper);
+  background-image: none;
   border: 0;
+  box-shadow: 1.5px 2px 0 rgb(60 50 30 / .16);
+  rotate: -1deg;
+  color: var(--pencil);
+  transition: background-color var(--dur-3) var(--ease-out), rotate var(--dur-spring) var(--spring-bouncy), box-shadow var(--dur-2) var(--ease-out);
+}
+
+/* 助手开着时才变成一张黄色便利贴。 */
+:root[data-style='sketch'] .topbar-actions .ai-toggle.active,
+:root[data-style='sketch'] .topbar-actions .ai-toggle.active:hover:not(:disabled) {
+  background-color: var(--sticky);
   box-shadow: 2px 3px 6px rgb(60 50 30 / .25);
   rotate: -1.5deg;
-  color: var(--pencil);
 }
 
 /* 阅读工具条也没有底板：工具散放在桌上，各自用铅笔圈起来。 */
@@ -999,10 +997,25 @@
 }
 
 :root[data-style='sketch'] .reader-tools button {
-  background-color: transparent;
+  background-color: var(--paper);
+  background-image: none;
   border-color: transparent;
-  box-shadow: none;
+  box-shadow: 1.5px 2px 0 rgb(60 50 30 / .16);
 }
+
+:root[data-style='sketch'] .reader-tools button:hover:not(:disabled) {
+  background-color: var(--paper);
+  box-shadow: 2px 3px 0 rgb(60 50 30 / .22);
+}
+
+/* 正在用的工具（框选、标记、目录、页面视图……）涂成黄色。 */
+:root[data-style='sketch'] .reader-tools button:is(.active, [aria-pressed='true'], [aria-expanded='true']),
+:root[data-style='sketch'] .reader-tools button:is(.active, [aria-pressed='true'], [aria-expanded='true']):hover:not(:disabled) {
+  background-color: var(--sticky);
+  rotate: -1deg;
+}
+
+:root[data-style='sketch'] .reader-zoom > :not(button) { background: transparent; }
 
 /* 铅笔描的框：真正的边框隐去，换成一圈经过噪声扰动的笔迹，外面再错开一道淡笔。 */
 :root[data-style='sketch'] :is(.reader-tools button:not(:disabled), .library-search, .import-button, .composer-field, .send-button, .settings-group, .view-switch, .library-sort, .summary-note, .sidebar-bottom button, .settings-footer button, .settings-close) {
@@ -1032,8 +1045,13 @@
   pointer-events: none;
 }
 
-:root[data-style='sketch'] .reader-tools button:not(:disabled):not(:hover)::before { opacity: .5; }
-:root[data-style='sketch'] .reader-tools button:not(:disabled):not(:hover)::after { opacity: 0; }
+/* 页码输入框也是一张实心的纸。 */
+:root[data-style='sketch'] .reader-page-control input {
+  background: var(--paper);
+  border: 1.5px solid var(--pencil);
+  border-radius: var(--r-sm);
+  box-shadow: 1.5px 2px 0 rgb(60 50 30 / .16);
+}
 :root[data-style='sketch'] .reader-tools button::after { transition: opacity var(--dur-2) var(--ease-out); }
 
 :root[data-style='sketch'] .liquid-indicator { filter: url(#sk-pencil); }
@@ -1060,8 +1078,8 @@
 :root[data-style='sketch'] .ai-pane::after {
   content: '';
   position: absolute;
-  top: -14px;
-  right: 104px;
+  top: -16px;
+  left: 6px;
   width: 26px;
   height: 52px;
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='26' height='52' viewBox='0 0 26 52'%3E%3Cpath d='M8 6v34a6 6 0 0 0 12 0V10a4 4 0 0 0-8 0v28' stroke='%238d8b85' stroke-width='2.2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat;
@@ -1082,21 +1100,21 @@
 :root[data-style='sketch'] .ai-messages {
   padding-left: 40px;
   background-image:
-    linear-gradient(transparent 31px, rgb(110 140 190 / .28) 31px, rgb(110 140 190 / .28) 32px),
+    linear-gradient(transparent 29px, rgb(110 140 190 / .28) 29px, rgb(110 140 190 / .28) 30px),
     linear-gradient(90deg, transparent 24px, rgb(200 85 61 / .4) 24px, rgb(200 85 61 / .4) 25.5px, transparent 25.5px);
-  background-size: 100% 32px, 100% 100%;
+  background-size: 100% 30px, 100% 100%;
   background-attachment: local, scroll;
 }
 
 :root[data-style='sketch'][data-theme='dark'] .ai-messages {
   background-image:
-    linear-gradient(transparent 31px, rgb(150 170 210 / .14) 31px, rgb(150 170 210 / .14) 32px),
+    linear-gradient(transparent 29px, rgb(150 170 210 / .14) 29px, rgb(150 170 210 / .14) 30px),
     linear-gradient(90deg, transparent 24px, rgb(238 138 112 / .35) 24px, rgb(238 138 112 / .35) 25.5px, transparent 25.5px);
 }
 
 :root[data-style='sketch'] .answer-body {
-  font-size: 17px;
-  line-height: 32px;
+  font-size: 15.5px;
+  line-height: 30px;
 }
 
 :root[data-style='sketch'] .answer-body :is(p, ul, ol) { margin-top: 0; margin-bottom: 0; }
@@ -1107,6 +1125,30 @@
   border-color: transparent;
   box-shadow: none;
 }
+
+:root[data-style='sketch'] .ai-header :is(.header-button, .drag-grip) {
+  position: relative;
+  border-color: transparent;
+  background: transparent;
+  overflow: visible;
+}
+
+/* 头部的按钮各自用铅笔圈起来，一眼看得出哪些能点。 */
+:root[data-style='sketch'] .ai-header :is(.header-button, .drag-grip)::before {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  border: 1.5px solid var(--pencil);
+  border-radius: 50% 46% 52% 44%;
+  filter: url(#sk-pencil);
+  opacity: .8;
+  pointer-events: none;
+}
+
+:root[data-style='sketch'] .ai-header .drag-grip { width: 24px; opacity: 1; }
+:root[data-style='sketch'] .ai-header .drag-grip::before { border-radius: 40% 46% 42% 48% / 22% 20% 24% 18%; }
+:root[data-style='sketch'] .ai-header :is(.header-button, .drag-grip):hover::before { opacity: 1; background: var(--sticky); z-index: -1; }
+:root[data-style='sketch'] .ai-header .header-button:disabled::before { opacity: .35; }
 
 :root[data-style='sketch'] .ai-header :is(h2, strong, .ai-title) {
   font-family: 'Long Cang', 'Caveat', cursive;
@@ -1120,8 +1162,8 @@
   rotate: 1.6deg;
   box-shadow: 2px 4px 8px rgb(60 50 30 / .28);
   font-family: 'Long Cang', 'Caveat', cursive;
-  font-size: 19px;
-  line-height: 1.45;
+  font-size: 16px;
+  line-height: 1.5;
 }
 
 :root[data-style='sketch'][data-theme='dark'] .user-question { background: var(--sticky); color: var(--pencil); }
@@ -1139,7 +1181,7 @@
   content: '';
   position: absolute;
   top: -4px;
-  left: 42px;
+  right: 34px;
   width: 64px;
   height: 20px;
   background: rgb(170 200 220 / .75);
@@ -1193,3 +1235,203 @@
 :root[data-style='sketch'] .reader-tools > button:not(.icon-button) { padding-inline: 10px; }
 :root[data-style='sketch'] .reader-search { min-width: 0; flex: 0 1 auto; }
 :root[data-style='sketch'] .reader-search input { min-width: 0; }
+
+/* 输入框里的字和回答一样大小，不再比回答还大。 */
+:root[data-style='sketch'] .composer-field textarea { font-size: 14.5px; }
+
+/* 并排的文档组：红笔圈住整组页签，圈在页签外面、压在纸片上面，不被挡住。 */
+:root[data-style='sketch'] .tab-strip > .group-frame {
+  top: 0;
+  bottom: -5px;
+  margin-left: -7px;
+  padding: 0 7px;
+  box-sizing: content-box;
+  z-index: 3;
+  border: 2px solid var(--red-pencil);
+  border-radius: 46% 54% 42% 58% / 60% 48% 52% 40%;
+  background: transparent;
+  filter: url(#sk-pencil-b);
+}
+
+/* 分屏时选中的那栏：工具条下面一道红笔划线，没选中的那栏淡一些；不再套一圈圆角红框。 */
+:root[data-style='sketch'] .reader-panes.split > .reader-pane.focused .reader-tools {
+  box-shadow: none;
+  background: linear-gradient(90deg, transparent 8px, var(--red-pencil) 8px, var(--red-pencil) calc(100% - 8px), transparent calc(100% - 8px)) no-repeat 0 calc(100% - 1px) / 100% 2px;
+}
+
+:root[data-style='sketch'] .reader-panes.split > .reader-pane:not(.focused) .reader-tools { opacity: .55; }
+
+:root[data-style='warm'] .reader-panes.split > .reader-pane.focused .reader-tools {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+/* 纸平放在桌上：贴身的短投影，上沿不再淡出，不像悬在半空。 */
+:root[data-style='sketch'] .page-slot,
+:root[data-style='sketch'] .markdown-paper {
+  box-shadow: 1px 1px 0 rgb(60 50 30 / .1), 2px 3px 4px rgb(60 50 30 / .2);
+}
+
+:root[data-style='sketch'] :is(.pdf-scroll, .markdown-scroll) {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+/* 书签：夹在书页边上的一条红色小纸签，手写书签名写在黄色便签上。 */
+:root[data-style='sketch'] .bookmark-hit {
+  height: 14px;
+  padding: 0 3px;
+  border: 1.5px solid var(--pencil);
+  border-radius: 2px 5px 4px 2px;
+  background: var(--red-pencil);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: 1.5px 2px 0 rgb(60 50 30 / .22);
+  rotate: -3deg;
+}
+
+:root[data-style='sketch'] .bookmark-hit:is(:hover, :focus-visible) {
+  border-color: var(--pencil);
+  background: var(--red-pencil);
+  box-shadow: 2px 3px 0 rgb(60 50 30 / .28);
+  rotate: 0deg;
+}
+
+:root[data-style='sketch'] .bookmark-tick { width: 10px; height: 2px; background: #fffdf8; }
+:root[data-style='sketch'] .bookmark.named .bookmark-hit { height: 24px; background: var(--sticky); }
+:root[data-style='sketch'] .bookmark.named .bookmark-tick { background: var(--red-pencil); }
+:root[data-style='sketch'] .bookmark-label { color: var(--pencil); font: 400 14px/22px var(--font-ui); }
+:root[data-style='sketch'] .bookmark-field { border: 1.5px solid var(--pencil); border-radius: 3px; background: var(--paper); box-shadow: 2px 3px 0 rgb(60 50 30 / .2); font-family: var(--font-hand-input); }
+
+:root[data-style='warm'] .bookmark-hit {
+  border-color: rgb(61 46 30 / .3);
+  background: #faf9f5;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: 0 1px 3px rgb(61 46 30 / .25);
+}
+
+:root[data-style='warm'] .bookmark-tick { background: var(--accent); }
+
+/* ---- 回答里的代码、表格、图示、引用 ------------------------------------------
+   跟着风格换外观，但正文可读性优先：代码始终用等宽字、深色字压在浅底上，公式不换字体。 */
+
+/* 暖色：代码块是暖沙色的卡片，表头一条暖色底，图示放在象牙白卡片里，引用用陶土色细线。 */
+:root[data-style='warm'] .answer-body .answer-code-block {
+  background: #f5f4ed;
+  border-color: var(--warm-rule);
+  border-radius: 10px;
+}
+
+:root[data-style='warm'][data-theme='dark'] .answer-body .answer-code-block { background: #262624; }
+:root[data-style='warm'] .answer-body .answer-code-head { background: #efebdf; border-color: var(--warm-rule); }
+:root[data-style='warm'][data-theme='dark'] .answer-body .answer-code-head { background: #2a2a28; }
+:root[data-style='warm'] .answer-body :not(pre) > code { background: #efebdf; border-color: var(--warm-rule); color: #6b3a24; }
+:root[data-style='warm'][data-theme='dark'] .answer-body :not(pre) > code { background: #3a3a37; color: #f0b9a2; }
+:root[data-style='warm'] .answer-body .answer-table { border-color: var(--warm-rule); border-radius: 10px; }
+:root[data-style='warm'] .answer-body th { background: #efebdf; color: var(--ink); }
+:root[data-style='warm'][data-theme='dark'] .answer-body th { background: #2a2a28; }
+:root[data-style='warm'] .answer-body :is(th, td) { border-color: var(--warm-rule); }
+:root[data-style='warm'] .answer-body .answer-diagram { background: var(--surface); border-color: var(--warm-rule); border-radius: 10px; }
+:root[data-style='warm'] .answer-body blockquote { border-left-color: var(--accent); color: var(--secondary); }
+
+/* 草稿：代码块是一张夹进本子的白色索引卡（铅笔描边、上面一条胶带），字仍是清楚的等宽字；
+   表格是铅笔画的格子，表头用黄色荧光笔涂过；图示是贴在本子上的一张纸，线条手绘；引用旁边一道红笔竖线。 */
+:root[data-style='sketch'] .answer-body .answer-code-block,
+:root[data-style='sketch'] .answer-body .answer-diagram,
+:root[data-style='sketch'] .answer-body .answer-table {
+  position: relative;
+  overflow: visible;
+  margin-top: 14px;
+  border: 0;
+  border-radius: 3px 6px 4px 7px;
+  background: #fffdf8;
+  box-shadow: 2px 3px 0 rgb(60 50 30 / .14), 3px 6px 12px -6px rgb(60 50 30 / .35);
+  line-height: 1.6;
+}
+
+:root[data-style='sketch'][data-theme='dark'] .answer-body :is(.answer-code-block, .answer-diagram, .answer-table) { background: var(--paper-2); }
+
+:root[data-style='sketch'] .answer-body :is(.answer-code-block, .answer-diagram, .answer-table)::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 1.5px solid var(--pencil);
+  border-radius: inherit;
+  filter: url(#sk-pencil);
+  opacity: .8;
+  pointer-events: none;
+}
+
+:root[data-style='sketch'] .answer-body :is(.answer-code-block, .answer-diagram)::after {
+  content: '';
+  position: absolute;
+  top: -9px;
+  left: 50%;
+  width: 56px;
+  height: 16px;
+  margin-left: -28px;
+  background: var(--tape);
+  rotate: -3deg;
+  pointer-events: none;
+}
+
+:root[data-style='sketch'] .answer-body .answer-code-block > :is(.answer-code-head, pre) { position: relative; z-index: 1; }
+:root[data-style='sketch'] .answer-body .answer-code-head {
+  height: 32px;
+  border-bottom: 1px dashed var(--pencil-soft);
+  font-family: 'Caveat', var(--font-ui);
+  font-size: 15px;
+  color: var(--surface-secondary);
+}
+
+:root[data-style='sketch'] .answer-body .answer-copy { font-family: 'Caveat', var(--font-ui); font-size: 15px; }
+:root[data-style='sketch'] .answer-body pre.answer-code { font-size: 12.5px; line-height: 1.65; color: var(--pencil); }
+:root[data-style='sketch'] .answer-body pre.answer-code code { font-family: var(--font-mono); }
+
+/* 行内代码：等宽字，铅笔描的小框。 */
+:root[data-style='sketch'] .answer-body :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: .82em;
+  background: rgb(255 242 168 / .45);
+  border: 1px solid var(--pencil-soft);
+  border-radius: 3px 5px 3px 4px;
+  color: var(--pencil);
+}
+
+:root[data-style='sketch'][data-theme='dark'] .answer-body :not(pre) > code { background: rgb(94 84 39 / .5); }
+
+:root[data-style='sketch'] .answer-body table {
+  font-family: var(--font-answer);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+:root[data-style='sketch'] .answer-body :is(th, td) { border-bottom: 1px solid var(--pencil-soft); border-right: 1px solid var(--line-soft); }
+:root[data-style='sketch'] .answer-body :is(th, td):last-child { border-right: 0; }
+:root[data-style='sketch'] .answer-body th {
+  background: linear-gradient(transparent 18%, rgb(255 226 120 / .55) 18%, rgb(255 226 120 / .55) 86%, transparent 86%);
+  color: var(--pencil);
+  font-weight: 400;
+}
+
+:root[data-style='sketch'][data-theme='dark'] .answer-body th { background: linear-gradient(transparent 18%, rgb(150 130 50 / .45) 18%, rgb(150 130 50 / .45) 86%, transparent 86%); }
+
+:root[data-style='sketch'] .answer-body .answer-diagram { padding: 18px 12px 12px; }
+:root[data-style='sketch'] .answer-body .answer-diagram figcaption { font-family: 'Caveat', var(--font-ui); font-size: 14px; }
+
+:root[data-style='sketch'] .answer-body blockquote {
+  border-left: 2px solid var(--red-pencil);
+  padding-left: .9em;
+  color: var(--surface-secondary);
+}
+
+:root[data-style='sketch'] .answer-body hr {
+  border: 0;
+  height: 6px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='6'%3E%3Cpath d='M0 3 Q15 0 30 3 T60 3' stroke='%238d8b85' stroke-width='1.4' fill='none'/%3E%3C/svg%3E") repeat-x center;
+}
+
+/* 公式不换字体：KaTeX 用自己的数学字体，才看得清。 */
+:root[data-style='sketch'] .answer-body .katex { font-family: KaTeX_Main, 'Times New Roman', serif; line-height: 1.3; }
+/* 宽表格仍要能横向滚动。 */
+:root[data-style='sketch'] .answer-body .answer-table { overflow: auto; }

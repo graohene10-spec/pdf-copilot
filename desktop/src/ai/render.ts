@@ -43,25 +43,37 @@ let diagramSeed = 0
 // so re-rendering an answer (scrolling, theme, streaming) never races or flashes the source.
 const svgCache = new Map<string, string>()
 let renderQueue: Promise<void> = Promise.resolve()
-export function renderDiagrams(root: HTMLElement, dark: boolean): Promise<void> {
+export type DiagramStyle = 'glass' | 'warm' | 'sketch'
+// 图示跟着界面风格走：暖色用象牙白与陶土色，草稿用 Mermaid 的手绘线条；字和线条都保持足够的对比度。
+function mermaidConfig(dark: boolean, style: DiagramStyle) {
+  const base = { startOnLoad: false, securityLevel: 'strict', fontFamily: 'inherit', flowchart: { htmlLabels: false }, suppressErrorRendering: true }
+  if (style === 'warm') return { ...base, theme: 'base', fontFamily: "'Anthropic Sans', 'Segoe UI', 'Microsoft YaHei UI', sans-serif", themeVariables: dark
+    ? { background: '#30302e', primaryColor: '#3a3a37', primaryBorderColor: '#d97757', primaryTextColor: '#faf9f5', secondaryColor: '#262624', tertiaryColor: '#2a2a28', lineColor: '#c2c0b6', textColor: '#faf9f5', noteBkgColor: '#4a3229', noteTextColor: '#faf9f5', fontSize: '14px' }
+    : { background: '#faf9f5', primaryColor: '#f5f4ed', primaryBorderColor: '#c96442', primaryTextColor: '#141413', secondaryColor: '#ebdbbc', tertiaryColor: '#f0eee6', lineColor: '#5e5d59', textColor: '#141413', noteBkgColor: '#f2dfd3', noteTextColor: '#141413', fontSize: '14px' } }
+  if (style === 'sketch') return { ...base, theme: 'base', look: 'handDrawn', handDrawnSeed: 7, fontFamily: "'Patrick Hand', 'Ma Shan Zheng', KaiTi, 'Microsoft YaHei UI', sans-serif", themeVariables: dark
+    ? { background: '#2e2c28', primaryColor: '#5e5427', primaryBorderColor: '#ece6d6', primaryTextColor: '#ece6d6', secondaryColor: '#36503a', tertiaryColor: '#34322d', lineColor: '#ece6d6', textColor: '#ece6d6', noteBkgColor: '#5e5427', noteTextColor: '#ece6d6', fontSize: '15px' }
+    : { background: '#fbf8f0', primaryColor: '#fff2a8', primaryBorderColor: '#2e2d2a', primaryTextColor: '#2e2d2a', secondaryColor: '#d6ecd2', tertiaryColor: '#ffd9cc', lineColor: '#2e2d2a', textColor: '#2e2d2a', noteBkgColor: '#fff2a8', noteTextColor: '#2e2d2a', fontSize: '15px' } }
+  return { ...base, theme: dark ? 'dark' : 'neutral' }
+}
+export function renderDiagrams(root: HTMLElement, dark: boolean, style: DiagramStyle = 'glass'): Promise<void> {
   const pending: HTMLElement[] = []
   for (const figure of root.querySelectorAll<HTMLElement>('figure[data-diagram]:not([data-rendered])')) {
-    const svg = svgCache.get(`${dark}:${figure.dataset.diagram || ''}`)
+    const svg = svgCache.get(`${style}:${dark}:${figure.dataset.diagram || ''}`)
     if (svg) { figure.dataset.rendered = 'true'; figure.innerHTML = svg; figure.classList.add('rendered') }
     else pending.push(figure)
   }
   if (!pending.length) return Promise.resolve()
-  renderQueue = renderQueue.then(() => renderPending(pending, dark)).catch(() => {})
+  renderQueue = renderQueue.then(() => renderPending(pending, dark, style)).catch(() => {})
   return renderQueue
 }
-async function renderPending(figures: HTMLElement[], dark: boolean) {
+async function renderPending(figures: HTMLElement[], dark: boolean, style: DiagramStyle) {
   mermaidModule ||= import('mermaid').then(module => module.default)
   const mermaid = await mermaidModule
-  mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: dark ? 'dark' : 'neutral', fontFamily: 'inherit', flowchart: { htmlLabels: false }, suppressErrorRendering: true })
+  mermaid.initialize(mermaidConfig(dark, style))
   for (const figure of figures) {
     if (!figure.isConnected || figure.dataset.rendered) continue
     figure.dataset.rendered = 'true'
-    const source = figure.dataset.diagram || '', key = `${dark}:${source}`
+    const source = figure.dataset.diagram || '', key = `${style}:${dark}:${source}`
     try {
       const svg = svgCache.get(key) || (await mermaid.render(`answer-diagram-${++diagramSeed}`, source)).svg
       if (svgCache.size > 60) svgCache.delete(svgCache.keys().next().value!)

@@ -176,7 +176,8 @@ function jump(source: any) { emit('jump', { page: source.page, rect: source.rect
 const renderTimers = new WeakMap<HTMLElement, ReturnType<typeof setTimeout>>()
 // 滚动、导航条刷新等也会触发指令更新；只有回答本身变了才重绘，图示不会反复重画。
 const renderedKeys = new WeakMap<HTMLElement, string>()
-const answerKey = (message: Message) => `${message.content.length}:${message.content.slice(-24)}:${message.finishedAt || 0}:${message.sources.length}:${dark.value}`
+const uiStyle = computed(() => effectiveAppearance.value.style)
+const answerKey = (message: Message) => `${message.content.length}:${message.content.slice(-24)}:${message.finishedAt || 0}:${message.sources.length}:${dark.value}:${uiStyle.value}`
 function renderAnswer(element: HTMLElement, message: Message) {
   renderedKeys.set(element, answerKey(message))
   element.innerHTML = renderMarkdown(message.content)
@@ -197,7 +198,7 @@ function renderAnswer(element: HTMLElement, message: Message) {
       if (last) { fragment.append(document.createTextNode(text.slice(last))); node.parentNode?.replaceChild(fragment, node) }
     }
   }
-  if (message.finishedAt) void renderDiagrams(element, dark.value)
+  if (message.finishedAt) void renderDiagrams(element, dark.value, uiStyle.value)
 }
 // Streaming answers re-render at most every 90ms; markdown and KaTeX stay cheap.
 function scheduleRender(element: HTMLElement, message: Message) {
