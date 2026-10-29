@@ -65,13 +65,30 @@ export const READING_FONTS: FontChoice[] = [
   font('harmony', 'HarmonyOS Sans', ['HarmonyOS Sans SC', 'HarmonyOS Sans']),
   font('source-han-sans', '思源黑体', ['Source Han Sans SC', 'Noto Sans CJK SC', 'Noto Sans SC', '思源黑体']),
 ]
+/** 界面风格：与液态玻璃并列的整套外观。暖色极简与铅笔草稿不使用玻璃材质，玻璃相关设置只在液态玻璃下生效。 */
+export type UiStyle = 'glass' | 'warm' | 'sketch'
+export const UI_STYLES: { id: UiStyle; label: string; hint: string }[] = [
+  { id: 'glass', label: '液态玻璃', hint: '通透的玻璃材质' },
+  { id: 'warm', label: '暖色极简', hint: '象牙白、细线与衬线' },
+  { id: 'sketch', label: '铅笔草稿', hint: '手写字与纸叠纸' },
+]
+/* 铅笔草稿里 AI 回答的字体（随应用内置，SIL OFL）；界面文字固定用龙藏体手写。 */
+const HAND_LATIN = "'Patrick Hand', 'Caveat'"
+export const SKETCH_ANSWER_FONTS: FontChoice[] = [
+  { id: 'mashanzheng', label: '马善政楷书（推荐）', families: [], stack: `${HAND_LATIN}, 'Ma Shan Zheng', KaiTi, STKaiti, ${SYSTEM_SANS}` },
+  { id: 'xiaowei', label: '站酷小薇体（最工整）', families: [], stack: `${HAND_LATIN}, 'ZCOOL XiaoWei', ${SERIF}` },
+  { id: 'kuaile', label: '站酷快乐体（圆润）', families: [], stack: `${HAND_LATIN}, 'ZCOOL KuaiLe', ${SYSTEM_SANS}` },
+  { id: 'longcang', label: '龙藏体（最草）', families: [], stack: `'Caveat', 'Long Cang', ${SYSTEM_SANS}` },
+  { id: 'kaiti', label: '系统楷体', families: [], stack: `${HAND_LATIN}, KaiTi, STKaiti, 'Kaiti SC', ${SERIF}` },
+  { id: 'reading', label: '跟随阅读字体', families: [], stack: '' },
+]
 export const BACKDROPS: { id: BackdropPreset; label: string }[] = [
   { id: 'mist', label: '晨雾' }, { id: 'dawn', label: '暮光' }, { id: 'mint', label: '薄荷' },
   { id: 'lavender', label: '薰衣草' }, { id: 'graphite', label: '石墨' }, { id: 'paper', label: '素白' },
 ]
 export interface AppPreferences {
   version: 3
-  appearance: { theme: ThemePreference; libraryView: 'grid' | 'list'; glassTransparency: number; glassBlur: number; glassHighlight: number; glassRefraction: boolean; glassLegibility: GlassLegibility; glassCompensation: number; glassTint: GlassTint; backdrop: BackdropPreset; background: BackgroundImage | null; gallery: BackgroundImage[]; uiFont: string; readingFont: string; customFonts: CustomFont[] }
+  appearance: { theme: ThemePreference; style: UiStyle; sketchAnswerFont: string; libraryView: 'grid' | 'list'; glassTransparency: number; glassBlur: number; glassHighlight: number; glassRefraction: boolean; glassLegibility: GlassLegibility; glassCompensation: number; glassTint: GlassTint; backdrop: BackdropPreset; background: BackgroundImage | null; gallery: BackgroundImage[]; uiFont: string; readingFont: string; customFonts: CustomFont[] }
   pdf: { initialZoom: 'fit-width' | number; zoomStep: number; fitOnPanelOverflow: boolean; openAssistantOnCapture: boolean; quickAskOnCapture: boolean; pageLayout: 'single' | 'spread'; coverAlone: boolean }
   markdown: { fontSize: number; contentWidth: number }
   assistant: { quickPrompts: QuickPrompts; captureQuestions: QuickPrompt[]; avatar: AssistantAvatar; greeting: AssistantGreeting; predictQuestions: boolean }
@@ -109,7 +126,7 @@ export const DEFAULT_SHORTCUTS: Readonly<Record<ShortcutAction, string>> = Objec
 const LEGACY_GLASS: Record<string, number> = { clear: 85, balanced: 70, rich: 30, solid: 0 }
 export const MAX_GALLERY = 6
 export function defaultPreferences(): AppPreferences {
-  return { version: 3, appearance: { theme: 'system', libraryView: 'grid', glassTransparency: 70, glassBlur: 50, glassHighlight: 50, glassRefraction: true, glassLegibility: 'thicken', glassCompensation: 50, glassTint: 'theme', backdrop: 'mist', background: null, gallery: [], uiFont: 'system', readingFont: 'anthropic', customFonts: [] },
+  return { version: 3, appearance: { theme: 'system', style: 'glass', sketchAnswerFont: 'mashanzheng', libraryView: 'grid', glassTransparency: 70, glassBlur: 50, glassHighlight: 50, glassRefraction: true, glassLegibility: 'thicken', glassCompensation: 50, glassTint: 'theme', backdrop: 'mist', background: null, gallery: [], uiFont: 'system', readingFont: 'anthropic', customFonts: [] },
     pdf: { initialZoom: 'fit-width', zoomStep: 15, fitOnPanelOverflow: true, openAssistantOnCapture: true, quickAskOnCapture: true, pageLayout: 'single', coverAlone: false },
     markdown: { fontSize: 17, contentWidth: 840 }, assistant: { quickPrompts: defaultQuickPrompts(), captureQuestions: defaultCaptureQuestions(), avatar: { kind: 'crab', image: null }, greeting: { style: 'mixed', custom: '' }, predictQuestions: true }, updates: { autoCheck: true, prerelease: false }, shortcuts: { ...DEFAULT_SHORTCUTS } }
 }
@@ -179,6 +196,8 @@ export function normalizePreferences(value: unknown, legacyTheme?: string | null
   defaults.updates.prerelease = updates.prerelease === true
   const theme = appearance.theme || legacyTheme
   defaults.appearance.theme = ['system', 'light', 'dark'].includes(theme) ? theme : defaults.appearance.theme
+  defaults.appearance.style = UI_STYLES.some(item => item.id === appearance.style) ? appearance.style : 'glass'
+  defaults.appearance.sketchAnswerFont = SKETCH_ANSWER_FONTS.some(item => item.id === appearance.sketchAnswerFont) ? appearance.sketchAnswerFont : 'mashanzheng'
   defaults.appearance.libraryView = ['grid', 'list'].includes(appearance.libraryView) ? appearance.libraryView : defaults.appearance.libraryView
   const legacyGlass = typeof appearance.glass === 'string' && Object.hasOwn(LEGACY_GLASS, appearance.glass) ? LEGACY_GLASS[appearance.glass] : defaults.appearance.glassTransparency
   defaults.appearance.glassTransparency = range(appearance.glassTransparency, 0, 100, legacyGlass)
@@ -228,6 +247,8 @@ export function preferenceErrors(value: AppPreferences): string[] {
   const errors: string[] = []
   if (!['system', 'light', 'dark'].includes(value.appearance.theme)) errors.push('请选择有效外观。')
   if (!['grid', 'list'].includes(value.appearance.libraryView)) errors.push('请选择有效文档视图。')
+  if (!UI_STYLES.some(item => item.id === value.appearance.style)) errors.push('请选择有效界面风格。')
+  if (!SKETCH_ANSWER_FONTS.some(item => item.id === value.appearance.sketchAnswerFont)) errors.push('请选择有效的回答字体。')
   if (!BACKDROPS.some(item => item.id === value.appearance.backdrop)) errors.push('请选择有效底板。')
   if (!Array.isArray(value.appearance.gallery) || value.appearance.gallery.length > MAX_GALLERY) errors.push(`图库最多保存 ${MAX_GALLERY} 张图片。`)
   else for (const image of value.appearance.gallery) errors.push(...backgroundErrors(image))

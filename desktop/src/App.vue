@@ -7,7 +7,7 @@ import FileTabs from './components/FileTabs.vue'
 import CaptureQuickPrompt from './components/CaptureQuickPrompt.vue'
 import { chatPhase, chatState, sendChat, closeChat, closeAllChats, configureRequests, stopChat, notices, dismissNotice, selectConversation, type Notice } from './ai/workspace'
 import { forgetPassword, forgetAllPasswords } from './document/passwords.mjs'
-import { useSettings, matchShortcut, matchWheelShortcut, shortcutFromEvent, shortcutLabel, UI_FONTS, READING_FONTS, fontChoices } from './settings'
+import { useSettings, matchShortcut, matchWheelShortcut, shortcutFromEvent, shortcutLabel, UI_FONTS, READING_FONTS, SKETCH_ANSWER_FONTS, fontChoices } from './settings'
 import { retainReaderEntries } from './reader/cache-policy.mjs'
 import { installGlassContrast } from './ui/glass-contrast'
 import { restoreLeavingPanel } from './ui/panel-transition'
@@ -1065,15 +1065,18 @@ function applyTheme() {
   theme.value = selected === 'system' ? (systemTheme.matches ? 'dark' : 'light') : selected
   const root = document.documentElement
   root.dataset.theme = theme.value
-  root.dataset.glass = appearance.glassTransparency === 0 ? 'solid' : 'custom'
+  // 暖色极简与铅笔草稿不用玻璃：按实色材质处理，玻璃运行时（折射、字色采样、镜面环）随之停下。
+  const glass = appearance.style === 'glass'
+  root.dataset.style = appearance.style
+  root.dataset.glass = !glass || appearance.glassTransparency === 0 ? 'solid' : 'custom'
   root.style.setProperty('--glass-transparency', String(appearance.glassTransparency / 100))
   // 模糊程度 50% 是默认强度；0 不模糊，100% 为两倍。
   root.style.setProperty('--glass-blur-scale', String(appearance.glassBlur / 50))
   // 边缘高光 100% 是以前的强度，默认 50%。
   root.style.setProperty('--glass-highlight', String(appearance.glassHighlight / 100))
-  root.dataset.refraction = appearance.glassRefraction ? 'on' : 'off'
+  root.dataset.refraction = glass && appearance.glassRefraction ? 'on' : 'off'
   glassContrast?.setOptions({ legibility: appearance.glassLegibility, compensation: appearance.glassCompensation, tint: appearance.glassTint })
-  root.dataset.background = appearance.background ? 'custom' : 'default'
+  root.dataset.background = glass && appearance.background ? 'custom' : 'default'
   root.dataset.backdrop = appearance.backdrop
   // Fonts: the interface font replaces the base stack; the reading font defaults to it.
   void registerCustomFonts(appearance.customFonts)
@@ -1082,7 +1085,9 @@ function applyTheme() {
   if (uiFont && uiFont.id !== 'system') { root.style.setProperty('--font', uiFont.stack); root.style.setProperty('--font-display', uiFont.stack) }
   else { root.style.removeProperty('--font'); root.style.removeProperty('--font-display') }
   if (readingFont?.stack) root.style.setProperty('--font-reading', readingFont.stack); else root.style.removeProperty('--font-reading')
-  const background = appearance.background?.dataUrl
+  const answerFont = SKETCH_ANSWER_FONTS.find(item => item.id === appearance.sketchAnswerFont)
+  if (appearance.style === 'sketch' && answerFont?.stack) root.style.setProperty('--font-answer', answerFont.stack); else root.style.removeProperty('--font-answer')
+  const background = glass ? appearance.background?.dataUrl : undefined
   if (background !== appliedBackground) {
     // The settings model accepts only bounded, locally encoded raster data URLs.
     if (background) root.style.setProperty('--custom-workspace-image', `url("${background}")`)

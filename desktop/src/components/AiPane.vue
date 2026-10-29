@@ -775,11 +775,11 @@ button:disabled{opacity:.4;cursor:default}
 .thinking-direction{margin:-2px 0 8px 10px;padding-left:12px;border-left:2px solid var(--hairline);font-size:12px;line-height:1.6;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;animation:zg-fade-in var(--dur-2) var(--ease-out)}
 .reasoning-body{margin:0 0 10px 10px;padding:2px 0 2px 12px;border-left:2px solid var(--hairline);font-size:12px;line-height:1.75;color:var(--muted);white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow:auto;scrollbar-width:thin}
 /* 回答正文：衬线正文（Anthropic Serif 一类），表格与代码参照 Claude 的排法。 */
-.answer-body{font-size:14.5px;line-height:1.75;overflow-wrap:anywhere;font-family:var(--font-reading);letter-spacing:.005em}
+.answer-body{font-size:14.5px;line-height:1.75;overflow-wrap:anywhere;font-family:var(--font-answer, var(--font-reading));letter-spacing:.005em}
 .answer-body :deep(>:first-child){margin-top:0}
 .answer-body :deep(>:last-child){margin-bottom:0}
 .answer-body :deep(p){margin:0 0 .85em}
-.answer-body :deep(h1),.answer-body :deep(h2),.answer-body :deep(h3),.answer-body :deep(h4){font-family:var(--font-reading);line-height:1.35;margin:1.2em 0 .5em;font-weight:650}
+.answer-body :deep(h1),.answer-body :deep(h2),.answer-body :deep(h3),.answer-body :deep(h4){font-family:var(--font-answer, var(--font-reading));line-height:1.35;margin:1.2em 0 .5em;font-weight:650}
 .answer-body :deep(h1){font-size:1.3em}
 .answer-body :deep(h2){font-size:1.18em}
 .answer-body :deep(h3){font-size:1.06em}

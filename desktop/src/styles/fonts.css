@@ -6,3 +6,41 @@
   font-style: normal;
   font-display: swap;
 }
+
+/* 铅笔草稿用的手写字体，均为 SIL OFL，随应用内置（中文裁成 GB2312 常用字）。
+   手写字的字面偏小，用 size-adjust 放大到与界面字号相当的视觉大小。 */
+@font-face {
+  font-family: 'Long Cang';
+  src: url('../assets/fonts/LongCang-Regular.woff2') format('woff2');
+  font-display: swap;
+  size-adjust: 122%;
+}
+@font-face {
+  font-family: 'Caveat';
+  src: url('../assets/fonts/Caveat-Variable.woff2') format('woff2');
+  font-weight: 400 700;
+  font-display: swap;
+  size-adjust: 136%;
+}
+@font-face {
+  font-family: 'Patrick Hand';
+  src: url('../assets/fonts/PatrickHand-Regular.woff2') format('woff2');
+  font-display: swap;
+  size-adjust: 104%;
+}
+@font-face {
+  font-family: 'Ma Shan Zheng';
+  src: url('../assets/fonts/MaShanZheng-Regular.woff2') format('woff2');
+  font-display: swap;
+  size-adjust: 104%;
+}
+@font-face {
+  font-family: 'ZCOOL XiaoWei';
+  src: url('../assets/fonts/ZCOOLXiaoWei-Regular.woff2') format('woff2');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'ZCOOL KuaiLe';
+  src: url('../assets/fonts/ZCOOLKuaiLe-Regular.woff2') format('woff2');
+  font-display: swap;
+}

@@ -18,4 +18,6 @@ PDF.js 第三方字体、色彩和 WebAssembly 资源包含自己的许可声明
 
 0.3.1 内置的独立字体文件为 [AnthropicSerif-Variable.woff2](desktop/src/assets/fonts/AnthropicSerif-Variable.woff2)。该文件目录目前没有附带单独的许可文本，来源与授权说明尚需提供者补充；不能用 Source Serif 4 包的许可代替这个独立文件的授权说明。
 
+0.8.0 起为「铅笔草稿」界面风格内置 Long Cang（龙藏体）、Ma Shan Zheng（马善政楷书）、ZCOOL KuaiLe（站酷快乐体）、ZCOOL XiaoWei（站酷小薇体）、Caveat 与 Patrick Hand 六款字体的子集（WOFF2），均采用 SIL Open Font License 1.1；版权声明与许可全文见 [desktop/src/assets/fonts/OFL.txt](desktop/src/assets/fonts/OFL.txt)。
+
 用户在设置中导入的字体保存在其本机文档库，不会加入项目发布包。
