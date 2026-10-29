@@ -990,7 +990,6 @@
   background: transparent;
   border-color: transparent;
   box-shadow: none;
-  overflow: visible;
 }
 
 :root[data-style='sketch'] .reader-zoom {
@@ -1188,3 +1187,9 @@
 :root[data-style='sketch'] .summary-note:nth-child(2n + 1) { rotate: -.6deg; }
 
 :root[data-style='sketch'] .import-button { rotate: -.6deg; }
+
+/* 手写字更宽：工具条收紧间距，让末尾的搜索框留在工具条里。 */
+:root[data-style='sketch'] .reader-tools { gap: 4px; padding-right: 10px; }
+:root[data-style='sketch'] .reader-tools > button:not(.icon-button) { padding-inline: 10px; }
+:root[data-style='sketch'] .reader-search { min-width: 0; flex: 0 1 auto; }
+:root[data-style='sketch'] .reader-search input { min-width: 0; }
