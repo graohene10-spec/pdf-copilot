@@ -3788,3 +3788,15 @@ kbd {
   -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 7px);
   mask-image: linear-gradient(to bottom, transparent 0, #000 7px);
 }
+
+/* 双页：页面栈是两列网格，左页靠中缝右对齐、右页左对齐；行距、中缝由阅读器按排版写入。 */
+.page-stack.spread {
+  display: grid;
+  grid-template-columns: max-content max-content;
+  justify-content: center;
+  align-items: start;
+}
+
+.page-stack.spread > .page-slot {
+  margin: 0;
+}

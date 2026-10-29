@@ -3,7 +3,7 @@ import { ref, shallowRef, computed, watch, onMounted, onActivated, onDeactivated
 import * as pdfjs from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url'
 import 'pdfjs-dist/web/pdf_viewer.css'
-import { ContinuousPdfViewer } from '../reader/continuous.mjs'
+import { ContinuousPdfViewer, SPREAD_GAP } from '../reader/continuous.mjs'
 import { cropImageAsync } from '../reader/crop'
 import { availableReadingWidth, shrinkToFitScale, clampPdfScale } from '../reader/layout.mjs'
 import AppIcon from './AppIcon.vue'
@@ -27,13 +27,16 @@ const props = withDefaults(defineProps<{
   findShortcut?: string
   shortcuts?: Record<string, string>
   initialView?: { page: number; fraction: number; scale: number | null; outlineOpen: boolean; search?: { query: string; current: number } }
-}>(), { initialPage: 1, sidebarFitEnabled: true, initialZoom: 'fit', zoomStep: .1, fitRequest: 0 })
+  pageLayout?: 'single' | 'spread'
+  coverAlone?: boolean
+}>(), { pageLayout: 'single', coverAlone: false, initialPage: 1, sidebarFitEnabled: true, initialZoom: 'fit', zoomStep: .1, fitRequest: 0 })
 const emit = defineEmits<{
   ready: [value: { pdf: any; page: number }]
   progress: [value: { page: number; pageCount: number; progress: number }]
   selection: [value: { text: string; page: number; image?: string; imagePending?: Promise<string>; rect?: any; captureFrame?: { left: number; top: number; width: number; height: number } }]
   text: [value: string]
   error: [value: string]
+  pageLayout: [value: { pageLayout: 'single' | 'spread'; coverAlone: boolean }]
 }>()
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
 const container = ref<HTMLElement>()
@@ -457,9 +460,14 @@ function followLayout() {
   const style = getComputedStyle(element)
   const left = parseFloat(style.paddingLeft) || 0, room = element.clientWidth - left - (parseFloat(style.paddingRight) || 0)
   // 加了 transform 的整摞会成为页面的 offsetParent，两种情况都换算成「页面在整摞里的位置」。
-  const inStack = slot.offsetParent === stack ? slot.offsetLeft : slot.offsetLeft - stack.offsetLeft
-  const shift = left + Math.max(0, (room - slot.offsetWidth * ratio) / 2) - (stack.offsetLeft + inStack - element.scrollLeft)
-  stack.style.transformOrigin = `${inStack}px ${follow.origin}px`
+  const inStack = (page: HTMLElement) => page.offsetParent === stack ? page.offsetLeft : page.offsetLeft - stack.offsetLeft
+  // 双页时以整行（两页加中缝）为准；落单的封面或末页按两栏宽算，和适应宽度的算法一致。
+  const row: HTMLElement[] = viewer.rowSlots?.() || [slot]
+  const first = row[0] || slot, last = row.at(-1) || slot
+  let start = inStack(first), end = inStack(last) + last.offsetWidth
+  if (viewer.spread?.enabled && row.length === 1) { if (first.style.gridColumn === '2') start -= first.offsetWidth + SPREAD_GAP; else end += first.offsetWidth + SPREAD_GAP }
+  const shift = left + Math.max(0, (room - (end - start) * ratio) / 2) - (stack.offsetLeft + start - element.scrollLeft)
+  stack.style.transformOrigin = `${start}px ${follow.origin}px`
   stack.style.transform = `translateX(${shift}px) scale(${ratio})`
 }
 function startFollow() {
@@ -638,6 +646,7 @@ onMounted(async () => {
     onSelectionPending() {},
     onError(reason: any) { if (active) emit('error', reason?.message || String(reason)) },
   })
+  viewer.setSpread(props.pageLayout === 'spread', props.coverAlone)
   observer = new ResizeObserver(() => { if (active) { positionFrozenViewport(); scheduleLayout() } })
   // 切到深色主题时给已经画好的页面补上彩色图片层（浅色主题里不做任何像素判断）。
   themeWatch = new MutationObserver(() => { if (active) viewer?.refreshPhotos?.() })
@@ -647,6 +656,25 @@ onMounted(async () => {
   await load()
 })
 watch(() => props.data, () => { if (viewer) load() })
+// ---- 页面视图：单页 / 双页（封面可单独一页）——偏好在全局保存，切换后适应宽度会按新排版重新铺满 ----
+const pageMenu = ref(false)
+const pageMenuHost = ref<HTMLElement>()
+const pageMenuPanel = ref<HTMLElement>()
+// 工具条会裁掉溢出的内容：弹层挂到 body 上，按按钮的位置摆在它正下方。
+const pageMenuAt = ref({ left: 0, top: 0 })
+function togglePageMenu() {
+  const box = pageMenuHost.value?.getBoundingClientRect()
+  if (box) pageMenuAt.value = { left: Math.max(146, Math.min(window.innerWidth - 146, box.left + box.width / 2)), top: box.bottom + 8 }
+  pageMenu.value = !pageMenu.value
+}
+function setPageLayout(pageLayout: 'single' | 'spread', coverAlone = props.coverAlone) { emit('pageLayout', { pageLayout, coverAlone }) }
+function closePageMenu(event: PointerEvent) { const target = event.target as Node; if (!pageMenuHost.value?.contains(target) && !pageMenuPanel.value?.contains(target)) pageMenu.value = false }
+watch(pageMenu, open => { if (open) document.addEventListener('pointerdown', closePageMenu, true); else document.removeEventListener('pointerdown', closePageMenu, true) })
+onBeforeUnmount(() => document.removeEventListener('pointerdown', closePageMenu, true))
+watch(() => [props.pageLayout, props.coverAlone] as const, ([layout, cover]) => {
+  if (!viewer?.setSpread(layout === 'spread', cover) || !active || loading.value || !viewer.pdf) return
+  if (fitMode) { lastAvailableWidth = readingWidth(); void renderZoom(viewer.getFitScale(readingWidth())) }
+})
 watch(() => props.initialZoom, value => { if (active && !loading.value && viewer?.pdf) void zoom(value === 'fit' ? null : value) })
 watch(() => props.fitRequest, requestPanelFit)
 watch(() => props.sidebarFitEnabled, enabled => { if (!enabled) pendingPanelFit = false; else requestPanelFit() })
@@ -734,6 +762,19 @@ defineExpose({ goToPage, getPage: () => page.value, getPdf: () => pdf, isSuspend
       <div class="reader-zoom"><button data-tip="缩小" aria-label="缩小" :data-tip-key="shortcuts?.zoomOut" @click="zoomOut">−</button><button @click="fitWidth" data-tip="适应宽度" :data-tip-key="shortcuts?.fitWidth">{{ scale >= .01 ? Math.round(scale * 100) : Math.round(scale * 1000) / 10 }}%</button><button data-tip="放大" aria-label="放大" :data-tip-key="shortcuts?.zoomIn" @click="zoomIn">＋</button></div>
       <button class="quiet-button crop-toggle" :class="{ active: capture }" @click="toggleCapture" data-tip="框选公式或图表作为 AI 上下文" :data-tip-key="shortcuts?.capture"><AppIcon name="crop" :size="17" />{{ capture ? '拖动框选' : '框选' }}</button>
       <InkButton :active="ink.state.enabled" @click="ink.toggle" />
+      <div ref="pageMenuHost" class="page-view-host" @keydown.esc.stop="pageMenu = false">
+        <button type="button" class="quiet-button" :class="{ active: pageMenu }" aria-haspopup="dialog" :aria-expanded="pageMenu" aria-label="页面视图" data-tip="页面视图" @click="togglePageMenu"><AppIcon :name="pageLayout === 'spread' ? 'book' : 'doc'" :size="17" /></button>
+        <Teleport to="body"><Transition name="history-pop">
+          <div v-if="pageMenu" ref="pageMenuPanel" class="page-view-menu" role="dialog" aria-label="页面视图" :style="{ left: `${pageMenuAt.left}px`, top: `${pageMenuAt.top}px` }" @keydown.esc.stop="pageMenu = false">
+            <p class="page-view-title">页面视图</p>
+            <div class="page-view-options">
+              <button type="button" :aria-pressed="pageLayout !== 'spread'" @click="setPageLayout('single')"><span class="page-view-icon"><AppIcon name="doc" :size="20" /></span>单一页面</button>
+              <button type="button" :aria-pressed="pageLayout === 'spread'" @click="setPageLayout('spread')"><span class="page-view-icon"><AppIcon name="book" :size="20" /></span>双页</button>
+            </div>
+            <label class="page-view-cover" :class="{ off: pageLayout !== 'spread' }"><span>单独显示封面</span><input type="checkbox" role="switch" :checked="coverAlone" :disabled="pageLayout !== 'spread'" @change="setPageLayout('spread', ($event.target as HTMLInputElement).checked)" /><i aria-hidden="true" /></label>
+          </div>
+        </Transition></Teleport>
+      </div>
       <ReaderSearch ref="searchControl" v-model="searchQuery" :busy="searchBusy" :current="searchCount" :total="searchMatches.length" :status="searchStatus" :shortcut="findShortcut" @next="nextSearch" @previous="previousSearch" @clear="clearSearch" />
     </div>
     <div class="reader-engine-body">
@@ -751,6 +792,23 @@ defineExpose({ goToPage, getPage: () => page.value, getPdf: () => pdf, isSuspend
 </template>
 
 <style scoped>
+.page-view-host { position: relative; display: flex; }
+.page-view-menu { position: fixed; z-index: 120; width: 260px; padding: 16px 16px 12px; border: 1px solid var(--line-soft); border-radius: var(--r-lg); background: var(--surface); color: var(--surface-ink); box-shadow: 0 18px 44px -18px rgb(0 0 0 / .32), 0 2px 6px rgb(0 0 0 / .06); transform: translateX(-50%); transform-origin: 50% 0; }
+.page-view-title { margin: 0 0 12px; font-size: 13px; font-weight: 600; }
+.page-view-options { display: flex; gap: 14px; }
+.page-view-options button { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 0; border: 0; background: none; box-shadow: none; color: var(--surface-ink); font-size: 12.5px; }
+.page-view-options button:hover:not(:disabled) { background: none; }
+.page-view-icon { display: grid; place-items: center; width: 64px; height: 48px; border: 1px solid var(--line-soft); border-radius: var(--r-md); background: color-mix(in srgb, var(--surface-ink) 3%, var(--surface)); transition: border-color var(--dur-1) var(--ease-soft), background var(--dur-1) var(--ease-soft); }
+.page-view-options button:hover .page-view-icon { background: color-mix(in srgb, var(--surface-ink) 7%, var(--surface)); }
+.page-view-options button[aria-pressed='true'] .page-view-icon { border: 1.5px solid var(--surface-ink); background: color-mix(in srgb, var(--surface-ink) 8%, var(--surface)); }
+.page-view-cover { position: relative; display: flex; align-items: center; justify-content: space-between; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line-soft); font-size: 13px; cursor: pointer; }
+.page-view-cover.off { opacity: .45; cursor: default; }
+.page-view-cover input { position: absolute; opacity: 0; pointer-events: none; }
+.page-view-cover i { position: relative; width: 36px; height: 20px; border-radius: 999px; background: color-mix(in srgb, var(--surface-ink) 18%, transparent); transition: background var(--dur-1) var(--ease-soft); }
+.page-view-cover i::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / .25); transition: transform var(--dur-2) var(--spring-snappy); }
+.page-view-cover input:checked + i { background: var(--surface-ink); }
+.page-view-cover input:checked + i::after { transform: translateX(16px); }
+.page-view-cover input:focus-visible + i { outline: 2px solid var(--accent); outline-offset: 2px; }
 .pdf-viewport { position: relative; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
 .pdf-viewport > .pdf-scroll { position: absolute; inset: 0; }
 /* 页面放大后超出阅读区时，底部出现一条玻璃横向滚动条；系统的横向滚动条隐藏，避免出现两条。 */

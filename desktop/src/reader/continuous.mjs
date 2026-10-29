@@ -1,6 +1,6 @@
 import { ContinuousPdfViewer as PageWindow } from '../../../extension/reader/continuous.mjs';
 import { clamp, renderPixelRatio, MAX_CANVAS_PIXELS } from '../../../extension/reader/geometry.mjs';
-import { MAX_RENDERED_PAGES } from '../../../extension/reader/scroll-layout.mjs';
+import { MAX_RENDERED_PAGES, PAGE_GAP, visiblePage } from '../../../extension/reader/scroll-layout.mjs';
 import { installDarkFilter, imageUnits, classifyImages, photoLayer, releasePhotoLayer } from './dark-pages.mjs';
 
 // Keep the former per-page resolution. A five-page desktop window and one
@@ -9,6 +9,18 @@ import { installDarkFilter, imageUnits, classifyImages, photoLayer, releasePhoto
 export const DESKTOP_RENDERED_PAGES = 5;
 export const DESKTOP_PAGE_PIXELS = MAX_CANVAS_PIXELS / (MAX_RENDERED_PAGES + 1);
 export const DESKTOP_CANVAS_PIXELS = DESKTOP_PAGE_PIXELS * (DESKTOP_RENDERED_PAGES + 1);
+// 双页时两页之间的缝；每页只有一半宽，窗口里多留几页（上一行、当前行、下一行）。
+export const SPREAD_GAP = 14;
+const SPREAD_RENDERED_PAGES = 7;
+
+/** Rows of a two-page spread: pairs of pages; with `coverAlone`, page 1 sits alone (on the right, like a book's cover). */
+export function spreadRows(count, coverAlone = false) {
+  const rows = [];
+  let number = 1;
+  if (coverAlone && count) { rows.push([1]); number = 2; }
+  for (; number <= count; number += 2) rows.push(number + 1 <= count ? [number, number + 1] : [number]);
+  return rows;
+}
 const canceled = error => ['RenderingCancelledException', 'AbortException'].includes(error?.name);
 const darkTheme = () => document.documentElement.dataset.theme === 'dark';
 const idle = callback => (window.requestIdleCallback ? window.requestIdleCallback(callback, { timeout: 1200 }) : setTimeout(callback, 200));
@@ -26,6 +38,8 @@ export class ContinuousPdfViewer extends PageWindow {
     installDarkFilter();
     this.paintJobs = [];
     this.suspended = false;
+    this.spread = { enabled: false, coverAlone: false };
+    this.rowFirst = [];
     this.activity = 0;
     // 每页哪些图片是照片（深色主题里保留原色）：判断一次后按页记住，缩放、翻回来都不再读像素。
     this.photoCache = new Map();
@@ -74,8 +88,58 @@ export class ContinuousPdfViewer extends PageWindow {
 
   schedule() { if (!this.suspended) super.schedule(); }
 
+  /** 切换单页 / 双页（以及封面是否单独一页），保持当前阅读的那一页仍在视口顶部。 */
+  setSpread(enabled, coverAlone = false) {
+    const next = { enabled: !!enabled, coverAlone: !!enabled && !!coverAlone };
+    if (next.enabled === this.spread.enabled && next.coverAlone === this.spread.coverAlone) return false;
+    this.spread = next;
+    this.stack.classList.toggle('spread', next.enabled);
+    this.stack.style.rowGap = next.enabled ? `${PAGE_GAP}px` : '';
+    this.stack.style.columnGap = next.enabled ? `${SPREAD_GAP}px` : '';
+    this.maxRenderedPages = next.enabled ? SPREAD_RENDERED_PAGES : DESKTOP_RENDERED_PAGES;
+    if (!this.pdf || !this.slots?.length) return true;
+    const number = this.currentPage;
+    this.layout();
+    this.container.scrollTop = this.stack.offsetTop + this.offsets[number - 1];
+    this.explicitPosition = { page: this.rowFirst[number] || number, top: this.container.scrollTop };
+    this.updateWindow(number);
+    return true;
+  }
+
+  // 双页时跳到右页：滚到这一行，当前页记为左页，但仍返回目标页本身（引用高亮、书签要定位到它）。
+  async goToPage(number, options = {}) {
+    if (!this.spread.enabled || !this.pdf) return super.goToPage(number, options);
+    const pdf = this.pdf, epoch = this.epoch;
+    const navigation = this.navigation = (this.navigation || 0) + 1;
+    number = clamp(Math.trunc(number) || 1, 1, this.pdf.numPages);
+    const first = this.rowFirst[number] || number;
+    if (options.scroll !== false) this.container.scrollTop = this.stack.offsetTop + this.offsets[number - 1];
+    this.explicitPosition = { page: first, top: this.container.scrollTop };
+    this.updateWindow(first);
+    const view = this.views.get(number);
+    await view?.promise;
+    if (pdf !== this.pdf || epoch !== this.epoch || navigation !== this.navigation || this.currentPage !== first || this.views.get(number) !== view || view?.disposed) return;
+    return view;
+  }
+
+  /** The slots shown side by side with `number` (just its own slot outside spread mode). */
+  rowSlots(number = this.currentPage) {
+    if (!this.spread.enabled || !this.slots) return this.slots?.[number - 1] ? [this.slots[number - 1]] : [];
+    const first = this.rowFirst[number] || number;
+    return [first, first + 1].filter(page => page <= this.slots.length && (this.rowFirst[page] || page) === first).map(page => this.slots[page - 1]);
+  }
+
   updateWindow(number) {
     if (this.suspended) return;
+    // 双页时以一行的左页作为「当前页」：页码、目录与进度都指向这一行。
+    if (this.spread.enabled && this.offsets) {
+      if (!number) {
+        const top = this.container.scrollTop;
+        if (this.explicitPosition && Math.abs(this.explicitPosition.top - top) > 1) this.explicitPosition = null;
+        number = this.explicitPosition?.page || visiblePage(this.offsets, this.heights, top - this.stack.offsetTop, this.container.clientHeight);
+      }
+      number = this.rowFirst[number] || number;
+    }
     const previous = this.currentPage;
     super.updateWindow(number);
     const painting = this.paintCurrentJob?.view;
@@ -144,6 +208,12 @@ export class ContinuousPdfViewer extends PageWindow {
     const style = getComputedStyle(this.container);
     const available = availableWidth ?? this.container.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
     const size = this.sizes.get(this.currentPage) || this.defaultSize;
+    if (this.spread.enabled) {
+      // 适应宽度：当前这一行的两页（单独一页的行按两页宽算）连同中缝一起铺满。
+      const row = this.rowSlots(this.currentPage).map(slot => (this.sizes.get(Number(slot.dataset.page)) || this.defaultSize).width);
+      const units = row.length > 1 ? row[0] + row[1] : size.width * 2;
+      return available > SPREAD_GAP ? clamp((available - SPREAD_GAP) / units, .001, 4) : this.displayScale || 1;
+    }
     return available > 0 ? clamp(available / size.width, .001, 4) : this.displayScale || 1;
   }
 
@@ -152,10 +222,42 @@ export class ContinuousPdfViewer extends PageWindow {
     // up an intermediate panel width and bypass the reader's resize hold.
     if (this.scale === null && this.defaultSize) this.scale = this.getFitScale();
     super.layout();
+    this.layoutSpread();
     for (const [index, slot] of this.slots.entries()) {
       const userUnit = this.views.get(index + 1)?.page?.userUnit || 1;
       for (const [name, value] of Object.entries({ '--scale-factor': this.displayScale, '--total-scale-factor': this.displayScale * userUnit, '--user-unit': userUnit, '--scale-round-x': '1px', '--scale-round-y': '1px' })) slot.style.setProperty(name, value);
     }
+  }
+
+  /** 双页排版：页面栈变成两列网格，同一行的两页共用一个纵向位置（offsets 按行算），其余滚动逻辑不变。 */
+  layoutSpread() {
+    const count = this.slots.length;
+    this.rowFirst = new Array(count + 1);
+    if (!this.spread.enabled) {
+      for (const [index, slot] of this.slots.entries()) {
+        slot.style.gridColumn = slot.style.justifySelf = '';
+        slot.style.marginBottom = index < count - 1 ? `${PAGE_GAP}px` : '0';
+      }
+      return;
+    }
+    const offsets = new Array(count + 1).fill(0);
+    const rows = spreadRows(count, this.spread.coverAlone);
+    let top = 0;
+    rows.forEach((row, index) => {
+      const cover = row.length === 1 && row[0] === 1 && this.spread.coverAlone;
+      row.forEach((page, column) => {
+        const slot = this.slots[page - 1];
+        offsets[page - 1] = top;
+        this.rowFirst[page] = row[0];
+        slot.style.marginBottom = '0';
+        // 左页贴着中缝靠右、右页靠左；封面单独放在右栏，最后落单的一页放在左栏。
+        slot.style.gridColumn = cover ? '2' : String(column + 1);
+        slot.style.justifySelf = cover || column === 1 ? 'start' : 'end';
+      });
+      top += Math.max(...row.map(page => this.heights[page - 1])) + (index < rows.length - 1 ? PAGE_GAP : 0);
+    });
+    offsets[count] = top;
+    this.offsets = offsets;
   }
 
   ensure(number) {

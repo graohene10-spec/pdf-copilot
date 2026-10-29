@@ -147,7 +147,7 @@ test('capture quick ask survives saving and reloading independently from automat
 })
 test('stored out-of-range values are bounded; new edits reject invalid numbers', () => {
   const fixed = normalizePreferences({ pdf: { initialZoom: 900, zoomStep: 1, fitOnPanelOverflow: false }, markdown: { fontSize: 99, contentWidth: 500 } })
-  assert.deepEqual(fixed.pdf, { initialZoom: 400, zoomStep: 5, fitOnPanelOverflow: false, openAssistantOnCapture: true, quickAskOnCapture: true })
+  assert.deepEqual(fixed.pdf, { initialZoom: 400, zoomStep: 5, fitOnPanelOverflow: false, openAssistantOnCapture: true, quickAskOnCapture: true, pageLayout: 'single', coverAlone: false })
   assert.deepEqual(fixed.markdown, { fontSize: 28, contentWidth: 600 })
   fixed.pdf.zoomStep = Number.NaN
   fixed.markdown.fontSize = 13.2
