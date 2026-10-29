@@ -13,7 +13,7 @@ import { installGlassContrast } from './ui/glass-contrast'
 import { restoreLeavingPanel } from './ui/panel-transition'
 import BookmarkRail from './components/BookmarkRail.vue'
 import ClaudeBurst from './components/ClaudeBurst.vue'
-import { bookmarks, loadBookmarks, addBookmark, removeBookmark, renameBookmark, neighbour, type BookmarkPosition } from './library/bookmarks'
+import { bookmarks, loadBookmarks, addBookmark, removeBookmark, clearBookmarks, renameBookmark, neighbour, type BookmarkPosition } from './library/bookmarks'
 import { useFullscreen } from './ui/fullscreen'
 import { vLiquidSelection } from './ui/liquid-selection'
 import { useReorder } from './ui/reorder'
@@ -604,11 +604,24 @@ function stepBookmark(direction: 1 | -1) {
   if (next) jumpBookmark(id, next.id)
 }
 function bookmarkMenu(id: string, markId: string, event: MouseEvent) {
-  contextMenu.value = { x: event.clientX, y: event.clientY, items: [
+  const source = sourceId(id), count = bookmarks.get(source)?.length || 0
+  const x = event.clientX, y = event.clientY
+  contextMenu.value = { x, y, items: [
     { label: '命名…', icon: 'edit', action: () => { editingBookmark.value = markId } },
-    { label: '删除书签', icon: 'trash', danger: true, separator: true, action: () => { removeBookmark(sourceId(id), markId); bookmarkTick.value++ } },
+    { label: '删除书签', icon: 'trash', danger: true, separator: true, action: () => { removeBookmark(source, markId); bookmarkTick.value++ } },
+    ...(count > 1 ? [{ label: `删除全部 ${count} 个书签…`, icon: 'trash', danger: true, action: () => confirmClearBookmarks(source, count, x, y) }] : []),
   ] }
 }
+// 一次清掉整本书的书签：再确认一步，免得误点。
+function confirmClearBookmarks(source: string, count: number, x: number, y: number) {
+  void nextTick(() => {
+    contextMenu.value = { x, y, items: [
+      { label: `确定删除全部 ${count} 个书签`, icon: 'trash', danger: true, action: () => { clearBookmarks(source); bookmarkTick.value++; notify(`已删除 ${count} 个书签`) } },
+      { label: '取消', icon: 'close', separator: true, action: () => {} },
+    ] }
+  })
+}
+function deleteBookmark(id: string, markId: string) { removeBookmark(sourceId(id), markId); bookmarkTick.value++ }
 function finishRename(id: string, markId: string, name: string) {
   if (editingBookmark.value !== markId) return
   editingBookmark.value = null
@@ -1420,7 +1433,7 @@ onBeforeUnmount(() => { stopAutoCheck(); for (const timer of pillTimers.values()
               <KeepAlive>
                 <component v-if="paneVisible(entry.id)" :is="entry.doc.kind === 'pdf' ? PdfReader : MarkdownReader" :ref="value => bindReader(entry.id, value)" :key="entry.id" :data="entry.bytes" :document-id="sourceId(entry.id)" :initial-page="entry.doc.page || 1" :initial-progress="entry.doc.progress || 0" :sidebar-fit-enabled="preferences.pdf.fitOnPanelOverflow" :initial-zoom="preferences.pdf.initialZoom === 'fit-width' ? 'fit' : preferences.pdf.initialZoom / 100" :zoom-step="preferences.pdf.zoomStep / 100" :fit-request="fitRequest" :font-size="preferences.markdown.fontSize" :content-width="preferences.markdown.contentWidth" :find-shortcut="preferences.shortcuts.find ? shortcut('find') : ''" :shortcuts="tipKeys" :initial-view="entry.view" :page-layout="preferences.pdf.pageLayout" :cover-alone="preferences.pdf.coverAlone" v-on="entry.events" @page-layout="setPageLayout" />
               </KeepAlive>
-              <BookmarkRail v-if="paneVisible(entry.id)" :marks="paneBookmarks(entry.id)" :editing="editingBookmark" @jump="markId => jumpBookmark(entry.id, markId)" @menu="(markId, event) => bookmarkMenu(entry.id, markId, event)" @rename="(markId, name) => finishRename(entry.id, markId, name)" @cancel="editingBookmark = null" />
+              <BookmarkRail v-if="paneVisible(entry.id)" :marks="paneBookmarks(entry.id)" :editing="editingBookmark" @jump="markId => jumpBookmark(entry.id, markId)" @menu="(markId, event) => bookmarkMenu(entry.id, markId, event)" @rename="(markId, name) => finishRename(entry.id, markId, name)" @remove="markId => deleteBookmark(entry.id, markId)" @cancel="editingBookmark = null" />
               <div v-if="tabDoc(entry.id)" class="reading-pill" :class="{ awake: pillAwake[entry.id] || splitView }" :data-tip="splitView ? entry.doc.name : undefined" role="status" :aria-label="`阅读位置自动保存 · ${tabDoc(entry.id)!.kind === 'pdf' ? `第 ${tabDoc(entry.id)!.page || 1} / ${tabDoc(entry.id)!.pageCount || '—'} 页 · ` : ''}已读 ${progressPercent(tabDoc(entry.id)!)}%`">
                 <svg class="pill-ring" viewBox="0 0 24 24" aria-hidden="true"><circle class="pill-ring-track" cx="12" cy="12" r="9" /><circle class="pill-ring-value" cx="12" cy="12" r="9" pathLength="100" :style="{ strokeDashoffset: 100 - progressPercent(tabDoc(entry.id)!) }" /></svg>
                 <span class="pill-text" aria-hidden="true"><span v-if="tabDoc(entry.id)!.kind === 'pdf'" class="pill-page"><b :key="tabDoc(entry.id)!.page || 1">{{ tabDoc(entry.id)!.page || 1 }}</b><i>/</i>{{ tabDoc(entry.id)!.pageCount || '—' }}</span><span v-else class="pill-page"><b :key="progressPercent(tabDoc(entry.id)!)">{{ progressPercent(tabDoc(entry.id)!) }}</b><i>%</i></span></span>

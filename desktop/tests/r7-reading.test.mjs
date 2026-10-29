@@ -31,7 +31,7 @@ test('every classical line ends with a full stop (or a question mark)', () => {
 })
 
 test('placeholders and thinking verbs are picked deterministically', () => {
-  assert.equal(PLACEHOLDERS.length, 14)
+  assert.equal(PLACEHOLDERS.length, 13)
   assert.ok(PLACEHOLDERS.includes('来一个最直白、最直接、最不绕弯子的解释。'))
   assert.ok(PLACEHOLDERS.includes(placeholderFor(.5)))
   assert.equal(placeholderFor(.5), placeholderFor(.5))

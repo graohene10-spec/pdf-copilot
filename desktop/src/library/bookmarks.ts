@@ -45,6 +45,13 @@ export function removeBookmark(id: string, markId: string) {
   bookmarks.set(id, (bookmarks.get(id) || []).filter(mark => mark.id !== markId))
   save(id)
 }
+/** Removes every bookmark of a document; returns how many were removed. */
+export function clearBookmarks(id: string) {
+  const count = bookmarks.get(id)?.length || 0
+  bookmarks.set(id, [])
+  save(id)
+  return count
+}
 export function renameBookmark(id: string, markId: string, name: string) {
   bookmarks.set(id, (bookmarks.get(id) || []).map(mark => mark.id === markId ? { ...mark, name: name.trim().slice(0, 40) } : mark))
   save(id)
