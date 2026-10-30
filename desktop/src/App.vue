@@ -361,8 +361,16 @@ async function refresh() {
 function searchDocuments() { clearTimeout(queryTimer); queryTimer = setTimeout(refresh, 180) }
 function chooseCategory(value: string) { category.value = value; tagFilter.value = ''; closeReader() }
 function chooseTag(value: string) { tagFilter.value = value; category.value = 'all'; closeReader() }
+// 文档库可以收起，只留桌面上的底板（铅笔草稿风格下是慢慢自转的流形）。「文档库」再点一次就打开 / 收起。
+const libraryShown = ref(true)
+function toggleLibrary() {
+  if (active.value) { closeReader(); return }
+  libraryShown.value = !libraryShown.value
+  if (!libraryShown.value) { clearPicked(); batchTag.value = null }
+}
 async function addDocuments(load: () => Promise<Doc[]>) {
   if (importing.value) { notify('正在加入文档，请稍候。'); return }
+  libraryShown.value = true
   importing.value = true
   try {
     const imported = await load()
@@ -529,6 +537,7 @@ async function loadGroupReaders(epoch: number) {
   }
 }
 function closeReader() {
+  libraryShown.value = true
   suspendLeaving([]); pauseReader(); ++openEpoch; void flushProgress(); splitPicker.value = undefined; active.value = null; opening.value = false; selection.value = undefined; detailsOpen.value = false
   // 没有打开的文件时才真正清空工作区；否则读者与助手留在原处，回来即用。
   if (!tabs.value.length) clearWorkspace()
@@ -1331,6 +1340,7 @@ function keydown(event: KeyboardEvent) {
       break
     case 'search':
       focusSearchPending = true
+      libraryShown.value = true
       if (active.value) closeReader()
       else if (search.value) { search.value.focus(); focusSearchPending = false }
       break
@@ -1439,6 +1449,8 @@ onMounted(async () => {
   window.addEventListener('resize', captureViewportChanged)
   systemTheme.addEventListener('change', applyTheme)
   try { await loadPreferences() } catch (error) { notify(`设置加载失败：${reason(error)}`) }
+  // 打开应用时先只看到流形底板，文档库收着；点「文档库」再展开。
+  if (!active.value && manifoldVisible.value) libraryShown.value = false
   await loadLibraryOrder()
   void loadCovers()
   await refresh()
@@ -1471,8 +1483,8 @@ onBeforeUnmount(() => { stopAutoCheck(); for (const timer of pillTimers.values()
       <Transition name="topbar" @before-enter="paneResizeStart($event, true)" @before-leave="paneResizeStart($event, false)" @after-enter="paneResizeEnd" @after-leave="paneResizeEnd" @enter-cancelled="paneResizeEnd($event, true)" @leave-cancelled="paneResizeEnd($event, true)">
       <header v-show="!chromeCollapsed" class="app-topbar" :class="{ 'with-tabs': tabs.length }" data-glass-interactive="panel">
         <button class="icon-button sidebar-toggle" @click="toggleSidebar" data-tip="显示 / 隐藏侧栏" :data-tip-key="tipKey('sidebar')" aria-label="切换侧栏" :aria-expanded="sidebarOpen"><AppIcon name="panel" :size="18" /></button>
-        <FileTabs v-if="tabs.length" :tabs="fileTabs" :active-id="active?.id" :group="group.length > 1 ? group : []" :visible="paneIds" @select="selectTab" @close="closeTab" @library="closeReader" @menu="tabMenu" @drag="tabDrag" @reorder="reorderTabs" />
-        <span v-else class="breadcrumb">{{ currentTitle }}</span>
+        <FileTabs v-if="tabs.length" :tabs="fileTabs" :active-id="active?.id" :group="group.length > 1 ? group : []" :visible="paneIds" @select="selectTab" @close="closeTab" @library="toggleLibrary" :library-open="libraryShown" @menu="tabMenu" @drag="tabDrag" @reorder="reorderTabs" />
+        <button v-else class="breadcrumb breadcrumb-toggle" :class="{ open: libraryShown }" :aria-pressed="libraryShown" :data-tip="libraryShown ? '收起文档库，只留桌面' : '打开文档库'" @click="toggleLibrary"><AppIcon name="library" :size="15" /><b>{{ libraryShown ? currentTitle : '文档库' }}</b></button>
         <div class="topbar-actions">
           <template v-if="active"><button class="icon-button" :class="{ 'is-starred': active.starred }" @click="toggleStar(active)" data-tip="收藏文档" aria-label="收藏文档"><AppIcon name="star" :size="18" /></button><button class="icon-button" :class="{ active: detailsOpen }" @click="detailsOpen = !detailsOpen" data-tip="文档详情与标签" aria-label="文档详情与标签" :aria-expanded="detailsOpen"><AppIcon name="tag" :size="18" /></button><button class="icon-button split-toggle" data-split-anchor :class="{ active: splitPicker || splitView }" @click="toggleSplitPicker($event)" data-tip="并排阅读" :data-tip-key="tipKey('split')" aria-label="并排阅读" :aria-expanded="!!splitPicker"><AppIcon name="split" :size="18" /><span v-if="splitView" class="split-count">{{ paneIds.length }}</span></button><button class="ai-toggle" data-tip="阅读助手" :data-tip-key="tipKey('ai')" :class="{ active: aiOpen }" @click="toggleAssistant" :aria-expanded="aiOpen"><ClaudeBurst :size="17" />阅读助手</button></template>
           <button v-else class="icon-button" @click="toggleTheme" :data-tip="theme === 'dark' ? '切换浅色主题' : '切换深色主题'" :aria-label="theme === 'dark' ? '切换浅色主题' : '切换深色主题'"><AppIcon :name="theme === 'dark' ? 'sun' : 'moon'" :size="18" /></button>
@@ -1484,7 +1496,7 @@ onBeforeUnmount(() => { stopAutoCheck(); for (const timer of pillTimers.values()
       </Transition>
 
       <Transition name="view">
-      <div v-if="!active" ref="libraryView" class="library-view" :class="{ 'rubber-banding': band.active.value }" key="library" data-reorder-scroll @pointerdown="band.pointerdown">
+      <div v-if="!active && libraryShown" ref="libraryView" class="library-view" :class="{ 'rubber-banding': band.active.value }" key="library" data-reorder-scroll @pointerdown="band.pointerdown">
         <header class="library-header">
           <div class="library-heading"><h1>{{ currentTitle }}<span class="heading-count">{{ visibleDocuments.length }}</span></h1></div>
           <div class="library-tools">

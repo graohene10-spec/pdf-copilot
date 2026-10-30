@@ -2,7 +2,7 @@
 import { ref, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import AppIcon from './AppIcon.vue'
 import { vLiquidSelection } from '../ui/liquid-selection'
-const props = defineProps<{ tabs: { id: string; name: string; kind: string; phase: string }[]; activeId?: string; group?: string[]; visible?: string[] }>()
+const props = defineProps<{ tabs: { id: string; name: string; kind: string; phase: string }[]; activeId?: string; group?: string[]; visible?: string[]; libraryOpen?: boolean }>()
 const emit = defineEmits<{
   select: [id: string]; close: [id: string]; library: []
   menu: [value: { id: string; x: number; y: number }]
@@ -107,7 +107,7 @@ onBeforeUnmount(() => { resizeObserver?.disconnect(); window.removeEventListener
 
 <template>
   <div class="file-tabs">
-    <button class="tab-library" data-glass-interactive @click="emit('library')" :class="{ selected: !activeId }" data-tip="文档库" aria-label="文档库"><AppIcon name="library" :size="16" /><span>文档库</span></button>
+    <button class="tab-library" data-glass-interactive @click="emit('library')" :class="{ selected: !activeId && libraryOpen !== false }" :aria-pressed="!activeId && libraryOpen !== false" :data-tip="activeId ? '文档库' : libraryOpen !== false ? '收起文档库' : '打开文档库'" aria-label="文档库"><AppIcon name="library" :size="16" /><span>文档库</span></button>
     <TransitionGroup ref="strip" v-liquid-selection="'.file-tab.selected'" tag="div" name="tab" class="tab-strip" role="tablist" aria-label="打开的文件" @before-leave="retire">
       <div v-if="frame" key="__group-frame" class="group-frame" :style="{ left: `${frame.left}px`, width: `${frame.width}px` }" aria-hidden="true" />
       <div v-for="(tab, index) in tabs" :key="tab.id" :data-id="tab.id" class="file-tab" data-glass-interactive="tab" :class="{ selected: tab.id === activeId, grouped: inGroup(tab.id), 'on-screen': (visible || []).includes(tab.id) && tab.id !== activeId }" @auxclick.prevent="$event.button === 1 && emit('close', tab.id)" @contextmenu.prevent="emit('menu', { id: tab.id, x: $event.clientX, y: $event.clientY })" @pointerdown="down($event, tab.id)">
