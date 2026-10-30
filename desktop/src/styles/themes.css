@@ -1550,3 +1550,55 @@
 
 /* 格子纸上的流形画在所有纸片后面（z-index: -1），外壳自成一层叠放上下文，流形不会掉到桌面底色下面。 */
 :root[data-style='sketch'] .app-shell { isolation: isolate; }
+
+/* ---- 选中文字：不用浏览器默认的蓝底白字 ------------------------------------------------ */
+:root[data-style='warm'] { --selection: rgb(232 170 92 / .38); }
+:root[data-style='warm'][data-theme='dark'] { --selection: rgb(217 119 87 / .36); }
+/* 草稿风格像拿荧光笔划过：黄色、带一点透明，铅笔字仍然清楚。 */
+:root[data-style='sketch'] { --selection: rgb(255 214 64 / .5); }
+:root[data-style='sketch'][data-theme='dark'] { --selection: rgb(240 196 70 / .3); }
+
+/* ---- 文档库框选：暖色是琥珀色的框，草稿是铅笔虚线框 ------------------------------------- */
+:root[data-style='warm'] .rubber-band-box { border-color: color-mix(in srgb, var(--accent) 75%, transparent); background: color-mix(in srgb, var(--accent) 10%, transparent); border-radius: 6px; }
+:root[data-style='warm'] .batch-bar { background: var(--surface); -webkit-backdrop-filter: none; backdrop-filter: none; border-color: var(--line-soft); }
+
+:root[data-style='sketch'] .rubber-band-box {
+  border: 1.5px dashed var(--pencil);
+  border-radius: 3px 6px 4px 7px;
+  background: repeating-linear-gradient(-45deg, transparent 0 7px, color-mix(in srgb, var(--pencil) 9%, transparent) 7px 8px);
+}
+/* 选中的卡片像被红铅笔圈了一下，左上角打个勾。 */
+:root[data-style='sketch'] .document-card.picked { box-shadow: none; outline: 2px solid var(--red-pencil); outline-offset: 4px; border-radius: 6px 10px 7px 11px; }
+:root[data-style='sketch'] .card-pick { background: var(--paper); color: var(--red-pencil); border: 1.5px solid var(--red-pencil); box-shadow: none; rotate: -8deg; }
+:root[data-style='sketch'] .batch-bar { background: var(--paper); -webkit-backdrop-filter: none; backdrop-filter: none; border: 1.5px solid var(--pencil); border-radius: 8px 12px 9px 13px; box-shadow: 3px 4px 0 color-mix(in srgb, var(--pencil) 18%, transparent); rotate: -.4deg; }
+:root[data-style='sketch'] .batch-bar button { border-radius: 6px; }
+
+/* ---- 阅读区上沿：工具条是一条撕下来的纸，页面从它的毛边底下滑过去，不再被一刀切断 ---------- */
+/* 纸条底边画一排尺子刻度，长短相间，填上工具与搜索之间那段空白。 */
+:root[data-style='sketch'] .reader-tools {
+  margin-bottom: 0;
+  padding: 0 12px 4px 10px;
+  border-radius: 10px 13px 0 0 / 8px 10px 0 0;
+  background-color: var(--paper);
+  background-image:
+    repeating-linear-gradient(to right, color-mix(in srgb, var(--pencil) 34%, transparent) 0 1px, transparent 1px 60px),
+    repeating-linear-gradient(to right, color-mix(in srgb, var(--pencil) 22%, transparent) 0 1px, transparent 1px 12px);
+  background-size: 100% 9px, 100% 5px;
+  background-position: 10px 100%, 10px 100%;
+  background-repeat: no-repeat;
+  box-shadow: 0 -1px 0 color-mix(in srgb, var(--pencil) 10%, transparent) inset;
+}
+
+:root[data-style='sketch'] .reader-engine-body::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 4;
+  height: 14px;
+  pointer-events: none;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='14' viewBox='0 0 140 14'%3E%3Cpath d='M0 7L8 5.5L16 9L25 4.5L33 8L41 5L49 9L58 4.5L66 8.5L75 6L83 9.5L92 4L99 8L108 5.5L116 9L124 4.5L131 8.5L140 5' transform='translate(0 1.6)' fill='none' stroke='rgba(60,50,30,.16)' stroke-width='2.4'/%3E%3Cpath d='M0 0H140V5L131 8.5L124 4.5L116 9L108 5.5L99 8L92 4L83 9.5L75 6L66 8.5L58 4.5L49 9L41 5L33 8L25 4.5L16 9L8 5.5L0 7Z' fill='%23fbf8f0'/%3E%3Cpath d='M0 7L8 5.5L16 9L25 4.5L33 8L41 5L49 9L58 4.5L66 8.5L75 6L83 9.5L92 4L99 8L108 5.5L116 9L124 4.5L131 8.5L140 5' fill='none' stroke='rgba(46,45,42,.55)' stroke-width='.9' stroke-linejoin='round'/%3E%3C/svg%3E") repeat-x 0 0 / 140px 14px;
+}
+:root[data-style='sketch'][data-theme='dark'] .reader-engine-body::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='14' viewBox='0 0 140 14'%3E%3Cpath d='M0 7L8 5.5L16 9L25 4.5L33 8L41 5L49 9L58 4.5L66 8.5L75 6L83 9.5L92 4L99 8L108 5.5L116 9L124 4.5L131 8.5L140 5' transform='translate(0 1.6)' fill='none' stroke='rgba(60,50,30,.16)' stroke-width='2.4'/%3E%3Cpath d='M0 0H140V5L131 8.5L124 4.5L116 9L108 5.5L99 8L92 4L83 9.5L75 6L66 8.5L58 4.5L49 9L41 5L33 8L25 4.5L16 9L8 5.5L0 7Z' fill='%232e2c28'/%3E%3Cpath d='M0 7L8 5.5L16 9L25 4.5L33 8L41 5L49 9L58 4.5L66 8.5L75 6L83 9.5L92 4L99 8L108 5.5L116 9L124 4.5L131 8.5L140 5' fill='none' stroke='rgba(236,230,214,.45)' stroke-width='.9' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+
+/* 毛边已经把页面上沿盖住了，不再需要淡出遮罩。 */
+:root[data-style='sketch'] :is(.pdf-scroll, .markdown-scroll) { -webkit-mask-image: none; mask-image: none; }

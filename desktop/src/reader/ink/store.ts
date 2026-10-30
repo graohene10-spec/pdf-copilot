@@ -8,6 +8,8 @@ type Operation =
   | { kind: 'erase'; page: number; removed: { stroke: InkStroke; index: number }[] }
   | { kind: 'clear'; page: number; strokes: InkStroke[] }
   | { kind: 'clearAll'; page: null; pages: [number, InkStroke[]][] }
+  | { kind: 'recolor'; page: null; changes: { page: number; before: InkStroke; after: InkStroke }[] }
+  | { kind: 'group'; page: null; operations: Operation[] }
 export type InkListener = (page: number | null) => void
 
 const HISTORY = 200
@@ -100,14 +102,60 @@ export class InkStore {
   }
   get hasInk() { return this.document.pages.size > 0 }
 
+  /** Erase a selection spanning several pages as one undo step. */
+  eraseSelection(selection: ReadonlyMap<number, ReadonlySet<string>>) {
+    const operations: Operation[] = []
+    for (const [page, ids] of selection) {
+      const list = this.document.pages.get(page) || []
+      const removed = list.map((stroke, index) => ({ stroke, index })).filter(({ stroke }) => ids.has(stroke.id))
+      if (!removed.length) continue
+      this.set(page, list.filter(stroke => !ids.has(stroke.id)))
+      operations.push({ kind: 'erase', page, removed })
+    }
+    if (!operations.length) return false
+    this.record({ kind: 'group', page: null, operations })
+    return true
+  }
+
+  /** Give every selected stroke a new colour (one undo step); ids stay the same so the selection survives. */
+  recolor(selection: ReadonlyMap<number, ReadonlySet<string>>, color: string) {
+    const changes: { page: number; before: InkStroke; after: InkStroke }[] = []
+    for (const [page, ids] of selection) {
+      const list = this.document.pages.get(page)
+      if (!list) continue
+      this.document.pages.set(page, list.map(stroke => {
+        if (!ids.has(stroke.id) || stroke.color === color) return stroke
+        const after = { ...stroke, color }
+        changes.push({ page, before: stroke, after })
+        return after
+      }))
+    }
+    if (!changes.length) return false
+    this.record({ kind: 'recolor', page: null, changes })
+    return true
+  }
+
   undo() {
     const operation = this.history.pop()
     if (!operation) return null
+    this.revert(operation)
+    this.changed(operation.page)
+    return operation.page
+  }
+
+  private revert(operation: Operation) {
+    if (operation.kind === 'group') { for (const part of [...operation.operations].reverse()) this.revert(part); return }
+    if (operation.kind === 'recolor') {
+      for (const { page, before, after } of operation.changes) {
+        const list = this.document.pages.get(page)
+        if (list) this.document.pages.set(page, list.map(stroke => stroke === after ? before : stroke))
+      }
+      return
+    }
     if (operation.kind === 'clearAll') {
       for (const [page, strokes] of operation.pages) this.document.pages.set(page, [...strokes, ...this.strokes(page)])
       this.points = countPoints(this.document)
-      this.changed(null)
-      return null
+      return
     }
     const list = [...this.strokes(operation.page)]
     if (operation.kind === 'add') this.set(operation.page, list.filter(stroke => stroke !== operation.stroke))
@@ -116,8 +164,6 @@ export class InkStore {
       for (const { stroke, index } of [...operation.removed].sort((a, b) => a.index - b.index)) list.splice(Math.min(index, list.length), 0, stroke)
       this.set(operation.page, list)
     }
-    this.changed(operation.page)
-    return operation.page
   }
 
   private set(page: number, strokes: InkStroke[]) {

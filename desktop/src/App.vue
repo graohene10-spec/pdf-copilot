@@ -18,6 +18,7 @@ import { bookmarks, loadBookmarks, addBookmark, removeBookmark, clearBookmarks, 
 import { useFullscreen } from './ui/fullscreen'
 import { vLiquidSelection } from './ui/liquid-selection'
 import { useReorder } from './ui/reorder'
+import { useRubberBand } from './ui/rubber-band'
 import { startAutoCheck, stopAutoCheck } from './ui/updater'
 import { registerCustomFonts } from './ui/custom-fonts'
 import { covers, loadCovers, setCover, imageCover, pageCover, type Cover } from './library/covers'
@@ -182,6 +183,8 @@ function expandChrome() { chromeCollapsed.value = false; sidebarOpen.value = tru
 function toggleSidebar() { if (chromeCollapsed.value) expandChrome(); else sidebarOpen.value = !sidebarOpen.value }
 const detailsOpen = ref(false)
 const removeTarget = ref<Doc | null>(null)
+/** 文档库里一次移除多份（框选后的批量操作）。 */
+const removeBatch = ref<Doc[] | null>(null)
 const theme = ref('light')
 const systemTheme = window.matchMedia('(prefers-color-scheme: dark)')
 const tagInput = ref('')
@@ -248,6 +251,59 @@ const visibleDocuments = computed(() => {
 })
 const canArrange = computed(() => !query.value && category.value !== 'recent' && librarySort.value.key === 'default' && visibleDocuments.value.length > 1)
 const collection = ref<HTMLElement>()
+const libraryView = ref<HTMLElement>()
+// 文档库的框选：空白处按住左键拖框选中，Ctrl / Shift 点卡片增减；选中后底部浮出批量操作条。
+const picked = ref(new Set<string>())
+let pickAnchor: string | undefined
+const band = useRubberBand({
+  container: () => libraryView.value,
+  items: () => [...(collection.value?.querySelectorAll<HTMLElement>('[data-reorder-id]') || [])].map(element => ({ id: element.dataset.reorderId!, element })),
+  selected: picked,
+  ignore: target => !!target.closest('.document-card, button, input, textarea, select, a, [role=menu], .batch-bar, .library-search'),
+})
+const pickedDocs = computed(() => visibleDocuments.value.filter(doc => picked.value.has(doc.id)))
+function clearPicked() { if (picked.value.size) picked.value = new Set(); pickAnchor = undefined }
+function cardClick(event: MouseEvent, doc: Doc) {
+  // Ctrl / ⌘ 点击加减一份，Shift 点击选中一段；普通点击仍是打开。
+  if (event.ctrlKey || event.metaKey) {
+    const next = new Set(picked.value)
+    if (next.has(doc.id)) next.delete(doc.id); else next.add(doc.id)
+    picked.value = next; pickAnchor = doc.id
+    return
+  }
+  if (event.shiftKey) {
+    const ids = visibleDocuments.value.map(item => item.id)
+    const from = Math.max(0, ids.indexOf(pickAnchor || doc.id)), to = ids.indexOf(doc.id)
+    picked.value = new Set([...picked.value, ...ids.slice(Math.min(from, to), Math.max(from, to) + 1)])
+    window.getSelection()?.removeAllRanges()
+    return
+  }
+  if (picked.value.size) clearPicked()
+  void openDocument(doc)
+}
+async function openPicked() {
+  const docs = pickedDocs.value
+  if (!docs.length) return
+  // 第一份打开，其余作为标签页排在后面，切过去时才读取。
+  for (const doc of docs.slice(1)) if (!tabs.value.some(tab => tab.doc.id === doc.id)) tabs.value.push({ doc })
+  clearPicked()
+  await openDocument(docs[0]!)
+}
+async function starPicked() {
+  const docs = pickedDocs.value, value = docs.some(doc => !doc.starred)
+  try { for (const doc of docs) if (doc.starred !== value) updateLocal(await library.update(sourceId(doc.id), { starred: value })) }
+  catch (error) { notify(reason(error)) }
+}
+const batchTag = ref<string | null>(null)
+async function tagPicked() {
+  const value = (batchTag.value || '').trim().slice(0, 40)
+  if (!value) { batchTag.value = null; return }
+  try { for (const doc of pickedDocs.value) if (!doc.tags.includes(value)) updateLocal(await library.update(sourceId(doc.id), { tags: [...doc.tags, value] })); notify(`已给 ${pickedDocs.value.length} 份文档加上标签「${value}」。`) }
+  catch (error) { notify(reason(error)) }
+  batchTag.value = null
+}
+function removePicked() { if (pickedDocs.value.length) removeBatch.value = [...pickedDocs.value] }
+function pickAll() { picked.value = new Set(visibleDocuments.value.map(doc => doc.id)) }
 function arrangeLibrary(visible: string[]) {
   // 只在筛选结果内调整顺序：被筛掉的文档保持原来的位置。
   const shown = new Set(visible)
@@ -266,6 +322,8 @@ const reorderLibrary = useReorder({
   commit: saveLibraryOrder,
   enabled: () => canArrange.value,
 })
+watch(visibleDocuments, docs => { if (!picked.value.size) return; const ids = new Set(docs.map(doc => doc.id)); if ([...picked.value].some(id => !ids.has(id))) picked.value = new Set([...picked.value].filter(id => ids.has(id))) })
+watch(active, value => { if (value) { clearPicked(); batchTag.value = null } })
 const currentTitle = computed(() => tagFilter.value || (category.value === 'starred' ? '我的收藏' : category.value === 'recent' ? '最近阅读' : '文档库'))
 const totalPages = computed(() => documents.value.filter(doc => doc.kind === 'pdf' && doc.lastOpenedAt).reduce((sum, doc) => sum + (doc.pageCount || 0), 0))
 
@@ -1066,10 +1124,17 @@ async function removeTag(value: string) {
   try { updateLocal(await library.update(sourceId(active.value.id), { tags: active.value.tags.filter(tag => tag !== value) })) }
   catch (error) { notify(reason(error)) }
 }
-async function removeDocument() {
-  if (!removeTarget.value) return
-  const target = removeTarget.value
-  try { if (active.value?.id === target.id) rememberReader(); await flushProgress(); await progressWrites.get(target.id); clearTimeout(indexTimers.get(target.id)); indexTimers.delete(target.id); await library.remove(target.id); for (const tab of [...tabs.value]) if (sourceId(tab.doc.id) === target.id) closeTab(tab.doc.id); removeTarget.value = null; await refresh(); notify('已从文档库移除，原文件保留。') }
+async function removeDocuments() {
+  const targets = removeBatch.value
+  if (!targets?.length) return
+  removeBatch.value = null
+  for (const target of targets) await removeDocument(true, target)
+  clearPicked()
+  notify(`已从文档库移除 ${targets.length} 份文档，原文件保留。`)
+}
+async function removeDocument(quiet = false, target = removeTarget.value) {
+  if (!target) return
+  try { if (active.value?.id === target.id) rememberReader(); await flushProgress(); await progressWrites.get(target.id); clearTimeout(indexTimers.get(target.id)); indexTimers.delete(target.id); await library.remove(target.id); for (const tab of [...tabs.value]) if (sourceId(tab.doc.id) === target.id) closeTab(tab.doc.id); removeTarget.value = null; await refresh(); if (!quiet) notify('已从文档库移除，原文件保留。') }
   catch (error) { notify(reason(error)) }
 }
 let appliedBackground: string | undefined
@@ -1220,13 +1285,21 @@ function keydown(event: KeyboardEvent) {
     // 收起卡片但保留截图：之后自己在阅读助手里提问，截图仍在输入框上方。
     else if (captureQuick.value) { dismissCaptureQuick(); event.preventDefault() }
     else if (removeTarget.value) { removeTarget.value = null; event.preventDefault() }
+    else if (removeBatch.value) { removeBatch.value = null; event.preventDefault() }
+    else if (!active.value && batchTag.value !== null) { batchTag.value = null; event.preventDefault() }
+    else if (!active.value && picked.value.size) { clearPicked(); event.preventDefault() }
     else if (detailsOpen.value) { detailsOpen.value = false; event.preventDefault() }
     else if (reader.value?.cancelCapture?.()) event.preventDefault()
     else if (fullscreen.value) { event.preventDefault(); void exitFullscreen() }
     return
   }
   const binding = shortcutFromEvent(event)
-  if (settingsOpen.value || removeTarget.value) {
+  // 文档库：Ctrl+A 全选，Delete 移除选中的文档（焦点在输入框里时不管）。
+  if (!active.value && !settingsOpen.value && !removeTarget.value && !removeBatch.value && !(event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])'))) {
+    if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.code === 'KeyA' && visibleDocuments.value.length) { event.preventDefault(); pickAll(); return }
+    if (event.key === 'Delete' && picked.value.size) { event.preventDefault(); removePicked(); return }
+  }
+  if (settingsOpen.value || removeTarget.value || removeBatch.value) {
     if (binding && ['Ctrl+KeyF', 'F11', preferences.value.shortcuts.find, preferences.value.shortcuts.fullscreen].includes(binding)) event.preventDefault()
     return
   }
@@ -1411,7 +1484,7 @@ onBeforeUnmount(() => { stopAutoCheck(); for (const timer of pillTimers.values()
       </Transition>
 
       <Transition name="view">
-      <div v-if="!active" class="library-view" key="library" data-reorder-scroll>
+      <div v-if="!active" ref="libraryView" class="library-view" :class="{ 'rubber-banding': band.active.value }" key="library" data-reorder-scroll @pointerdown="band.pointerdown">
         <header class="library-header">
           <div class="library-heading"><h1>{{ currentTitle }}<span class="heading-count">{{ visibleDocuments.length }}</span></h1></div>
           <div class="library-tools">
@@ -1424,12 +1497,28 @@ onBeforeUnmount(() => { stopAutoCheck(); for (const timer of pillTimers.values()
         <div v-if="loading" class="library-empty"><span class="spinner"></span><p>正在读取文档库…</p></div>
         <div v-else-if="!visibleDocuments.length" class="library-empty"><div class="empty-art"><AppIcon name="book" :size="42" /></div><h2>{{ query ? '没有匹配的文档' : category === 'starred' ? '暂无收藏' : tagFilter ? '此标签下暂无文档' : '暂无文档' }}</h2><p>{{ query ? '可搜索标题、标签和已读取的文档内容。' : '点击“加入文档”添加 PDF 或 Markdown，可一次选择多个文件。' }}</p><button v-if="query" @click="query = ''; refresh()">查看全部文档</button><small>导入不会移动或修改原文件</small></div>
         <div v-else ref="collection" class="document-collection" :class="[display, { arrangeable: canArrange }]" :aria-description="canArrange ? '拖动卡片或按 Alt+方向键调整位置' : undefined">
-          <article v-for="doc in visibleDocuments" :key="doc.id" class="document-card" :class="[doc.kind, { 'reorder-lifted': reorderLibrary.dragging.value === doc.id }]" :data-reorder-id="doc.id" tabindex="0" role="button" :aria-label="`打开 ${doc.name}`" @click="openDocument(doc)" @keydown.enter="openDocument(doc)" @keydown="reorderLibrary.keydown($event, doc.id)" @pointerdown="reorderLibrary.pointerdown($event, doc.id)">
+          <article v-for="doc in visibleDocuments" :key="doc.id" class="document-card" :class="[doc.kind, { 'reorder-lifted': reorderLibrary.dragging.value === doc.id, picked: picked.has(doc.id) }]" :data-reorder-id="doc.id" tabindex="0" role="button" :aria-label="`打开 ${doc.name}`" :aria-selected="picked.size ? picked.has(doc.id) : undefined" @click="cardClick($event, doc)" @keydown.enter="openDocument(doc)" @keydown="reorderLibrary.keydown($event, doc.id)" @pointerdown="reorderLibrary.pointerdown($event, doc.id)">
             <div class="document-cover" :class="{ 'has-image': covers.has(sourceId(doc.id)) }"><img v-if="covers.has(sourceId(doc.id))" class="cover-image" :class="covers.get(sourceId(doc.id))!.kind" :src="covers.get(sourceId(doc.id))!.image" alt="" draggable="false" /><template v-else><div class="cover-lines"><i></i><i></i><i></i><i></i></div><div class="document-type-icon"><AppIcon :name="doc.kind === 'pdf' ? 'file' : 'markdown'" :size="display === 'list' ? 23 : 30" /></div></template><button class="card-star" :class="{ 'is-starred': doc.starred }" @click.stop="toggleStar(doc)" :data-tip="doc.starred ? '取消收藏' : '收藏文档'" :aria-label="doc.starred ? '取消收藏' : '收藏文档'"><AppIcon name="star" :size="17" /></button></div>
             <div class="document-card-body"><div class="document-card-title"><h3 :data-tip="doc.name">{{ doc.name.replace(/\.(pdf|md|markdown)$/i, '') }}</h3><span class="format-pill">{{ doc.kind === 'pdf' ? 'PDF' : 'MD' }}</span></div><p class="document-meta">{{ size(doc.size) }}<span>·</span>{{ doc.lastOpenedAt ? `阅读于 ${date(doc.lastOpenedAt)}` : `加入于 ${date(doc.addedAt)}` }}</p><div class="document-tags"><span v-for="tag in doc.tags.slice(0, 3)" :key="tag">{{ tag }}</span><span v-if="doc.tags.length > 3">+{{ doc.tags.length - 3 }}</span></div><div class="document-progress"><div><i :style="{ width: `${progressPercent(doc)}%` }"></i></div><span>{{ doc.progress ? `${progressPercent(doc)}%` : '未读' }}</span></div></div>
             <button class="card-remove icon-button" @click.stop="removeTarget = doc" data-tip="从文档库移除" aria-label="从文档库移除"><AppIcon name="trash" :size="15" /></button>
+            <span v-if="picked.has(doc.id)" class="card-pick" aria-hidden="true"><AppIcon name="check" :size="13" /></span>
           </article>
         </div>
+        <Transition name="batch">
+          <div v-if="picked.size" class="batch-bar" role="toolbar" aria-label="批量操作">
+            <span class="batch-count">已选 <b>{{ picked.size }}</b> 份</span>
+            <span class="batch-divider" aria-hidden="true"></span>
+            <button @click="openPicked" data-tip="第一份打开，其余放进标签页"><AppIcon name="book" :size="15" />打开</button>
+            <button @click="starPicked"><AppIcon name="star" :size="15" />{{ pickedDocs.some(doc => !doc.starred) ? '收藏' : '取消收藏' }}</button>
+            <form v-if="batchTag !== null" class="batch-tag" @submit.prevent="tagPicked"><input v-model="batchTag" placeholder="标签名，回车添加" maxlength="40" aria-label="批量添加的标签" @vue:mounted="({ el }: any) => el.focus()" @blur="tagPicked" /></form>
+            <button v-else @click="batchTag = ''"><AppIcon name="tag" :size="15" />加标签</button>
+            <button class="batch-danger" @click="removePicked" data-tip-key="Delete"><AppIcon name="trash" :size="15" />移除</button>
+            <span class="batch-divider" aria-hidden="true"></span>
+            <button class="icon-button" @click="pickAll" data-tip="全选" data-tip-key="Ctrl + A" aria-label="全选"><AppIcon name="check" :size="15" /></button>
+            <button class="icon-button" @click="clearPicked" data-tip="取消选择" data-tip-key="Esc" aria-label="取消选择"><AppIcon name="close" :size="15" /></button>
+          </div>
+        </Transition>
+        <div v-if="band.box.value" class="rubber-band-box" :style="{ left: `${band.box.value.left}px`, top: `${band.box.value.top}px`, width: `${band.box.value.width}px`, height: `${band.box.value.height}px` }" aria-hidden="true"></div>
       </div>
 
       </Transition>
@@ -1480,7 +1569,8 @@ onBeforeUnmount(() => { stopAutoCheck(); for (const timer of pillTimers.values()
     </TransitionGroup>
     <Transition name="toast"><div v-if="toast" class="toast-message" role="status"><span>{{ toast }}</span><button @click="toast = ''" data-tip="关闭提示" aria-label="关闭提示"><AppIcon name="close" :size="15" /></button></div></Transition>
     <Transition name="dialog">
-      <div v-if="removeTarget" class="dialog-backdrop" @click.self="removeTarget = null"><section class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="remove-title"><div class="dialog-icon"><AppIcon name="trash" :size="24" /></div><h2 id="remove-title">从文档库移除？</h2><p>「{{ removeTarget.name }}」的阅读记录与标签会被移除，原文件仍保留在电脑上。</p><div class="dialog-actions"><button @click="removeTarget = null">取消</button><button class="danger-button" @click="removeDocument">移除文档</button></div></section></div>
+      <div v-if="removeBatch" class="dialog-backdrop" @click.self="removeBatch = null"><section class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="remove-batch-title"><div class="dialog-icon"><AppIcon name="trash" :size="24" /></div><h2 id="remove-batch-title">移除 {{ removeBatch.length }} 份文档？</h2><p>{{ removeBatch.slice(0, 3).map(doc => `「${doc.name}」`).join('') }}{{ removeBatch.length > 3 ? ` 等 ${removeBatch.length} 份` : '' }}的阅读记录与标签会被移除，原文件仍保留在电脑上。</p><div class="dialog-actions"><button @click="removeBatch = null">取消</button><button class="danger-button" @click="removeDocuments">移除 {{ removeBatch.length }} 份</button></div></section></div>
+      <div v-else-if="removeTarget" class="dialog-backdrop" @click.self="removeTarget = null"><section class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="remove-title"><div class="dialog-icon"><AppIcon name="trash" :size="24" /></div><h2 id="remove-title">从文档库移除？</h2><p>「{{ removeTarget.name }}」的阅读记录与标签会被移除，原文件仍保留在电脑上。</p><div class="dialog-actions"><button @click="removeTarget = null">取消</button><button class="danger-button" @click="removeDocument()">移除文档</button></div></section></div>
     </Transition>
     <Transition name="settings-pop">
       <SettingsDialog v-if="settingsOpen" :initial-tab="settingsTab" @close="settingsOpen = false" @ai-saved="aiSettingsSaved" />

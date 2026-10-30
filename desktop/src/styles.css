@@ -1999,7 +1999,16 @@ kbd {
 }
 
 .textLayer ::selection {
-  background: color-mix(in srgb, var(--accent) 32%, transparent);
+  background: var(--selection);
+}
+
+/* 选中文字的底色跟着界面风格走：液态玻璃取当前底板的强调色，暖色极简是蜂蜜色，铅笔草稿是荧光笔黄（见 themes.css）。 */
+:root {
+  --selection: color-mix(in srgb, var(--accent) 26%, transparent);
+}
+
+::selection {
+  background: var(--selection);
 }
 
 .link-layer {
@@ -3800,3 +3809,72 @@ kbd {
 .page-stack.spread > .page-slot {
   margin: 0;
 }
+
+/* ---- 文档库框选 ------------------------------------------------------------------------ */
+:root.rubber-banding, :root.rubber-banding * { -webkit-user-select: none; user-select: none; }
+.library-view.rubber-banding .document-card { pointer-events: none; }
+
+.rubber-band-box {
+  position: fixed;
+  z-index: 40;
+  pointer-events: none;
+  border: 1px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.document-card.picked {
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  box-shadow: var(--shadow-2), 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent), var(--glass-edge);
+}
+
+.card-pick {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-on, #fff);
+  box-shadow: 0 2px 6px rgb(0 0 0 / .18), 0 0 0 2px var(--surface);
+  pointer-events: none;
+  animation: card-pick-in var(--dur-2) var(--spring-snappy) both;
+}
+.document-collection.list .card-pick { top: 50%; left: 6px; margin-top: -11px; }
+@keyframes card-pick-in { from { transform: scale(.4); opacity: 0; } }
+
+.batch-bar {
+  position: sticky;
+  bottom: 18px;
+  z-index: 20;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: auto;
+  padding: 6px;
+  border-radius: var(--r-lg);
+  background-color: var(--popup-glass);
+  background-image: var(--popup-sheen);
+  -webkit-backdrop-filter: blur(var(--popup-blur)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--popup-blur)) saturate(var(--glass-sat));
+  border: 1px solid var(--glass-outline);
+  box-shadow: 0 18px 40px -16px rgb(0 0 0 / .35), var(--glass-edge);
+  color: var(--surface-ink);
+  font-size: 13px;
+}
+.batch-bar button { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 11px; border: 0; border-radius: calc(var(--r-lg) - 6px); background: none; box-shadow: none; color: inherit; font-size: 13px; white-space: nowrap; }
+.batch-bar button.icon-button { width: 32px; padding: 0; justify-content: center; }
+.batch-bar button:hover { background: color-mix(in srgb, var(--surface-ink) 8%, transparent); }
+.batch-bar .batch-danger { color: var(--danger); }
+.batch-bar .batch-danger:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.batch-count { padding: 0 8px 0 10px; color: var(--surface-muted); white-space: nowrap; }
+.batch-count b { color: var(--surface-ink); font-weight: 650; }
+.batch-divider { width: 1px; height: 20px; margin: 0 2px; background: var(--line-soft); }
+.batch-tag input { width: 168px; height: 32px; padding: 0 10px; border: 1px solid var(--line-soft); border-radius: calc(var(--r-lg) - 6px); background: color-mix(in srgb, var(--surface) 70%, transparent); color: inherit; font: inherit; }
+.batch-enter-active, .batch-leave-active { transition: opacity var(--dur-2) var(--ease-soft), translate var(--dur-3) var(--spring-snappy); }
+.batch-enter-from, .batch-leave-to { opacity: 0; translate: 0 14px; }

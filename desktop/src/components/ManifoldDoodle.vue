@@ -1,7 +1,7 @@
 <script setup lang="ts">
-// 铅笔草稿的格子纸上，一个铅笔画的流形或神经网络慢慢自转（两分半一圈），旁边缓缓浮现英文的定理、定义。
-// 流形上的一部分知识直接画在曲面上（切平面、坐标基、法向量、度量圆、坐标卡、Stokes 边界、积分曲线）；
-// 神经网络则演示训练：前向传播的信号一层层走过去，反向传播的梯度（红笔）一层层走回来，权重随之变化，角落里画损失曲线。
+// 铅笔草稿的格子纸上，一个铅笔画的流形或神经网络慢慢自转（四分钟一圈），旁边缓缓浮现英文的定理、定义。
+// 流形上的一部分知识直接画在曲面上（切平面、坐标基、法向量、度量圆、坐标卡、Stokes 边界、积分曲线、测地线、指数映射、平行移动、密切圆、主方向）；
+// 神经网络则演示训练：前向传播的信号一层层走过去，反向传播的梯度（红笔）一层层走回来，权重随之变化，歇 5 秒再来下一轮；角落里画损失曲线。
 // 每隔 4–8 分钟随机换一个画面，换的时候像重新画一遍。每秒 30 帧，窗口不可见时停下。
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { manifoldById, nextManifold, buildMesh, THEOREMS, type Mesh, type Note as Knowledge, type Visual, type Vec } from '../sketch/manifolds'
@@ -14,14 +14,17 @@ const current = ref<string>()
 type Note = { key: number; text: string; slot: number; drawn: boolean; leaving: boolean }
 const notes = ref<Note[]>([])
 
-const PERIOD = 150000 // 一整圈两分半
+const PERIOD = 240000 // 一整圈四分钟
 const DRAW_IN = 2600 // 换画面时「画出来」的时长
 const FRAME = 1000 / 30
-const SLOTS = 4
+const SLOTS = 5 // 三条在场、一条正在淡去，新的一条总有空位
 const NOTE_EVERY = 9000 // 每 9 秒写一条
-const NOTE_STAYS = 16000 // 每条停留 16 秒（加上缓慢的浮现与淡去，同时最多两条）
+const NOTE_STAYS = 25000 // 每条停留 25 秒（加上缓慢的浮现与淡去，同时最多三条）
+const NOTE_MAX = 3
+const RECENT = 40 // 最近写过的这么多条不再重复（跨画面也算）
 const STEP = 5200 // 一次训练迭代：前向一半，反向一半
-const SURFACE_VISUALS: Visual[] = ['tangent', 'basis', 'normal', 'metric', 'chart', 'stokes', 'field', 'curve']
+const REST = 5000 // 每轮迭代之后歇 5 秒，再开始下一轮
+const SURFACE_VISUALS: Visual[] = ['tangent', 'basis', 'normal', 'metric', 'chart', 'stokes', 'field', 'curve', 'geodesic', 'exp', 'transport', 'curvature', 'principal']
 const CURVE_VISUALS: Visual[] = ['field', 'curve']
 
 let mesh: Mesh | undefined
@@ -33,6 +36,7 @@ let switchTimer: ReturnType<typeof setTimeout> | undefined
 let noteTimer: ReturnType<typeof setTimeout> | undefined
 let noteKey = 0, slotIndex = 0
 let bag: Knowledge[] = []
+const recent: string[] = []
 let ink = '#2e2d2a', red = '#c8553d'
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)')
 const timers = new Set<ReturnType<typeof setTimeout>>()
@@ -221,13 +225,14 @@ function stepTraining(net: Graph, state: Training) {
 
 function drawNetwork(context: CanvasRenderingContext2D, net: Graph, state: Training, project: Project, reveal: number, now: number) {
   const elapsed = now - drawnAt
-  const step = Math.floor(elapsed / STEP)
+  const step = Math.floor(elapsed / (STEP + REST))
   while (state.step < step) stepTraining(net, state)
-  const phase = (elapsed % STEP) / STEP // 0–.5 前向，.5–1 反向
-  const forward = phase < .5
-  // 反向传播在后半程的前 80% 走完（留出余量让最后一层的闪光淡完），从输出层一层层往回走；走到哪一层，那一层的权重就更新。
-  const back = forward ? 0 : Math.min(1, (phase - .5) * 2 / .8)
-  const progress = forward ? phase * 2 : back
+  const time = elapsed % (STEP + REST) // 0–STEP/2 前向，STEP/2–STEP 反向，之后歇着
+  const forward = time < STEP / 2, resting = time >= STEP
+  // 反向传播从输出层一层层往回走；走到哪一层，那一层的权重就更新。歇着的时候闪光慢慢淡完。
+  const backTime = forward ? 0 : time - STEP / 2
+  const back = Math.min(1, backTime / (STEP / 2))
+  const progress = forward ? time / (STEP / 2) : back
   const stageStart = (stage: number) => (net.stages - 1 - stage) / net.stages // 反向时这一层开始更新的进度
   const count = net.nodes.length / 3
   const sx = new Float32Array(count), sy = new Float32Array(count), depth = new Float32Array(count)
@@ -243,7 +248,7 @@ function drawNetwork(context: CanvasRenderingContext2D, net: Graph, state: Train
   const weight = (e: number) => { const u = updated(e); return Math.abs(state.from[e]! + (state.to[e]! - state.from[e]!) * u * u * (3 - 2 * u)) }
   const flash = (e: number) => {
     if (forward || !state.flash[e]) return 0
-    const since = (back - stageStart(net.stage[e]!)) * STEP * .4
+    const since = backTime - stageStart(net.stage[e]!) * STEP / 2
     return since < 0 ? 0 : since < FLASH_RISE ? since / FLASH_RISE : Math.max(0, 1 - (since - FLASH_RISE) / FLASH_FADE)
   }
   const curve = (path: Path2D, e: number, a: number, b: number) => {
@@ -280,7 +285,7 @@ function drawNetwork(context: CanvasRenderingContext2D, net: Graph, state: Train
   for (let k = 0; k < count; k++) { circles.moveTo(sx[k]! + 3.2, sy[k]!); circles.arc(sx[k]!, sy[k]!, 3.2, 0, Math.PI * 2) }
   context.stroke(circles)
   if (reveal < 1 || reduced.matches) return
-  if (!forward && back >= 1) { drawLoss(context, state); return }
+  if (resting) { drawLoss(context, state); return }
   // 信号：前向是铅笔点，沿着这一步的连线从左走到右；反向是红点，沿着连线走回来。
   context.fillStyle = forward ? ink : red
   context.globalAlpha = .45
@@ -327,6 +332,52 @@ function drawLoss(context: CanvasRenderingContext2D, state: Training) {
 }
 
 // ---- 画在流形上的示意 ----
+type Surface = (u: number, v: number) => Vec
+type Domain = { u: [number, number]; v: [number, number]; wrapU?: boolean; wrapV?: boolean }
+// 首尾相接的参数（环面、纽结管）走出范围时绕回另一头。
+const wrap = (value: number, [low, high]: [number, number]) => low + ((((value - low) % (high - low)) + (high - low)) % (high - low))
+const partials = (f: Surface, domain: Domain, u: number, v: number) => {
+  const du = (domain.u[1] - domain.u[0]) * 1e-3, dv = (domain.v[1] - domain.v[0]) * 1e-3
+  return [scale(sub(f(u + du, v), f(u - du, v)), 1 / (2 * du)), scale(sub(f(u, v + dv), f(u, v - dv)), 1 / (2 * dv))] as const
+}
+const normalAt = (f: Surface, domain: Domain, u: number, v: number) => { const [fu, fv] = partials(f, domain, u, v); return unit(cross(fu, fv)) }
+
+/** 曲面上的测地线：沿切方向走一小步，把位移换算成参数增量（解第一基本形式），再把方向投影回新的切平面——离散的平行移动。 */
+function geodesic(f: Surface, domain: Domain, u: number, v: number, direction: Vec, length: number, steps = 36): Vec[] {
+  const points = [f(u, v)], h = length / steps
+  let d = direction
+  for (let k = 0; k < steps; k++) {
+    const [fu, fv] = partials(f, domain, u, v)
+    const E = dot(fu, fu), F = dot(fu, fv), G = dot(fv, fv), det = E * G - F * F
+    if (!(det > 1e-12)) break
+    const x = dot(fu, d) * h, y = dot(fv, d) * h
+    u += (G * x - F * y) / det; v += (E * y - F * x) / det
+    if (domain.wrapU) u = wrap(u, domain.u)
+    if (domain.wrapV) v = wrap(v, domain.v)
+    if (u < domain.u[0] || u > domain.u[1] || v < domain.v[0] || v > domain.v[1]) break
+    const n = normalAt(f, domain, u, v)
+    d = unit(sub(d, scale(n, dot(d, n))))
+    points.push(f(u, v))
+  }
+  return points
+}
+
+/** 主方向：形算子 S = I⁻¹ II 的两个本征向量，换回三维的切向量。 */
+function principalDirections(f: Surface, domain: Domain, u: number, v: number): Vec[] {
+  const du = (domain.u[1] - domain.u[0]) * 4e-3, dv = (domain.v[1] - domain.v[0]) * 4e-3
+  const [fu, fv] = partials(f, domain, u, v), n = unit(cross(fu, fv)), p = f(u, v)
+  const fuu = scale(add(sub(f(u + du, v), scale(p, 2)), f(u - du, v)), 1 / (du * du))
+  const fvv = scale(add(sub(f(u, v + dv), scale(p, 2)), f(u, v - dv)), 1 / (dv * dv))
+  const fuv = scale(add(sub(f(u + du, v + dv), f(u + du, v - dv)), sub(f(u - du, v - dv), f(u - du, v + dv))), 1 / (4 * du * dv))
+  const E = dot(fu, fu), F = dot(fu, fv), G = dot(fv, fv), L = dot(fuu, n), M = dot(fuv, n), N = dot(fvv, n), det = E * G - F * F
+  if (!(det > 1e-12)) return [unit(fu), unit(cross(n, fu))]
+  const s11 = (G * L - F * M) / det, s12 = (G * M - F * N) / det, s21 = (E * M - F * L) / det, s22 = (E * N - F * M) / det
+  const half = (s11 + s22) / 2, root = Math.sqrt(Math.max(0, half * half - (s11 * s22 - s12 * s21)))
+  if (root < 1e-6) return [unit(fu), unit(cross(n, fu))] // 脐点：每个方向都是主方向
+  const first = Math.abs(s12) > 1e-9 ? add(scale(fu, s12), scale(fv, half + root - s11)) : Math.abs(s21) > 1e-9 ? add(scale(fu, half + root - s22), scale(fv, s21)) : fu
+  const d1 = unit(first)
+  return [d1, unit(cross(n, d1))]
+}
 function drawVisual(context: CanvasRenderingContext2D, item: Drawing, now: number, project: Project) {
   if (!mesh) return
   const fadeIn = Math.min(1, (now - item.born) / 2400)
@@ -398,7 +449,7 @@ function drawVisual(context: CanvasRenderingContext2D, item: Drawing, now: numbe
       for (let k = 1; k < 6; k++) { const s = -a + 2 * a * k / 6; line([add(add(p, scale(e1, s)), scale(e2, -a)), add(add(p, scale(e1, s)), scale(e2, a))]) }
       context.globalAlpha = alpha
       dotAt(p, 'p')
-      const [x, y] = P(corners[0]!); context.fillText('T_pM', x + 4, y)
+      const [x, y] = P(corners[0]!); context.fillText('TₚM', x + 4, y)
       break
     }
     case 'basis': {
@@ -426,7 +477,7 @@ function drawVisual(context: CanvasRenderingContext2D, item: Drawing, now: numbe
       context.globalAlpha = alpha
       dotAt(p)
       arrow(p, add(p, scale(e1, r)))
-      const [x, y] = P(add(p, scale(e2, r))); context.fillText('g_p(v, v) = 1', x + 6, y - 4)
+      const [x, y] = P(add(p, scale(e2, r))); context.fillText('gₚ(v, v) = 1', x + 6, y - 4)
       break
     }
     case 'chart':
@@ -467,6 +518,73 @@ function drawVisual(context: CanvasRenderingContext2D, item: Drawing, now: numbe
       arrow(p, add(p, scale(fu, .3)), 'γ′(0)')
       break
     }
+    case 'geodesic': {
+      // 一条测地线：从 p 沿某个方向「一直往前走」，两头都画。
+      const direction = add(scale(e1, Math.cos(item.t)), scale(e2, Math.sin(item.t)))
+      const forth = geodesic(f, domain, item.u, item.v, direction, .7), backward = geodesic(f, domain, item.u, item.v, scale(direction, -1), .7)
+      context.lineWidth = 1.8
+      line([...backward.reverse(), ...forth.slice(1)])
+      context.lineWidth = 1.4
+      dotAt(p, 'p')
+      arrow(p, add(p, scale(direction, .2)), 'γ′')
+      break
+    }
+    case 'exp': {
+      // 指数映射：从 p 出发、各个方向等长的测地线，端点连成一个测地圆。
+      const ends: Vec[] = []
+      context.lineWidth = 1.2
+      for (let k = 0; k < 10; k++) {
+        const a = k / 10 * Math.PI * 2, path = geodesic(f, domain, item.u, item.v, add(scale(e1, Math.cos(a)), scale(e2, Math.sin(a))), .3)
+        line(path)
+        ends.push(path[path.length - 1]!)
+      }
+      context.lineWidth = 1.6
+      line(ends, true, true)
+      dotAt(p, 'p')
+      const [x, y] = P(ends[1]!); context.fillText('expₚ', x + 6, y)
+      break
+    }
+    case 'transport': {
+      // 平行移动：沿坐标曲线把一个切向量一路投影到新的切平面里带过去。
+      const u0 = clampU(item.u - span.u * 2.2), u1 = clampU(item.u + span.u * 2.2)
+      line(Array.from({ length: 31 }, (_, k) => f(u0 + (u1 - u0) * k / 30, item.v)))
+      let w = unit(add(e1, e2))
+      for (let k = 0; k <= 30; k++) {
+        const u = u0 + (u1 - u0) * k / 30, q = f(u, item.v), n = normalAt(f, domain, u, item.v)
+        w = unit(sub(w, scale(n, dot(w, n))))
+        if (k % 6 === 0) arrow(q, add(q, scale(w, .16)), k === 0 ? 'V' : k === 30 ? 'P(V)' : undefined)
+      }
+      break
+    }
+    case 'curvature': {
+      // 坐标曲线在 p 处的密切圆：半径 1/κ，圆心在曲线的主法线方向上。
+      const h = (domain.u[1] - domain.u[0]) * 4e-3
+      const c1 = scale(sub(f(item.u + h, item.v), f(item.u - h, item.v)), 1 / (2 * h))
+      const c2 = scale(add(sub(f(item.u + h, item.v), scale(p, 2)), f(item.u - h, item.v)), 1 / (h * h))
+      const speed = Math.hypot(...c1), kappa = Math.hypot(...cross(c1, c2)) / (speed ** 3 || 1)
+      line(Array.from({ length: 31 }, (_, k) => f(clampU(item.u - span.u * 2 + span.u * 4 * k / 30), item.v)))
+      dotAt(p, 'p')
+      if (!(kappa > .05)) break
+      const T = unit(c1), N = unit(sub(c2, scale(T, dot(c2, T)))), R = 1 / kappa, center = add(p, scale(N, R))
+      const reach = Math.min(Math.PI, .9 / R)
+      context.globalAlpha = alpha * .8
+      line(Array.from({ length: 49 }, (_, k) => { const a = -reach + 2 * reach * k / 48; return add(center, add(scale(N, -R * Math.cos(a)), scale(T, R * Math.sin(a)))) }), reach >= Math.PI)
+      context.globalAlpha = alpha
+      if (R < 1.2) { line([p, center], false, true); dotAt(center) }
+      const [x, y] = P(add(p, scale(N, Math.min(R, .5) / 2))); context.fillText('R = 1/κ', x + 6, y)
+      break
+    }
+    case 'principal': {
+      // 主方向：形算子的两个本征方向，互相垂直；沿它们的法曲率是 k₁、k₂。
+      const directions = principalDirections(f, domain, item.u, item.v)
+      dotAt(p, 'p')
+      directions.forEach((d, k) => {
+        context.lineWidth = k ? 1.4 : 1.8
+        line([add(p, scale(d, -.2)), add(p, scale(d, .2))])
+        const [x, y] = P(add(p, scale(d, .22))); context.fillText(k ? 'k₂' : 'k₁', x + 4, y)
+      })
+      break
+    }
   }
   context.restore()
 }
@@ -490,9 +608,14 @@ function pickKnowledge(): Knowledge | undefined {
       const allowed = mesh?.curves.length ? CURVE_VISUALS : SURFACE_VISUALS
       bag = [...THEOREMS.filter(item => !item.visual || allowed.includes(item.visual)), ...(manifold?.facts || []).map(text => ({ text }))]
     }
+    // 最近写过的先不放进来，免得老是看到同一条（候选太少时才放回去）。
+    const fresh = bag.filter(item => !recent.includes(item.text))
+    if (fresh.length >= 6) bag = fresh
     bag.sort(() => Math.random() - .5)
   }
-  return bag.pop()
+  const item = bag.pop()
+  if (item) { recent.push(item.text); if (recent.length > RECENT) recent.shift() }
+  return item
 }
 
 function retire(note: Note) {
@@ -506,10 +629,12 @@ function retire(note: Note) {
 function nextNote() {
   const knowledge = document.hidden ? undefined : pickKnowledge()
   if (knowledge) {
-    // 同时最多两条：再写新的之前，先让最早的那条淡去。
+    // 同时最多三条：再写新的之前，先让最早的那条淡去。
     const showing = notes.value.filter(item => !item.leaving)
-    if (showing.length >= 2) retire(showing[0]!)
+    if (showing.length >= NOTE_MAX) retire(showing[0]!)
     const drawn = !!knowledge.visual && !!mesh && !reduced.matches
+    // 流形上一次只画一个示意：新的示意出现时，旧的那条不再用红笔标出。
+    if (drawn) for (const item of notes.value) item.drawn = false
     const note: Note = { key: ++noteKey, text: knowledge.text, slot: slotIndex++ % SLOTS, drawn, leaving: false }
     notes.value = [...notes.value, note]
     if (drawn && mesh) {
@@ -574,6 +699,7 @@ onBeforeUnmount(() => {
 .slot-1{right:1.5%;top:51%;rotate:1.5deg;text-align:right}
 .slot-2{right:1.5%;top:75%;rotate:1deg;text-align:right}
 .slot-3{left:30%;top:87%;rotate:-1.5deg}
+.slot-4{left:58%;top:88%;rotate:1deg}
 @keyframes manifold-in{from{opacity:0}to{opacity:1}}
 @keyframes manifold-note-in{from{opacity:0;translate:0 8px}to{opacity:.55;translate:0 0}}
 @media (prefers-reduced-motion:reduce){.manifold-doodle,.manifold-note{animation:none}}

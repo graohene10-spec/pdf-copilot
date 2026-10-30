@@ -35,6 +35,10 @@ const MAX_API_BYTES: usize = 4 * 1024 * 1024;
 const MAX_SUMS_BYTES: usize = 256 * 1024;
 const MAX_INSTALLER_BYTES: u64 = 512 * 1024 * 1024;
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
+/// Small requests (release list, checksums) must finish within this time.
+const API_TIMEOUT: Duration = Duration::from_secs(45);
+/// A dropped download resumes from where it stopped (HTTP Range) this many times.
+const DOWNLOAD_RETRIES: u32 = 4;
 
 static DOWNLOADING: AtomicBool = AtomicBool::new(false);
 static CANCEL: AtomicBool = AtomicBool::new(false);
@@ -171,9 +175,19 @@ async fn read_limited(mut response: Response, limit: usize) -> Result<Vec<u8>> {
     Ok(data)
 }
 
-async fn get(url: Url, accept: &str) -> Result<Response> {
-    let response = client()?.get(url).header(reqwest::header::ACCEPT, accept).timeout(Duration::from_secs(30))
-        .send().await.map_err(|_| "无法连接 GitHub，请检查网络或代理设置")?;
+async fn get(url: Url, accept: &str) -> Result<Response> { request(url, accept, None).await }
+
+/// `from`: resume a download at this byte (the server answers 206, or 200 when it ignores ranges).
+/// Downloads have no overall deadline — a large installer on a slow line can take minutes; the
+/// client's connect and read timeouts still end a connection that has stalled.
+async fn request(url: Url, accept: &str, from: Option<u64>) -> Result<Response> {
+    let mut builder = client()?.get(url).header(reqwest::header::ACCEPT, accept);
+    builder = match from {
+        Some(offset) => builder.header(reqwest::header::RANGE, format!("bytes={offset}-")),
+        None if accept == "application/octet-stream" => builder,
+        None => builder.timeout(API_TIMEOUT),
+    };
+    let response = builder.send().await.map_err(|_| "无法连接 GitHub，请检查网络或代理设置")?;
     if !allowed_host(response.url()) { return Err("更新服务器地址无效".into()); }
     let status = response.status();
     if status.is_success() { return Ok(response); }
@@ -193,7 +207,8 @@ async fn installer_checksum(release: &Release, name: &str) -> Option<String> {
     if let Some(hash) = release.assets.iter().find(|asset| asset.name == name).and_then(api_digest) { return Some(hash); }
     let asset = release.assets.iter().find(|asset| asset.name == "SHA256SUMS.txt")?;
     let url = Url::parse(&asset.browser_download_url).ok().filter(allowed_host)?;
-    let data = read_limited(get(url, "application/octet-stream").await.ok()?, MAX_SUMS_BYTES).await.ok()?;
+    let response = tokio::time::timeout(API_TIMEOUT, get(url, "application/octet-stream")).await.ok()?.ok()?;
+    let data = tokio::time::timeout(API_TIMEOUT, read_limited(response, MAX_SUMS_BYTES)).await.ok()?.ok()?;
     checksum_for(&String::from_utf8_lossy(&data), name)
 }
 
@@ -263,18 +278,43 @@ async fn download_with(url: String, sha256: String, dir: PathBuf, progress: impl
 }
 
 async fn stream_to_file(url: Url, path: &Path, expected: &str, progress: &impl Fn(DownloadProgress) -> Result<()>) -> Result<()> {
-    let mut response = get(url, "application/octet-stream").await.map_err(|error| format!("下载更新失败：{error}"))?;
-    let total = response.content_length();
+    let mut response = get(url.clone(), "application/octet-stream").await.map_err(|error| format!("下载更新失败：{error}"))?;
+    let mut total = response.content_length();
     if total.is_some_and(|size| size > MAX_INSTALLER_BYTES) { return Err("更新安装包超过大小限制".into()); }
     // Chunks are at most a few dozen KiB, so plain blocking writes stay short.
     let mut file = std::fs::File::create(path).map_err(|e| format!("无法写入更新安装包：{e}"))?;
     let mut hasher = Sha256::new();
     let mut downloaded = 0_u64;
+    let mut retries = 0_u32;
     let mut last = Instant::now();
     progress(DownloadProgress { downloaded, total })?;
     loop {
         if CANCEL.load(Ordering::SeqCst) { return Err("已取消下载".into()); }
-        let Some(chunk) = response.chunk().await.map_err(|_| "下载更新中断，请检查网络连接")? else { break };
+        let chunk = match response.chunk().await {
+            Ok(Some(chunk)) => chunk,
+            Ok(None) if total.is_none_or(|size| downloaded >= size) => break,
+            // The connection dropped or stalled: pick up where it stopped instead of starting over.
+            failed => {
+                retries += 1;
+                if retries > DOWNLOAD_RETRIES { return Err(if failed.is_ok() { "下载更新中断，请重试".into() } else { "下载更新中断，请检查网络连接".into() }); }
+                tokio::time::sleep(Duration::from_secs(1 << retries.min(4))).await;
+                if CANCEL.load(Ordering::SeqCst) { return Err("已取消下载".into()); }
+                // A failed reconnect counts as another retry on the next pass.
+                let Ok(next) = request(url.clone(), "application/octet-stream", Some(downloaded)).await else { continue };
+                if next.status() == reqwest::StatusCode::PARTIAL_CONTENT {
+                    response = next;
+                } else {
+                    // The server ignored the range: start the file over.
+                    response = next;
+                    total = response.content_length();
+                    file = std::fs::File::create(path).map_err(|e| format!("无法写入更新安装包：{e}"))?;
+                    hasher = Sha256::new();
+                    downloaded = 0;
+                }
+                continue;
+            }
+        };
+        retries = 0;
         downloaded += chunk.len() as u64;
         if downloaded > MAX_INSTALLER_BYTES || total.is_some_and(|size| downloaded > size) { return Err("更新安装包大小不符".into()); }
         hasher.update(&chunk);
