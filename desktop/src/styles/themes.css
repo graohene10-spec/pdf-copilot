@@ -1574,19 +1574,21 @@
 :root[data-style='sketch'] .batch-bar button { border-radius: 6px; }
 
 /* ---- 阅读区上沿：工具条是一条撕下来的纸，页面从它的毛边底下滑过去，不再被一刀切断 ---------- */
-/* 纸条底边画一排尺子刻度，长短相间，填上工具与搜索之间那段空白。 */
 :root[data-style='sketch'] .reader-tools {
   margin-bottom: 0;
-  padding: 0 12px 4px 10px;
+  padding: 0 12px 0 10px;
   border-radius: 10px 13px 0 0 / 8px 10px 0 0;
   background-color: var(--paper);
+}
+
+/* 收起顶栏专心阅读时，纸条底边才画一排很淡、很短的尺子刻度。 */
+:root[data-style='sketch'] .app-shell.chrome-collapsed .reader-tools {
   background-image:
-    repeating-linear-gradient(to right, color-mix(in srgb, var(--pencil) 34%, transparent) 0 1px, transparent 1px 60px),
-    repeating-linear-gradient(to right, color-mix(in srgb, var(--pencil) 22%, transparent) 0 1px, transparent 1px 12px);
-  background-size: 100% 9px, 100% 5px;
+    repeating-linear-gradient(to right, color-mix(in srgb, var(--pencil) 16%, transparent) 0 1px, transparent 1px 60px),
+    repeating-linear-gradient(to right, color-mix(in srgb, var(--pencil) 9%, transparent) 0 1px, transparent 1px 12px);
+  background-size: 100% 5px, 100% 3px;
   background-position: 10px 100%, 10px 100%;
   background-repeat: no-repeat;
-  box-shadow: 0 -1px 0 color-mix(in srgb, var(--pencil) 10%, transparent) inset;
 }
 
 :root[data-style='sketch'] .reader-engine-body::before {
@@ -1594,9 +1596,9 @@
   position: absolute;
   inset: 0 0 auto;
   z-index: 4;
-  height: 14px;
+  height: 9px;
   pointer-events: none;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='14' viewBox='0 0 140 14'%3E%3Cpath d='M0 7L8 5.5L16 9L25 4.5L33 8L41 5L49 9L58 4.5L66 8.5L75 6L83 9.5L92 4L99 8L108 5.5L116 9L124 4.5L131 8.5L140 5' transform='translate(0 1.6)' fill='none' stroke='rgba(60,50,30,.16)' stroke-width='2.4'/%3E%3Cpath d='M0 0H140V5L131 8.5L124 4.5L116 9L108 5.5L99 8L92 4L83 9.5L75 6L66 8.5L58 4.5L49 9L41 5L33 8L25 4.5L16 9L8 5.5L0 7Z' fill='%23fbf8f0'/%3E%3Cpath d='M0 7L8 5.5L16 9L25 4.5L33 8L41 5L49 9L58 4.5L66 8.5L75 6L83 9.5L92 4L99 8L108 5.5L116 9L124 4.5L131 8.5L140 5' fill='none' stroke='rgba(46,45,42,.55)' stroke-width='.9' stroke-linejoin='round'/%3E%3C/svg%3E") repeat-x 0 0 / 140px 14px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='14' viewBox='0 0 140 14'%3E%3Cpath d='M0 7L8 5.5L16 9L25 4.5L33 8L41 5L49 9L58 4.5L66 8.5L75 6L83 9.5L92 4L99 8L108 5.5L116 9L124 4.5L131 8.5L140 5' transform='translate(0 1.6)' fill='none' stroke='rgba(60,50,30,.16)' stroke-width='2.4'/%3E%3Cpath d='M0 0H140V5L131 8.5L124 4.5L116 9L108 5.5L99 8L92 4L83 9.5L75 6L66 8.5L58 4.5L49 9L41 5L33 8L25 4.5L16 9L8 5.5L0 7Z' fill='%23fbf8f0'/%3E%3Cpath d='M0 7L8 5.5L16 9L25 4.5L33 8L41 5L49 9L58 4.5L66 8.5L75 6L83 9.5L92 4L99 8L108 5.5L116 9L124 4.5L131 8.5L140 5' fill='none' stroke='rgba(46,45,42,.55)' stroke-width='.9' stroke-linejoin='round'/%3E%3C/svg%3E") repeat-x 0 0 / 90px 9px;
 }
 :root[data-style='sketch'][data-theme='dark'] .reader-engine-body::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='14' viewBox='0 0 140 14'%3E%3Cpath d='M0 7L8 5.5L16 9L25 4.5L33 8L41 5L49 9L58 4.5L66 8.5L75 6L83 9.5L92 4L99 8L108 5.5L116 9L124 4.5L131 8.5L140 5' transform='translate(0 1.6)' fill='none' stroke='rgba(60,50,30,.16)' stroke-width='2.4'/%3E%3Cpath d='M0 0H140V5L131 8.5L124 4.5L116 9L108 5.5L99 8L92 4L83 9.5L75 6L66 8.5L58 4.5L49 9L41 5L33 8L25 4.5L16 9L8 5.5L0 7Z' fill='%232e2c28'/%3E%3Cpath d='M0 7L8 5.5L16 9L25 4.5L33 8L41 5L49 9L58 4.5L66 8.5L75 6L83 9.5L92 4L99 8L108 5.5L116 9L124 4.5L131 8.5L140 5' fill='none' stroke='rgba(236,230,214,.45)' stroke-width='.9' stroke-linejoin='round'/%3E%3C/svg%3E"); }
 

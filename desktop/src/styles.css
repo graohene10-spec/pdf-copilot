@@ -694,6 +694,23 @@ kbd {
   padding-left: 4px;
 }
 
+.breadcrumb-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 12px 0 10px;
+  border: 0;
+  border-radius: var(--r-control);
+  background: none;
+  box-shadow: none;
+  cursor: pointer;
+  transition: background-color var(--dur-1) var(--ease-soft), color var(--dur-1) var(--ease-soft);
+}
+.breadcrumb-toggle b { font-weight: inherit; }
+.breadcrumb-toggle:not(.open) { color: var(--muted); }
+.breadcrumb-toggle:hover { background: color-mix(in srgb, var(--surface-ink) 7%, transparent); color: var(--secondary); }
+
 .breadcrumb > span {
   color: var(--muted);
   padding: 0 12px;
