@@ -115,7 +115,7 @@ try {
   assert.equal(await page.locator('html').getAttribute('data-theme'), 'dark');
   await page.locator('.document-collection.list').waitFor();
   const initial = await storedPreferences();
-  assert.deepEqual(initial.appearance, { theme: 'dark', style: 'glass', sketchAnswerFont: 'mashanzheng', manifold: { show: true, reader: false, shapes: ['calabi', 'hopf', 'klein', 'boy', 'breather', 'dini', 'knot'] }, libraryView: 'list', glassTransparency: 70, glassBlur: 50, glassHighlight: 50, glassRefraction: true, glassLegibility: 'thicken', glassCompensation: 50, glassTint: 'theme', backdrop: 'mist', background: null, gallery: [], uiFont: 'system', readingFont: 'anthropic', customFonts: [] });
+  assert.deepEqual(initial.appearance, { theme: 'dark', style: 'glass', sketchAnswerFont: 'mashanzheng', manifold: { show: true, reader: false, shapes: ['calabi', 'hopf', 'klein', 'boy', 'breather', 'dini', 'knot', 'transformer', 'cnn', 'mlp', 'lstm', 'autoencoder'] }, libraryView: 'list', glassTransparency: 70, glassBlur: 50, glassHighlight: 50, glassRefraction: true, glassLegibility: 'thicken', glassCompensation: 50, glassTint: 'theme', backdrop: 'mist', background: null, gallery: [], uiFont: 'system', readingFont: 'anthropic', customFonts: [] });
   assert.equal(initial.pdf.initialZoom, 125);
   assert.equal(initial.pdf.zoomStep, 10);
   report.push('Theme, default list view and PDF numeric preferences save through the real browser adapter.');
