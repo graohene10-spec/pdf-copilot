@@ -41,8 +41,8 @@ const timers = new Set<ReturnType<typeof setTimeout>>()
 type Drawing = { visual: Visual; patch: number; u: number; v: number; curve: number; t: number; born: number; fading: number }
 let drawing: Drawing | undefined
 
-/** 神经网络的训练状态：每条连线的权重（从上一步的值缓缓变到这一步的值）、迭代次数、损失曲线。 */
-type Training = { from: Float32Array; to: Float32Array; step: number; losses: number[]; attention: Float32Array[] }
+/** 神经网络的训练状态：每条连线的权重（反向传播经过时从旧值变到新值）、这一步被加强的连线（会闪一下）、迭代次数、损失曲线。 */
+type Training = { from: Float32Array; to: Float32Array; flash: Uint8Array; step: number; losses: number[] }
 let training: Training | undefined
 
 // 每个顶点固定一点手抖（两遍笔画各一份），线条稳定地「不直」，不会逐帧闪。
@@ -115,7 +115,8 @@ function draw(now: number) {
   const angle = reduced.matches ? .6 : ((now - start) / PERIOD) * Math.PI * 2
   const tilt = baseTilt + Math.sin(angle * .5) * .05
   const ca = Math.cos(angle), sa = Math.sin(angle), ct = Math.cos(tilt), st = Math.sin(tilt)
-  const size = Math.min(width * .62, height) * .46, cx = width * .56, cy = height * .52, camera = 3.4
+  // 神经网络比流形稀疏，画得更大一些占住画面；透视也放缓，转到近处时不至于冲出画布。
+  const size = Math.min(width * .62, height) * (graph ? .64 : .46), cx = width * .56, cy = height * .52, camera = graph ? 5 : 3.4
   // 把模型坐标投到画布：绕竖轴自转，再向前倾一点，看得到上面。
   const project: Project = (x, y, z) => {
     const x1 = x * ca + z * sa, z1 = -x * sa + z * ca
@@ -163,34 +164,59 @@ function drawMesh(context: CanvasRenderingContext2D, { points, lines, closed }: 
 }
 
 // ---- 神经网络与训练 ----
+const FLASH_RISE = 120, FLASH_FADE = 700 // 连线被加强时闪一下：120 ms 亮起，700 ms 淡回去
+
 function newTraining(net: Graph): Training {
-  const count = net.edges.length / 2
-  const random = () => Float32Array.from({ length: count }, () => (Math.random() * 2 - 1))
-  const attention = net.attention ? Array.from({ length: net.attention.rows * 2 }, () => softmaxRows(net.attention!.tokens)) : []
-  return { from: random(), to: random(), step: 0, losses: [], attention }
+  const from = initialWeights(net)
+  const state: Training = { from, to: from, flash: new Uint8Array(from.length), step: 0, losses: [] }
+  planUpdate(net, state)
+  return state
 }
 
-// 注意力权重：每个词元对所有词元的一行 softmax，越训练越「尖」。
-function softmaxRows(tokens: number, sharpness = 1) {
-  const out = new Float32Array(tokens * tokens)
-  for (let i = 0; i < tokens; i++) {
-    const logits = Array.from({ length: tokens }, (_, j) => (Math.random() * 2 + (i === j ? .8 : 0)) * sharpness)
-    const max = Math.max(...logits), exps = logits.map(value => Math.exp(value - max)), sum = exps.reduce((a, b) => a + b, 0)
-    exps.forEach((value, j) => { out[i * tokens + j] = value / sum })
+function initialWeights(net: Graph) {
+  return net.attention ? attentionWeights(net, 1) : Float32Array.from({ length: net.edges.length / 2 }, () => Math.random() * 2 - 1)
+}
+
+// 注意力权重：每个词元对所有词元的一行 softmax，越训练越「尖」。连线顺序与 networks.ts 一致：行 → 头 → i → j。
+function attentionWeights(net: Graph, sharpness: number) {
+  const tokens = net.attention!.tokens, out = new Float32Array(net.edges.length / 2)
+  for (let m = 0; m < net.attention!.rows * 2; m++) {
+    for (let i = 0; i < tokens; i++) {
+      const logits = Array.from({ length: tokens }, (_, j) => (Math.random() * 2 + (i === j ? .8 : 0)) * sharpness)
+      const max = Math.max(...logits), exps = logits.map(value => Math.exp(value - max)), sum = exps.reduce((x, y) => x + y, 0)
+      exps.forEach((value, j) => { out[m * tokens * tokens + i * tokens + j] = Math.min(1, value / sum * tokens * .7) })
+    }
   }
   return out
 }
 
-/** 一次迭代结束：权重朝新方向挪一点（越到后面挪得越少），记下这一步的损失。 */
+/** 算出这一步要更新到的权重，并挑出每层加强最多的几条连线（每层最多约一成、不超过 16 条），反向传播经过时让它们闪一下。 */
+function planUpdate(net: Graph, state: Training) {
+  const rate = Math.max(.16, .55 / Math.sqrt(state.step + 1))
+  state.to = net.attention
+    ? attentionWeights(net, 1 + Math.min(2.5, state.step / 25))
+    : Float32Array.from(state.from, w => Math.max(-1, Math.min(1, w + (Math.random() * 2 - 1) * rate)))
+  const gains = Float32Array.from(state.to, (w, e) => Math.abs(w) - Math.abs(state.from[e]!))
+  const sizes = new Uint16Array(net.stages), taken = new Uint16Array(net.stages)
+  for (const stage of net.stage) sizes[stage]++
+  state.flash = new Uint8Array(gains.length)
+  for (const e of Array.from(gains.keys()).sort((a, b) => gains[b]! - gains[a]!)) {
+    const stage = net.stage[e]!
+    if (gains[e]! < .06) break
+    if (taken[stage]! >= Math.min(16, Math.max(3, Math.ceil(sizes[stage]! * .1)))) continue
+    taken[stage]++
+    state.flash[e] = 1
+  }
+}
+
+/** 一次迭代结束：新权重落定，记下这一步的损失，再计划下一步。 */
 function stepTraining(net: Graph, state: Training) {
   state.step++
-  const rate = .55 / Math.sqrt(state.step)
   state.from = state.to
-  state.to = Float32Array.from(state.from, w => Math.max(-1, Math.min(1, w + (Math.random() * 2 - 1) * rate)))
   const loss = 2.3 * Math.exp(-state.step / 22) + .18 + (Math.random() - .5) * .16 * Math.exp(-state.step / 60)
   state.losses.push(Math.max(.05, loss))
   if (state.losses.length > 120) state.losses.shift()
-  if (net.attention) state.attention = state.attention.map(() => softmaxRows(net.attention!.tokens, 1 + Math.min(2.5, state.step / 25)))
+  planUpdate(net, state)
 }
 
 function drawNetwork(context: CanvasRenderingContext2D, net: Graph, state: Training, project: Project, reveal: number, now: number) {
@@ -198,7 +224,11 @@ function drawNetwork(context: CanvasRenderingContext2D, net: Graph, state: Train
   const step = Math.floor(elapsed / STEP)
   while (state.step < step) stepTraining(net, state)
   const phase = (elapsed % STEP) / STEP // 0–.5 前向，.5–1 反向
-  const ease = Math.min(1, phase * 2)
+  const forward = phase < .5
+  // 反向传播在后半程的前 80% 走完（留出余量让最后一层的闪光淡完），从输出层一层层往回走；走到哪一层，那一层的权重就更新。
+  const back = forward ? 0 : Math.min(1, (phase - .5) * 2 / .8)
+  const progress = forward ? phase * 2 : back
+  const stageStart = (stage: number) => (net.stages - 1 - stage) / net.stages // 反向时这一层开始更新的进度
   const count = net.nodes.length / 3
   const sx = new Float32Array(count), sy = new Float32Array(count), depth = new Float32Array(count)
   for (let k = 0; k < count; k++) {
@@ -206,15 +236,15 @@ function drawNetwork(context: CanvasRenderingContext2D, net: Graph, state: Train
     sx[k] = x + jitter![k * 4]!; sy[k] = y + jitter![k * 4 + 1]!; depth[k] = d
   }
   const edges = net.edges.length / 2, visible = Math.ceil(edges * reveal)
-  // 连线：权重越大越深；注意力连线按当前的注意力权重。四档深浅各一条路径。
+  // 连线：权重越大越深，整体很浅，密的地方也看得清结构。四档深浅各一条路径；刚被加强的连线另画三档闪光。
   const paths = [new Path2D(), new Path2D(), new Path2D(), new Path2D()]
-  const weight = (e: number) => {
-    if (net.attention) {
-      const tokens = net.attention.tokens, perRow = tokens * tokens * 2
-      const row = Math.floor(e / perRow), k = e % perRow, head = Math.floor(k / (tokens * tokens)), cell = k % (tokens * tokens)
-      return Math.min(1, state.attention[row * 2 + head]![cell]! * tokens * .7)
-    }
-    return Math.abs(state.from[e]! + (state.to[e]! - state.from[e]!) * ease)
+  const flashes = [new Path2D(), new Path2D(), new Path2D()]
+  const updated = (e: number) => forward ? 0 : Math.max(0, Math.min(1, (back - stageStart(net.stage[e]!)) * net.stages))
+  const weight = (e: number) => { const u = updated(e); return Math.abs(state.from[e]! + (state.to[e]! - state.from[e]!) * u * u * (3 - 2 * u)) }
+  const flash = (e: number) => {
+    if (forward || !state.flash[e]) return 0
+    const since = (back - stageStart(net.stage[e]!)) * STEP * .4
+    return since < 0 ? 0 : since < FLASH_RISE ? since / FLASH_RISE : Math.max(0, 1 - (since - FLASH_RISE) / FLASH_FADE)
   }
   const curve = (path: Path2D, e: number, a: number, b: number) => {
     const bend = net.bend[e]!
@@ -226,12 +256,15 @@ function drawNetwork(context: CanvasRenderingContext2D, net: Graph, state: Train
   }
   for (let e = 0; e < visible; e++) {
     const a = net.edges[e * 2]!, b = net.edges[e * 2 + 1]!
-    const level = Math.min(3, Math.floor(weight(e) * 3.2 + (depth[a]! + depth[b]!) * .4))
+    const glow = reduced.matches ? 0 : flash(e)
+    if (glow > .05) { curve(flashes[Math.min(2, Math.floor(glow * 3))]!, e, a, b); continue }
+    const level = Math.min(3, Math.floor(weight(e) * 3 + (depth[a]! + depth[b]!) * .3))
     curve(paths[level]!, e, a, b)
   }
-  paths.forEach((path, level) => { context.globalAlpha = .035 + level * .055; context.lineWidth = .7 + level * .25; context.stroke(path) })
+  paths.forEach((path, level) => { context.globalAlpha = .018 + level * .03; context.lineWidth = .6 + level * .2; context.stroke(path) })
+  flashes.forEach((path, level) => { context.globalAlpha = .12 + level * .1; context.lineWidth = 1 + level * .25; context.stroke(path) })
   // 外框：特征图、注意力块、编码 z。
-  context.globalAlpha = .16; context.lineWidth = 1
+  context.globalAlpha = .11; context.lineWidth = 1
   context.setLineDash([5, 4])
   for (const frame of net.frames) {
     context.beginPath()
@@ -240,14 +273,14 @@ function drawNetwork(context: CanvasRenderingContext2D, net: Graph, state: Train
   }
   context.setLineDash([])
   // 神经元：小圆圈；前向信号经过时轻轻点亮。
-  const forward = phase < .5, progress = forward ? phase * 2 : (phase - .5) * 2
   const active = forward ? Math.floor(progress * net.stages) : net.stages - 1 - Math.floor(progress * net.stages)
   const within = (progress * net.stages) % 1
-  context.globalAlpha = .3; context.lineWidth = 1
+  context.globalAlpha = .26; context.lineWidth = 1
   const circles = new Path2D()
   for (let k = 0; k < count; k++) { circles.moveTo(sx[k]! + 3.2, sy[k]!); circles.arc(sx[k]!, sy[k]!, 3.2, 0, Math.PI * 2) }
   context.stroke(circles)
   if (reveal < 1 || reduced.matches) return
+  if (!forward && back >= 1) { drawLoss(context, state); return }
   // 信号：前向是铅笔点，沿着这一步的连线从左走到右；反向是红点，沿着连线走回来。
   context.fillStyle = forward ? ink : red
   context.globalAlpha = .45
@@ -452,7 +485,7 @@ function pickKnowledge(): Knowledge | undefined {
   if (!bag.length) {
     const id = current.value || ''
     const manifold = manifoldById(id), network = networkById(id)
-    if (network) bag = [...ML_FACTS, ...network.facts, ...network.facts].map(text => ({ text }))
+    if (network) bag = [...ML_FACTS, ...network.facts].map(text => ({ text }))
     else {
       const allowed = mesh?.curves.length ? CURVE_VISUALS : SURFACE_VISUALS
       bag = [...THEOREMS.filter(item => !item.visual || allowed.includes(item.visual)), ...(manifold?.facts || []).map(text => ({ text }))]
