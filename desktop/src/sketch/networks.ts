@@ -79,11 +79,11 @@ function cnn(): Graph {
     b.frames.push([[x, -h, z0 - h], [x, h, z0 - h], [x, h, z0 + h], [x, -h, z0 + h]])
     return ids
   }
-  const input = plane(7, 0, 0, .3)
-  const conv = [plane(5, 1.5, -.95, .26), plane(5, 1.5, .95, .26)]
-  const pool = [plane(2, 2.8, -.7, .4), plane(2, 2.8, .7, .4)]
-  const fc = ring(b, 6, 3.9, .7)
-  const out = ring(b, 3, 4.8, .4)
+  const input = plane(7, 0, 0, .42)
+  const conv = [plane(5, 1.5, -1.25, .36), plane(5, 1.5, 1.25, .36)]
+  const pool = [plane(2, 2.8, -.9, .55), plane(2, 2.8, .9, .55)]
+  const fc = ring(b, 6, 3.9, .95)
+  const out = ring(b, 3, 4.8, .55)
   const outputs: number[][] = []
   conv.forEach(channel => channel.forEach((c, k) => {
     const i = Math.floor(k / 5), j = k % 5
