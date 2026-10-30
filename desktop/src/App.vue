@@ -28,6 +28,7 @@ const SettingsDialog = defineAsyncComponent(() => import('./components/SettingsD
 const SplitPicker = defineAsyncComponent(() => import('./components/SplitPicker.vue'))
 const UpdateCard = defineAsyncComponent(() => import('./components/UpdateCard.vue'))
 const ContextMenu = defineAsyncComponent(() => import('./components/ContextMenu.vue'))
+const ManifoldDoodle = defineAsyncComponent(() => import('./components/ManifoldDoodle.vue'))
 const { preferences, effectiveAppearance, load: loadPreferences, save: savePreferences } = useSettings()
 
 const documents = ref<Doc[]>([])
@@ -1073,6 +1074,11 @@ async function removeDocument() {
 }
 let appliedBackground: string | undefined
 let glassContrast: ReturnType<typeof installGlassContrast> | undefined
+// 铅笔草稿的格子纸上那个自转的流形：文档库默认显示，阅读时默认不显示（设置里可改）。
+const manifoldVisible = computed(() => {
+  const appearance = effectiveAppearance.value
+  return appearance.style === 'sketch' && appearance.manifold.show && (!active.value || appearance.manifold.reader)
+})
 function applyTheme() {
   const appearance = effectiveAppearance.value
   const selected = appearance.theme
@@ -1369,6 +1375,7 @@ onBeforeUnmount(() => { stopAutoCheck(); for (const timer of pillTimers.values()
 
 <template>
   <div class="app-shell" :class="{ 'sidebar-collapsed': !sidebarOpen, 'has-reader': active, 'chrome-collapsed': chromeCollapsed }">
+    <ManifoldDoodle v-if="manifoldVisible" :shapes="effectiveAppearance.manifold.shapes" />
     <Transition name="chrome-tag"><button v-if="chromeCollapsed" class="chrome-tag" data-tip="展开顶栏与侧栏" :data-tip-key="tipKey('sidebar')" aria-label="展开顶栏与侧栏" @click="expandChrome"><AppIcon name="chevron-right" :size="14" /></button></Transition>
     <Transition name="sidebar" @before-enter="paneResizeStart($event, true)" @before-leave="paneResizeStart($event, false)" @after-enter="paneResizeEnd" @after-leave="paneResizeEnd" @enter-cancelled="paneResizeEnd($event, true)" @leave-cancelled="paneResizeEnd($event, true)">
     <aside class="app-sidebar" v-if="sidebarOpen" data-glass-interactive="panel">
@@ -1382,6 +1389,23 @@ onBeforeUnmount(() => { stopAutoCheck(); for (const timer of pillTimers.values()
       <div class="tag-heading"><p class="sidebar-label">标签</p><AppIcon name="tag" :size="14" /></div>
       <nav v-liquid-selection="{ radius: 'var(--r-control)' }" class="tag-nav" aria-label="文档标签"><button v-for="tag in tags" :key="tag" :class="{ selected: tagFilter === tag }" @click="chooseTag(tag)"><span class="tag-dot"></span>{{ tag }}<span>{{ documents.filter(doc => doc.tags.includes(tag)).length }}</span></button><p v-if="!tags.length" class="tag-empty">可在文档详情中添加标签。</p></nav>
       <div class="sidebar-spacer"></div>
+      <div v-if="effectiveAppearance.style === 'sketch'" class="sidebar-doodle" aria-hidden="true">
+        <svg viewBox="0 0 120 150" width="120" height="150" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+          <g class="sunflower">
+            <path class="stem" d="M60 76 C58 96 63 112 60 140" />
+            <path class="leaf" d="M60 118 C44 104 30 108 24 116 C36 124 50 124 60 118 Z M60 118 L32 114" />
+            <path class="leaf" d="M61 128 C76 116 92 118 98 126 C86 134 72 134 61 128 Z M61 128 L90 125" />
+            <g class="petals"><ellipse cx="60" cy="31" rx="7.5" ry="13" transform="rotate(0 60 52)" /><ellipse cx="60" cy="31" rx="7.5" ry="13" transform="rotate(30 60 52)" /><ellipse cx="60" cy="31" rx="7.5" ry="13" transform="rotate(60 60 52)" /><ellipse cx="60" cy="31" rx="7.5" ry="13" transform="rotate(90 60 52)" /><ellipse cx="60" cy="31" rx="7.5" ry="13" transform="rotate(120 60 52)" /><ellipse cx="60" cy="31" rx="7.5" ry="13" transform="rotate(150 60 52)" /><ellipse cx="60" cy="31" rx="7.5" ry="13" transform="rotate(180 60 52)" /><ellipse cx="60" cy="31" rx="7.5" ry="13" transform="rotate(210 60 52)" /><ellipse cx="60" cy="31" rx="7.5" ry="13" transform="rotate(240 60 52)" /><ellipse cx="60" cy="31" rx="7.5" ry="13" transform="rotate(270 60 52)" /><ellipse cx="60" cy="31" rx="7.5" ry="13" transform="rotate(300 60 52)" /><ellipse cx="60" cy="31" rx="7.5" ry="13" transform="rotate(330 60 52)" /></g>
+            <circle class="face" cx="60" cy="52" r="20" />
+            <ellipse class="eye" cx="53" cy="48" rx="2.6" ry="4" />
+            <ellipse class="eye" cx="67" cy="48" rx="2.6" ry="4" />
+            <path d="M51 57 C55 63 65 63 69 57" />
+            <ellipse class="cheek" cx="47" cy="57" rx="3.5" ry="2.2" />
+            <ellipse class="cheek" cx="73" cy="57" rx="3.5" ry="2.2" />
+          </g>
+          <path class="ground" d="M18 141 C40 138 80 143 104 140" />
+        </svg>
+      </div>
       <div class="sidebar-bottom"><button @click="openSettings()" aria-label="设置"><AppIcon name="settings" :size="17" /><span>设置</span></button><button class="icon-button" @click="toggleTheme($event)" :data-tip="theme === 'dark' ? '切换浅色主题' : '切换深色主题'" :aria-label="theme === 'dark' ? '切换浅色主题' : '切换深色主题'"><AppIcon :name="theme === 'dark' ? 'sun' : 'moon'" :size="17" /></button></div>
     </aside>
     </Transition>

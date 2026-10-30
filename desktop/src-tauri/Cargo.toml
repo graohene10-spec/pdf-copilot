@@ -1,6 +1,6 @@
 [package]
 name = "phydog"
-version = "0.8.3"
+version = "0.9.0"
 description = "A lightweight PDF and Markdown reading workspace"
 authors = ["开智"]
 edition = "2021"
