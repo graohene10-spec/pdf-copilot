@@ -40,3 +40,26 @@ test('manifold preferences: shown in the library, hidden while reading, all shap
   assert.deepEqual(preferenceErrors(custom), [])
   assert.ok(preferenceErrors({ ...custom, appearance: { ...custom.appearance, manifold: { show: true, reader: false, shapes: [] } } }).includes('请至少选择一种流形。'))
 })
+
+test('neural networks build finite graphs and rotate with the manifolds; every note is in English', async () => {
+  const { NETWORKS, ML_FACTS } = await import('../src/sketch/networks.ts')
+  const { SCENES } = await import('../src/sketch/manifolds.ts')
+  assert.deepEqual(SCENES.map(item => item.id), [...MANIFOLDS.map(item => item.id), ...NETWORKS.map(item => item.id)])
+  assert.deepEqual(MANIFOLD_IDS, SCENES.map(item => item.id))
+  for (const network of NETWORKS) {
+    const graph = network.build()
+    const count = graph.nodes.length / 3
+    assert.ok(graph.nodes.every(Number.isFinite), network.id)
+    assert.equal(graph.edges.length / 2, graph.stage.length)
+    assert.equal(graph.bend.length, graph.stage.length)
+    for (const index of graph.edges) assert.ok(index < count, network.id)
+    for (const stage of graph.stage) assert.ok(stage < graph.stages, network.id)
+    let max = 0
+    for (let k = 0; k < graph.nodes.length; k += 3) max = Math.max(max, Math.hypot(graph.nodes[k], graph.nodes[k + 1], graph.nodes[k + 2]))
+    assert.ok(max > .99 && max < 1.01, `${network.id} radius ${max}`)
+  }
+  assert.ok(NETWORKS.find(item => item.id === 'transformer').build().attention)
+  assert.ok(NETWORKS.find(item => item.id === 'cnn').build().kernel.outputs.every(patch => patch.length === 9))
+  const texts = [...THEOREMS.map(item => item.text), ...MANIFOLDS.flatMap(item => item.facts), ...NETWORKS.flatMap(item => item.facts), ...ML_FACTS]
+  for (const text of texts) assert.ok(!/[一-鿿]/.test(text), text)
+})

@@ -1,10 +1,11 @@
 <script setup lang="ts">
-// 铅笔草稿的格子纸上，一个铅笔画的流形慢慢自转 360°；旁边随机浮现微分几何的定理与定义，
-// 其中一部分直接画在流形上（切平面、坐标基、法向量、度量圆、坐标卡、Stokes 边界、积分曲线），跟着流形一起转。
-// 每隔一段随机的时间换一种流形，换的时候像重新画一遍。
-// 只画线框：每帧旋转、投影几千个点，按远近分四档深浅一次画完；转得很慢（56 秒一圈），每秒 15 帧就够顺，窗口不可见时停下。
+// 铅笔草稿的格子纸上，一个铅笔画的流形或神经网络慢慢自转（两分半一圈），旁边缓缓浮现英文的定理、定义。
+// 流形上的一部分知识直接画在曲面上（切平面、坐标基、法向量、度量圆、坐标卡、Stokes 边界、积分曲线）；
+// 神经网络则演示训练：前向传播的信号一层层走过去，反向传播的梯度（红笔）一层层走回来，权重随之变化，角落里画损失曲线。
+// 每隔 4–8 分钟随机换一个画面，换的时候像重新画一遍。每秒 30 帧，窗口不可见时停下。
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { manifoldById, nextManifold, buildMesh, THEOREMS, type Mesh, type Note as Knowledge, type Visual, type Vec } from '../sketch/manifolds'
+import { networkById, ML_FACTS, type Graph } from '../sketch/networks'
 
 const props = defineProps<{ shapes: string[] }>()
 
@@ -13,14 +14,18 @@ const current = ref<string>()
 type Note = { key: number; text: string; slot: number; drawn: boolean; leaving: boolean }
 const notes = ref<Note[]>([])
 
-const PERIOD = 56000 // 一整圈 56 秒
-const DRAW_IN = 1800 // 换流形时「画出来」的时长
-const FRAME = 1000 / 15
+const PERIOD = 150000 // 一整圈两分半
+const DRAW_IN = 2600 // 换画面时「画出来」的时长
+const FRAME = 1000 / 30
 const SLOTS = 4
+const NOTE_EVERY = 9000 // 每 9 秒写一条
+const NOTE_STAYS = 16000 // 每条停留 16 秒（加上缓慢的浮现与淡去，同时最多两条）
+const STEP = 5200 // 一次训练迭代：前向一半，反向一半
 const SURFACE_VISUALS: Visual[] = ['tangent', 'basis', 'normal', 'metric', 'chart', 'stokes', 'field', 'curve']
 const CURVE_VISUALS: Visual[] = ['field', 'curve']
 
 let mesh: Mesh | undefined
+let graph: Graph | undefined
 let baseTilt = .42
 let jitter: Float32Array | undefined
 let frame = 0, last = 0, start = 0, drawnAt = 0, width = 0, height = 0, ratio = 1
@@ -35,6 +40,10 @@ const timers = new Set<ReturnType<typeof setTimeout>>()
 /** 画在流形上的示意：在哪块曲面、哪个参数点，什么时候出现 / 开始淡出。 */
 type Drawing = { visual: Visual; patch: number; u: number; v: number; curve: number; t: number; born: number; fading: number }
 let drawing: Drawing | undefined
+
+/** 神经网络的训练状态：每条连线的权重（从上一步的值缓缓变到这一步的值）、迭代次数、损失曲线。 */
+type Training = { from: Float32Array; to: Float32Array; step: number; losses: number[]; attention: Float32Array[] }
+let training: Training | undefined
 
 // 每个顶点固定一点手抖（两遍笔画各一份），线条稳定地「不直」，不会逐帧闪。
 function seeded(count: number) {
@@ -51,12 +60,15 @@ function later(callback: () => void, delay: number) {
 }
 
 function choose(id: string | undefined) {
-  const manifold = id ? manifoldById(id) : undefined
-  if (!manifold) return
+  if (!id) return
+  const manifold = manifoldById(id), network = networkById(id)
+  if (!manifold && !network) return
   current.value = id
-  mesh = buildMesh(manifold)
-  baseTilt = manifold.tilt ?? .42
-  jitter = seeded(mesh.points.length / 3)
+  mesh = manifold ? buildMesh(manifold) : undefined
+  graph = network ? network.build() : undefined
+  training = graph ? newTraining(graph) : undefined
+  baseTilt = manifold?.tilt ?? (network ? .32 : .42)
+  jitter = seeded(mesh ? mesh.points.length / 3 : graph!.nodes.length / 3)
   drawnAt = performance.now()
   bag = []
   if (drawing) drawing.fading = drawnAt
@@ -67,8 +79,8 @@ function choose(id: string | undefined) {
 function scheduleSwitch() {
   clearTimeout(switchTimer)
   if (props.shapes.length < 2 || reduced.matches) return
-  // 35–75 秒随机换一种。
-  switchTimer = setTimeout(() => choose(nextManifold(props.shapes, current.value)), 35000 + Math.random() * 40000)
+  // 4–8 分钟随机换一个画面。
+  switchTimer = setTimeout(() => choose(nextManifold(props.shapes, current.value)), 240000 + Math.random() * 240000)
 }
 
 function resize() {
@@ -99,11 +111,9 @@ type Project = (x: number, y: number, z: number) => [number, number, number]
 
 function draw(now: number) {
   const element = canvas.value, context = element?.getContext('2d')
-  if (!element || !context || !mesh || !jitter) return
-  const { points, lines, closed } = mesh
-  const count = points.length / 3
+  if (!element || !context || !jitter || (!mesh && !graph)) return
   const angle = reduced.matches ? .6 : ((now - start) / PERIOD) * Math.PI * 2
-  const tilt = baseTilt + Math.sin(angle * .5) * .06
+  const tilt = baseTilt + Math.sin(angle * .5) * .05
   const ca = Math.cos(angle), sa = Math.sin(angle), ct = Math.cos(tilt), st = Math.sin(tilt)
   const size = Math.min(width * .62, height) * .46, cx = width * .56, cy = height * .52, camera = 3.4
   // 把模型坐标投到画布：绕竖轴自转，再向前倾一点，看得到上面。
@@ -113,51 +123,181 @@ function draw(now: number) {
     const perspective = camera / (camera + z2)
     return [cx + x1 * size * perspective, cy - y2 * size * perspective, (1 - z2) / 2]
   }
-  const sx = new Float32Array(count), sy = new Float32Array(count), depth = new Float32Array(count)
-  for (let k = 0; k < count; k++) {
-    const [x, y, d] = project(points[k * 3]!, points[k * 3 + 1]!, points[k * 3 + 2]!)
-    sx[k] = x; sy[k] = y; depth[k] = d
-  }
   context.setTransform(ratio, 0, 0, ratio, 0, 0)
   context.clearRect(0, 0, width, height)
   context.lineCap = 'round'
   context.lineJoin = 'round'
   context.strokeStyle = ink
-  // 换流形时线一条条画出来。
+  // 换画面时线一条条画出来。
   const reveal = reduced.matches ? 1 : Math.min(1, (now - drawnAt) / DRAW_IN)
-  const visible = Math.ceil(lines.length * reveal)
-  for (const pass of [0, 1]) {
-    const paths = [new Path2D(), new Path2D(), new Path2D(), new Path2D()]
-    const offset = pass * 2
-    for (let l = 0; l < visible; l++) {
-      const line = lines[l]!, steps = closed[l] ? line.length : line.length - 1
-      for (let s = 0; s < steps; s++) {
-        const a = line[s]!, b = line[(s + 1) % line.length]!
-        const level = Math.min(3, Math.max(0, Math.floor((depth[a]! + depth[b]!) * 2)))
-        if (pass && level < 2) continue // 错开的第二笔只描近处两档，远处本来就淡
-        const path = paths[level]!
-        path.moveTo(sx[a]! + jitter[a * 4 + offset]!, sy[a]! + jitter[a * 4 + offset + 1]!)
-        path.lineTo(sx[b]! + jitter[b * 4 + offset]!, sy[b]! + jitter[b * 4 + offset + 1]!)
-      }
-    }
-    // 远处的线淡，近处的线深；第二遍是错开一点的淡笔，像铅笔来回描。
-    paths.forEach((path, level) => {
-      if (pass && level < 2) return
-      // 只是背景：整体很淡，不和书页、卡片抢眼。
-      context.globalAlpha = (.06 + level * .085) * (pass ? .35 : 1)
-      context.lineWidth = pass ? .7 : .9 + level * .1
-      context.stroke(path)
-    })
-  }
-  if (drawing && reveal >= 1) drawVisual(context, drawing, now, project)
+  if (mesh) drawMesh(context, mesh, project, reveal)
+  else if (graph && training) drawNetwork(context, graph, training, project, reveal, now)
+  if (mesh && drawing && reveal >= 1) drawVisual(context, drawing, now, project)
   context.globalAlpha = 1
+}
+
+function drawMesh(context: CanvasRenderingContext2D, { points, lines, closed }: Mesh, project: Project, reveal: number) {
+  const count = points.length / 3
+  const sx = new Float32Array(count), sy = new Float32Array(count), depth = new Float32Array(count)
+  for (let k = 0; k < count; k++) {
+    const [x, y, d] = project(points[k * 3]!, points[k * 3 + 1]!, points[k * 3 + 2]!)
+    sx[k] = x; sy[k] = y; depth[k] = d
+  }
+  const visible = Math.ceil(lines.length * reveal)
+  const paths = [new Path2D(), new Path2D(), new Path2D(), new Path2D()]
+  for (let l = 0; l < visible; l++) {
+    const line = lines[l]!, steps = closed[l] ? line.length : line.length - 1
+    for (let s = 0; s < steps; s++) {
+      const a = line[s]!, b = line[(s + 1) % line.length]!
+      const path = paths[Math.min(3, Math.max(0, Math.floor((depth[a]! + depth[b]!) * 2)))]!
+      path.moveTo(sx[a]! + jitter![a * 4]!, sy[a]! + jitter![a * 4 + 1]!)
+      path.lineTo(sx[b]! + jitter![b * 4]!, sy[b]! + jitter![b * 4 + 1]!)
+    }
+  }
+  // 只是背景：整体很淡，远处的线更淡，不和书页、卡片抢眼。
+  paths.forEach((path, level) => {
+    context.globalAlpha = .06 + level * .085
+    context.lineWidth = .9 + level * .1
+    context.stroke(path)
+  })
+}
+
+// ---- 神经网络与训练 ----
+function newTraining(net: Graph): Training {
+  const count = net.edges.length / 2
+  const random = () => Float32Array.from({ length: count }, () => (Math.random() * 2 - 1))
+  const attention = net.attention ? Array.from({ length: net.attention.rows * 2 }, () => softmaxRows(net.attention!.tokens)) : []
+  return { from: random(), to: random(), step: 0, losses: [], attention }
+}
+
+// 注意力权重：每个词元对所有词元的一行 softmax，越训练越「尖」。
+function softmaxRows(tokens: number, sharpness = 1) {
+  const out = new Float32Array(tokens * tokens)
+  for (let i = 0; i < tokens; i++) {
+    const logits = Array.from({ length: tokens }, (_, j) => (Math.random() * 2 + (i === j ? .8 : 0)) * sharpness)
+    const max = Math.max(...logits), exps = logits.map(value => Math.exp(value - max)), sum = exps.reduce((a, b) => a + b, 0)
+    exps.forEach((value, j) => { out[i * tokens + j] = value / sum })
+  }
+  return out
+}
+
+/** 一次迭代结束：权重朝新方向挪一点（越到后面挪得越少），记下这一步的损失。 */
+function stepTraining(net: Graph, state: Training) {
+  state.step++
+  const rate = .55 / Math.sqrt(state.step)
+  state.from = state.to
+  state.to = Float32Array.from(state.from, w => Math.max(-1, Math.min(1, w + (Math.random() * 2 - 1) * rate)))
+  const loss = 2.3 * Math.exp(-state.step / 22) + .18 + (Math.random() - .5) * .16 * Math.exp(-state.step / 60)
+  state.losses.push(Math.max(.05, loss))
+  if (state.losses.length > 120) state.losses.shift()
+  if (net.attention) state.attention = state.attention.map(() => softmaxRows(net.attention!.tokens, 1 + Math.min(2.5, state.step / 25)))
+}
+
+function drawNetwork(context: CanvasRenderingContext2D, net: Graph, state: Training, project: Project, reveal: number, now: number) {
+  const elapsed = now - drawnAt
+  const step = Math.floor(elapsed / STEP)
+  while (state.step < step) stepTraining(net, state)
+  const phase = (elapsed % STEP) / STEP // 0–.5 前向，.5–1 反向
+  const ease = Math.min(1, phase * 2)
+  const count = net.nodes.length / 3
+  const sx = new Float32Array(count), sy = new Float32Array(count), depth = new Float32Array(count)
+  for (let k = 0; k < count; k++) {
+    const [x, y, d] = project(net.nodes[k * 3]!, net.nodes[k * 3 + 1]!, net.nodes[k * 3 + 2]!)
+    sx[k] = x + jitter![k * 4]!; sy[k] = y + jitter![k * 4 + 1]!; depth[k] = d
+  }
+  const edges = net.edges.length / 2, visible = Math.ceil(edges * reveal)
+  // 连线：权重越大越深；注意力连线按当前的注意力权重。四档深浅各一条路径。
+  const paths = [new Path2D(), new Path2D(), new Path2D(), new Path2D()]
+  const weight = (e: number) => {
+    if (net.attention) {
+      const tokens = net.attention.tokens, perRow = tokens * tokens * 2
+      const row = Math.floor(e / perRow), k = e % perRow, head = Math.floor(k / (tokens * tokens)), cell = k % (tokens * tokens)
+      return Math.min(1, state.attention[row * 2 + head]![cell]! * tokens * .7)
+    }
+    return Math.abs(state.from[e]! + (state.to[e]! - state.from[e]!) * ease)
+  }
+  const curve = (path: Path2D, e: number, a: number, b: number) => {
+    const bend = net.bend[e]!
+    if (!bend) { path.moveTo(sx[a]!, sy[a]!); path.lineTo(sx[b]!, sy[b]!); return }
+    // 注意力头：中点沿 z 鼓出去，画成一段弧。
+    const mid = (k: number) => (net.nodes[a * 3 + k]! + net.nodes[b * 3 + k]!) / 2
+    const [mx, my] = project(mid(0), mid(1), mid(2) + bend)
+    path.moveTo(sx[a]!, sy[a]!); path.quadraticCurveTo(2 * mx - (sx[a]! + sx[b]!) / 2, 2 * my - (sy[a]! + sy[b]!) / 2, sx[b]!, sy[b]!)
+  }
+  for (let e = 0; e < visible; e++) {
+    const a = net.edges[e * 2]!, b = net.edges[e * 2 + 1]!
+    const level = Math.min(3, Math.floor(weight(e) * 3.2 + (depth[a]! + depth[b]!) * .4))
+    curve(paths[level]!, e, a, b)
+  }
+  paths.forEach((path, level) => { context.globalAlpha = .035 + level * .055; context.lineWidth = .7 + level * .25; context.stroke(path) })
+  // 外框：特征图、注意力块、编码 z。
+  context.globalAlpha = .16; context.lineWidth = 1
+  context.setLineDash([5, 4])
+  for (const frame of net.frames) {
+    context.beginPath()
+    frame.forEach((p, k) => { const [x, y] = project(p[0], p[1], p[2]); if (k) context.lineTo(x, y); else context.moveTo(x, y) })
+    context.closePath(); context.stroke()
+  }
+  context.setLineDash([])
+  // 神经元：小圆圈；前向信号经过时轻轻点亮。
+  const forward = phase < .5, progress = forward ? phase * 2 : (phase - .5) * 2
+  const active = forward ? Math.floor(progress * net.stages) : net.stages - 1 - Math.floor(progress * net.stages)
+  const within = (progress * net.stages) % 1
+  context.globalAlpha = .3; context.lineWidth = 1
+  const circles = new Path2D()
+  for (let k = 0; k < count; k++) { circles.moveTo(sx[k]! + 3.2, sy[k]!); circles.arc(sx[k]!, sy[k]!, 3.2, 0, Math.PI * 2) }
+  context.stroke(circles)
+  if (reveal < 1 || reduced.matches) return
+  // 信号：前向是铅笔点，沿着这一步的连线从左走到右；反向是红点，沿着连线走回来。
+  context.fillStyle = forward ? ink : red
+  context.globalAlpha = .45
+  const dots = new Path2D()
+  let shown = 0
+  for (let e = 0; e < edges && shown < 90; e++) {
+    if (net.stage[e] !== active || weight(e) < .35) continue
+    if ((e * 7) % 3 && edges > 300) continue // 连线很多时只挑一部分画信号
+    const a = net.edges[e * 2]!, b = net.edges[e * 2 + 1]!
+    const t = forward ? within : 1 - within
+    const x = sx[a]! + (sx[b]! - sx[a]!) * t, y = sy[a]! + (sy[b]! - sy[a]!) * t
+    dots.moveTo(x + 2.2, y); dots.arc(x, y, 2.2, 0, Math.PI * 2)
+    shown++
+  }
+  context.fill(dots)
+  // CNN：卷积核在输入上滑动，框出当前的 3×3 窗口。
+  if (net.kernel && forward && active === 0) {
+    const patch = net.kernel.outputs[Math.floor(within * net.kernel.outputs.length) % net.kernel.outputs.length]!
+    context.strokeStyle = red; context.globalAlpha = .4; context.lineWidth = 1.2
+    const xs = patch.map(i => sx[i]!), ys = patch.map(i => sy[i]!)
+    context.strokeRect(Math.min(...xs) - 5, Math.min(...ys) - 5, Math.max(...xs) - Math.min(...xs) + 10, Math.max(...ys) - Math.min(...ys) + 10)
+    context.strokeStyle = ink
+  }
+  drawLoss(context, state)
+}
+
+// 左下角的损失曲线：随训练下降、带一点噪声；标上迭代次数。
+function drawLoss(context: CanvasRenderingContext2D, state: Training) {
+  if (state.losses.length < 2) return
+  const w = Math.min(220, width * .26), h = 80, x0 = width * .06, y0 = height * .84
+  context.save()
+  context.globalAlpha = .3; context.lineWidth = 1; context.strokeStyle = ink
+  context.beginPath(); context.moveTo(x0, y0 - h); context.lineTo(x0, y0); context.lineTo(x0 + w, y0); context.stroke()
+  const max = 2.6
+  context.globalAlpha = .45; context.strokeStyle = red; context.lineWidth = 1.3
+  context.beginPath()
+  const span = Math.max(30, state.losses.length - 1) // 横轴随训练拉长，最多保留 120 步
+  state.losses.forEach((loss, k) => { const x = x0 + (k / span) * w, y = y0 - (loss / max) * h; if (k) context.lineTo(x, y); else context.moveTo(x, y) })
+  context.stroke()
+  context.globalAlpha = .4; context.fillStyle = ink; context.font = `15px Caveat, 'Long Cang', cursive`
+  context.fillText('loss', x0 + 6, y0 - h + 4)
+  context.fillText(`step ${state.step}`, x0 + w - 48, y0 + 16)
+  context.restore()
 }
 
 // ---- 画在流形上的示意 ----
 function drawVisual(context: CanvasRenderingContext2D, item: Drawing, now: number, project: Project) {
   if (!mesh) return
-  const fadeIn = Math.min(1, (now - item.born) / 700)
-  const fadeOut = item.fading ? Math.max(0, 1 - (now - item.fading) / 900) : 1
+  const fadeIn = Math.min(1, (now - item.born) / 2400)
+  const fadeOut = item.fading ? Math.max(0, 1 - (now - item.fading) / 2400) : 1
   const alpha = fadeIn * fadeOut * .5
   if (alpha <= 0) { if (drawing === item) drawing = undefined; return }
   const P = (p: Vec) => project(p[0], p[1], p[2])
@@ -307,24 +447,39 @@ function tick(now: number) {
 function run() { if (!frame && !document.hidden) frame = requestAnimationFrame(tick) }
 function halt() { cancelAnimationFrame(frame); frame = 0 }
 
-// 随机的定理 / 定义：洗好的一袋，抽完再洗；夹几条当前流形自己的小知识。能画的就画在流形上。
+// 随机的定理 / 定义：洗好的一袋，抽完再洗；夹几条当前画面自己的。流形上能画的就画在曲面上。
 function pickKnowledge(): Knowledge | undefined {
   if (!bag.length) {
-    const manifold = current.value ? manifoldById(current.value) : undefined
-    const allowed = mesh?.curves.length ? CURVE_VISUALS : SURFACE_VISUALS
-    const usable = THEOREMS.filter(item => !item.visual || allowed.includes(item.visual))
-    bag = [...usable, ...(manifold?.facts || []).map(text => ({ text }))].sort(() => Math.random() - .5)
+    const id = current.value || ''
+    const manifold = manifoldById(id), network = networkById(id)
+    if (network) bag = [...ML_FACTS, ...network.facts, ...network.facts].map(text => ({ text }))
+    else {
+      const allowed = mesh?.curves.length ? CURVE_VISUALS : SURFACE_VISUALS
+      bag = [...THEOREMS.filter(item => !item.visual || allowed.includes(item.visual)), ...(manifold?.facts || []).map(text => ({ text }))]
+    }
+    bag.sort(() => Math.random() - .5)
   }
   return bag.pop()
 }
 
+function retire(note: Note) {
+  const live = notes.value.find(item => item.key === note.key)
+  if (!live || live.leaving) return
+  live.leaving = true
+  if (live.drawn && drawing) drawing.fading = performance.now()
+  later(() => { notes.value = notes.value.filter(item => item.key !== note.key) }, 3000)
+}
+
 function nextNote() {
   const knowledge = document.hidden ? undefined : pickKnowledge()
-  if (knowledge && mesh) {
-    const drawn = !!knowledge.visual && !reduced.matches
+  if (knowledge) {
+    // 同时最多两条：再写新的之前，先让最早的那条淡去。
+    const showing = notes.value.filter(item => !item.leaving)
+    if (showing.length >= 2) retire(showing[0]!)
+    const drawn = !!knowledge.visual && !!mesh && !reduced.matches
     const note: Note = { key: ++noteKey, text: knowledge.text, slot: slotIndex++ % SLOTS, drawn, leaving: false }
     notes.value = [...notes.value, note]
-    if (drawn) {
+    if (drawn && mesh) {
       const now = performance.now()
       if (drawing) drawing.fading = now
       const patch = Math.floor(Math.random() * Math.max(1, mesh.surface.length))
@@ -332,15 +487,9 @@ function nextNote() {
       const pick = (range?: [number, number]) => range ? range[0] + (range[1] - range[0]) * (.25 + Math.random() * .5) : 0
       drawing = { visual: knowledge.visual!, patch, u: pick(domain?.u), v: pick(domain?.v), curve: Math.floor(Math.random() * Math.max(1, mesh.curves.length)), t: Math.random() * Math.PI * 2, born: now, fading: 0 }
     }
-    const mine = drawing
-    later(() => {
-      const live = notes.value.find(item => item.key === note.key)
-      if (live) live.leaving = true
-      if (drawn && drawing && drawing === mine) drawing.fading = performance.now()
-      later(() => { notes.value = notes.value.filter(item => item.key !== note.key) }, 900)
-    }, drawn ? 9000 : 10500)
+    later(() => retire(note), NOTE_STAYS)
   }
-  noteTimer = setTimeout(nextNote, reduced.matches ? 60000 : 4600)
+  noteTimer = setTimeout(nextNote, reduced.matches ? 60000 : NOTE_EVERY)
 }
 
 function visibility() { if (document.hidden) halt(); else run() }
@@ -359,7 +508,7 @@ onMounted(() => {
   themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-style'] })
   document.addEventListener('visibilitychange', visibility)
   run()
-  noteTimer = setTimeout(nextNote, 1600)
+  noteTimer = setTimeout(nextNote, 2500)
 })
 onBeforeUnmount(() => {
   halt(); clearTimeout(switchTimer); clearTimeout(noteTimer)
@@ -378,21 +527,21 @@ onBeforeUnmount(() => {
 
 <style scoped>
 /* 画在桌面的格子纸上：在所有纸片后面，不接收鼠标。 */
-.manifold-doodle{position:absolute;inset:0 0 0 250px;z-index:-1;pointer-events:none;color:var(--pencil);font-family:'Long Cang','Caveat',cursive;animation:manifold-in 1.2s var(--ease-out) both}
-/* 流形是背景的主体：几乎占满文档库右侧的整块桌面，被卡片、面板挡住一部分也无妨。 */
+.manifold-doodle{position:absolute;inset:0 0 0 250px;z-index:-1;pointer-events:none;color:var(--pencil);font-family:'Caveat','Long Cang',cursive;animation:manifold-in 2.4s var(--ease-out) both}
+/* 画面是背景的主体：几乎占满文档库右侧的整块桌面，被卡片、面板挡住一部分也无妨。 */
 .manifold-canvas{position:absolute;inset:4% 2% 0 6%;width:92%;height:96%}
-.manifold-note{position:absolute;max-width:min(18vw,240px);margin:0;font-size:16px;line-height:1.5;color:var(--surface-muted);--note-opacity:.55;opacity:var(--note-opacity);animation:manifold-write 1.1s var(--ease-soft) both;transition:opacity .9s var(--ease-out),translate .9s var(--ease-out)}
+/* 知识缓缓浮现、缓缓淡去：只动透明度和一点点位移。 */
+.manifold-note{position:absolute;max-width:min(20vw,270px);margin:0;font-size:17px;line-height:1.4;color:var(--surface-muted);opacity:.55;animation:manifold-note-in 3s var(--ease-soft) backwards;transition:opacity 3s var(--ease-soft),translate 3s var(--ease-soft)}
 /* 画在流形上的那一条用红笔写，前面一道红色短线，和画上去的示意对得上。 */
 .manifold-note.drawn{color:color-mix(in srgb,var(--red-pencil) 75%,var(--surface-muted))}
-.manifold-note.drawn::before{content:'';position:absolute;left:-14px;top:.75em;width:9px;height:2px;border-radius:2px;background:var(--red-pencil)}
-.manifold-note.leaving{--note-opacity:0;translate:0 -6px}
+.manifold-note.drawn::before{content:'';position:absolute;left:-14px;top:.7em;width:9px;height:2px;border-radius:2px;background:var(--red-pencil)}
+.manifold-note.leaving{opacity:0;translate:0 -8px}
 /* 手写的知识避开顶上的标题与工具条，沿右侧和底边排开。 */
 .slot-0{right:1.5%;top:27%;rotate:-1.5deg;text-align:right}
 .slot-1{right:1.5%;top:51%;rotate:1.5deg;text-align:right}
 .slot-2{right:1.5%;top:75%;rotate:1deg;text-align:right}
 .slot-3{left:30%;top:87%;rotate:-1.5deg}
 @keyframes manifold-in{from{opacity:0}to{opacity:1}}
-/* 一笔写出来：从左到右露出（只动 clip-path，淡出用的 opacity 不被动画占住）。 */
-@keyframes manifold-write{from{clip-path:inset(-40% 100% -40% -10%)}to{clip-path:inset(-40% -40% -40% -10%)}}
+@keyframes manifold-note-in{from{opacity:0;translate:0 8px}to{opacity:.55;translate:0 0}}
 @media (prefers-reduced-motion:reduce){.manifold-doodle,.manifold-note{animation:none}}
 </style>

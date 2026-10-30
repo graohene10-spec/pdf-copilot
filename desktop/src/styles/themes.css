@@ -1526,43 +1526,21 @@
   pointer-events: none;
 }
 
-/* ---- 侧栏空白处：一朵铅笔画的向日葵（植物大战僵尸的那种），站在地上轻轻晃 -------------- */
+/* ---- 侧栏空白处：铅笔排线的纹理，底下密、往上渐渐淡掉，像纸边被铅笔蹭过 -------------- */
 .sidebar-doodle { display: none; }
 
 :root[data-style='sketch'] .sidebar-doodle {
   display: block;
-  margin: auto auto 10px;
-  width: 120px;
-  color: var(--pencil);
+  height: 150px;
+  margin: auto -12px 6px;
   pointer-events: none;
-}
-
-:root[data-style='sketch'] .sidebar-doodle svg { display: block; overflow: visible; }
-:root[data-style='sketch'] .sidebar-doodle .petals { fill: #f7cf4a; stroke-width: 1.2; }
-:root[data-style='sketch'] .sidebar-doodle .face { fill: #e9a640; }
-:root[data-style='sketch'] .sidebar-doodle .eye { fill: currentColor; stroke: none; }
-:root[data-style='sketch'] .sidebar-doodle .cheek { fill: #f08a6a; stroke: none; opacity: .7; }
-:root[data-style='sketch'] .sidebar-doodle .stem { stroke-width: 2.2; stroke: #6f8f3a; }
-:root[data-style='sketch'] .sidebar-doodle .leaf { fill: #9cc35a; stroke: #4f6b2a; stroke-width: 1.2; }
-:root[data-style='sketch'] .sidebar-doodle .ground { stroke-width: 1.2; opacity: .5; }
-:root[data-style='sketch'][data-theme='dark'] .sidebar-doodle .petals { fill: #c9a23a; }
-:root[data-style='sketch'][data-theme='dark'] .sidebar-doodle .face { fill: #b9822f; }
-:root[data-style='sketch'][data-theme='dark'] .sidebar-doodle .leaf { fill: #6f8f3a; }
-
-/* 像游戏里那样，整朵花绕着根部左右轻轻摆。 */
-:root[data-style='sketch'] .sidebar-doodle .sunflower {
-  transform-box: view-box;
-  transform-origin: 60px 140px;
-  animation: sunflower-sway 3.2s ease-in-out infinite;
-}
-
-@keyframes sunflower-sway {
-  0%, 100% { transform: rotate(-3deg); }
-  50% { transform: rotate(3deg); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  :root[data-style='sketch'] .sidebar-doodle .sunflower { animation: none; }
+  opacity: .5;
+  background:
+    repeating-linear-gradient(62deg, transparent 0 7px, color-mix(in srgb, var(--pencil) 22%, transparent) 7px 8px),
+    repeating-linear-gradient(-28deg, transparent 0 11px, color-mix(in srgb, var(--pencil) 14%, transparent) 11px 12px);
+  -webkit-mask-image: linear-gradient(to top, #000 0%, rgba(0, 0, 0, .55) 45%, transparent 100%);
+  mask-image: linear-gradient(to top, #000 0%, rgba(0, 0, 0, .55) 45%, transparent 100%);
+  filter: url(#sk-pencil);
 }
 
 /* 侧栏很矮时（标签很多）不画，免得挤占导航。 */
