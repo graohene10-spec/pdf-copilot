@@ -11,14 +11,14 @@ type Patch = { f: Param; u: [number, number]; v: [number, number]; nu: number; n
 type Curve = { f: (t: number) => Vec; n: number }
 type Shape = { patches?: Patch[]; curves?: Curve[] }
 
-export type ManifoldId = 'calabi' | 'hopf' | 'klein' | 'boy' | 'breather' | 'dini' | 'knot'
+export type ManifoldId = 'calabi' | 'hopf' | 'klein' | 'boy' | 'breather' | 'dini' | 'knot' | 'torus'
 /** 画好的线框：点、折线（点的下标），以及把参数映到画布坐标系（已居中缩放）的函数，用来在流形上画切平面等。 */
 export type Mesh = {
   points: Float32Array
   lines: Uint32Array[]
   closed: boolean[]
   surface: ((u: number, v: number) => Vec)[] // 每块曲面一个，已归一化
-  domains: { u: [number, number]; v: [number, number] }[]
+  domains: { u: [number, number]; v: [number, number]; wrapU?: boolean; wrapV?: boolean }[]
   curves: ((t: number) => Vec)[] // 已归一化
 }
 /** tilt：观察的俯角（弧度），默认 0.42；扁平的形状从高一点看更清楚。 */
@@ -119,6 +119,12 @@ function dini(): Shape {
   ] }] }
 }
 
+// 环面（甜甜圈）：R = 1、r = .42，参数两个方向都首尾相接。
+function torus(): Shape {
+  const R = 1, r = .42
+  return { patches: [{ u: [0, TAU], v: [0, TAU], nu: 56, nv: 26, wrapU: true, wrapV: true, f: (u, v) => [(R + r * Math.cos(v)) * Math.cos(u), r * Math.sin(v), (R + r * Math.cos(v)) * Math.sin(u)] }] }
+}
+
 // (2, 5) 环面纽结的管状邻域。
 function knot(): Shape {
   const p = 2, q = 5, radius = .3
@@ -160,6 +166,13 @@ export const MANIFOLDS: Manifold[] = [
   { id: 'dini', name: 'Dini 曲面', shape: dini, facts: [
     'Dini’s surface: a twisted pseudosphere of constant negative curvature',
     'Hilbert: no complete surface of constant negative curvature immerses isometrically in ℝ³',
+  ] },
+  { id: 'torus', name: '环面（甜甜圈）', shape: torus, tilt: .62, facts: [
+    'The torus T² = S¹ × S¹ has Euler characteristic 0, so ∫ K dA = 0',
+    'On the torus K > 0 on the outer half and K < 0 around the hole',
+    'The flat torus ℝ² / ℤ² carries a metric with K ≡ 0, and it embeds C¹-isometrically in ℝ³ (Nash–Kuiper)',
+    'A coffee mug and a doughnut are homeomorphic: both are genus-one surfaces',
+    'π₁(T²) = ℤ × ℤ: loops are counted by how often they wind around each circle',
   ] },
   { id: 'knot', name: '环面纽结', shape: knot, facts: [
     'The (2, 5) torus knot winds twice around one axis of a torus and five times around the other',
@@ -217,15 +230,15 @@ export function buildMesh(manifold: Manifold): Mesh {
   return {
     points, lines, closed,
     surface: (shape.patches || []).map(patch => (s: number, t: number) => normalize(patch.f(s, t))),
-    domains: (shape.patches || []).map(patch => ({ u: patch.u, v: patch.v })),
+    domains: (shape.patches || []).map(patch => ({ u: patch.u, v: patch.v, wrapU: patch.wrapU, wrapV: patch.wrapV })),
     curves: (shape.curves || []).map(curve => (t: number) => normalize(curve.f(t))),
   }
 }
 
 // ---- 浮现的定理与定义 ----------------------------------------------------------
 
-/** 画在流形上的示意：切平面、坐标基、法向量 / 高斯映射、度量圆、坐标卡、Stokes 边界、向量场与积分曲线。 */
-export type Visual = 'tangent' | 'basis' | 'normal' | 'metric' | 'chart' | 'stokes' | 'field' | 'curve'
+/** 画在流形上的示意：切平面、坐标基、法向量 / 高斯映射、度量圆、坐标卡、Stokes 边界、向量场与积分曲线、测地线、指数映射、平行移动、密切圆、主方向。 */
+export type Visual = 'tangent' | 'basis' | 'normal' | 'metric' | 'chart' | 'stokes' | 'field' | 'curve' | 'geodesic' | 'exp' | 'transport' | 'curvature' | 'principal'
 export type Note = { text: string; visual?: Visual }
 
 export const THEOREMS: Note[] = [
@@ -237,14 +250,14 @@ export const THEOREMS: Note[] = [
   { text: 'Stokes’ theorem: ∫M dω = ∫∂M ω', visual: 'stokes' },
   { text: 'A vector field X ∈ Γ(TM) has integral curves γ′(t) = X(γ(t))', visual: 'field' },
   { text: 'A smooth curve γ : (−ε, ε) → M with γ(0) = p has velocity γ′(0) ∈ TₚM', visual: 'curve' },
-  { text: 'Theorema Egregium: Gaussian curvature depends only on the first fundamental form' },
+  { text: 'Theorema Egregium: Gaussian curvature K = k₁k₂ depends only on the first fundamental form', visual: 'principal' },
   { text: 'Gauss–Bonnet: ∫M K dA + ∫∂M k_g ds = 2π χ(M)' },
   { text: 'Whitney embedding: every smooth n-manifold embeds in ℝ²ⁿ' },
   { text: 'Nash embedding: every Riemannian manifold embeds isometrically in some ℝᴺ' },
   { text: 'Hairy ball theorem: S² has no nowhere-vanishing continuous tangent field' },
-  { text: 'Levi-Civita connection: the unique torsion-free connection compatible with the metric' },
-  { text: 'Geodesics satisfy ∇γ′ γ′ = 0 and locally minimise length' },
-  { text: 'Hopf–Rinow: on a complete Riemannian manifold any two points are joined by a minimising geodesic' },
+  { text: 'Levi-Civita connection: the unique torsion-free connection compatible with the metric', visual: 'transport' },
+  { text: 'Geodesics satisfy ∇γ′ γ′ = 0 and locally minimise length', visual: 'geodesic' },
+  { text: 'Hopf–Rinow: on a complete Riemannian manifold any two points are joined by a minimising geodesic', visual: 'exp' },
   { text: 'de Rham: Hᵏ_dR(M) ≅ Hᵏ(M; ℝ)' },
   { text: 'd² = 0, and dually the boundary of a boundary is empty: ∂² = 0' },
   { text: 'Poincaré lemma: on a contractible domain every closed form is exact' },
@@ -257,4 +270,57 @@ export const THEOREMS: Note[] = [
   { text: 'Poincaré duality: Hᵏ(M) ≅ Hₙ₋ₖ(M) for closed oriented n-manifolds' },
   { text: 'Morse theory: indices of critical points build the cell structure of M' },
   { text: 'Lie derivative 𝓛X Y = [X, Y] measures how Y changes along the flow of X' },
+  // 可以画在曲面上的
+  { text: 'A geodesic is locally the straightest path: its acceleration is normal to the surface', visual: 'geodesic' },
+  { text: 'Geodesic equation: ẍᵏ + Γᵏᵢⱼ ẋⁱ ẋʲ = 0', visual: 'geodesic' },
+  { text: 'Clairaut: on a surface of revolution r · cos ψ is constant along every geodesic', visual: 'geodesic' },
+  { text: 'Exponential map expₚ : TₚM → M sends v to γᵥ(1), a local diffeomorphism near 0', visual: 'exp' },
+  { text: 'Gauss lemma: small geodesic spheres meet the radial geodesics at right angles', visual: 'exp' },
+  { text: 'Geodesic circle: C(r) = 2πr − (π/3) K r³ + O(r⁴)', visual: 'exp' },
+  { text: 'Parallel transport along γ solves ∇γ′ V = 0 and is an isometry between tangent spaces', visual: 'transport' },
+  { text: 'Holonomy: transporting a vector around a small loop turns it by ∬ K dA', visual: 'transport' },
+  { text: 'Christoffel symbols: Γᵏᵢⱼ = ½ gᵏˡ (∂ᵢ gⱼₗ + ∂ⱼ gᵢₗ − ∂ₗ gᵢⱼ)', visual: 'transport' },
+  { text: 'Curvature of a curve: κ = |γ′ × γ″| / |γ′|³, and the osculating circle has radius 1/κ', visual: 'curvature' },
+  { text: 'Meusnier: curves through p with the same tangent share the normal curvature κₙ = κ cos θ', visual: 'curvature' },
+  { text: 'Frenet–Serret: T′ = κN, N′ = −κT + τB, B′ = −τN', visual: 'curvature' },
+  { text: 'Principal curvatures k₁, k₂: eigenvalues of the shape operator, along orthogonal principal directions', visual: 'principal' },
+  { text: 'Euler: normal curvature κₙ(θ) = k₁ cos²θ + k₂ sin²θ', visual: 'principal' },
+  { text: 'Mean curvature H = (k₁ + k₂) / 2; minimal surfaces have H = 0', visual: 'principal' },
+  { text: 'Gaussian curvature K = (LN − M²) / (EG − F²)', visual: 'principal' },
+  { text: 'First fundamental form: ds² = E du² + 2F du dv + G dv²', visual: 'metric' },
+  { text: 'Isometry: a map that preserves the metric, so lengths, angles and areas', visual: 'metric' },
+  { text: 'Area element: dA = √(EG − F²) du dv', visual: 'chart' },
+  { text: 'Atlas: charts covering M whose transition maps φ ∘ ψ⁻¹ are smooth', visual: 'chart' },
+  { text: 'Divergence theorem: ∫Ω div X dV = ∫∂Ω ⟨X, n⟩ dA', visual: 'stokes' },
+  { text: 'Green: ∮∂D P dx + Q dy = ∬D (∂Q/∂x − ∂P/∂y) dA', visual: 'stokes' },
+  { text: 'Flow of X: d/dt φₜ(p) = X(φₜ(p)), and φₛ ∘ φₜ = φₛ₊ₜ', visual: 'field' },
+  { text: 'Differential dfₚ : TₚM → T_f(p)N pushes velocities forward', visual: 'curve' },
+  { text: 'A surface in ℝ³ is orientable iff it has a continuous unit normal field', visual: 'normal' },
+  { text: 'Second fundamental form: II = L du² + 2M du dv + N dv², with L = ⟨fᵤᵤ, N⟩', visual: 'normal' },
+  { text: 'Tangent bundle TM = ⊔ TₚM is itself a 2n-dimensional manifold', visual: 'tangent' },
+  { text: 'Cotangent space T*ₚM: linear functionals on TₚM, spanned by du, dv', visual: 'basis' },
+  // 只写字的
+  { text: 'Euler characteristic: χ = V − E + F for any triangulation' },
+  { text: 'Closed surfaces are spheres, connected sums of tori, or connected sums of projective planes' },
+  { text: 'Bonnet–Myers: Ric ≥ (n − 1)k > 0 forces diam ≤ π/√k and a finite fundamental group' },
+  { text: 'Cartan–Hadamard: a complete, simply connected manifold with K ≤ 0 is diffeomorphic to ℝⁿ' },
+  { text: 'Uniformization: every simply connected Riemann surface is the disc, the plane or the sphere' },
+  { text: 'Ricci flow: ∂g/∂t = −2 Ric' },
+  { text: 'Hodge: every de Rham class has a unique harmonic representative' },
+  { text: 'A Lie group is a manifold with smooth group operations; Tₑ G is its Lie algebra' },
+  { text: 'Cartan’s magic formula: 𝓛X = d ιX + ιX d' },
+  { text: 'Wedge product: α ∧ β = (−1)ᵏˡ β ∧ α' },
+  { text: 'Leibniz rule: d(α ∧ β) = dα ∧ β + (−1)ᵏ α ∧ dβ' },
+  { text: 'Jacobi equation: D²J/dt² + R(J, γ′)γ′ = 0' },
+  { text: 'Sectional curvature: K(X, Y) = ⟨R(X, Y)Y, X⟩ / (|X|²|Y|² − ⟨X, Y⟩²)' },
+  { text: 'Ricci curvature: Ric(X, Y) = tr(Z ↦ R(Z, X)Y)' },
+  { text: 'Einstein manifold: Ric = λg' },
+  { text: 'Codazzi–Mainardi: (∇X S)Y = (∇Y S)X' },
+  { text: 'Regular value theorem: f⁻¹(c) is a submanifold of dimension n − k' },
+  { text: 'Brouwer: every continuous map Dⁿ → Dⁿ has a fixed point' },
+  { text: 'Partitions of unity exist subordinate to any open cover of a smooth manifold' },
+  { text: 'Pullback commutes with d: f*(dω) = d(f*ω)' },
+  { text: 'Vector bundle: locally U × ℝᵏ, glued by transition functions in GL(k)' },
+  { text: 'Lie bracket: [X, Y]f = X(Yf) − Y(Xf)' },
+  { text: 'Hopf: the index sum of a vector field with isolated zeros equals χ(M)' },
 ]

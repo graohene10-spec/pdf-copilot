@@ -24,7 +24,7 @@ const unfocused = (target: EventTarget | null) => !target || target === document
 const editable = (target: EventTarget | null) => target instanceof Element && !!target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')
 
 export function usePdfInk(options: PdfInkOptions) {
-  const state = reactive({ enabled: false, mode: 'pen' as InkMode, colors: { ...DEFAULT_COLORS } as Record<InkTool, string>, lastTool: 'pen' as InkTool, canUndo: false, pageHasInk: false, status: '' })
+  const state = reactive({ enabled: false, mode: 'pen' as InkMode, colors: { ...DEFAULT_COLORS } as Record<InkTool, string>, lastTool: 'pen' as InkTool, canUndo: false, pageHasInk: false, selected: 0, status: '' })
   let layers: InkLayers | undefined
   let store: InkStore | undefined
   let root: HTMLElement | null = null
@@ -34,6 +34,7 @@ export function usePdfInk(options: PdfInkOptions) {
     state.canUndo = !!store?.canUndo
     state.pageHasInk = options.scope === 'document' ? !!store?.hasInk : !!store?.strokes(options.page.value).length
     state.status = layers?.status || store?.error || ''
+    state.selected = layers?.selectedCount || 0
     // Markdown attaches layers only to blocks that carry marks (or near the view while drawing).
     if (options.scope === 'document') layers?.schedule()
   }
@@ -57,7 +58,7 @@ export function usePdfInk(options: PdfInkOptions) {
   function exit() { if (!state.enabled) return false; setEnabled(false); return true }
   function setMode(mode: InkMode) {
     state.mode = mode
-    if (mode !== 'eraser') state.lastTool = mode
+    if (mode !== 'eraser' && mode !== 'select') state.lastTool = mode
     layers?.setMode(mode)
   }
   /** Shortcut for one drawing tool: turns markup on with that tool, or off when it is already the active tool. */
@@ -67,17 +68,27 @@ export function usePdfInk(options: PdfInkOptions) {
     setMode(tool)
   }
   function setColor(color: string) {
-    // Picking an ink while erasing returns to the last drawing tool.
-    if (state.mode === 'eraser') setMode(state.lastTool)
+    // With strokes selected, a colour recolours them; otherwise picking an ink returns to the last drawing tool.
+    if (state.mode === 'select' && layers?.recolorSelection(color)) { refresh(); return }
+    if (state.mode === 'eraser' || state.mode === 'select') setMode(state.lastTool)
     state.colors[state.lastTool] = color
     layers?.setColor(color)
   }
   function undo() { layers?.undo(); refresh() }
+  function deleteSelection() { layers?.deleteSelection(); refresh() }
   function clearPage() { if (options.scope === 'document') layers?.clearAll(); else layers?.clearPage(options.page.value); refresh() }
 
   function keydown(event: KeyboardEvent) {
     if (!state.enabled || event.defaultPrevented || event.isComposing) return
-    if (event.key === 'Escape') { event.preventDefault(); setEnabled(false); return }
+    if (event.key === 'Escape') { event.preventDefault(); if (!layers?.clearSelection()) setEnabled(false); return }
+    if (state.mode === 'select' && !editable(event.target)) {
+      if ((event.key === 'Delete' || event.key === 'Backspace') && state.selected) { event.preventDefault(); deleteSelection(); return }
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.code === 'KeyA') {
+        event.preventDefault()
+        layers?.selectAll(options.scope === 'document' ? (store?.document.pages.keys() || []) : [options.page.value])
+        return
+      }
+    }
     if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.code === 'KeyZ' && !editable(event.target)) { event.preventDefault(); undo() }
   }
   const flush = () => { void store?.flush() }
@@ -110,5 +121,5 @@ export function usePdfInk(options: PdfInkOptions) {
     if (store) releaseInkStore(store)
     store = undefined
   })
-  return { state, toggle, exit, pick, setMode, setColor, undo, clearPage, schedule: () => layers?.schedule(), hasInk: (page: number) => !!store?.strokes(page).length }
+  return { state, toggle, exit, pick, setMode, setColor, undo, clearPage, deleteSelection, schedule: () => layers?.schedule(), hasInk: (page: number) => !!store?.strokes(page).length }
 }

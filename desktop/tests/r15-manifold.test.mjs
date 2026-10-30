@@ -34,9 +34,9 @@ test('the next manifold differs from the current one when there is a choice', ()
 
 test('manifold preferences: shown in the library, hidden while reading, all shapes by default; at least one shape kept', () => {
   assert.deepEqual(defaultPreferences().appearance.manifold, { show: true, reader: false, shapes: MANIFOLD_IDS })
-  const custom = normalizePreferences({ appearance: { manifold: { show: false, reader: true, shapes: ['klein', 'boy', 'boy', 'torus'] } } })
+  const custom = normalizePreferences({ appearance: { manifold: { show: false, reader: true, shapes: ['klein', 'boy', 'boy', 'sphere'] } } })
   assert.deepEqual(custom.appearance.manifold, { show: false, reader: true, shapes: ['klein', 'boy'] })
-  assert.deepEqual(normalizePreferences({ appearance: { manifold: { shapes: ['torus'] } } }).appearance.manifold.shapes, MANIFOLD_IDS)
+  assert.deepEqual(normalizePreferences({ appearance: { manifold: { shapes: ['sphere'] } } }).appearance.manifold.shapes, MANIFOLD_IDS)
   assert.deepEqual(preferenceErrors(custom), [])
   assert.ok(preferenceErrors({ ...custom, appearance: { ...custom.appearance, manifold: { show: true, reader: false, shapes: [] } } }).includes('请至少选择一种流形。'))
 })

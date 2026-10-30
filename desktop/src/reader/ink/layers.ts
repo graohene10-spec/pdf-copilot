@@ -8,7 +8,7 @@
 import './ink.css'
 import {
   DEFAULT_COLORS, DEFAULT_SIZES, HIGHLIGHTER_OPACITY, MAX_STROKE_POINTS, PAGE_UNITS,
-  normalizePoint, snapUnderline, strokeHit, strokeId, strokePath,
+  normalizePoint, snapUnderline, strokeHit, strokeId, strokeInRect, strokePath,
   type InkMode, type InkStroke, type InkTool,
 } from './model.ts'
 import type { InkStore } from './store.ts'
@@ -19,6 +19,8 @@ interface Layer { page: number; slot: HTMLElement; svg: SVGSVGElement; aspect: n
 interface Gesture {
   pointer: number; layer: Layer; tool: InkMode; color: string; size: number; seed: number
   points: number[]; path?: SVGPathElement; frame: number; erased: Set<string>; last?: [number, number]
+  /** Select tool: the dashed box being dragged and how it combines with the current selection. */
+  box?: HTMLElement; combine?: 'replace' | 'add' | 'toggle'; from?: [number, number]; to?: [number, number]
 }
 export interface InkLayerOptions {
   container: HTMLElement
@@ -50,6 +52,8 @@ export class InkLayers {
   private store: InkStore | null = null
   private unsubscribe?: () => void
   private gesture?: Gesture
+  /** Selected strokes per page (select tool). */
+  private selection = new Map<number, Set<string>>()
 
   constructor({ container, viewer, onChange }: InkLayerOptions) {
     this.container = container; this.viewer = viewer; this.onChange = onChange
@@ -61,7 +65,8 @@ export class InkLayers {
     this.schedule()
   }
 
-  get tool(): InkTool { return this.mode === 'eraser' ? 'pen' : this.mode }
+  get tool(): InkTool { return this.mode === 'eraser' || this.mode === 'select' ? 'pen' : this.mode }
+  get selectedCount() { let count = 0; for (const ids of this.selection.values()) count += ids.size; return count }
 
   setStore(store: InkStore | null) {
     this.cancelGesture()
@@ -75,7 +80,7 @@ export class InkLayers {
   setEnabled(value: boolean) {
     if (this.enabled === value) return
     this.enabled = value
-    if (!value) this.cancelGesture()
+    if (!value) { this.cancelGesture(); this.clearSelection() }
     else {
       // A text selection made before entering markup mode would otherwise
       // stay highlighted (and be offered to the assistant) under the pen.
@@ -87,7 +92,31 @@ export class InkLayers {
     this.schedule()
   }
 
-  setMode(mode: InkMode) { this.cancelGesture(); this.mode = mode; this.updateCursor() }
+  setMode(mode: InkMode) { this.cancelGesture(); if (mode !== 'select') this.clearSelection(); this.mode = mode; this.updateCursor() }
+
+  clearSelection() {
+    if (!this.selection.size) return false
+    this.selection.clear()
+    for (const layer of this.layers.values()) this.render(layer)
+    this.onChange?.()
+    return true
+  }
+  /** Select every stroke on the given pages (Ctrl+A with the select tool). */
+  selectAll(pages: Iterable<number>) {
+    this.selection.clear()
+    for (const page of pages) { const ids = (this.store?.strokes(page) || []).map(stroke => stroke.id); if (ids.length) this.selection.set(page, new Set(ids)) }
+    for (const layer of this.layers.values()) this.render(layer)
+    this.onChange?.()
+  }
+  deleteSelection() {
+    if (!this.selection.size || !this.store) return false
+    const done = this.store.eraseSelection(this.selection)
+    this.selection.clear()
+    for (const layer of this.layers.values()) this.render(layer)
+    this.onChange?.()
+    return done
+  }
+  recolorSelection(color: string) { return !!this.selection.size && !!this.store?.recolor(this.selection, color) }
   setColor(color: string) { this.colors[this.tool] = color }
   private updateCursor() {
     for (const name of [...this.container.classList]) if (name.startsWith('ink-tool-')) this.container.classList.remove(name)
@@ -100,6 +129,12 @@ export class InkLayers {
 
   private storeChanged(page: number | null) {
     this.status = this.store?.error || ''
+    // Undo or another pane may remove selected strokes.
+    for (const [selected, ids] of [...this.selection]) {
+      const present = new Set((this.store?.strokes(selected) || []).map(stroke => stroke.id))
+      for (const id of [...ids]) if (!present.has(id)) ids.delete(id)
+      if (!ids.size) this.selection.delete(selected)
+    }
     for (const layer of this.layers.values()) if (page === null || layer.page === page) this.render(layer)
     this.onChange?.()
   }
@@ -182,6 +217,8 @@ export class InkLayers {
         layer.paths.set(stroke.id, path)
       }
       path.setAttribute('d', cachedPath(stroke, layer.aspect))
+      path.setAttribute('fill', stroke.color)
+      path.classList.toggle('ink-selected', !!this.selection.get(layer.page)?.has(stroke.id))
       path.style.display = ''
       // Keep document order: undo restores erased strokes at their old depth.
       const expected: ChildNode | null = previous ? previous.nextSibling : layer.svg.firstChild
@@ -203,7 +240,7 @@ export class InkLayers {
     this.container.focus({ preventScroll: true })
     try { layer.svg.setPointerCapture(event.pointerId) } catch { /* Synthetic pointers cannot be captured. */ }
     const tool: InkMode = eraserButton ? 'eraser' : this.mode
-    const drawing = tool === 'eraser' ? null : tool
+    const drawing = tool === 'eraser' || tool === 'select' ? null : tool
     const start = this.point(event, layer)
     this.gesture = {
       pointer: event.pointerId, layer, tool, frame: 0, erased: new Set(), last: start,
@@ -211,6 +248,16 @@ export class InkLayers {
       seed: Math.floor(Math.random() * 0x7fffffff), points: [start[0], start[1]],
     }
     if (tool === 'eraser') { this.erase(start, start); return }
+    if (tool === 'select') {
+      // The box lives in screen space so it can span several pages (PDF) or blocks (Markdown).
+      this.gesture.combine = event.ctrlKey || event.metaKey ? 'toggle' : event.shiftKey ? 'add' : 'replace'
+      this.gesture.from = this.gesture.to = [event.clientX, event.clientY]
+      const box = this.gesture.box = document.createElement('div')
+      box.className = 'ink-select-box'
+      document.body.append(box)
+      this.drawBox(this.gesture)
+      return
+    }
     const path = this.gesture.path = document.createElementNS(SVG, 'path')
     path.setAttribute('class', `ink-stroke ink-live ink-${tool}`)
     path.setAttribute('fill', this.gesture.color)
@@ -227,6 +274,7 @@ export class InkLayers {
     for (const sample of events.length ? events : [event]) {
       const point = normalizePoint(sample.clientX, sample.clientY, rect)
       if (gesture.tool === 'eraser') { this.erase(gesture.last || point, point); gesture.last = point; continue }
+      if (gesture.tool === 'select') { gesture.last = point; continue }
       if (gesture.tool === 'underline') {
         const aspect = layer.aspect || 1
         const end = snapUnderline([gesture.points[0], gesture.points[1] * aspect], [point[0], point[1] * aspect])
@@ -239,11 +287,54 @@ export class InkLayers {
       if (gesture.points.length / 2 >= MAX_STROKE_POINTS) break
       gesture.points.push(point[0], point[1])
     }
+    if (gesture.tool === 'select') { gesture.to = [event.clientX, event.clientY]; this.drawBox(gesture); return }
     if (gesture.tool !== 'eraser' && !gesture.frame) gesture.frame = requestAnimationFrame(() => { gesture.frame = 0; this.drawLive(gesture) })
   }
 
+  /** The select box on screen, clipped to the reader's visible area. */
+  private boxRect(gesture: Gesture) {
+    const [ax, ay] = gesture.from || [0, 0], [bx, by] = gesture.to || gesture.from || [0, 0]
+    const view = this.container.getBoundingClientRect()
+    return { left: Math.max(view.left, Math.min(ax, bx)), top: Math.max(view.top, Math.min(ay, by)), right: Math.min(view.right, Math.max(ax, bx)), bottom: Math.min(view.bottom, Math.max(ay, by)) }
+  }
+  private drawBox(gesture: Gesture) {
+    if (!gesture.box) return
+    const rect = this.boxRect(gesture)
+    Object.assign(gesture.box.style, { left: `${rect.left}px`, top: `${rect.top}px`, width: `${Math.max(0, rect.right - rect.left)}px`, height: `${Math.max(0, rect.bottom - rect.top)}px` })
+  }
+  /** Finish a select gesture: a drag selects every stroke the box touches on any page, a tap picks the topmost stroke under the pointer. */
+  private finishSelect(gesture: Gesture) {
+    const box = this.boxRect(gesture), [px, py] = gesture.from || [0, 0]
+    const tap = box.right - box.left < 4 && box.bottom - box.top < 4
+    const hits: [number, string][] = []
+    for (const layer of this.layers.values()) {
+      const rect = layer.svg.getBoundingClientRect(), aspect = layer.aspect || 1
+      if (!rect.width || !rect.height) continue
+      const units = (x: number, y: number): [number, number] => [(x - rect.left) / rect.width * PAGE_UNITS, (y - rect.top) / rect.height * PAGE_UNITS * aspect]
+      const strokes = this.store?.strokes(layer.page) || []
+      if (tap) {
+        if (px < rect.left || px > rect.right || py < rect.top || py > rect.bottom) continue
+        const radius = ERASER_RADIUS * PAGE_UNITS / rect.width
+        const top = strokes.filter(stroke => strokeHit(stroke, units(px, py), radius, aspect)).pop()
+        if (top) hits.push([layer.page, top.id])
+        continue
+      }
+      if (box.right < rect.left || box.left > rect.right || box.bottom < rect.top || box.top > rect.bottom) continue
+      const [left, top] = units(Math.max(box.left, rect.left), Math.max(box.top, rect.top)), [right, bottom] = units(Math.min(box.right, rect.right), Math.min(box.bottom, rect.bottom))
+      for (const stroke of strokes) if (strokeInRect(stroke, { left, top, right, bottom }, aspect)) hits.push([layer.page, stroke.id])
+    }
+    if (gesture.combine === 'replace') this.selection.clear()
+    for (const [page, id] of tap ? hits.slice(-1) : hits) {
+      const ids = this.selection.get(page) || new Set<string>()
+      if (gesture.combine === 'toggle' && ids.has(id)) ids.delete(id); else ids.add(id)
+      if (ids.size) this.selection.set(page, ids); else this.selection.delete(page)
+    }
+    for (const layer of this.layers.values()) this.render(layer)
+    this.onChange?.()
+  }
+
   private drawLive(gesture: Gesture) {
-    if (this.gesture !== gesture || !gesture.path || gesture.tool === 'eraser') return
+    if (this.gesture !== gesture || !gesture.path || gesture.tool === 'eraser' || gesture.tool === 'select') return
     gesture.path.setAttribute('d', strokePath({ tool: gesture.tool, size: gesture.size, seed: gesture.seed, points: gesture.points }, gesture.layer.aspect || 1, false))
   }
 
@@ -259,6 +350,7 @@ export class InkLayers {
       this.render(layer)
       return
     }
+    if (gesture.tool === 'select') { gesture.box?.remove(); this.finishSelect(gesture); return }
     const rect = layer.svg.getBoundingClientRect()
     const points = gesture.points
     const span = Math.hypot((points[points.length - 2] - points[0]) * rect.width, (points[points.length - 1] - points[1]) * rect.height)
@@ -298,6 +390,7 @@ export class InkLayers {
     this.gesture = undefined
     cancelAnimationFrame(gesture.frame)
     gesture.path?.remove()
+    gesture.box?.remove()
     try { if (gesture.layer.svg.hasPointerCapture(gesture.pointer)) gesture.layer.svg.releasePointerCapture(gesture.pointer) } catch { /* already released */ }
     this.render(gesture.layer)
   }

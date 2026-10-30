@@ -7,7 +7,8 @@
 import { getStroke, type StrokeOptions } from 'perfect-freehand'
 
 export type InkTool = 'pen' | 'highlighter' | 'underline'
-export type InkMode = InkTool | 'eraser'
+/** 'select'：拖出一个框选中笔迹，再批量删除或改色。 */
+export type InkMode = InkTool | 'eraser' | 'select'
 export interface InkStroke {
   id: string
   tool: InkTool
@@ -157,6 +158,20 @@ export function strokeHit(stroke: Pick<InkStroke, 'tool' | 'size' | 'points'>, p
   for (let index = 1; index < centerline.length; index++) {
     const a = centerline[index - 1], b = centerline[index]
     if (segmentDistance(point[0], point[1], a[0], a[1], b[0], b[1]) <= reach) return true
+  }
+  return false
+}
+
+/** True when any part of the stroke's centerline falls inside the rectangle (page units). */
+export function strokeInRect(stroke: Pick<InkStroke, 'tool' | 'size' | 'points'>, rect: { left: number; top: number; right: number; bottom: number }, aspect: number): boolean {
+  const points = toPageUnits(stroke.points, aspect)
+  const line = stroke.tool === 'underline' && points.length >= 2 ? [points[0], points[points.length - 1]] : points
+  const inside = ([x, y]: [number, number]) => x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom
+  if (line.some(inside)) return true
+  // Long segments (an underline's two ends) can cross the box without a vertex inside it.
+  for (let index = 1; index < line.length; index++) {
+    const a = line[index - 1], b = line[index], steps = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 4)
+    for (let step = 1; step < steps; step++) if (inside([a[0] + (b[0] - a[0]) * step / steps, a[1] + (b[1] - a[1]) * step / steps])) return true
   }
   return false
 }

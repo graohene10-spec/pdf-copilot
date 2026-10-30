@@ -27,8 +27,10 @@ export type UpdateState = {
 
 const SKIPPED_KEY = 'kaizhi.update.skipped'
 const LAST_CHECKED_KEY = 'kaizhi.update.lastChecked'
-export const INITIAL_CHECK_DELAY = 8_000
+export const INITIAL_CHECK_DELAY = 3_000
 export const CHECK_INTERVAL = 6 * 60 * 60 * 1000
+/** After a failed automatic check (no network yet, GitHub unreachable) try again soon instead of in six hours. */
+export const RETRY_DELAYS = [60_000, 5 * 60_000, 20 * 60_000]
 
 function load(key: string): string | null {
   try { return window.localStorage.getItem(key) } catch { return null }
@@ -44,7 +46,7 @@ const state = reactive<UpdateState>({
   skippedVersion: load(SKIPPED_KEY), skippedAvailable: null, dismissedVersion: null, includePrerelease: false,
 })
 let installerPath: { version: string; path: string } | null = null
-let pending: Promise<void> | null = null
+let pending: Promise<boolean> | null = null
 const busy = () => state.phase === 'downloading' || state.phase === 'installing'
 
 const visible = computed(() => !!state.info && state.dismissedVersion !== state.info.version && (
@@ -53,7 +55,8 @@ const visible = computed(() => !!state.info && state.dismissedVersion !== state.
 
 function message(error: unknown) { return error instanceof Error ? error.message : String(error) }
 
-async function runCheck(manual: boolean, includePrerelease: boolean) {
+/** True when the release list was read (whether or not a newer version exists). */
+async function runCheck(manual: boolean, includePrerelease: boolean): Promise<boolean> {
   // A background re-check while an update is on screen must not flicker or hide the card.
   const quiet = !manual && !!state.info
   if (!quiet) { state.phase = 'checking'; state.error = ''; state.errorSource = null }
@@ -62,19 +65,21 @@ async function runCheck(manual: boolean, includePrerelease: boolean) {
     state.status ||= await updateStatus()
     const info = await checkForUpdate(includePrerelease)
     state.lastChecked = Date.now(); store(LAST_CHECKED_KEY, String(state.lastChecked))
-    if (!info) { state.info = null; state.phase = 'up-to-date'; return }
-    if (!shouldOffer(info, state.skippedVersion, manual)) { state.info = null; state.skippedAvailable = info.version; state.phase = 'idle'; return }
+    if (!info) { state.info = null; state.phase = 'up-to-date'; return true }
+    if (!shouldOffer(info, state.skippedVersion, manual)) { state.info = null; state.skippedAvailable = info.version; state.phase = 'idle'; return true }
     if (manual || state.info?.version !== info.version) state.dismissedVersion = null
     state.info = info
     state.phase = installerPath?.version === info.version ? 'ready' : 'available'
+    return true
   } catch (error) {
     if (!quiet) { state.phase = 'error'; state.errorSource = 'check'; state.error = message(error) }
+    return false
   }
 }
 
 /** Looks for a newer release. Manual checks also re-offer skipped or postponed versions. */
-export function check(options: { manual?: boolean; includePrerelease?: boolean } = {}): Promise<void> {
-  if (busy()) return Promise.resolve()
+export function check(options: { manual?: boolean; includePrerelease?: boolean } = {}): Promise<boolean> {
+  if (busy()) return Promise.resolve(true)
   const includePrerelease = options.includePrerelease ?? state.includePrerelease
   if (pending && !options.manual) return pending
   const run = (pending ? pending.then(() => runCheck(!!options.manual, includePrerelease)) : runCheck(!!options.manual, includePrerelease))
@@ -140,12 +145,26 @@ let timer: ReturnType<typeof setTimeout> | undefined
 let generation = 0
 let sessionChecked = false
 let autoPrerelease: boolean | undefined
+let failures = 0
+let schedule: ((delay: number) => void) | undefined
 
-export function stopAutoCheck(): void { generation++; clearTimeout(timer); timer = undefined }
+function detach() {
+  window.removeEventListener('online', online)
+  document.removeEventListener('visibilitychange', wake)
+}
+export function stopAutoCheck(): void { generation++; clearTimeout(timer); timer = undefined; schedule = undefined; detach() }
+
+// 网络恢复时，上次自动检查失败了就马上再查；窗口重新回到前台、距上次成功检查已超过 6 小时也查一次。
+function online() { if (failures) schedule?.(INITIAL_CHECK_DELAY) }
+function wake() {
+  if (document.visibilityState !== 'visible') return
+  if (failures || !state.lastChecked || Date.now() - state.lastChecked >= CHECK_INTERVAL) schedule?.(INITIAL_CHECK_DELAY)
+}
 
 /**
- * Schedules quiet checks ~8 s after launch and every 6 hours. Call again when
- * preferences change; turning on 测试版 checks again soon.
+ * Schedules quiet checks a few seconds after launch and every 6 hours; a failed
+ * check is retried after 1, 5 and 20 minutes. Call again when preferences
+ * change; turning on 测试版 checks again soon.
  */
 export function startAutoCheck(options: { includePrerelease: boolean; enabled: boolean }): () => void {
   const channelChanged = autoPrerelease !== undefined && autoPrerelease !== options.includePrerelease
@@ -155,13 +174,21 @@ export function startAutoCheck(options: { includePrerelease: boolean; enabled: b
   if (!options.enabled) return stopAutoCheck
   const id = generation
   const tick = (delay: number) => {
+    clearTimeout(timer)
     timer = setTimeout(() => {
       sessionChecked = true
-      void check({ manual: false }).finally(() => { if (id === generation) tick(CHECK_INTERVAL) })
+      void check({ manual: false }).then(ok => {
+        if (id !== generation) return
+        failures = ok ? 0 : failures + 1
+        tick(ok ? CHECK_INTERVAL : RETRY_DELAYS[Math.min(failures, RETRY_DELAYS.length) - 1]!)
+      })
     }, delay)
   }
+  schedule = tick
+  window.addEventListener('online', online)
+  document.addEventListener('visibilitychange', wake)
   const sinceLast = state.lastChecked ? Date.now() - state.lastChecked : CHECK_INTERVAL
-  tick(!sessionChecked || channelChanged ? INITIAL_CHECK_DELAY : Math.max(INITIAL_CHECK_DELAY, CHECK_INTERVAL - sinceLast))
+  tick(!sessionChecked || channelChanged || failures ? INITIAL_CHECK_DELAY : Math.max(INITIAL_CHECK_DELAY, CHECK_INTERVAL - sinceLast))
   return stopAutoCheck
 }
 
