@@ -2,6 +2,7 @@
 import { computed, ref, watch, onMounted, onBeforeUnmount, nextTick, defineAsyncComponent } from 'vue'
 import AppIcon from './AppIcon.vue'
 import AssistantMark from './AssistantMark.vue'
+import { MANIFOLDS } from '../sketch/manifolds'
 import { greetingFor } from '../ai/greeting'
 import { importFontFiles, forgetFontFile, registerCustomFonts } from '../ui/custom-fonts'
 import { vLiquidSelection } from '../ui/liquid-selection'
@@ -156,6 +157,12 @@ onMounted(() => { installed.value = Object.fromEntries([...UI_FONTS, ...READING_
 const uiFontChoices = computed(() => fontChoices(UI_FONTS, draft.value.appearance.customFonts))
 const readingFontChoices = computed(() => fontChoices(READING_FONTS, draft.value.appearance.customFonts))
 const uiFontStack = computed(() => uiFontChoices.value.find(item => item.id === draft.value.appearance.uiFont)?.stack)
+// 轮换的流形至少留一种。
+function toggleManifold(id: string) {
+  const shapes = draft.value.appearance.manifold.shapes
+  if (shapes.includes(id)) { if (shapes.length > 1) draft.value.appearance.manifold.shapes = shapes.filter(item => item !== id) }
+  else draft.value.appearance.manifold.shapes = MANIFOLDS.map(item => item.id).filter(item => item === id || shapes.includes(item))
+}
 const sketchAnswerStack = computed(() => SKETCH_ANSWER_FONTS.find(item => item.id === draft.value.appearance.sketchAnswerFont)?.stack || readingFontStack.value)
 const readingFontStack = computed(() => readingFontChoices.value.find(item => item.id === draft.value.appearance.readingFont)?.stack || uiFontStack.value)
 // 导入字体文件：只存进本机文档库，不随应用分发；导入后立即可在两个字体选项里选到。
@@ -333,6 +340,9 @@ function dialogKeydown(event: KeyboardEvent) {
             <template v-else-if="draft.appearance.style === 'sketch'">
               <label class="setting-row"><span>回答字体</span><select v-model="draft.appearance.sketchAnswerFont" :disabled="saving" aria-label="回答字体"><option v-for="item in SKETCH_ANSWER_FONTS" :key="item.id" :value="item.id">{{ item.label }}</option></select></label>
               <p class="answer-font-preview" :style="{ fontFamily: sketchAnswerStack }">换别的形状也行，定律照样成立——只是没法算。Gauss 1835</p>
+              <label class="setting-check"><input v-model="draft.appearance.manifold.show" type="checkbox" :disabled="saving" aria-label="格子纸上显示旋转的流形" /><span>格子纸上画一个慢慢自转的流形，旁边手写它的拓扑小知识</span></label>
+              <label class="setting-check"><input v-model="draft.appearance.manifold.reader" type="checkbox" :disabled="saving || !draft.appearance.manifold.show" aria-label="阅读时也显示流形" /><span>阅读时也显示（默认只在文档库显示）</span></label>
+              <div class="manifold-picks" role="group" aria-label="轮换的流形"><span class="manifold-picks-label">轮换</span><button v-for="item in MANIFOLDS" :key="item.id" type="button" :aria-pressed="draft.appearance.manifold.shapes.includes(item.id)" :disabled="saving || !draft.appearance.manifold.show" @click="toggleManifold(item.id)">{{ item.name }}</button></div>
             </template>
             </div>
             <template v-if="draft.appearance.style === 'glass'">
@@ -581,6 +591,11 @@ button{color:var(--control-ink)}
 .style-card[aria-checked='true'] .swatch-check{opacity:1;scale:1}
 .style-card:focus-visible{outline:none}
 .style-card:focus-visible .style-art{outline:2px solid var(--accent);outline-offset:3px}
+.manifold-picks{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:4px 0 6px}
+.manifold-picks-label{margin-right:4px;font-size:12.5px;color:var(--surface-muted)}
+.manifold-picks button{display:inline-flex;align-items:baseline;gap:5px;height:30px;padding:0 11px;border:1px solid var(--line);border-radius:var(--r-full);background:transparent;box-shadow:none;font-size:12.5px;color:var(--surface-secondary)}
+.manifold-picks button small{font-size:11px;color:var(--surface-muted)}
+.manifold-picks button[aria-pressed='true']{background:var(--sticky,var(--accent-soft));border-color:var(--surface-ink);color:var(--surface-ink)}
 .answer-font-preview{margin:2px 0 4px;padding:10px 12px;border-radius:var(--r-sm);background:var(--fill-4);font-size:17px;line-height:1.6;color:var(--surface-ink)}
 :root[data-theme='dark'] .swatch-bar{background:rgb(255 255 255 / .14)}
 .background-heading{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:14px}

@@ -32,8 +32,9 @@ const wrapped = page => page.evaluate(() => {
     const host = node.parentElement;
     if (!text || text.length > 24 || !host || host.closest('.answer-body,.markdown-paper,.pdf-scroll,.ai-welcome,.settings-help,p,textarea,option,.document-card-title,.user-question,.tag-empty')) continue;
     const range = document.createRange(); range.selectNodeContents(node);
-    const tops = new Set([...range.getClientRects()].filter(rect => rect.width > 1 && rect.height > 1).map(rect => Math.round(rect.top / 6)));
-    if (tops.size > 1) found.push(text);
+    // 同一行的字可能因为换字体被拆成几段：只有上沿相差超过半行时才算折行。
+    const rects = [...range.getClientRects()].filter(rect => rect.width > 1 && rect.height > 1);
+    if (rects.some(rect => Math.abs(rect.top - rects[0].top) > rects[0].height / 2)) found.push(text);
   }
   return found;
 });

@@ -6,6 +6,7 @@ import { nativeModelInventory, registerNativeModelInventory } from '../ai/native
 import { chatState, sendChat, stopChat, configureRequests, taskSummary, conversations, activeConversationId, selectConversation, newConversation, deleteConversation, loadConversations, conversationTokens, contextWindow, branchConversation, resendQuestion, watchConversation, allConversations, pinMessage, MAX_ATTACHMENTS, type Message, type ChatState } from '../ai/workspace'
 import { renderMarkdown, renderDiagrams } from '../ai/render'
 import { nudgeGlassMotion } from '../ui/glass-motion'
+import { vMarquee } from '../ui/marquee'
 import { loadAiSettings, saveModelChoice } from '../ai/settings.mjs'
 import { useSettings } from '../settings'
 import AppIcon from './AppIcon.vue'
@@ -543,18 +544,18 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
         <Transition name="history-pop">
           <div v-if="historyOpen" class="history-menu" role="dialog" aria-label="对话记录">
             <button class="history-new" @click="startConversation"><AppIcon name="compose" :size="15" />新对话</button>
-            <div v-if="alternatives?.length" class="history-switch"><p class="history-label">助手正在读</p><button class="current" disabled>{{ document.title }}</button><button v-for="item in alternatives" :key="item.id" @click="historyOpen = false; emit('switchDocument', item.id)">改读 {{ item.title }}</button></div>
+            <div v-if="alternatives?.length" class="history-switch"><p class="history-label">助手正在读</p><button v-marquee class="current" aria-current="true" tabindex="-1"><span class="marquee-text">{{ document.title }}</span></button><button v-for="item in alternatives" :key="item.id" v-marquee @click="historyOpen = false; emit('switchDocument', item.id)"><span class="marquee-text">改读 {{ item.title }}</span></button></div>
             <div class="history-scope" role="tablist" aria-label="对话范围"><button role="tab" :aria-selected="historyScope === 'document'" @click="historyScope = 'document'">这份文档</button><button role="tab" :aria-selected="historyScope === 'all'" @click="showAll">全部文档</button></div>
             <div v-if="historyScope === 'all'" class="history-list">
               <p v-if="loadingAll" class="history-empty">正在读取…</p>
               <div v-for="item in everything" v-else :key="item.id" class="history-item" :class="{ current: item.id === conversationId }">
-                <button class="history-open" @click="openAny(item)"><span><AppIcon v-if="item.branchOf" name="branch" :size="12" class="branch-mark" />{{ item.title || '新对话' }}</span><small>{{ titles.get(item.documentId) || '已移除的文档' }} · {{ relative(item.updatedAt) }}</small></button>
+                <button v-marquee class="history-open" @click="openAny(item)"><span><AppIcon v-if="item.branchOf" name="branch" :size="12" class="branch-mark" /><span class="marquee-text">{{ item.title || '新对话' }}</span></span><small>{{ titles.get(item.documentId) || '已移除的文档' }} · {{ relative(item.updatedAt) }}</small></button>
               </div>
               <p v-if="!loadingAll && !everything.length" class="history-empty">还没有对话。</p>
             </div>
             <div v-else class="history-list">
               <div v-for="item in history" :key="item.id" class="history-item" :class="{ current: item.id === conversationId }">
-                <button class="history-open" @click="useConversation(item.id)"><span><AppIcon v-if="item.branchOf" name="branch" :size="12" class="branch-mark" />{{ item.title || '新对话' }}</span><small>{{ relative(item.updatedAt) }} · {{ Math.ceil(item.messages.length / 2) }} 问<template v-if="item.request"> · 回答中</template></small></button>
+                <button v-marquee class="history-open" @click="useConversation(item.id)"><span><AppIcon v-if="item.branchOf" name="branch" :size="12" class="branch-mark" /><span class="marquee-text">{{ item.title || '新对话' }}</span></span><small>{{ relative(item.updatedAt) }} · {{ Math.ceil(item.messages.length / 2) }} 问<template v-if="item.request"> · 回答中</template></small></button>
                 <button v-if="item.messages.length" class="history-delete" :aria-label="`删除对话 ${item.title}`" data-tip="删除这段对话" @click.stop="removeConversation(item.id)"><AppIcon name="trash" :size="13" /></button>
               </div>
               <p v-if="!history.length" class="history-empty">还没有对话。</p>
@@ -703,15 +704,15 @@ button:disabled{opacity:.4;cursor:default}
 .history-scope button[aria-selected='true']{background:color-mix(in srgb,var(--ink) 10%,var(--surface));color:var(--ink);box-shadow:0 1px 3px rgb(0 0 0 / .1)}
 .history-switch{display:flex;flex-wrap:wrap;gap:4px;padding:0 4px}
 .history-switch .history-label{width:100%;margin:10px 6px 2px}
-.history-switch button{max-width:100%;height:28px;padding:0 10px;border:1px solid var(--hairline);border-radius:var(--r-sm);background:none;box-shadow:none;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.history-switch button.current{opacity:1;background:color-mix(in srgb,var(--ink) 8%,transparent);font-weight:600}
-.history-switch button:hover:not(:disabled){background:color-mix(in srgb,var(--ink) 6%,transparent)}
+.history-switch button{display:block;max-width:100%;height:28px;padding:0 10px;border:1px solid var(--hairline);border-radius:var(--r-sm);background:none;box-shadow:none;font-size:12px;line-height:26px;text-align:left;overflow:hidden;white-space:nowrap}
+.history-switch button.current{cursor:default;opacity:1;background:color-mix(in srgb,var(--ink) 8%,transparent);font-weight:600}
+.history-switch button:not(.current):hover:not(:disabled){background:color-mix(in srgb,var(--ink) 6%,transparent)}
 .history-list{overflow:auto;min-height:0;scrollbar-width:none}
 .history-item{position:relative;display:flex;align-items:center;border-radius:var(--r-control)}
 .history-item:hover{background:color-mix(in srgb,var(--ink) 5%,transparent)}
 .history-item.current{background:color-mix(in srgb,var(--ink) 9%,transparent)}
 .history-open{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:8px 12px;border:0;background:none;box-shadow:none;text-align:left}
-.history-open span{display:flex;align-items:center;gap:5px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px;font-weight:550}
+.history-open>span{display:flex;align-items:center;gap:5px;max-width:100%;min-width:0;overflow:hidden;white-space:nowrap;font-size:12.5px;font-weight:550}
 .branch-mark{flex-shrink:0;color:var(--muted)}
 .history-open small{font-size:10.5px;color:var(--muted)}
 .history-delete{display:grid;place-items:center;width:28px;height:28px;margin-right:6px;padding:0;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--muted);opacity:0}

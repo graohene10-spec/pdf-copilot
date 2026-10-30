@@ -1075,23 +1075,33 @@
   overflow: visible;
 }
 
+:root[data-style='sketch'] .reader-panes > .ai-panel { padding-top: 14px; }
+:root[data-style='sketch'] .reader-panes > .ai-panel:is(.pane-enter-from, .pane-leave-to) { padding-top: 14px; }
+
+/* 回形针真的别在本子上：外圈压在纸面上（带一点投影），里圈从纸的上沿绕到纸背后，只露出纸外的一截。 */
 :root[data-style='sketch'] .ai-pane::after {
   content: '';
   position: absolute;
-  top: 2px;
-  left: 6px;
-  width: 26px;
-  height: 52px;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='26' height='52' viewBox='0 0 26 52'%3E%3Cpath d='M8 6v34a6 6 0 0 0 12 0V10a4 4 0 0 0-8 0v28' stroke='%238d8b85' stroke-width='2.2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat;
+  top: -16px;
+  left: 10px;
+  width: 28px;
+  height: 64px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='64' viewBox='0 0 28 64'%3E%3Cpath d='M8 13 V50 a6.5 6.5 0 0 0 13 0 V10 a4.5 4.5 0 0 0 -9 0 V19' stroke='%238d8b85' stroke-width='2.3' fill='none' stroke-linecap='round'/%3E%3Cpath d='M8.6 13 V49' stroke='%23d6d3cc' stroke-width='.8' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat;
+  filter: drop-shadow(1px 1.5px 0 rgb(60 50 30 / .22));
   pointer-events: none;
   z-index: 9;
+  transform-origin: 50% 25%;
   animation: sketch-clip var(--dur-bounce) var(--spring-bouncy) both;
   animation-delay: 200ms;
 }
 
+:root[data-style='sketch'][data-theme='dark'] .ai-pane::after { filter: drop-shadow(1px 1.5px 0 rgb(0 0 0 / .45)); }
+
+/* 回形针从上面滑下来卡住纸边，轻轻一晃。 */
 @keyframes sketch-clip {
-  from { opacity: 0; transform: translateY(-14px) rotate(-12deg); }
-  to { opacity: 1; transform: none; }
+  0% { opacity: 0; transform: translateY(-18px) rotate(-10deg); }
+  60% { opacity: 1; transform: translateY(2px) rotate(3deg); }
+  100% { opacity: 1; transform: none; }
 }
 
 :root[data-style='sketch'] .ai-body,
@@ -1264,19 +1274,29 @@
 /* 输入框里的字和回答一样大小，不再比回答还大。 */
 :root[data-style='sketch'] .composer-field textarea { font-size: 14.5px; }
 
-/* 并排的文档组：红笔圈住整组页签，圈在页签外面、压在纸片上面，不被挡住。 */
+/* 并排的文档组：红笔在页签下面、桌面上随手圈一圈，比页签大一圈，被纸片挡住的部分就藏在后面；
+   外面再描一道没对齐的淡笔，像来回圈了两次。 */
 :root[data-style='sketch'] .tab-strip > .group-frame {
-  top: 0;
-  bottom: -5px;
-  margin-left: -7px;
-  padding: 0 7px;
+  top: -6px;
+  bottom: -9px;
+  margin-left: -13px;
+  padding: 0 13px;
   box-sizing: content-box;
-  z-index: 3;
-  border: 2px solid var(--red-pencil);
-  border-radius: 4px 8px 3px 7px / 7px 3px 8px 4px;
+  z-index: 0;
+  border: 2.2px solid var(--red-pencil);
+  border-radius: 14px 26px 10px 22px / 20px 10px 24px 12px;
   background: transparent;
   filter: url(#sk-pencil);
-  rotate: -.4deg;
+  rotate: -.8deg;
+}
+
+:root[data-style='sketch'] .tab-strip > .group-frame::after {
+  content: '';
+  position: absolute;
+  inset: 3px -6px -2px 4px;
+  border: 1.4px solid color-mix(in srgb, var(--red-pencil) 60%, transparent);
+  border-radius: 22px 12px 26px 10px / 12px 22px 10px 24px;
+  rotate: 1.3deg;
 }
 
 /* 分屏时选中的那栏：工具条下面一道红笔划线，没选中的那栏淡一些；不再套一圈圆角红框。 */
@@ -1461,3 +1481,94 @@
 :root[data-style='sketch'] .answer-body .katex { font-family: KaTeX_Main, 'Times New Roman', serif; line-height: 1.3; }
 /* 宽表格仍要能横向滚动。 */
 :root[data-style='sketch'] .answer-body .answer-table { overflow: auto; }
+
+/* ---- 右上角的按钮：和工具条一样是实心的纸片、铅笔描的圈，正在用的涂黄 -------------- */
+:root[data-style='sketch'] .topbar-actions { gap: 6px; }
+
+:root[data-style='sketch'] .topbar-actions .icon-button,
+:root[data-style='sketch'] .topbar-actions .icon-button:hover:not(:disabled) {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  background-color: var(--paper);
+  background-image: none;
+  border-color: transparent;
+  border-radius: 50% 44% 52% 46%;
+  box-shadow: 1.5px 2px 0 rgb(60 50 30 / .16);
+}
+
+:root[data-style='sketch'] .topbar-actions .icon-button::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 1.5px solid var(--pencil);
+  border-radius: inherit;
+  filter: url(#sk-pencil);
+  opacity: .85;
+  pointer-events: none;
+}
+
+:root[data-style='sketch'] .topbar-actions .icon-button:is(.active, .is-starred, [aria-pressed='true'], [aria-expanded='true']) {
+  background-color: var(--sticky);
+}
+
+:root[data-style='sketch'] .topbar-actions .icon-button:nth-child(odd) { rotate: -1.5deg; }
+:root[data-style='sketch'] .topbar-actions .icon-button:nth-child(even) { rotate: 1.2deg; }
+
+:root[data-style='sketch'] .topbar-actions .ai-toggle::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 1.5px solid var(--pencil);
+  border-radius: 12px 16px 11px 17px / 16px 11px 17px 12px;
+  filter: url(#sk-pencil);
+  opacity: .85;
+  pointer-events: none;
+}
+
+/* ---- 侧栏空白处：一朵铅笔画的向日葵（植物大战僵尸的那种），站在地上轻轻晃 -------------- */
+.sidebar-doodle { display: none; }
+
+:root[data-style='sketch'] .sidebar-doodle {
+  display: block;
+  margin: auto auto 10px;
+  width: 120px;
+  color: var(--pencil);
+  pointer-events: none;
+}
+
+:root[data-style='sketch'] .sidebar-doodle svg { display: block; overflow: visible; }
+:root[data-style='sketch'] .sidebar-doodle .petals { fill: #f7cf4a; stroke-width: 1.2; }
+:root[data-style='sketch'] .sidebar-doodle .face { fill: #e9a640; }
+:root[data-style='sketch'] .sidebar-doodle .eye { fill: currentColor; stroke: none; }
+:root[data-style='sketch'] .sidebar-doodle .cheek { fill: #f08a6a; stroke: none; opacity: .7; }
+:root[data-style='sketch'] .sidebar-doodle .stem { stroke-width: 2.2; stroke: #6f8f3a; }
+:root[data-style='sketch'] .sidebar-doodle .leaf { fill: #9cc35a; stroke: #4f6b2a; stroke-width: 1.2; }
+:root[data-style='sketch'] .sidebar-doodle .ground { stroke-width: 1.2; opacity: .5; }
+:root[data-style='sketch'][data-theme='dark'] .sidebar-doodle .petals { fill: #c9a23a; }
+:root[data-style='sketch'][data-theme='dark'] .sidebar-doodle .face { fill: #b9822f; }
+:root[data-style='sketch'][data-theme='dark'] .sidebar-doodle .leaf { fill: #6f8f3a; }
+
+/* 像游戏里那样，整朵花绕着根部左右轻轻摆。 */
+:root[data-style='sketch'] .sidebar-doodle .sunflower {
+  transform-box: view-box;
+  transform-origin: 60px 140px;
+  animation: sunflower-sway 3.2s ease-in-out infinite;
+}
+
+@keyframes sunflower-sway {
+  0%, 100% { transform: rotate(-3deg); }
+  50% { transform: rotate(3deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-style='sketch'] .sidebar-doodle .sunflower { animation: none; }
+}
+
+/* 侧栏很矮时（标签很多）不画，免得挤占导航。 */
+@media (max-height: 680px) {
+  :root[data-style='sketch'] .sidebar-doodle { display: none; }
+}
+
+/* 格子纸上的流形画在所有纸片后面（z-index: -1），外壳自成一层叠放上下文，流形不会掉到桌面底色下面。 */
+:root[data-style='sketch'] .app-shell { isolation: isolate; }

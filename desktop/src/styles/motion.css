@@ -492,3 +492,33 @@
   flex-shrink: 0;
   min-width: var(--panel-width, 360px);
 }
+
+/* ---- 走马灯：放不下的书名、标题 -------------------------------------------- */
+
+/* 平时从左边开始显示、末尾省略；指上去时（vMarquee）走到头，停一下，再弹回左边，循环。 */
+.marquee-text {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.marquee-run .marquee-text {
+  overflow: visible;
+  text-overflow: clip;
+  width: max-content;
+  max-width: none;
+  animation: zg-marquee var(--marquee-duration, 4s) linear infinite;
+}
+
+@keyframes zg-marquee {
+  0%, 12% { transform: none; }
+  78% { transform: translateX(var(--marquee-shift, 0)); animation-timing-function: linear; }
+  88% { transform: translateX(var(--marquee-shift, 0)); animation-timing-function: var(--spring-snappy); }
+  100% { transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marquee-run .marquee-text { animation: none; overflow: hidden; text-overflow: ellipsis; width: auto; max-width: 100%; }
+}
