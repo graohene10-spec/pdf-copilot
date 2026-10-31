@@ -222,7 +222,11 @@ function answerClick(event: MouseEvent) {
   const button = (event.target as Element).closest<HTMLButtonElement>('[data-copy]')
   if (!button) return
   const code = button.closest('.answer-code-block')?.querySelector('code')?.textContent || ''
-  void copy(code).then(ok => { if (ok) { button.textContent = '已复制'; setTimeout(() => { button.textContent = '复制' }, 1400) } })
+  void copy(code).then(ok => {
+    if (!ok) return
+    button.classList.add('copied'); button.setAttribute('aria-label', '已复制'); button.dataset.tip = '已复制'
+    setTimeout(() => { button.classList.remove('copied'); button.setAttribute('aria-label', '复制代码'); button.dataset.tip = '复制代码' }, 1400)
+  })
 }
 async function copy(text: string) {
   try { await navigator.clipboard.writeText(text); return true } catch { state.value.status = '复制失败，请手动选择文字。'; state.value.error = true; return false }
@@ -518,12 +522,12 @@ watch(() => [predictable.value, state.value.id, props.document.id, props.context
   clearTimeout(predictTimer); predicting?.abort(); predicting = undefined
   const context = predictContext(), key = predictionKey(context)
   if (!predictable.value) { if (prompt.value || busy.value) prediction.value = ''; return }
-  if (key === dismissed) return
-  prediction.value = ''
+  if (key === dismissed) { prediction.value = ''; return }
+  // 换页、来新消息时先留着上一条猜测，等新的算出来再替换，不在猜测和默认提示之间来回跳。
   predictTimer = setTimeout(() => {
     const request = new AbortController(); predicting = request
-    predictQuestion(context, request.signal).then(question => { if (predicting === request && !request.signal.aborted && preferences.value.assistant.predictQuestions && !prompt.value && !busy.value) prediction.value = question }).catch(() => {}).finally(() => { if (predicting === request) predicting = undefined })
-  }, 700)
+    predictQuestion(context, request.signal).then(question => { if (predicting === request && !request.signal.aborted && preferences.value.assistant.predictQuestions && !prompt.value && !busy.value && question) prediction.value = question }).catch(() => {}).finally(() => { if (predicting === request) predicting = undefined })
+  }, 1200)
 }, { immediate: true })
 onMounted(() => {
   void loadConversations(props.document.id).then(() => { conversationId.value = ownConversation(props.document.id, props.conversationId) })
@@ -799,7 +803,11 @@ button:disabled{opacity:.4;cursor:default}
 .answer-body :deep(code){font-family:var(--font-mono);font-size:.84em;padding:.12em .38em;border-radius:5px;background:color-mix(in srgb,var(--ink) 8%,transparent);border:1px solid var(--hairline);overflow-wrap:anywhere;-webkit-box-decoration-break:clone;box-decoration-break:clone}
 .answer-body :deep(.answer-code-block){--ink:var(--surface-ink);margin:0 0 1em;border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden;background:var(--surface-2);color:var(--surface-ink)}
 .answer-body :deep(.answer-code-head){display:flex;align-items:center;justify-content:space-between;height:30px;padding:0 6px 0 12px;font-family:var(--font-ui);font-size:11px;color:var(--surface-muted);border-bottom:1px solid var(--line-soft)}
-.answer-body :deep(.answer-copy){height:22px;padding:0 8px;border:0;border-radius:6px;background:none;box-shadow:none;font-size:11px;color:var(--surface-muted)}
+.answer-body :deep(.answer-copy){display:grid;place-items:center;width:26px;height:24px;padding:0;border:0;border-radius:6px;background:none;box-shadow:none;color:var(--surface-muted)}
+.answer-body :deep(.answer-copy svg){grid-area:1/1;transition:opacity var(--dur-1) var(--ease-soft),scale var(--dur-2) var(--spring-snappy)}
+.answer-body :deep(.answer-copy .copy-done){opacity:0;scale:.6}
+.answer-body :deep(.answer-copy.copied .copy-idle){opacity:0;scale:.6}
+.answer-body :deep(.answer-copy.copied .copy-done){opacity:1;scale:1;color:var(--success,#3f8f5a)}
 .answer-body :deep(.answer-copy:hover){background:var(--fill-3);color:var(--surface-ink)}
 .answer-body :deep(pre.answer-code){margin:0;padding:10px 12px;overflow:auto;font-size:12px;line-height:1.6;scrollbar-width:thin}
 .answer-body :deep(pre.answer-code code){padding:0;border:0;background:none;font-size:inherit}

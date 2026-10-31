@@ -7,6 +7,10 @@ import MarkdownIt from 'markdown-it'
 import { installMarkdownMath } from '../components/markdown-math'
 import { installCjkEmphasis } from '../components/markdown-cjk'
 
+// 代码块右上角的复制按钮：一枚小图标，复制成功后换成对勾（AiPane 切换 .copied）。
+const icon = (d: string, name: string) => `<svg class="copy-${name}" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>`
+const COPY_ICON = icon('M9 9h11v11H9z M5 15H4V4h11v1', 'idle') + icon('m5 12 4 4 10-10', 'done')
+
 const markdown = new MarkdownIt({ html: false, linkify: true, breaks: true, typographer: false })
 installMarkdownMath(markdown)
 installCjkEmphasis(markdown)
@@ -21,7 +25,7 @@ markdown.renderer.rules.fence = (tokens, index) => {
     return `<figure class="answer-diagram" data-diagram="${escape(token.content)}"><pre class="answer-code"><code>${escape(token.content)}</code></pre></figure>\n`
   }
   const label = language ? `<span>${escape(language)}</span>` : '<span>代码</span>'
-  return `<div class="answer-code-block"><div class="answer-code-head">${label}<button type="button" class="answer-copy" data-copy>复制</button></div><pre class="answer-code"><code>${escape(token.content)}</code></pre></div>\n`
+  return `<div class="answer-code-block"><div class="answer-code-head">${label}<button type="button" class="answer-copy" data-copy aria-label="复制代码" data-tip="复制代码">${COPY_ICON}</button></div><pre class="answer-code"><code>${escape(token.content)}</code></pre></div>\n`
 }
 markdown.renderer.rules.code_block = markdown.renderer.rules.fence
 const defaultLink = markdown.renderer.rules.link_open || ((tokens, index, options, _env, self) => self.renderToken(tokens, index, options))
