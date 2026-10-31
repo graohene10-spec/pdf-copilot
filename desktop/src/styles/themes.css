@@ -1430,7 +1430,7 @@
   color: var(--surface-secondary);
 }
 
-:root[data-style='sketch'] .answer-body .answer-copy { font-family: 'Caveat', var(--font-ui); font-size: 15px; }
+:root[data-style='sketch'] .answer-body .answer-copy svg { filter: url(#sk-pencil); }
 :root[data-style='sketch'] .answer-body pre.answer-code { font-size: 12.5px; line-height: 1.65; color: var(--pencil); }
 :root[data-style='sketch'] .answer-body pre.answer-code code { font-family: var(--font-mono); }
 
