@@ -235,7 +235,7 @@ async function copy(text: string) {
 // ---- Scrolling and the question navigator ---------------------------------
 let renderFrame = 0
 function restoreScroll() { if (messageList.value) messageList.value.scrollTop = state.value.scrollTop }
-function rememberScroll() { if (messageList.value) state.value.scrollTop = messageList.value.scrollTop; updateRail() }
+function rememberScroll() { if (messageList.value) state.value.scrollTop = messageList.value.scrollTop; updateThumb() }
 function nearBottom() { const list = messageList.value; return !list || list.scrollHeight - list.scrollTop - list.clientHeight < 80 }
 let follow = true
 function scroll() { void nextTick(() => { if (messageList.value && follow) messageList.value.scrollTop = messageList.value.scrollHeight; updateRail() }) }
@@ -245,7 +245,12 @@ watch(() => [conversationId.value, messages.value.length, messages.value.at(-1)?
   if (value[1] !== previous?.[1]) follow = true
   scheduleScroll()
 })
-function onScroll() { follow = nearBottom(); rememberScroll() }
+// 滚动时每帧只更新一次细滑块与「当前这一问」，不重算整条刻度（刻度只在内容变化时重算）。
+let scrollFrame = 0
+function onScroll() {
+  if (scrollFrame) return
+  scrollFrame = requestAnimationFrame(() => { scrollFrame = 0; follow = nearBottom(); rememberScroll() })
+}
 type Mark = { id: string; top: number; text: string; answer: string; current: boolean; pinned: boolean }
 const marks = ref<Mark[]>([])
 const hoverMark = ref<Mark | null>(null)
@@ -286,21 +291,35 @@ function togglePin(mark: Mark) {
 function tickFocus(mark: Mark, event: FocusEvent) { const tick = event.target as HTMLElement; hoverMark.value = mark; hoverTop.value = (tickColumn.value?.offsetTop || 0) + tick.offsetTop + tick.offsetHeight / 2 }
 // 右侧导航条代替滚动条：细滑块表示当前视口，刻度是每一轮提问。
 const thumb = ref({ top: 0, height: 1, visible: false })
+/** 每一问在列表里的位置（像素），内容变化时重算，滚动时只拿来判断当前是哪一问。 */
+let markOffsets: number[] = []
+function updateThumb() {
+  const list = messageList.value
+  if (!list) return
+  const height = Math.max(1, list.scrollHeight)
+  const next = { top: list.scrollTop / height, height: Math.min(1, list.clientHeight / height), visible: list.scrollHeight > list.clientHeight + 4 }
+  const previous = thumb.value
+  if (Math.abs(previous.top - next.top) > 1e-4 || Math.abs(previous.height - next.height) > 1e-4 || previous.visible !== next.visible) thumb.value = next
+  if (!marks.value.length) return
+  const view = list.scrollTop + list.clientHeight / 3
+  let current = -1
+  markOffsets.forEach((offset, index) => { if (offset <= view) current = index })
+  marks.value.forEach((mark, index) => { if (mark.current !== (index === current)) mark.current = index === current })
+}
 function updateRail() {
   const list = messageList.value
   if (!list) return
   const height = Math.max(1, list.scrollHeight)
-  thumb.value = { top: list.scrollTop / height, height: Math.min(1, list.clientHeight / height), visible: list.scrollHeight > list.clientHeight + 4 }
   const users = [...list.querySelectorAll<HTMLElement>('.ai-message.user')]
-  if (users.length < 2) { marks.value = []; return }
-  const view = list.scrollTop + list.clientHeight / 3
-  let current = -1
-  users.forEach((element, index) => { if (element.offsetTop <= view) current = index })
-  marks.value = users.map((element, index) => {
-    const message = messages.value.find(item => item.id === element.dataset.id)
-    const answer = messages.value[messages.value.indexOf(message!) + 1]
-    return { id: element.dataset.id || '', top: element.offsetTop / height, text: message?.content || '', answer: plainText(answer?.content || '').slice(0, 140), current: index === current, pinned: Boolean(message?.pinned) }
+  markOffsets = users.map(element => element.offsetTop)
+  if (users.length < 2) { marks.value = []; updateThumb(); return }
+  const index = new Map(messages.value.map((item, position) => [item.id, position]))
+  marks.value = users.map((element, position) => {
+    const at = index.get(element.dataset.id || '') ?? -1, message = messages.value[at], answer = messages.value[at + 1]
+    // 预览只要开头一百多字：先截一段再去掉 Markdown，长回答不必整篇过正则。
+    return { id: element.dataset.id || '', top: markOffsets[position]! / height, text: message?.content || '', answer: plainText((answer?.content || '').slice(0, 800)).slice(0, 140), current: false, pinned: Boolean(message?.pinned) }
   })
+  updateThumb()
 }
 // 预览里不显示 Markdown、公式与引用标记的源码。
 function plainText(source: string) {
@@ -535,7 +554,7 @@ onMounted(() => {
   observer = new ResizeObserver(() => updateRail())
   if (messageList.value) observer.observe(messageList.value)
 })
-onBeforeUnmount(() => { unwatch?.(); rememberScroll(); clearInterval(ticker); clearTimeout(predictTimer); predicting?.abort(); observer?.disconnect(); if (renderFrame) cancelAnimationFrame(renderFrame); pickerRequest?.abort(); document.removeEventListener('pointerdown', pickerOutside, true); window.removeEventListener('keydown', strayEscape, true); document.removeEventListener('pointerdown', historyOutside, true) })
+onBeforeUnmount(() => { unwatch?.(); cancelAnimationFrame(scrollFrame); rememberScroll(); clearInterval(ticker); clearTimeout(predictTimer); predicting?.abort(); observer?.disconnect(); if (renderFrame) cancelAnimationFrame(renderFrame); pickerRequest?.abort(); document.removeEventListener('pointerdown', pickerOutside, true); window.removeEventListener('keydown', strayEscape, true); document.removeEventListener('pointerdown', historyOutside, true) })
 defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startConversation })
 </script>
 
@@ -573,7 +592,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
     </header>
 
     <div class="ai-body">
-      <div ref="messageList" class="ai-messages" @scroll="onScroll" @click="answerClick">
+      <div ref="messageList" class="ai-messages" data-glass-still @scroll.passive="onScroll" @click="answerClick">
         <div v-if="!messages.length" class="ai-welcome">
           <AssistantMark :kind="avatar.kind" :image="avatar.image" :size="56" class="ai-welcome-mark" />
           <h2 class="ai-welcome-lead" :lang="greeting.lang === 'zh' ? 'zh-CN' : 'en'">{{ greeting.text }}</h2>
@@ -727,8 +746,10 @@ button:disabled{opacity:.4;cursor:default}
 .history-pop-leave-active{transition:opacity var(--dur-1) var(--ease-out),transform var(--dur-1) var(--ease-out)}
 .history-pop-enter-from,.history-pop-leave-to{opacity:0;transform:translateY(-6px) scale(.95)}
 /* 消息区；原生滚动条隐藏，右侧导航条代替。 */
-.ai-body{position:relative;flex:1;min-height:0;display:flex}
-.ai-messages{flex:1;min-width:0;overflow:auto;padding:18px 26px 8px 18px;scrollbar-width:none;-webkit-mask-image:linear-gradient(180deg,transparent 0,#000 14px,#000 calc(100% - 14px),transparent 100%);mask-image:linear-gradient(180deg,transparent 0,#000 14px,#000 calc(100% - 14px),transparent 100%)}
+.ai-body{position:relative;flex:1;min-height:0;display:flex;-webkit-mask-image:linear-gradient(180deg,transparent 0,#000 14px,#000 calc(100% - 14px),transparent 100%);mask-image:linear-gradient(180deg,transparent 0,#000 14px,#000 calc(100% - 14px),transparent 100%)}
+/* 上下沿的淡出遮罩挂在外层 .ai-body 上，而不是滚动容器本身。对话列表单独成一层（will-change）：
+   半透明玻璃上的文字默认不走合成滚动，滚轮每动一帧都要把整屏文字重新栅格化，长回答里就一顿一顿的。 */
+.ai-messages{flex:1;min-width:0;overflow:auto;overscroll-behavior:contain;padding:18px 26px 8px 18px;scrollbar-width:none;will-change:transform}
 .ai-messages::-webkit-scrollbar{display:none}
 .scroll-rail{position:absolute;right:3px;top:6px;bottom:6px;width:14px;z-index:5;cursor:default;touch-action:none}
 .rail-thumb{position:absolute;right:5px;width:3px;min-height:18px;border-radius:2px;background:color-mix(in srgb,var(--ink) 18%,transparent);transition:width var(--dur-2) var(--spring-snappy),right var(--dur-2) var(--spring-snappy),background var(--dur-1) var(--ease-soft)}
@@ -761,7 +782,7 @@ button:disabled{opacity:.4;cursor:default}
    古诗没有对应的西文字形，退到宋体 / 思源宋体，仍是衬线。 */
 .ai-welcome-lead{max-width:100%;margin:0;font-family:'Anthropic Serif','Source Han Serif SC','Noto Serif CJK SC','Noto Serif SC','Songti SC','STSong','SimSun',serif;font-size:27px;font-weight:400;line-height:1.35;letter-spacing:-.012em;text-wrap:balance;font-optical-sizing:auto}
 .ai-welcome-lead:lang(zh-CN){font-size:22px;letter-spacing:.06em;line-height:1.6}
-.ai-message{margin-bottom:22px;animation:zg-rise-in var(--dur-3) var(--ease-out) both}
+.ai-message{margin-bottom:22px;animation:zg-rise-in var(--dur-3) var(--ease-out) backwards}
 .ai-message.user{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
 .user-question{max-width:88%;padding:9px 14px;border-radius:var(--r-lg) var(--r-lg) var(--r-xs) var(--r-lg);background:color-mix(in srgb,var(--ink) 9%,transparent);border:1px solid var(--hairline);font-size:13.5px;line-height:1.75;white-space:pre-wrap;overflow-wrap:anywhere}
 .question-actions{display:flex;gap:2px;opacity:0;transition:opacity var(--dur-2) var(--ease-out)}
@@ -928,5 +949,5 @@ textarea::placeholder{color:var(--muted);font-family:'Anthropic Serif','Source H
 .composer-drawer:not(.open){visibility:hidden;transition:height var(--dur-spring) var(--spring-snappy),opacity var(--dur-1) var(--ease-out),visibility 0s linear var(--dur-spring)}
 @media(prefers-reduced-motion:reduce){.composer-drawer,.composer-drawer>*{transition:none}}
 @media(prefers-reduced-motion:reduce){.ai-message,.thinking-label,.question-editor,.prompt-ghost{animation:none!important}}
-@media(prefers-reduced-transparency:reduce),(prefers-contrast:more){.ai-messages{-webkit-mask-image:none;mask-image:none}}
+@media(prefers-reduced-transparency:reduce),(prefers-contrast:more){.ai-body{-webkit-mask-image:none;mask-image:none}}
 </style>
