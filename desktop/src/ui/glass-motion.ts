@@ -18,7 +18,9 @@ export function nudgeGlassMotion(hold = HOLD) {
 }
 
 export function installGlassMotion(): () => void {
-  const onScroll = () => nudgeGlassMotion()
+  // 玻璃面板自己里面的滚动（阅读助手的对话列表等，标 data-glass-still）不会改变任何玻璃身后的画面，
+  // 不必撤透镜——撤 / 装透镜要整页重算样式，长对话里滚一下就顿一下。
+  const onScroll = (event: Event) => { if (event.target instanceof Element && event.target.closest('[data-glass-still]')) return; nudgeGlassMotion() }
   document.addEventListener('scroll', onScroll, { capture: true, passive: true })
   return () => { document.removeEventListener('scroll', onScroll, { capture: true }); clearTimeout(timer); timer = undefined; delete document.documentElement.dataset.glassMotion }
 }
