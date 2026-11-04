@@ -2,6 +2,7 @@ import { reactive, shallowReactive, markRaw } from 'vue'
 import { loadAiSettings, loadApiKey } from './settings.mjs'
 import { RequestScheduler } from './request-scheduler.mjs'
 import { library } from '../sdk'
+import { recordUsage } from './usage'
 
 export type Usage = { input?: number; output?: number; reasoning?: number; estimated: boolean }
 export type Message = {
@@ -12,6 +13,10 @@ export type Message = {
   ask?: { includeDocument: boolean; selectionOnly?: boolean; page?: number; text?: string }
   /** 钉住的提问在右侧导航刻度旁多一个圆点。 */
   pinned?: boolean
+  /** /compress 之后：被压缩进摘要的消息仍显示，但不再随请求发出；summary 是那条摘要。 */
+  compressed?: boolean; summary?: boolean
+  /** 摘录卡片：读者用 Ctrl+↓ / → / ← 从回答里带过来的一段文字（self 本对话、main 来自主对话、side 来自附属对话），随之后的提问一起发出。 */
+  note?: 'self' | 'main' | 'side'
 }
 type Request = { controller: AbortController; phase: string }
 export type ChatState = {
@@ -19,6 +24,10 @@ export type ChatState = {
   messages: Message[]; draft: string; status: string; error: boolean; includeDocument: boolean; includeSelection: boolean; request: Request | null; scrollTop: number
   /** A branch remembers where it split off. */
   branchOf?: { conversationId: string; title: string }
+  /** 侧边对话：挂在一段主对话旁边，不出现在对话记录里，跟主对话一起保存、一起删除。 */
+  sideOf?: string
+  /** 侧边对话开始时主对话的上下文快照：之后主对话再说什么，侧边看不到，要读者自己带过去。 */
+  inherited?: { role: 'user' | 'assistant'; content: string }[]
 }
 type DocumentChats = { list: ChatState[]; activeId: string; loaded: boolean; loading?: Promise<void> }
 
@@ -52,7 +61,55 @@ export function chatState(documentId: string, conversationId?: string): ChatStat
   return entry.list.find(item => item.id === (conversationId || entry.activeId)) || entry.list[0]
 }
 export function conversations(documentId: string): ChatState[] {
-  return [...chats(documentId).list].sort((a, b) => b.updatedAt - a.updatedAt)
+  return chats(documentId).list.filter(item => !item.sideOf).sort((a, b) => b.updatedAt - a.updatedAt)
+}
+/** 一段主对话的侧边对话；create 时没有就新建一段（不切换当前对话）。 */
+export function sideConversation(documentId: string, mainId: string, create = false): ChatState | undefined {
+  const entry = chats(documentId)
+  let side = entry.list.find(item => item.sideOf === mainId)
+  if (!side && create) {
+    side = blank(documentId)
+    const main = entry.list.find(item => item.id === mainId)
+    side.sideOf = mainId; side.includeDocument = main?.includeDocument ?? true
+    side.inherited = main ? inheritedContext(main) : []
+    entry.list.push(side)
+  }
+  return side
+}
+/** 主对话此刻的上下文（压缩过的部分只带摘要），最多 12 条、约 30000 字。 */
+function inheritedContext(main: ChatState) {
+  const kept: { role: 'user' | 'assistant'; content: string }[] = []
+  let chars = 0
+  for (const message of [...main.messages].reverse()) {
+    if (message.compressed || (message.failed && !message.content) || !message.content) continue
+    const content = wireText(message)
+    if (kept.length >= 12 || chars + content.length > 30000) break
+    kept.unshift({ role: message.summary || message.note ? 'user' : message.role, content }); chars += content.length
+  }
+  return kept
+}
+const NOTE_LABEL = { self: '读者从这段对话里摘出来、要接着讨论的片段', main: '读者从主对话带过来的片段', side: '读者从附属对话带回来的片段' } as const
+/** 一条消息发给模型时的文字：摘要、摘录卡片带上说明。 */
+function wireText(message: Message) {
+  if (message.summary) return `[此前对话的摘要，供参考]\n${message.content}`
+  if (message.note) return `[${NOTE_LABEL[message.note]}]\n${message.content}`
+  return message.content
+}
+/** 放一张摘录卡片进对话（不发请求）；之后的提问会一起带上它。 */
+export function addNote(documentId: string, conversationId: string, text: string, from: 'self' | 'main' | 'side') {
+  const state = chatState(documentId, conversationId)
+  const content = text.trim().slice(0, 8000)
+  if (!content) return null
+  const note: Message = { id: crypto.randomUUID(), role: 'user', content, sources: [], note: from }
+  state.messages.push(note)
+  state.updatedAt = Date.now()
+  schedulePersist(documentId)
+  return note
+}
+export function removeMessage(documentId: string, conversationId: string, messageId: string) {
+  const state = chatState(documentId, conversationId)
+  const index = state.messages.findIndex(item => item.id === messageId)
+  if (index >= 0) { state.messages.splice(index, 1); schedulePersist(documentId) }
 }
 export function activeConversationId(documentId: string) { return chats(documentId).activeId }
 export function selectConversation(documentId: string, conversationId: string) {
@@ -62,7 +119,7 @@ export function selectConversation(documentId: string, conversationId: string) {
 /** Start a fresh conversation, reusing an untouched empty one. */
 export function newConversation(documentId: string): ChatState {
   const entry = chats(documentId)
-  const empty = entry.list.find(item => !item.messages.length && !item.request)
+  const empty = entry.list.find(item => !item.sideOf && !item.messages.length && !item.request)
   if (empty) { entry.activeId = empty.id; empty.updatedAt = Date.now(); return empty }
   const conversation = blank(documentId)
   entry.list.push(conversation); entry.activeId = conversation.id
@@ -73,9 +130,10 @@ export function deleteConversation(documentId: string, conversationId: string) {
   const conversation = entry.list.find(item => item.id === conversationId)
   if (!conversation) return
   conversation.request?.controller.abort()
-  entry.list = entry.list.filter(item => item !== conversation)
-  if (!entry.list.length) entry.list.push(blank(documentId))
-  if (entry.activeId === conversationId) entry.activeId = [...entry.list].sort((a, b) => b.updatedAt - a.updatedAt)[0].id
+  for (const side of entry.list.filter(item => item.sideOf === conversationId)) side.request?.controller.abort()
+  entry.list = entry.list.filter(item => item !== conversation && item.sideOf !== conversationId)
+  if (!entry.list.some(item => !item.sideOf)) entry.list.push(blank(documentId))
+  if (entry.activeId === conversationId) entry.activeId = entry.list.filter(item => !item.sideOf).sort((a, b) => b.updatedAt - a.updatedAt)[0]!.id
   schedulePersist(documentId)
 }
 /** Copy a conversation up to (and including) one message into a new conversation and show it. */
@@ -107,7 +165,8 @@ export function watchConversation(conversationId: string, onScreen: () => boolea
 }
 export function dismissNotice(id: string) { const index = notices.findIndex(item => item.id === id); if (index >= 0) notices.splice(index, 1) }
 function noticeFinished(state: ChatState, documentTitle: string) {
-  if ([...(watching.get(state.id) || [])].some(onScreen => onScreen())) return
+  // 侧边对话就在主对话旁边，答完不另外提示。
+  if (state.sideOf || [...(watching.get(state.id) || [])].some(onScreen => onScreen())) return
   notices.push({ id: crypto.randomUUID(), documentId: state.documentId, conversationId: state.id, title: state.title || '新对话', documentTitle, at: Date.now() })
   if (notices.length > 4) notices.splice(0, notices.length - 4)
 }
@@ -144,8 +203,11 @@ export function closeAllChats() { for (const id of [...documents.keys()]) closeC
 // ---- Persistence: conversations survive restarts, without screenshots. ----
 const persistTimers = new Map<string, ReturnType<typeof setTimeout>>()
 function serialize(entry: DocumentChats) {
-  return JSON.stringify({ activeId: entry.activeId, list: entry.list.filter(item => item.messages.length).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, MAX_STORED_CONVERSATIONS).map(item => ({
-    id: item.id, title: item.title, createdAt: item.createdAt, updatedAt: item.updatedAt, branchOf: item.branchOf,
+  const mains = entry.list.filter(item => !item.sideOf && item.messages.length).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, MAX_STORED_CONVERSATIONS)
+  const kept = new Set(mains.map(item => item.id))
+  const sides = entry.list.filter(item => item.sideOf && kept.has(item.sideOf) && item.messages.length)
+  return JSON.stringify({ activeId: entry.activeId, list: [...mains, ...sides].map(item => ({
+    id: item.id, title: item.title, createdAt: item.createdAt, updatedAt: item.updatedAt, branchOf: item.branchOf, sideOf: item.sideOf, inherited: item.inherited,
     messages: item.messages.filter(message => !message.failed || message.content).slice(-MAX_MESSAGES).map(({ images: _images, activity: _activity, ...message }) => ({ ...message, content: message.content.slice(0, 60000), reasoning: message.reasoning?.slice(0, 20000), sources: message.sources.slice(0, 24).map(source => ({ ...source, text: String(source.text || '').slice(0, 600) })) })),
   })) })
 }
@@ -162,7 +224,7 @@ function schedulePersist(documentId: string) {
 /** Every conversation with messages across the given documents, newest first (loads saved ones on demand). */
 export async function allConversations(documentIds: string[]): Promise<ChatState[]> {
   await Promise.all(documentIds.map(id => loadConversations(id)))
-  return documentIds.flatMap(id => chats(id).list.filter(item => item.messages.length)).sort((a, b) => b.updatedAt - a.updatedAt)
+  return documentIds.flatMap(id => chats(id).list.filter(item => !item.sideOf && item.messages.length)).sort((a, b) => b.updatedAt - a.updatedAt)
 }
 /** Load saved conversations once per document; the live ones stay in front. */
 export function loadConversations(documentId: string): Promise<void> {
@@ -176,13 +238,13 @@ export function loadConversations(documentId: string): Promise<void> {
       for (const item of Array.isArray(stored?.list) ? stored.list : []) {
         if (!item || typeof item.id !== 'string' || known.has(item.id) || !Array.isArray(item.messages)) continue
         const conversation = blank(documentId)
-        Object.assign(conversation, { id: item.id, title: String(item.title || ''), branchOf: item.branchOf && typeof item.branchOf.conversationId === 'string' ? { conversationId: item.branchOf.conversationId, title: String(item.branchOf.title || '') } : undefined, createdAt: Number(item.createdAt) || Date.now(), updatedAt: Number(item.updatedAt) || Date.now(),
+        Object.assign(conversation, { id: item.id, title: String(item.title || ''), sideOf: typeof item.sideOf === 'string' ? item.sideOf : undefined, inherited: Array.isArray(item.inherited) ? item.inherited.filter((entry: any) => entry && typeof entry.content === 'string' && (entry.role === 'user' || entry.role === 'assistant')) : undefined, branchOf: item.branchOf && typeof item.branchOf.conversationId === 'string' ? { conversationId: item.branchOf.conversationId, title: String(item.branchOf.title || '') } : undefined, createdAt: Number(item.createdAt) || Date.now(), updatedAt: Number(item.updatedAt) || Date.now(),
           messages: item.messages.filter((message: any) => message && (message.role === 'user' || message.role === 'assistant')).map((message: any) => ({ ...message, content: String(message.content || ''), sources: Array.isArray(message.sources) ? message.sources : [] })) })
         entry.list.push(conversation)
       }
       // Reopen the conversation last used for this document if nothing has started yet.
       const current = entry.list.find(item => item.id === entry.activeId)
-      if (current && !current.messages.length && stored?.activeId && entry.list.some(item => item.id === stored.activeId)) {
+      if (current && !current.messages.length && stored?.activeId && entry.list.some(item => item.id === stored.activeId && !item.sideOf)) {
         entry.activeId = stored.activeId
         entry.list = entry.list.filter(item => item !== current)
       }
@@ -209,7 +271,7 @@ export function contextWindow(provider: string, model: string): number {
 export function conversationTokens(state: ChatState): number {
   let chars = 0, tokens = 0, kept = 0
   for (const message of [...state.messages].reverse()) {
-    if (message.failed && !message.content) continue
+    if ((message.failed && !message.content) || message.compressed) continue
     if (kept >= 12 || chars + message.content.length > 40000) break
     chars += message.content.length; kept++
     tokens += estimateTokens(message.content)
@@ -258,8 +320,8 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
     const user: Message = { id: crypto.randomUUID(), role: 'user', content: question, sources: [], images, ask: { includeDocument, selectionOnly: sendOptions.selectionOnly, page: context.page, text: selection.text ? String(selection.text).slice(0, 20000) : undefined } }
     const wireContent = sendOptions.selectionOnly
       ? `${question}${selection.text ? '\n\n[用户选中的内容]\n' + selection.text : ''}${selection.image ? '\n\n[附图是用户在文档里框选的区域，问题针对它]' : ''}${attached.length ? `\n\n[用户附上了 ${attached.length} 张图片]` : ''}`
-      : `${question}\n\n[用户当前阅读的文档]\n${descriptor.title}${descriptor.kind === 'pdf' ? ` · 物理 PDF 第 ${context.page} 页` : ' · Markdown 文档'}${selection.text ? '\n\n[用户选中的内容]\n' + selection.text : ''}${attached.length ? `\n\n[用户附上了 ${attached.length} 张图片]` : ''}`
-    const history = boundedHistory([...state.messages.filter(message => !message.failed).map(({ role, content, sources }) => ({ role, content: content + (sources.length ? '\n[此前查到的相关位置]\n' + JSON.stringify(sources.slice(0, 8).map(item => ({ sourceId: item.sourceId, page: item.page, line: item.line, text: item.text.slice(0, 400) }))) : '') })), { ...user, content: wireContent }])
+      : `${question}\n\n[用户当前阅读的文档]\n${descriptor.title}${descriptor.kind === 'pdf' ? ` · 物理 PDF 第 ${context.page} 页` : ' · Markdown 文档'}${selection.text ? '\n\n[用户选中的内容]\n' + selection.text : ''}${attached.length ? `\n\n[用户附上了 ${attached.length} 张图片]` : ''}${state.sideOf ? '\n\n[这是挂在主对话旁边的附属对话（侧边对话）]' : ''}`
+    const history = boundedHistory([...(state.inherited || []).map(item => ({ role: item.role, content: `[主对话里的内容（开启附属对话时）]\n${item.content}` })), ...state.messages.filter(message => !message.failed && !message.compressed).map(message => message.summary || message.note ? { role: 'user', content: wireText(message) } : ({ role: message.role, content: message.content + (message.sources.length ? '\n[此前查到的相关位置]\n' + JSON.stringify(message.sources.slice(0, 8).map(item => ({ sourceId: item.sourceId, page: item.page, line: item.line, text: item.text.slice(0, 400) }))) : '') })), { ...user, content: wireContent }])
     // The scheduler reports the first queue position before the answer bubble exists.
     let waiting = ''
     ticket = scheduler.acquire({ owner: `${descriptor.id}:${state.id}`, provider: snapshot.provider, signal, onState: (value: any) => {
@@ -324,7 +386,10 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
       state.status = signal.aborted ? '' : error?.message || String(error)
     }
   } finally {
-    if (answer) { answer.finishedAt = Date.now(); answer.activity = ''; state.updatedAt = answer.finishedAt }
+    if (answer) {
+      answer.finishedAt = Date.now(); answer.activity = ''; state.updatedAt = answer.finishedAt
+      if (answer.usage) recordUsage({ kind: state.sideOf ? 'side' : 'chat', provider: snapshot.provider, model: snapshot.model || '', ms: answer.finishedAt - (answer.startedAt || answer.finishedAt), estimated: answer.usage.estimated, input: answer.usage.input || 0, output: answer.usage.output || 0, reasoning: answer.usage.reasoning || 0 })
+    }
     documentSession?.close()
     try { await resource?.close() } catch {}
     ticket?.release()
@@ -343,7 +408,7 @@ export function resendQuestion(descriptor: { id: string; title: string; kind: st
   const index = state.messages.findIndex(message => message.id === userMessageId)
   const user = state.messages[index]
   if (!user || user.role !== 'user' || !question.trim()) return
-  const lastUser = state.messages.map(message => message.role).lastIndexOf('user')
+  const lastUser = state.messages.map(message => message.role === 'user' && !message.note ? 'user' : '').lastIndexOf('user')
   let target = state
   if (index === lastUser) {
     if (state.request) return
@@ -355,4 +420,28 @@ export function resendQuestion(descriptor: { id: string; title: string; kind: st
     conversationId: target.id, includeDocument: ask?.includeDocument ?? target.includeDocument, includeSelection: Boolean(ask?.text), selectionOnly: ask?.selectionOnly, images: user.images?.length ? [user.images[0]!] : undefined, attachments: user.images?.slice(1),
   })
   return target.id
+}
+
+/**
+ * /compress：把这段对话里还没压缩过的问答交给模型写成一份摘要，之后的请求只带摘要和其后的消息。
+ * 原来的消息仍留在界面上（标为已压缩），随时可以翻看。
+ */
+export async function compressConversation(descriptor: { id: string; title: string }, conversationId: string, instructions = '', signal: AbortSignal): Promise<void> {
+  const state = chatState(descriptor.id, conversationId)
+  const pending = state.messages.filter(message => !message.compressed && !(message.failed && !message.content))
+  if (pending.filter(message => !message.summary).length < 2) throw new Error('对话还很短，不需要压缩。')
+  const transcript = pending.map(message => `${message.summary ? '【此前的摘要】' : message.role === 'user' ? '读者' : '助手'}：${message.content.slice(0, 12000)}`).join('\n\n')
+  const { complete } = await import('./complete')
+  const summary = await complete({ kind: 'compress', signal, messages: [{ role: 'user', content: [
+    `下面是读者与阅读助手围绕《${descriptor.title}》的一段对话。请把它压缩成一份简明的摘要，供之后继续对话时代替原文使用：`,
+    '保留读者关心的问题、已经得出的结论、关键的定义 / 公式 / 页码引用，以及尚未解决的问题；去掉寒暄与重复。用读者使用的语言，分条列出，不超过 400 字。',
+    instructions && `读者对摘要的额外要求：${instructions}`,
+    `[对话]\n${transcript}`,
+  ].filter(Boolean).join('\n\n') }] })
+  signal.throwIfAborted()
+  if (!summary.trim()) throw new Error('没有得到摘要，请稍后再试。')
+  for (const message of pending) message.compressed = true
+  state.messages.push({ id: crypto.randomUUID(), role: 'assistant', content: summary.trim(), sources: [], summary: true, finishedAt: Date.now() })
+  state.updatedAt = Date.now()
+  schedulePersist(descriptor.id)
 }

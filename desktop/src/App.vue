@@ -19,6 +19,7 @@ import { useFullscreen } from './ui/fullscreen'
 import { vLiquidSelection } from './ui/liquid-selection'
 import { useReorder } from './ui/reorder'
 import { useRubberBand } from './ui/rubber-band'
+import { translator, translate } from './ai/translate'
 import { startAutoCheck, stopAutoCheck } from './ui/updater'
 import { registerCustomFonts } from './ui/custom-fonts'
 import { covers, loadCovers, setCover, imageCover, pageCover, type Cover } from './library/covers'
@@ -30,6 +31,7 @@ const SplitPicker = defineAsyncComponent(() => import('./components/SplitPicker.
 const UpdateCard = defineAsyncComponent(() => import('./components/UpdateCard.vue'))
 const ContextMenu = defineAsyncComponent(() => import('./components/ContextMenu.vue'))
 const ManifoldDoodle = defineAsyncComponent(() => import('./components/ManifoldDoodle.vue'))
+const TranslatePane = defineAsyncComponent(() => import('./components/TranslatePane.vue'))
 const { preferences, effectiveAppearance, load: loadPreferences, save: savePreferences } = useSettings()
 
 const documents = ref<Doc[]>([])
@@ -47,7 +49,7 @@ const fileTabs = computed(() => tabs.value.map(tab => ({ id: tab.doc.id, name: i
    - order：工作区里所有窗口（文档栏与助手）的左右顺序，用户拖动调整。 */
 const MAX_PANES = 3
 const MAX_AI_PANELS = 3
-type AiPanel = { key: string; doc: string | null; conversation?: string; width: number }
+type AiPanel = { key: string; doc: string | null; conversation?: string; width: number; side?: number }
 const group = ref<string[]>([])
 const aiPanels = ref<AiPanel[]>([])
 const order = ref<string[]>([])
@@ -361,6 +363,14 @@ async function refresh() {
 function searchDocuments() { clearTimeout(queryTimer); queryTimer = setTimeout(refresh, 180) }
 function chooseCategory(value: string) { category.value = value; tagFilter.value = ''; closeReader() }
 function chooseTag(value: string) { tagFilter.value = value; category.value = 'all'; closeReader() }
+// ---- 机翻：左侧的翻译栏 ----------------------------------------------------
+const translatePane = ref<{ focus: () => void }>()
+function toggleTranslate() { translator.open = !translator.open; if (translator.open) void nextTick(() => translatePane.value?.focus()) }
+/** 选中的文字（阅读区、Markdown、阅读助手的回答）：有就翻译它，没有就开关翻译栏。 */
+function translateSelection(text = window.getSelection()?.toString() || '') {
+  if (text.trim()) { void translate(text); return }
+  toggleTranslate()
+}
 // 文档库可以收起，只留桌面上的底板（铅笔草稿风格下是慢慢自转的流形）。「文档库」再点一次就打开 / 收起。
 const libraryShown = ref(true)
 function toggleLibrary() {
@@ -746,7 +756,8 @@ function startWidthDrag(event: PointerEvent, key: string) {
   const bounds = element?.getBoundingClientRect()
   // The handle on the left edge grows leftwards; on the right edge it grows rightwards.
   const side = (event.currentTarget as HTMLElement).dataset.edge === 'right' ? 1 : -1
-  widthDrag = { key, x: event.clientX, width: bounds?.width || panel.width, side }
+  // 侧边对话开着时，窗口宽度里有一截属于侧栏；拖动只改主栏那一部分。
+  widthDrag = { key, x: event.clientX, width: (bounds?.width || panel.width + (panel.side || 0)) - (panel.side || 0), side }
   ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
   document.documentElement.classList.add('resizing-panels')
   // 拖动助手宽度时，PDF 跟着手实时缩放，松手后再按最终宽度重画一次。
@@ -761,6 +772,22 @@ function endWidthDrag() {
   if (!widthDrag) return
   widthDrag = undefined; document.documentElement.classList.remove('resizing-panels')
   if (!resizingPanels.size) for (const instance of visibleReaders()) instance.holdPanelResize?.(false, false)
+}
+// 侧边对话展开 / 收起：窗口加宽或收回侧栏那一截，用弹簧动画；PDF 在动画期间跟着缩放，停下后按最终宽度重画。
+const sideAnimating = ref(new Set<string>())
+function setPanelSide(key: string, width: number) {
+  const panel = aiPanels.value.find(item => item.key === key)
+  if (!panel || (panel.side || 0) === width) return
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  if (!reduced) {
+    sideAnimating.value = new Set([...sideAnimating.value, key])
+    if (pdfOnScreen()) for (const instance of visibleReaders()) instance.holdPanelResize?.(true, width > 0)
+    setTimeout(() => {
+      const next = new Set(sideAnimating.value); next.delete(key); sideAnimating.value = next
+      if (!next.size && !resizingPanels.size) for (const instance of visibleReaders()) instance.holdPanelResize?.(false, true)
+    }, 520)
+  }
+  panel.side = width
 }
 // ---- Dragging windows to rearrange (lift, others slide aside) ---------------
 let panelDrag: { key: string; element: HTMLElement; grab: number; startX: number; startY: number; moved: boolean; pointer: number } | undefined
@@ -867,6 +894,7 @@ function appContextMenu(event: MouseEvent) {
     items.push({ label: '全选', icon: 'check', hint: 'Ctrl+A', separator: true, action: () => { field.focus(); field.select() } })
   } else if (text.trim()) {
     items.push({ label: '复制', icon: 'copy', hint: 'Ctrl+C', action: () => { void navigator.clipboard.writeText(text).catch(() => document.execCommand('copy')) } })
+    items.push({ label: '机翻', icon: 'translate', hint: shortcut('translate'), action: () => { void translate(text) } })
     if (active.value && target.closest('.reader-pane')) items.push({ label: '问阅读助手', icon: 'sparkle', action: () => openAssistant(true) })
     if (active.value && target.closest('.reader-pane')) { const pane = target.closest<HTMLElement>('[data-pane-id]')?.dataset.paneId; items.push({ label: '在这里加书签', icon: 'star', hint: shortcut('bookmark'), action: () => addBookmarkHere(pane || active.value?.id) }) }
   } else if (!active.value && target.closest('.document-card')) {
@@ -1345,6 +1373,7 @@ function keydown(event: KeyboardEvent) {
       else if (search.value) { search.value.focus(); focusSearchPending = false }
       break
     case 'settings': openSettings(); break
+    case 'translate': translateSelection(); break
     case 'sidebar': toggleSidebar(); break
     case 'ai': if (active.value) toggleAssistant(); break
     case 'nextTab': moveTab(1); break
@@ -1479,6 +1508,10 @@ onBeforeUnmount(() => { stopAutoCheck(); for (const timer of pillTimers.values()
     </aside>
     </Transition>
 
+    <Transition name="translate-pane" @before-enter="paneResizeStart($event, true)" @before-leave="paneResizeStart($event, false)" @after-enter="paneResizeEnd" @after-leave="paneResizeEnd" @enter-cancelled="paneResizeEnd($event, true)" @leave-cancelled="paneResizeEnd($event, true)">
+      <div v-if="translator.open" class="translate-column"><TranslatePane ref="translatePane" :shortcut="preferences.shortcuts.translate ? shortcut('translate') : ''" @close="translator.open = false" /></div>
+    </Transition>
+
     <main class="app-main">
       <Transition name="topbar" @before-enter="paneResizeStart($event, true)" @before-leave="paneResizeStart($event, false)" @after-enter="paneResizeEnd" @after-leave="paneResizeEnd" @enter-cancelled="paneResizeEnd($event, true)" @leave-cancelled="paneResizeEnd($event, true)">
       <header v-show="!chromeCollapsed" class="app-topbar" :class="{ 'with-tabs': tabs.length }" data-glass-interactive="panel">
@@ -1490,6 +1523,7 @@ onBeforeUnmount(() => { stopAutoCheck(); for (const timer of pillTimers.values()
           <button v-else class="icon-button" @click="toggleTheme" :data-tip="theme === 'dark' ? '切换浅色主题' : '切换深色主题'" :aria-label="theme === 'dark' ? '切换浅色主题' : '切换深色主题'"><AppIcon :name="theme === 'dark' ? 'sun' : 'moon'" :size="18" /></button>
           <button class="icon-button" @click="collapseChrome" data-tip="收起顶栏与侧栏，阅读区占满窗口" aria-label="收起顶栏与侧栏"><AppIcon name="collapse-up" :size="18" /></button>
           <button class="icon-button" @click="toggleFullscreen" :disabled="fullscreenPending" :aria-label="fullscreen ? '退出全屏' : '进入全屏'" :aria-pressed="fullscreen" :data-tip="fullscreen ? '退出全屏' : '进入全屏'" :data-tip-key="tipKey('fullscreen')"><AppIcon :name="fullscreen ? 'exit-fullscreen' : 'fullscreen'" :size="18" /></button>
+          <button class="icon-button translate-toggle" :class="{ active: translator.open }" @click="toggleTranslate" data-tip="翻译" :data-tip-key="tipKey('translate')" aria-label="翻译" :aria-pressed="translator.open"><AppIcon name="translate" :size="18" /></button>
           <button class="icon-button" @click="openSettings()" data-tip="设置" :data-tip-key="tipKey('settings')" aria-label="打开设置"><AppIcon name="settings" :size="18" /></button>
         </div>
       </header>
@@ -1551,9 +1585,9 @@ onBeforeUnmount(() => { stopAutoCheck(); for (const timer of pillTimers.values()
               </div>
             </section>
             <section v-for="id in (multiPanel ? paneIds.filter(id => !readerCache.some(entry => entry.id === id)) : [])" :key="`pending:${id}`" class="reader-pane pending" :style="{ order: panelOrder(`doc:${id}`) }"><div class="reader-overlay"><span class="spinner"></span><p>正在打开 {{ tabDoc(id)?.name }}…</p></div></section>
-            <section v-for="panel in stageAi" :key="panel.key" class="ai-panel" :class="{ lifted: draggingPanel === panel.key }" :style="{ order: panelOrder(panel.key), width: `${panel.width}px`, '--panel-width': `${panel.width}px` }" :data-panel-key="panel.key">
+            <section v-for="panel in stageAi" :key="panel.key" class="ai-panel" :class="{ lifted: draggingPanel === panel.key, 'with-side': (panel.side || 0) > 0, 'side-animating': sideAnimating.has(panel.key) }" :style="{ order: panelOrder(panel.key), width: `${panel.width + (panel.side || 0)}px`, '--panel-width': `${panel.width + (panel.side || 0)}px` }" :data-panel-key="panel.key">
               <div class="panel-resizer" :data-edge="panelOrder(panel.key) === 0 && multiPanel ? 'right' : 'left'" role="separator" aria-orientation="vertical" aria-label="拖动调整阅读助手宽度" data-tip="拖动调整宽度，双击恢复" @pointerdown.stop="startWidthDrag($event, panel.key)" @pointermove="moveWidthDrag" @pointerup="endWidthDrag" @pointercancel="endWidthDrag" @dblclick="panel.width = 380" />
-              <AiPane v-if="aiDocument(panel)" :ref="value => bindAi(panel.key, value)" data-glass-interactive="panel" :document="aiDocument(panel)!" :context="aiContext(panel)" :conversation-id="panel.conversation" :draggable="multiPanel" :send-shortcut="preferences.shortcuts.aiSend ? shortcut('aiSend') : ''" :consume-capture="consumeSelection" @settings="openSettings('ai')" @close="closeAiPanel(panel.key)" @jump="jump" @clear-selection="clearSelection" @conversation="id => setPanelConversation(panel.key, id)" @grab="startPanelDrag($event, panel.key)" :alternatives="aiAlternatives(panel)" :library="libraryIndex" @switch-document="id => switchAiDocument(panel, id)" @open-conversation="openConversationAt" />
+              <AiPane v-if="aiDocument(panel)" :ref="value => bindAi(panel.key, value)" data-glass-interactive="panel" :document="aiDocument(panel)!" :context="aiContext(panel)" :conversation-id="panel.conversation" :draggable="multiPanel" :send-shortcut="preferences.shortcuts.aiSend ? shortcut('aiSend') : ''" :consume-capture="consumeSelection" @settings="openSettings('ai')" @close="closeAiPanel(panel.key)" @jump="jump" @clear-selection="clearSelection" @conversation="id => setPanelConversation(panel.key, id)" @grab="startPanelDrag($event, panel.key)" :alternatives="aiAlternatives(panel)" :library="libraryIndex" @switch-document="id => switchAiDocument(panel, id)" @open-conversation="openConversationAt" @side="width => setPanelSide(panel.key, width)" />
             </section>
           </TransitionGroup>
           <div v-if="selection && !captureQuick && !aiOpen && selection.image" class="selection-context"><AppIcon name="crop" :size="16" /><span>{{ selection.image ? `已框选第 ${selection.page} 页的图表或公式` : `已选择 ${selection.text.length} 个字符` }}</span><button @click="openAssistant(true)"><AppIcon name="sparkle" :size="15" />向 AI 提问</button><button class="icon-button" @click="clearSelection" data-tip="清除选区" aria-label="清除选区"><AppIcon name="close" :size="14" /></button></div>

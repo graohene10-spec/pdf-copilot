@@ -2,7 +2,7 @@ import { MANIFOLD_IDS } from '../sketch/manifolds.ts'
 import { normalizeBackground, backgroundErrors, type BackgroundImage } from './background.ts'
 import { defaultQuickPrompts, normalizeQuickPrompts, quickPromptErrors, defaultCaptureQuestions, normalizeCaptureQuestions, captureQuestionErrors, type QuickPrompt, type QuickPrompts } from './quick-prompts.ts'
 
-export type ShortcutAction = 'import' | 'search' | 'find' | 'fullscreen' | 'settings' | 'sidebar' | 'ai' | 'outline' | 'capture' | 'fitWidth' | 'zoomOut' | 'zoomIn' | 'previousPage' | 'nextPage' | 'aiSend' | 'aiStop' | 'nextTab' | 'previousTab' | 'closeTab' | 'split' | 'inkPen' | 'inkHighlighter' | 'inkUnderline' | 'bookmark' | 'bookmarkPrev' | 'bookmarkNext'
+export type ShortcutAction = 'import' | 'search' | 'find' | 'fullscreen' | 'settings' | 'sidebar' | 'ai' | 'outline' | 'capture' | 'fitWidth' | 'zoomOut' | 'zoomIn' | 'previousPage' | 'nextPage' | 'aiSend' | 'aiStop' | 'nextTab' | 'previousTab' | 'closeTab' | 'split' | 'inkPen' | 'inkHighlighter' | 'inkUnderline' | 'bookmark' | 'bookmarkPrev' | 'bookmarkNext' | 'translate'
 /** The assistant's mark on its empty screen: a built-in glyph or the user's own image (GIF/APNG/WebP animate). */
 export type AssistantAvatar = { kind: AvatarKind; image: string | null }
 export type AvatarKind = 'crab' | 'claude' | 'chatgpt' | 'deepseek' | 'custom'
@@ -116,6 +116,7 @@ export const SHORTCUTS: { action: ShortcutAction; label: string }[] = [
   { action: 'split', label: '并排阅读' },
   { action: 'inkPen', label: '标记：钢笔' }, { action: 'inkHighlighter', label: '标记：荧光笔' }, { action: 'inkUnderline', label: '标记：下划线' },
   { action: 'bookmark', label: '在当前位置加书签' }, { action: 'bookmarkPrev', label: '跳到上一个书签' }, { action: 'bookmarkNext', label: '跳到下一个书签' },
+  { action: 'translate', label: '机翻选中的文字 / 打开翻译栏' },
 ]
 export const DEFAULT_SHORTCUTS: Readonly<Record<ShortcutAction, string>> = Object.freeze({
   import: 'Ctrl+KeyO', search: 'Ctrl+KeyK', settings: 'Ctrl+Comma', sidebar: 'Ctrl+KeyB',
@@ -126,6 +127,7 @@ export const DEFAULT_SHORTCUTS: Readonly<Record<ShortcutAction, string>> = Objec
   nextTab: 'Ctrl+Tab', previousTab: 'Ctrl+Shift+Tab', closeTab: 'Ctrl+KeyW', split: 'Ctrl+Backslash',
   inkPen: 'Alt+Digit1', inkHighlighter: 'Alt+Digit2', inkUnderline: 'Alt+Digit3',
   bookmark: 'Alt+KeyB', bookmarkPrev: 'Ctrl+ArrowUp', bookmarkNext: 'Ctrl+ArrowDown',
+  translate: 'Ctrl+KeyT',
 })
 const LEGACY_GLASS: Record<string, number> = { clear: 85, balanced: 70, rich: 30, solid: 0 }
 export const MAX_GALLERY = 6
@@ -138,7 +140,7 @@ const modifierOrder = ['Ctrl', 'Alt', 'Shift', 'Meta']
 const aliases: Record<string, string> = { control: 'Ctrl', ctrl: 'Ctrl', alt: 'Alt', option: 'Alt', shift: 'Shift', meta: 'Meta', cmd: 'Meta', command: 'Meta' }
 const labels: Record<string, string> = { Comma: ',', Period: '.', Minus: '−', Equal: '=', BracketLeft: '[', BracketRight: ']', Semicolon: ';', Quote: "'", Slash: '/', Backslash: '\\', Backquote: '`', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Enter: 'Enter', Space: 'Space', Tab: 'Tab', Backspace: 'Backspace', Delete: 'Delete', Home: 'Home', End: 'End', PageUp: 'Page Up', PageDown: 'Page Down', WheelUp: '滚轮向上', WheelDown: '滚轮向下' }
 const reserved = new Set([
-  'Ctrl+KeyT', 'Ctrl+KeyN', 'Ctrl+KeyL', 'Ctrl+KeyR', 'Ctrl+KeyP', 'Ctrl+KeyS', 'Ctrl+KeyH', 'Ctrl+KeyD', 'Ctrl+KeyJ',
+  'Ctrl+KeyN', 'Ctrl+KeyL', 'Ctrl+KeyR', 'Ctrl+KeyP', 'Ctrl+KeyS', 'Ctrl+KeyH', 'Ctrl+KeyD', 'Ctrl+KeyJ',
   'Ctrl+Shift+KeyT', 'Ctrl+Shift+KeyN', 'Ctrl+Shift+KeyW', 'Ctrl+Shift+KeyI', 'Ctrl+Shift+KeyJ', 'Ctrl+Shift+KeyB', 'Ctrl+Shift+Delete',
   'Ctrl+PageUp', 'Ctrl+PageDown', 'Ctrl+F4', 'Alt+F4', 'Alt+ArrowLeft', 'Alt+ArrowRight', 'Alt+Home',
   'Meta+KeyL', 'Meta+KeyD',

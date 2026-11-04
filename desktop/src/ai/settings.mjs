@@ -37,3 +37,11 @@ export function saveModelChoice(model, effort) {
   delete stored.apiKey;
   localStorage.setItem(storageKey, JSON.stringify({ ...stored, model, effort }));
 }
+// 其他服务的凭据（例如有道翻译的应用 ID 与密钥）：桌面版加密保存在本机，浏览器预览只留在内存里。
+export async function saveCredential(provider, key) {
+  keys.set(provider, key || '');
+  if (globalThis.__TAURI_INTERNALS__) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('set_credential', { provider, key: key || '' });
+  }
+}
