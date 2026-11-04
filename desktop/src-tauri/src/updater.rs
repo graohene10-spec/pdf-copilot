@@ -27,7 +27,7 @@ const SETUP_SUFFIX: &str = "_x64-setup.exe";
 const PORTABLE_SUFFIX: &str = "_x64-portable.zip";
 /// Files replaced by a portable update keep this suffix until the next launch removes them.
 const OLD_SUFFIX: &str = ".kaizhi-old";
-/// The program's file name since 0.11 (English install folder and exe); earlier versions were 开智.exe.
+/// The program's file name since 0.10.2 (English install folder and exe); earlier versions were 开智.exe.
 const EXE_NAME: &str = "OpenIntelligence.exe";
 const LEGACY_EXE_NAME: &str = "开智.exe";
 const MAX_UNPACKED_BYTES: u64 = 1024 * 1024 * 1024;
@@ -388,7 +388,7 @@ pub fn install(app: &tauri::AppHandle, path: &str) -> Result<()> {
         let launch = apply_portable(&package, dir, &exe)?;
         relaunch(None, &launch, None)?;
     } else {
-        // 0.11 起程序叫 OpenIntelligence，安装器会装进新的英文文件夹：装好后启动新程序，再静默卸载旧的中文文件夹。
+        // 0.10.2 起程序叫 OpenIntelligence，安装器会装进新的英文文件夹：装好后启动新程序，再静默卸载旧的中文文件夹。
         let renamed = exe.file_name().is_some_and(|name| name != EXE_NAME);
         let target = renamed.then(|| std::env::var_os("LOCALAPPDATA").map(|base| PathBuf::from(base).join("OpenIntelligence").join(EXE_NAME))).flatten();
         let legacy = target.as_ref().and_then(|_| exe.parent().map(|dir| dir.join("uninstall.exe"))).filter(|uninstaller| uninstaller.is_file());
@@ -405,7 +405,7 @@ pub fn install(app: &tauri::AppHandle, path: &str) -> Result<()> {
 /// every swapped file is put back. Files not in the ZIP (user data) are untouched.
 #[cfg_attr(not(windows), allow(dead_code))]
 /// Returns the program to start afterwards: the package's OpenIntelligence.exe when it has one
-/// (a 0.10 portable folder still holds 开智.exe, which the next launch cleans up).
+/// (a 0.10.1 portable folder still holds 开智.exe, which the next launch cleans up).
 fn apply_portable(package: &Path, dir: &Path, exe: &Path) -> Result<PathBuf> {
     let staging = update_dir().join("portable");
     let _ = std::fs::remove_dir_all(&staging);
@@ -492,7 +492,7 @@ pub fn remove_leftovers() {
     remove_legacy_exe(&dir, &exe);
 }
 
-/// 0.10 的更新程序只认得 开智.exe：它更新完总是重新启动 开智.exe。所以 0.11 的安装器把新程序也复制成
+/// 0.10.1 及更早的更新程序只认得 开智.exe：它更新完总是重新启动 开智.exe。所以 0.10.2 的安装器把新程序也复制成
 /// 旧目录里的 开智.exe（见 windows/hooks.nsh），免安装包里也带一份 开智.exe。新程序一旦以 开智.exe 的身份
 /// 启动，就转去启动 OpenIntelligence.exe 并退出；安装版顺带静默卸载旧的中文目录（卸载程序保留文档库与设置）。
 /// 返回 true 表示已经转交，本进程应立即退出。
@@ -519,7 +519,7 @@ fn legacy_target(exe: &Path, dir: &Path, local_app_data: Option<PathBuf>) -> Opt
     }
 }
 
-/// A portable folder updated from 0.10 still holds the old 开智.exe next to OpenIntelligence.exe.
+/// A portable folder updated from 0.10.1 still holds the old 开智.exe next to OpenIntelligence.exe.
 #[cfg_attr(not(windows), allow(dead_code))]
 fn remove_legacy_exe(dir: &Path, exe: &Path) {
     if exe.file_name().is_some_and(|name| name == EXE_NAME) && !dir.join("uninstall.exe").exists() {
@@ -735,12 +735,12 @@ mod tests {
         assert!(!root.join("escape.txt").exists());
         assert_eq!(std::fs::read(dir.join("开智.exe")).unwrap(), b"new exe");
 
-        // 0.11 renames the program: a 0.10 folder accepts OpenIntelligence.exe, starts it, and drops 开智.exe next launch.
-        let renamed = root.join("kaizhi_0.11.0_x64-portable.zip");
-        zip_with(&renamed, &[("OpenIntelligence-portable/OpenIntelligence.exe", b"renamed exe"), ("OpenIntelligence-portable/native-host/PdfCopilotHost.exe", b"host 0.11")]);
+        // 0.10.2 renames the program: a 0.10.1 folder accepts OpenIntelligence.exe, starts it, and drops 开智.exe next launch.
+        let renamed = root.join("kaizhi_0.10.2_x64-portable.zip");
+        zip_with(&renamed, &[("OpenIntelligence-portable/OpenIntelligence.exe", b"renamed exe"), ("OpenIntelligence-portable/native-host/PdfCopilotHost.exe", b"host 0.10.2")]);
         assert_eq!(apply_portable(&renamed, &dir, &dir.join("开智.exe")).unwrap(), dir.join(EXE_NAME));
         assert_eq!(std::fs::read(dir.join(EXE_NAME)).unwrap(), b"renamed exe");
-        // 0.10 的更新程序会启动 开智.exe：它是新程序的副本，转去启动同目录的 OpenIntelligence.exe。
+        // 0.10.1 及更早的更新程序会启动 开智.exe：它是新程序的副本，转去启动同目录的 OpenIntelligence.exe。
         std::fs::write(dir.join("开智.exe"), b"copy").unwrap();
         assert_eq!(legacy_target(&dir.join("开智.exe"), &dir, None), Some((dir.join(EXE_NAME), None)));
         assert_eq!(legacy_target(&dir.join(EXE_NAME), &dir, None), None);

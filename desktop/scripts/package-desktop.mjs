@@ -24,7 +24,7 @@ for (const path of [setup, executable, helper]) await access(path);
 await mkdir(join(portable, 'native-host'), { recursive: true });
 await cp(setup, join(output, setupName));
 await cp(executable, join(portable, portableExecutable));
-// 0.10 的自动更新只认得 开智.exe：留一份同样的程序，它以旧名启动时会转交给 OpenIntelligence.exe 并删掉自己。
+// 0.10.1 及更早的自动更新只认得 开智.exe：留一份同样的程序，它以旧名启动时会转交给 OpenIntelligence.exe 并删掉自己。
 if (portableExecutable !== '开智.exe') await cp(executable, join(portable, '开智.exe'));
 await cp(helper, join(portable, 'native-host/PdfCopilotHost.exe'));
 await cp(join(root, 'README.md'), join(output, 'README.md'));

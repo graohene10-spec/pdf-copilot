@@ -1,4 +1,4 @@
-# 开智 0.11.0
+# 开智 0.10.2
 
 ## 安装路径与程序名改成英文
 - 程序名改为 `OpenIntelligence.exe`，安装目录改为 `%LOCALAPPDATA%\OpenIntelligence`。窗口标题仍是「开智」。
@@ -27,5 +27,6 @@
 ## 字体
 - 界面字体、阅读字体、铅笔草稿的回答字体都可以直接选常用西文字体：Arial、Times New Roman、Georgia、Segoe UI、Calibri、Verdana、Garamond、Cambria 等。中文部分自动落到黑体或宋体。
 
-## 暖色极简
+## 其他
 - AI 栏的拖拽条挪进 AI 栏一侧，不再压在阅读区滚动条上。
+- 铅笔草稿设置里背景动画的说明改成「背景动画」。
