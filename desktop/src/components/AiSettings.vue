@@ -2,7 +2,7 @@
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { PROVIDERS, PROTOCOLS, getProvider, getNativeModels, getNativeStatus } from '../ai/providers.mjs'
 import { nativeModelInventory, registerNativeModelInventory } from '../ai/native-models'
-import { loadAiSettings, loadApiKey, saveAiSettings } from '../ai/settings.mjs'
+import { loadAiSettings, loadApiKey, saveAiSettings, saveCredential, supportsFast, TRANSLATION_DEFAULTS } from '../ai/settings.mjs'
 import { DOCUMENT_LIMIT_FIELDS } from '../../../extension/common/document-limits.mjs'
 import { apiOrigin } from '../../../extension/common/settings.js'
 import { normalizeRequestLimits } from '../../../extension/common/request-queue.mjs'
@@ -10,6 +10,7 @@ import { normalizeRequestLimits } from '../../../extension/common/request-queue.
 withDefaults(defineProps<{ embedded?: boolean }>(), { embedded: false })
 const emit = defineEmits<{ saved: [value: any]; close: [] }>()
 const settings = ref<any>(loadAiSettings())
+settings.value.translation = { ...TRANSLATION_DEFAULTS, ...(settings.value.translation || {}) }
 const key = ref('')
 const status = ref('')
 const error = ref(false)
@@ -68,6 +69,21 @@ async function refreshNative() {
   finally { if (modelRequest === request) { modelRequest = undefined; refreshing.value = false } }
 }
 onBeforeUnmount(() => { disposed = true; keyEpoch++; modelRequest?.abort() })
+// ---- 翻译用的 AI：默认共用上面的服务商；不共用时单独选服务商（需要时单独填密钥）。 ----
+const tr = computed<any>(() => settings.value.translation)
+const trProvider = computed<any>(() => getProvider(tr.value.share ? settings.value.provider : tr.value.provider))
+const trModels = computed<any[]>(() => trProvider.value?.id === 'codex' ? nativeModels.value : trProvider.value?.models || [])
+const trEfforts = computed<string[]>(() => trModels.value.find(item => item.id === tr.value.model)?.efforts || ['none', 'low', 'medium', 'high'])
+const trNeedsKey = computed(() => !tr.value.share && tr.value.provider !== 'codex' && tr.value.provider !== settings.value.provider)
+const trKey = ref('')
+let trKeyEpoch = 0
+watch(() => tr.value.provider, async (value, previous) => {
+  if (previous && value !== previous) { const next: any = getProvider(value); tr.value.baseUrl = next?.baseUrl || ''; tr.value.protocol = 'chat'; tr.value.model = ''; tr.value.effort = '' }
+  const epoch = ++trKeyEpoch; trKey.value = ''
+  if (value === 'codex' && !nativeModels.value.length && (globalThis as any).__TAURI_INTERNALS__) void refreshNative()
+  try { const result = await loadApiKey(value); if (epoch === trKeyEpoch) trKey.value = result } catch { /* 读不到就留空 */ }
+}, { immediate: true })
+watch(() => tr.value.share, () => { tr.value.model = ''; tr.value.effort = '' })
 async function save() {
   saving.value = true; status.value = ''; error.value = false
   try {
@@ -81,6 +97,7 @@ async function save() {
       if (!Number.isInteger(value) || value < field.min || value > field.max) throw new Error(`${field.label}须为 ${field.min}–${field.max} 的整数。`)
     }
     settings.value.requestLimits = normalizeRequestLimits(settings.value.requestLimits)
+    if (trNeedsKey.value) { apiOrigin(tr.value.baseUrl); await saveCredential(tr.value.provider, trKey.value) }
     await saveAiSettings(settings.value, key.value)
     edited.value = false
     const saved = { ...settings.value }
@@ -110,6 +127,20 @@ defineExpose({ save, hasChanges: () => edited.value })
     <label>模型<select v-if="settings.provider === 'codex'" v-model="settings.model" aria-label="模型" :disabled="refreshing"><option value="">模型默认</option><option v-if="hasStoredModel" :value="settings.model">当前设置：{{ settings.model }}</option><option v-for="item in models" :key="item.id" :value="item.id">{{ item.name || item.id }}</option></select><input v-else v-model="settings.model" aria-label="模型" list="ai-model-list" placeholder="模型默认或自定义名称" /></label>
     <datalist v-if="settings.provider !== 'codex'" id="ai-model-list"><option v-for="item in models" :key="item.id" :value="item.id">{{ item.name }}</option></datalist>
     <label>思考强度<select v-model="settings.effort" aria-label="思考强度"><option value="">模型默认</option><option v-for="item in efforts.filter(Boolean)" :key="item" :value="item">{{ ({ none:'不思考',low:'低',medium:'中',high:'高',xhigh:'很高',max:'最高',minimal:'极低',ultra:'极高' } as any)[item] || item }}</option></select></label>
+    <label v-if="supportsFast(settings.provider)" class="check"><input v-model="settings.fast" type="checkbox" /> Fast：更快出字，额度消耗更多</label>
+    <details class="limit-settings"><summary>翻译用的 AI</summary>
+      <label class="check"><input v-model="tr.share" type="checkbox" /> 与阅读助手共用服务商</label>
+      <template v-if="!tr.share">
+        <label>服务商<select v-model="tr.provider" aria-label="翻译服务商"><option v-for="item in PROVIDERS" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
+        <label v-if="trProvider?.custom">接口协议<select v-model="tr.protocol" aria-label="翻译接口协议"><option v-for="item in PROTOCOLS" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
+        <label v-if="tr.provider !== 'codex'">API 地址<input v-model="tr.baseUrl" aria-label="翻译 API 地址" type="url" /></label>
+        <label v-if="trNeedsKey">API Key<input v-model="trKey" aria-label="翻译 API Key" type="password" autocomplete="off" placeholder="加密保存在本机" /></label>
+      </template>
+      <label>模型<select v-if="trProvider?.id === 'codex'" v-model="tr.model" aria-label="翻译模型"><option value="">自动（小模型）</option><option v-for="item in trModels" :key="item.id" :value="item.id">{{ item.name || item.id }}</option></select><input v-else v-model="tr.model" aria-label="翻译模型" list="tr-model-list" placeholder="留空自动用小模型" /></label>
+      <datalist id="tr-model-list"><option v-for="item in trModels" :key="item.id" :value="item.id">{{ item.name }}</option></datalist>
+      <label>思考强度<select v-model="tr.effort" aria-label="翻译思考强度"><option value="">自动</option><option v-for="item in trEfforts.filter(Boolean)" :key="item" :value="item">{{ ({ none:'不思考',low:'低',medium:'中',high:'高',xhigh:'很高',max:'最高',minimal:'极低',ultra:'极高' } as any)[item] || item }}</option></select></label>
+      <label v-if="supportsFast(trProvider?.id)" class="check"><input v-model="tr.fast" type="checkbox" /> Fast</label>
+    </details>
     <details class="limit-settings"><summary>每题阅读预算</summary><label v-for="field in DOCUMENT_LIMIT_FIELDS" :key="field.key">{{ field.label }}<input v-model.number="settings.documentLimits[field.key]" type="number" :min="field.min" :max="field.max" :step="field.step || 1" /></label></details>
     <details class="limit-settings"><summary>多文件提问</summary><label v-for="field in requestFields" :key="field.key">{{ field.label }}<input v-model.number="settings.requestLimits[field.key]" type="number" :min="field.min" :max="field.max" :aria-label="field.label" /></label><p class="settings-note">切换标签或收起助手后继续回答；关闭文件标签会停止该文件的提问。</p></details>
     <p v-if="status" class="settings-status" :class="{ error }" role="status">{{ status }}</p>

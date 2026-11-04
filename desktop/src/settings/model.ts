@@ -45,6 +45,12 @@ export type BackdropPreset = 'mist' | 'dawn' | 'mint' | 'lavender' | 'graphite' 
 const SYSTEM_SANS = "'Segoe UI Variable Text', 'Segoe UI', -apple-system, 'PingFang SC', 'Microsoft YaHei UI', 'Microsoft YaHei', system-ui, sans-serif"
 export type FontChoice = { id: string; label: string; families: string[]; stack: string }
 const font = (id: string, label: string, families: string[], fallback = SYSTEM_SANS): FontChoice => ({ id, label, families, stack: [...families.map(name => `'${name}'`), fallback].join(', ') })
+/** 西文常用字体：系统大多自带；中文落到 fallback（黑体或宋体）。 */
+const CJK_SERIF = "'Source Han Serif SC', 'Noto Serif CJK SC', 'Songti SC', SimSun, serif"
+const SERIF_LATIN = new Set(['Times New Roman', 'Georgia', 'Garamond', 'Palatino Linotype', 'Cambria', 'Book Antiqua', 'Baskerville'])
+function latin(sans: string, names: string[]): FontChoice[] {
+  return names.map(name => font(`latin-${name.toLowerCase().replace(/\s+/g, '-')}`, name, [name], SERIF_LATIN.has(name) ? CJK_SERIF : sans))
+}
 export const UI_FONTS: FontChoice[] = [
   { id: 'system', label: '系统默认', families: [], stack: SYSTEM_SANS },
   font('harmony', 'HarmonyOS Sans', ['HarmonyOS Sans SC', 'HarmonyOS Sans']),
@@ -52,6 +58,7 @@ export const UI_FONTS: FontChoice[] = [
   font('source-han-sans', '思源黑体', ['Source Han Sans SC', 'Noto Sans CJK SC', 'Noto Sans SC', '思源黑体']),
   font('yahei', '微软雅黑', ['Microsoft YaHei UI', 'Microsoft YaHei']),
   font('pingfang', '苹方', ['PingFang SC']),
+  ...latin(SYSTEM_SANS, ['Arial', 'Segoe UI', 'Helvetica', 'Verdana', 'Tahoma', 'Calibri', 'Times New Roman', 'Georgia']),
 ]
 const SERIF = "'Times New Roman', serif"
 export const READING_FONTS: FontChoice[] = [
@@ -65,6 +72,7 @@ export const READING_FONTS: FontChoice[] = [
   font('fangsong', '仿宋', ['FangSong', 'STFangsong'], SERIF),
   font('harmony', 'HarmonyOS Sans', ['HarmonyOS Sans SC', 'HarmonyOS Sans']),
   font('source-han-sans', '思源黑体', ['Source Han Sans SC', 'Noto Sans CJK SC', 'Noto Sans SC', '思源黑体']),
+  ...latin(SYSTEM_SANS, ['Times New Roman', 'Georgia', 'Garamond', 'Palatino Linotype', 'Cambria', 'Book Antiqua', 'Arial', 'Calibri', 'Verdana', 'Segoe UI']),
 ]
 /** 界面风格：与液态玻璃并列的整套外观。暖色极简与铅笔草稿不使用玻璃材质，玻璃相关设置只在液态玻璃下生效。 */
 export type UiStyle = 'glass' | 'warm' | 'sketch'
@@ -82,6 +90,7 @@ export const SKETCH_ANSWER_FONTS: FontChoice[] = [
   { id: 'longcang', label: '龙藏体（最草）', families: [], stack: `'Caveat', 'Long Cang', ${SYSTEM_SANS}` },
   { id: 'kaiti', label: '系统楷体', families: [], stack: `${HAND_LATIN}, KaiTi, STKaiti, 'Kaiti SC', ${SERIF}` },
   { id: 'reading', label: '跟随阅读字体', families: [], stack: '' },
+  ...['Times New Roman', 'Georgia', 'Arial', 'Calibri', 'Segoe UI'].map(name => ({ id: `latin-${name.toLowerCase().replace(/\s+/g, '-')}`, label: name, families: [], stack: `'${name}', KaiTi, STKaiti, ${SYSTEM_SANS}` })),
 ]
 /** 铅笔草稿的格子纸背景上慢慢自旋的流形：是否显示、阅读时是否也显示、在哪几种之间轮换。 */
 export type ManifoldPreferences = { show: boolean; reader: boolean; shapes: string[] }

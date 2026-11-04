@@ -18,7 +18,8 @@ async function settle() { await page.waitForTimeout(650); }
 async function closeMenu() { if (await menu().isVisible()) await page.keyboard.press('Escape'); await menu().waitFor({ state: 'hidden' }); }
 // 模型胶囊直接排在抽屉里，不再需要先切到列表。
 const modelList = async () => {};
-const effortSlider = () => menu().getByRole('slider', { name: '思考强度', exact: true });
+// 思考强度是一排分段按钮（radiogroup）。
+const efforts = () => menu().getByRole('radiogroup', { name: '思考强度', exact: true });
 
 try {
   await mkdir(artifacts, { recursive: true });
@@ -65,18 +66,18 @@ try {
   await picker().click(); await modelList();
   await menu().getByRole('option', { name: '评审模型 6', exact: true }).waitFor();
   assert.equal(await menu().getByRole('option').count(), 9);
-  assert.deepEqual(await page.evaluate(() => window.__reviewDiscovery.calls), ['status', 'models']);
+  assert.deepEqual(await page.evaluate(() => window.__reviewDiscovery.calls), ['status', 'status', 'models'] /* 打开面板时先预热 Codex */);
   assert.equal(await page.evaluate(() => localStorage.getItem('paperdesk.ai.settings.v1')), before);
   checks.push('Cold composer discovers every Codex model without opening settings or changing stored configuration.');
   await menu().getByRole('option', { name: '评审模型 5', exact: true }).click();
-  assert.equal(await effortSlider().getAttribute('aria-valuemax'), '2', 'Efforts follow the model: default, low, high.');
-  await effortSlider().focus(); await effortSlider().press('Home'); await effortSlider().press('ArrowRight');
-  assert.equal(await effortSlider().getAttribute('aria-valuetext'), '低');
+  assert.equal(await efforts().getByRole('radio').count(), 3, 'Efforts follow the model: default, low, high.');
+  await efforts().getByRole('radio', { name: '低', exact: true }).click();
+  assert.equal(await efforts().getByRole('radio', { name: '低', exact: true }).getAttribute('aria-checked'), 'true');
   const chosen = await page.evaluate(() => JSON.parse(localStorage.getItem('paperdesk.ai.settings.v1')));
   assert.deepEqual(chosen, { ...JSON.parse(before), model: 'review-5', effort: 'low' });
   assert.equal(await pane().getByRole('textbox', { name: '向 AI 提问', exact: true }).inputValue(), '保留用户草稿');
   await closeMenu(); await picker().click();
-  assert.deepEqual(await page.evaluate(() => window.__reviewDiscovery.calls), ['status', 'models']);
+  assert.deepEqual(await page.evaluate(() => window.__reviewDiscovery.calls), ['status', 'status', 'models']);
   await closeMenu();
   checks.push('Model switch adapts supported efforts, writes only model/effort, retains the draft and uses the cached inventory.');
 
@@ -85,7 +86,7 @@ try {
   await dialog.getByLabel('模型', { exact: true }).waitFor();
   await page.evaluate(() => window.__reviewDiscovery.models = [{ id: 'new-inventory', name: '新读取的模型', efforts: ['low', 'high'], defaultEffort: 'high', vision: true }]);
   await dialog.getByRole('button', { name: '检查登录并读取模型', exact: true }).click();
-  await dialog.getByRole('option', { name: '新读取的模型', exact: true }).waitFor({ state: 'attached' });
+  await dialog.getByLabel('模型', { exact: true }).getByRole('option', { name: '新读取的模型', exact: true }).waitFor({ state: 'attached' });
   await dialog.getByRole('button', { name: '取消', exact: true }).click();
   await dialog.waitFor({ state: 'detached' });
   await picker().click(); await modelList();

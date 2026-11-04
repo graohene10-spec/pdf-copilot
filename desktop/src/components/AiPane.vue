@@ -3,11 +3,12 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, defineAsync
 import 'katex/dist/katex.min.css'
 import { getProvider, getNativeModels, getNativeStatus } from '../ai/providers.mjs'
 import { nativeModelInventory, registerNativeModelInventory } from '../ai/native-models'
-import { addNote, removeMessage, compressConversation, sideConversation, chatState, sendChat, stopChat, configureRequests, taskSummary, conversations, activeConversationId, selectConversation, newConversation, deleteConversation, loadConversations, conversationTokens, contextWindow, branchConversation, resendQuestion, watchConversation, allConversations, pinMessage, MAX_ATTACHMENTS, type Message, type ChatState } from '../ai/workspace'
+import { addExcerpt, removeExcerpt, removeMessage, compressConversation, sideConversation, chatState, sendChat, stopChat, configureRequests, taskSummary, conversations, activeConversationId, selectConversation, newConversation, deleteConversation, loadConversations, conversationTokens, contextWindow, branchConversation, resendQuestion, watchConversation, allConversations, pinMessage, MAX_ATTACHMENTS, type Message, type ChatState } from '../ai/workspace'
 import { renderMarkdown, renderDiagrams } from '../ai/render'
 import { nudgeGlassMotion } from '../ui/glass-motion'
 import { vMarquee } from '../ui/marquee'
-import { loadAiSettings, saveModelChoice } from '../ai/settings.mjs'
+import { loadAiSettings, saveModelChoice, supportsFast } from '../ai/settings.mjs'
+import { warmNative } from '../ai/native.mjs'
 import { useSettings } from '../settings'
 import AppIcon from './AppIcon.vue'
 import AssistantMark from './AssistantMark.vue'
@@ -23,7 +24,9 @@ const props = defineProps<{ document: { id: string; title: string; kind: string 
   /** Every library document, for the history of all conversations. */
   library?: { id: string; title: string }[]
   /** 附属对话（侧边对话）：嵌在主对话右边的同一种助手，没有分支、没有对话记录，标题栏写明它挂在哪段主对话上。 */
-  side?: boolean; mainTitle?: string }>()
+  side?: boolean; mainTitle?: string
+  /** 外层窗口刚放进附属对话输入框的摘录，用来闪一下。 */
+  arrived?: string }>()
 const emit = defineEmits<{ jump: [value: { page: number; rect?: any; line?: number }]; close: []; settings: []; error: [value: string]; clearSelection: []; conversation: [id: string]; grab: [event: PointerEvent]; switchDocument: [id: string]; openConversation: [value: { documentId: string; conversationId: string }]
   /** 侧边对话打开 / 收起：整个助手窗口要加宽（或收回）的像素数，0 表示收起。 */
   side: [width: number] }>()
@@ -157,7 +160,7 @@ function readQuote(): QuotePop | null {
 }
 let quoteFrame = 0
 function selectionChanged() { cancelAnimationFrame(quoteFrame); quoteFrame = requestAnimationFrame(() => { quotePop.value = readQuote() }) }
-// 摘录飞过去：一张小纸条从选区飞到目标对话的底部，落下后那里出现摘录卡片。
+// 摘录飞过去：一张小纸条从选区飞进目标对话的输入框，落下后输入框上方多一枚摘录。
 function fly(text: string, from: DOMRect, target: HTMLElement | null | undefined) {
   if (!pane.value || !target || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return Promise.resolve()
   const box = pane.value.getBoundingClientRect(), goal = target.getBoundingClientRect()
@@ -166,7 +169,7 @@ function fly(text: string, from: DOMRect, target: HTMLElement | null | undefined
   slip.textContent = text.length > 60 ? `${text.slice(0, 60)}…` : text
   pane.value.append(slip)
   const startX = from.left - box.left, startY = from.top - box.top
-  const endX = goal.left - box.left + 18, endY = goal.bottom - box.top - 64
+  const endX = goal.left - box.left + 18, endY = goal.top - box.top + 8
   const animation = slip.animate([
     { transform: `translate(${startX}px, ${startY}px) scale(1)`, opacity: .95 },
     { transform: `translate(${(startX + endX) / 2}px, ${Math.min(startY, endY) - 40}px) scale(.9) rotate(${endX > startX ? 3 : -3}deg)`, opacity: 1, offset: .45 },
@@ -183,11 +186,11 @@ async function quoteAction(action: 'add' | 'side' | 'main') {
   if (target === 'side') openSide()
   await nextTick()
   const targetId = target === 'side' ? sideConversation(props.document.id, state.value.id, true)!.id : state.value.id
-  const list = target === 'side' ? pane.value?.querySelector<HTMLElement>('.ai-pane.embedded .ai-messages') : messageList.value
-  await fly(pop.text, pop.rect, list || pane.value?.querySelector<HTMLElement>('.ai-side'))
-  const note = addNote(props.document.id, targetId, pop.text, action === 'add' ? 'self' : pop.from)
-  if (note) { arrivedNote.value = note.id; setTimeout(() => { if (arrivedNote.value === note.id) arrivedNote.value = '' }, 1200) }
-  if (target === 'main') { follow = true; scheduleScroll(); focusPrompt() }
+  const field = target === 'side' ? pane.value?.querySelector<HTMLElement>('.ai-pane.embedded .composer-field') : composerField.value
+  await fly(pop.text, pop.rect, field || pane.value?.querySelector<HTMLElement>('.ai-side'))
+  const excerpt = addExcerpt(props.document.id, targetId, pop.text, action === 'add' ? 'self' : pop.from)
+  if (excerpt) { arrivedNote.value = excerpt.id; setTimeout(() => { if (arrivedNote.value === excerpt.id) arrivedNote.value = '' }, 1200) }
+  if (target === 'main') focusPrompt()
   else void nextTick(() => pane.value?.querySelector<HTMLTextAreaElement>('.ai-pane.embedded .prompt-box textarea')?.focus())
   return true
 }
@@ -204,6 +207,10 @@ function quoteKeys(event: KeyboardEvent) {
 }
 // 摘录只占一行：图标表示来处，悬停看全文。
 const noteLabel = (message: Message) => message.note === 'main' ? '来自主对话' : message.note === 'side' ? '来自附属对话' : '摘录'
+const excerptLabel = (from: string) => from === 'main' ? '来自主对话' : from === 'side' ? '来自附属对话' : '摘录'
+const excerpts = computed(() => state.value.excerpts || [])
+// arrivedNote 在外层窗口里设置；附属对话里的摘录由外层带着 id 落进来，这里也要认得。
+const arrivedExcerpt = computed(() => props.arrived || arrivedNote.value)
 onMounted(() => { if (props.side) return; document.addEventListener('selectionchange', selectionChanged); window.addEventListener('keydown', quoteKeys, true) })
 onBeforeUnmount(() => { cancelAnimationFrame(quoteFrame); document.removeEventListener('selectionchange', selectionChanged); window.removeEventListener('keydown', quoteKeys, true) })
 
@@ -492,7 +499,11 @@ const pickerModels = computed<{ id: string; name: string; efforts?: string[]; de
   return [...extra, ...custom, ...list]
 })
 const modelLabel = computed(() => pickerModels.value.find(item => item.id === (settings.value.model || ''))?.name || settings.value.model || '默认模型')
-function commitChoice(model: string, effort: string) { saveModelChoice(model, effort); settings.value = loadAiSettings() }
+function commitChoice(model: string, effort: string, fast?: boolean) { saveModelChoice(model, effort, fast); settings.value = loadAiSettings() }
+const fastChoice = computed(() => supportsFast(settings.value.provider) ? Boolean(settings.value.fast) : undefined)
+function chooseFast(value: boolean) { commitChoice(settings.value.model || '', settings.value.effort || '', value) }
+// Codex：面板一出现就把小助手拉起来，第一次提问不用等冷启动。
+onMounted(() => { if (!props.side && settings.value.provider === 'codex') void warmNative() })
 function chooseModel(id: string) {
   const model = pickerModels.value.find(item => item.id === id)
   let effort = settings.value.effort || ''
@@ -790,7 +801,8 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
             </div>
             <template v-else>
               <div class="user-question">{{ message.content }}</div>
-              <div v-if="message.ask?.text || message.images?.length || message.ask?.includeDocument" class="sent-context" aria-label="随问题发送的上下文">
+              <div v-if="message.ask?.text || message.images?.length || message.ask?.includeDocument || message.excerpts?.length" class="sent-context" aria-label="随问题发送的上下文">
+                <span v-for="item in message.excerpts || []" :key="item.id" class="sent-quote sent-excerpt" :data-tip="`${excerptLabel(item.from)}：${item.text.slice(0, 300)}`"><AppIcon :name="item.from === 'self' ? 'pin' : 'branch'" :size="10" />{{ item.text.slice(0, 40) }}{{ item.text.length > 40 ? '…' : '' }}</span>
                 <img v-for="(image, index) in (message.images || []).slice(0, 5)" :key="index" :src="image" alt="随问题发送的图片" />
                 <span v-if="message.ask?.text" class="sent-quote" :title="message.ask.text">“{{ message.ask.text.slice(0, 60) }}{{ message.ask.text.length > 60 ? '…' : '' }}”</span>
                 <span v-if="message.ask?.includeDocument" class="sent-doc"><AppIcon name="book" :size="11" />{{ document.kind === 'pdf' ? `文档 · 第 ${message.ask.page || 1} 页` : '文档' }}</span>
@@ -862,6 +874,13 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
           <label class="selection-chip" :class="{ off: !includeSelection }"><input v-model="includeSelection" type="checkbox" :disabled="busy" :aria-label="selected.image ? `使用${selectionLabel}` : '使用所选文字'" /><img v-if="selected.image" :src="selected.image" alt="选取的截图预览" /><span v-else class="selection-text">{{ selected.text.slice(0, 80) }}</span><small>{{ selected.image ? selectionLabel : selected.rect?.space === 'markdown' ? '框选区域的文字' : '所选文字' }}</small></label>
           <button class="chip-remove" data-tip="清除选区" aria-label="清除选区" @click="emit('clearSelection')"><AppIcon name="close" :size="11" /></button>
         </div>
+        <TransitionGroup v-if="excerpts.length" tag="div" name="excerpt" class="ai-excerpts" aria-label="随下一个问题发送的摘录">
+          <span v-for="item in excerpts" :key="item.id" class="excerpt-chip" :class="{ arrived: arrivedExcerpt === item.id }" :data-tip="`${excerptLabel(item.from)}：${item.text.slice(0, 300)}`">
+            <AppIcon class="note-icon" :name="item.from === 'self' ? 'pin' : 'branch'" :size="11" />
+            <span class="note-text">{{ item.text }}</span>
+            <button type="button" class="note-remove" aria-label="移除这段摘录" @click="removeExcerpt(document.id, state.id, item.id)"><AppIcon name="close" :size="10" /></button>
+          </span>
+        </TransitionGroup>
         <div v-if="attachments.length" class="ai-attachments" aria-label="附上的图片">
           <span v-for="(image, index) in attachments" :key="image.slice(-48) + index" class="attachment"><img :src="image" alt="附上的图片" /><button type="button" class="chip-remove" :aria-label="`移除第 ${index + 1} 张图片`" data-tip="移除这张图片" @click="removeAttachment(index)"><AppIcon name="close" :size="11" /></button></span>
         </div>
@@ -877,14 +896,14 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
           <span class="composer-space" />
           <span class="context-ring" :data-tip="`上下文约 ${count(contextUsed)} / ${count(contextLimit)} tokens`" aria-hidden="true" :style="{ '--ratio': contextRatio }"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5" /><circle class="ring-value" cx="10" cy="10" r="7.5" pathLength="100" /></svg></span>
           <div ref="pickerHost" class="model-picker-host">
-            <button type="button" class="model-picker" :disabled="busy" :aria-expanded="pickerOpen" :aria-controls="`model-drawer-${state.id}`" aria-label="选择模型与思考强度" data-tip="模型与思考强度" @click="pickerOpen = !pickerOpen"><span class="picker-model">{{ modelLabel }}</span><span class="picker-effort">{{ EFFORT_LABELS[settings.effort || ''] || settings.effort }}</span><AppIcon name="down" :size="12" class="picker-chevron" /></button>
+            <button type="button" class="model-picker" :disabled="busy" :aria-expanded="pickerOpen" :aria-controls="`model-drawer-${state.id}`" aria-label="选择模型与思考强度" data-tip="模型与思考强度" @click="pickerOpen = !pickerOpen"><span class="picker-model">{{ modelLabel }}</span><span class="picker-effort">{{ EFFORT_LABELS[settings.effort || ''] || settings.effort }}</span><AppIcon v-if="fastChoice" name="bolt" :size="11" class="picker-fast" /><AppIcon name="down" :size="12" class="picker-chevron" /></button>
           </div>
           <button v-if="busy" class="send-button stop" aria-label="停止" data-tip="停止回答" @click="stop"><span class="stop-square" /></button>
           <button v-else class="send-button" :disabled="!prompt.trim()" aria-label="发送" data-tip="发送" :data-tip-key="sendShortcut || 'Enter'" @click="send()"><AppIcon name="arrow-up" :size="17" /></button>
         </div>
         <!-- 点模型按钮时，输入栏下沿顺势拉长，露出模型与思考强度；再点一次或按 Esc 收回。 -->
         <div :id="`model-drawer-${state.id}`" class="composer-drawer" :class="{ open: pickerOpen }" :inert="!pickerOpen || undefined">
-          <ModelPicker v-if="drawerMounted" :model="settings.model || ''" :effort="settings.effort || ''" :models="pickerModels" :loading="pickerLoading" :error="pickerError" :can-refresh="settings.provider === 'codex'" @model="chooseModel" @effort="chooseEffort" @refresh="refreshPickerModels" @close="closePicker" />
+          <ModelPicker v-if="drawerMounted" :model="settings.model || ''" :effort="settings.effort || ''" :models="pickerModels" :loading="pickerLoading" :error="pickerError" :can-refresh="settings.provider === 'codex'" :fast="fastChoice" @model="chooseModel" @effort="chooseEffort" @fast="chooseFast" @refresh="refreshPickerModels" @close="closePicker" />
         </div>
       </div>
     </div>
@@ -892,7 +911,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
     <Transition name="side-col">
       <div v-if="sideOpen && sideId" class="ai-side" :style="{ width: `${sideWidth}px` }">
         <div class="side-divider" role="separator" aria-orientation="vertical" aria-label="拖动调整主对话与附属对话的宽度" data-tip="拖动调整宽度" @pointerdown="startSideDrag" @pointermove="moveSideDrag" @pointerup="endSideDrag" @pointercancel="endSideDrag" />
-        <AiPane side class="embedded" :document="document" :context="context" :conversation-id="sideId" :main-title="title" :send-shortcut="sendShortcut" :consume-capture="consumeCapture" @close="closeSide" @settings="emit('settings')" @jump="value => emit('jump', value)" @clear-selection="emit('clearSelection')" />
+        <AiPane side class="embedded" :document="document" :context="context" :conversation-id="sideId" :arrived="arrivedNote" :main-title="title" :send-shortcut="sendShortcut" :consume-capture="consumeCapture" @close="closeSide" @settings="emit('settings')" @jump="value => emit('jump', value)" @clear-selection="emit('clearSelection')" />
       </div>
     </Transition>
     </div>
@@ -1178,6 +1197,17 @@ textarea::placeholder{color:var(--muted);font-family:'Anthropic Serif','Source H
 .chip-remove{display:grid;place-items:center;width:22px;height:22px;margin-top:8px;padding:0;border:0;border-radius:var(--r-xs);background:var(--frost);box-shadow:none}
 .chip-remove:hover{background:var(--frost-hover)}
 .ai-attachments{display:flex;flex-wrap:wrap;gap:10px;padding:12px 12px 0}
+/* 输入框里攒的摘录：一行一枚，和输入框连成一体，悬停看全文。 */
+.ai-excerpts{display:flex;flex-direction:column;gap:4px;padding:9px 10px 0}
+.excerpt-chip{display:flex;align-items:center;gap:6px;min-width:0;height:24px;padding:0 3px 0 8px;border-left:2px solid color-mix(in srgb,var(--accent) 65%,transparent);border-radius:3px 7px 7px 3px;background:color-mix(in srgb,var(--accent) 7%,transparent);color:var(--secondary);font-size:12px}
+.excerpt-chip .note-icon{flex:none;opacity:.7}
+.excerpt-chip .note-text{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.excerpt-chip .note-remove{opacity:.55}
+.excerpt-chip:hover .note-remove{opacity:1}
+.excerpt-chip.arrived{animation:note-arrive 1.1s var(--ease-out)}
+.excerpt-enter-active,.excerpt-leave-active{transition:opacity var(--dur-2) var(--ease-out),translate var(--dur-2) var(--ease-out)}
+.excerpt-enter-from{opacity:0;translate:0 6px}.excerpt-leave-to{opacity:0}
+.sent-context .sent-excerpt{display:inline-flex;gap:4px}
 .attachment{position:relative;display:block}
 .attachment img{display:block;width:56px;height:42px;border:1px solid var(--hairline);border-radius:var(--r-sm);object-fit:cover;background:#fff}
 .attachment .chip-remove{position:absolute;top:-7px;right:-7px;width:18px;height:18px;margin:0;border-radius:50%;background:var(--surface);box-shadow:0 1px 3px rgb(0 0 0 / .25)}
@@ -1215,6 +1245,7 @@ textarea::placeholder{color:var(--muted);font-family:'Anthropic Serif','Source H
 .model-picker:hover:not(:disabled),.model-picker[aria-expanded='true']{background:var(--frost);border-color:var(--hairline);color:var(--ink)}
 .picker-model{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
 .picker-effort{flex:0 0 auto;font-weight:500;color:var(--muted)}
+.picker-fast{flex:none;margin-left:-2px;color:var(--accent)}
 .picker-chevron{flex:0 0 auto;opacity:.55;transition:transform var(--dur-3) var(--spring-snappy)}
 .model-picker[aria-expanded='true'] .picker-chevron{transform:rotate(180deg)}
 .send-button{display:grid;place-items:center;flex:0 0 32px;width:32px;height:32px;padding:0;border:1px solid transparent;border-radius:var(--r-control);background:color-mix(in srgb,var(--accent) 84%,transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / .25);color:var(--accent-on,#fff);transition:transform var(--dur-press) var(--spring-press),opacity var(--dur-1) var(--ease-soft),background var(--dur-1) var(--ease-soft)}

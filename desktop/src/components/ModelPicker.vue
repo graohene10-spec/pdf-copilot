@@ -5,8 +5,9 @@ import AppIcon from './AppIcon.vue'
 // 输入栏下沿拉出的抽屉：上面一行是模型（可横向滑动的胶囊），下面一行是思考强度滑杆。
 // 服务商、密钥与预算都在设置里，这里不再放入口。
 type Model = { id: string; name: string; efforts?: string[]; defaultEffort?: string }
-const props = defineProps<{ model: string; effort: string; models: Model[]; loading?: boolean; error?: string; canRefresh?: boolean }>()
-const emit = defineEmits<{ model: [id: string]; effort: [value: string]; refresh: []; close: [] }>()
+// fast：服务商支持优先通道（Codex / OpenAI）时才传，undefined 就不显示开关。
+const props = defineProps<{ model: string; effort: string; models: Model[]; loading?: boolean; error?: string; canRefresh?: boolean; fast?: boolean }>()
+const emit = defineEmits<{ model: [id: string]; effort: [value: string]; fast: [value: boolean]; refresh: []; close: [] }>()
 const EFFORT_LABELS: Record<string, string> = { '': '默认', none: '关', minimal: '极简', low: '低', medium: '中', high: '高', xhigh: '超高', max: '最高', ultra: '极致' }
 const chips = ref<HTMLElement>()
 const current = computed(() => props.models.find(item => item.id === props.model))
@@ -61,6 +62,7 @@ onMounted(() => chips.value?.querySelector<HTMLElement>('[aria-selected="true"]'
         <button v-for="(step, i) in steps" :key="step || 'default'" type="button" role="radio" :aria-checked="i === index" :tabindex="i === index ? 0 : -1" :class="{ on: i === index }" :data-tip="step ? undefined : '使用模型默认强度'" @click="emit('effort', step)">{{ label(step) }}</button>
       </div>
       <span class="effort-meter" aria-hidden="true" :title="label(effort)"><i v-for="bar in 4" :key="bar" :class="{ lit: index > 0 && bar <= Math.ceil(index / Math.max(1, steps.length - 1) * 4) }" /></span>
+      <button v-if="fast !== undefined" type="button" class="fast-toggle" :class="{ on: fast }" role="switch" :aria-checked="fast" aria-label="Fast" :data-tip="fast ? 'Fast 已开：更快，额度消耗更多' : 'Fast：更快出字，额度消耗更多'" @click="emit('fast', !fast)"><AppIcon name="bolt" :size="12" />Fast</button>
     </div>
     <p v-if="error" class="drawer-status" role="status">{{ error }}</p>
   </div>
@@ -94,6 +96,9 @@ button{font:inherit;color:inherit;cursor:pointer}
 .effort-meter i{width:3px;border-radius:1px;background:color-mix(in srgb,var(--ink) 16%,transparent);transition:background var(--dur-2) var(--ease-out)}
 .effort-meter i:nth-child(1){height:5px}.effort-meter i:nth-child(2){height:8px}.effort-meter i:nth-child(3){height:11px}.effort-meter i:nth-child(4){height:14px}
 .effort-meter i.lit{background:var(--accent)}
+.fast-toggle{display:inline-flex;align-items:center;gap:3px;flex:0 0 auto;height:26px;padding:0 8px;border:1px solid transparent;border-radius:var(--r-sm);background:none;box-shadow:none;font-size:11.5px;font-weight:600;color:var(--muted);transition:background var(--dur-1) var(--ease-soft),color var(--dur-1) var(--ease-soft)}
+.fast-toggle:hover{background:var(--frost);color:var(--ink)}
+.fast-toggle.on{background:color-mix(in srgb,var(--accent) 14%,transparent);border-color:color-mix(in srgb,var(--accent) 30%,transparent);color:var(--accent)}
 .drawer-status{margin:0 0 2px 36px;font-size:11px;color:var(--muted)}
 @media(prefers-reduced-motion:reduce){.effort-thumb,.model-chips button{transition:none}.model-chips{scroll-behavior:auto}}
 </style>

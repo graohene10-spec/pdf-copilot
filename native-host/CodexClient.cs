@@ -371,7 +371,15 @@ namespace PdfCopilot {
                 foreach (string image in request.Images) input.Add(Json.Obj("type", "image", "url", image));
                 var turnParams = Json.Obj("threadId", chat.ThreadId, "input", input, "approvalPolicy", "never", "sandboxPolicy", Json.Obj("type", "readOnly", "networkAccess", false), "environments", new object[0]);
                 if (request.Effort != "") turnParams["effort"] = request.Effort;
-                var turnResult = Call("turn/start", turnParams, 30000); chat.TurnId = Json.Text(Json.Map(Json.Get(turnResult, "turn")), "id");
+                // Fast: Codex's priority service tier (the /fast toggle). Older Codex rejects the field; then retry without it.
+                if (request.Fast) turnParams["serviceTier"] = "fast";
+                Dictionary<string, object> turnResult;
+                try { turnResult = Call("turn/start", turnParams, 30000); }
+                catch (InvalidOperationException e) {
+                    if (!request.Fast || !e.Message.Contains("code -32602")) throw;
+                    turnParams.Remove("serviceTier"); turnResult = Call("turn/start", turnParams, 30000);
+                }
+                chat.TurnId = Json.Text(Json.Map(Json.Get(turnResult, "turn")), "id");
                 if (chat.Cancelled) Interrupt(chat);
                 if (!chat.Finished.WaitOne(15 * 60 * 1000)) { chat.Error = "The Codex response timed out."; Interrupt(chat); }
                 if (chat.Error != null && !chat.Cancelled) throw new InvalidOperationException(chat.Error);

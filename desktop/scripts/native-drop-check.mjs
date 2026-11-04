@@ -10,7 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { chromium } from 'playwright';
 
 const root = resolve(import.meta.dirname, '..');
-const executable = resolve(root, 'release/开智-portable/开智.exe');
+const executable = resolve(root, 'release/OpenIntelligence-portable/OpenIntelligence.exe');
 const output = resolve(root, 'artifacts/native-drop-check.json');
 const fixtureDirectory = resolve(root, 'artifacts', `native-drop-${randomUUID()}`);
 const names = ['拖入检查 PDF.pdf', '拖入检查 Markdown.md', '忽略的文件.txt'];
@@ -40,7 +40,7 @@ const ownDocuments = async () => (await invoke('list_documents', { query: '' }))
 
 try {
   await mkdir(fixtureDirectory);
-  await copyFile(resolve(root, 'release/开智-portable/samples/sample.pdf'), paths[0]);
+  await copyFile(resolve(root, 'release/OpenIntelligence-portable/samples/sample.pdf'), paths[0]);
   await writeFile(paths[1], '# 本机拖入验证\n\n这份临时 Markdown 仅用于验证文档拖入。\n', 'utf8');
   await writeFile(paths[2], 'This unsupported fixture must not be imported.', 'utf8');
   const port = await freePort();

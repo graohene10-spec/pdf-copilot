@@ -154,6 +154,9 @@
 :root[data-style='warm'] .app-sidebar:is(.sidebar-enter-from, .sidebar-leave-to) { margin-right: 0; }
 :root[data-style='warm'] .app-topbar:is(.topbar-enter-from, .topbar-leave-to) { margin-bottom: 0; }
 :root[data-style='warm'] .reader-panes > .ai-panel:is(.pane-enter-from, .pane-leave-to) { margin-left: 0; }
+/* 没有间距时，拖拽条挪进助手一侧，别压在阅读区的滚动条上。 */
+:root[data-style='warm'] .panel-resizer[data-edge='left'] { left: 0; }
+:root[data-style='warm'] .panel-resizer[data-edge='right'] { right: 0; }
 
 :root[data-style='warm'] .app-sidebar {
   padding: 22px 14px 16px;
@@ -1660,7 +1663,7 @@
 :root[data-style='warm'] .ai-pane.embedded { border-left: 0; background: none; }
 :root[data-style='sketch'] .ai-pane.embedded { rotate: 0deg; background: none; box-shadow: none; border: 0; }
 :root[data-style='sketch'] .ai-pane.embedded::after { content: none; }
-:root[data-style='sketch'] .note-card { border-left: 2px solid var(--red-pencil); background: color-mix(in srgb, var(--sticky) 45%, transparent); rotate: .4deg; }
+:root[data-style='sketch'] :is(.note-card, .excerpt-chip) { border-left: 2px solid var(--red-pencil); background: color-mix(in srgb, var(--sticky) 45%, transparent); rotate: .4deg; }
 :root[data-style='sketch'] .note-flyer { background: var(--sticky); color: var(--pencil); border-left: 0; border-radius: 2px; font-family: 'Caveat', var(--font-ui); font-size: 15px; }
 
 /* 草稿 · 列表视图：选中的行像被荧光笔涂过，左边一道红铅笔竖线，不画会压到邻行的圈。 */

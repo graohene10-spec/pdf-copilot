@@ -152,7 +152,7 @@ try {
   const firstCrop = await crop();
   ids = await page.evaluate(async names => { const { library } = await import('/src/sdk/index.ts'); const docs = await library.list(); return names.map(name => docs.find(doc => doc.name === name).id); }, names);
   assert.equal(await page.locator('.ai-pane .model-bar').count(), 0);
-  assert.match(await page.locator('.ai-pane > :first-child').getAttribute('class'), /ai-header/);
+  assert.match(await page.locator('.ai-pane .ai-main > :first-child').first().getAttribute('class'), /ai-header/);
   assert.equal(await page.locator('.ai-pane .conversation-title .title-text').textContent(), '新对话');
   await configure('');
   await send('ATTACH_MISSING'); await dialog().waitFor();
