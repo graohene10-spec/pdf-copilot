@@ -190,9 +190,11 @@ try {
 
   // A late reply cannot bring back a suggestion once the switch is off.
   holdPrediction = true;
-  const beforeAnswer = predictionCount();
+  const beforeAnswer = predictionCount(), asked = requests.filter(item => item.kind === 'ask').length;
   await page.keyboard.press('Enter');
   await pane().locator('.thinking.live').waitFor();
+  // 思考行在读取文档时就出现了，请求可能还没到本地模型；等它到了再放行，否则 release 还是上一轮的。
+  await until(async () => requests.filter(item => item.kind === 'ask').length > asked, 'The second question reaches the model.');
   release();
   await until(async () => await pane().locator('.answer-body').count() >= 2, 'The second answer arrives.');
   await until(async () => predictionCount() > beforeAnswer && Boolean(releasePrediction), 'A prediction starts after the answer.');
