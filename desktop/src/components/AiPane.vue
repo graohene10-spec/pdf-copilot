@@ -3,7 +3,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, defineAsync
 import 'katex/dist/katex.min.css'
 import { getProvider, getNativeModels, getNativeStatus } from '../ai/providers.mjs'
 import { nativeModelInventory, registerNativeModelInventory } from '../ai/native-models'
-import { compressConversation, sideConversation, chatState, sendChat, stopChat, configureRequests, taskSummary, conversations, activeConversationId, selectConversation, newConversation, deleteConversation, loadConversations, conversationTokens, contextWindow, branchConversation, resendQuestion, watchConversation, allConversations, pinMessage, MAX_ATTACHMENTS, type Message, type ChatState } from '../ai/workspace'
+import { addNote, removeMessage, compressConversation, sideConversation, chatState, sendChat, stopChat, configureRequests, taskSummary, conversations, activeConversationId, selectConversation, newConversation, deleteConversation, loadConversations, conversationTokens, contextWindow, branchConversation, resendQuestion, watchConversation, allConversations, pinMessage, MAX_ATTACHMENTS, type Message, type ChatState } from '../ai/workspace'
 import { renderMarkdown, renderDiagrams } from '../ai/render'
 import { nudgeGlassMotion } from '../ui/glass-motion'
 import { vMarquee } from '../ui/marquee'
@@ -15,21 +15,22 @@ import { greetingFor, placeholderFor, thinkingVerb, spinnerFor } from '../ai/gre
 import { predictQuestion, predictionKey } from '../ai/predict'
 import { cropImageAsync } from '../reader/crop'
 const ModelPicker = defineAsyncComponent(() => import('./ModelPicker.vue'))
-const SideChat = defineAsyncComponent(() => import('./SideChat.vue'))
 const UsagePanel = defineAsyncComponent(() => import('./UsagePanel.vue'))
 
 const props = defineProps<{ document: { id: string; title: string; kind: string }; context: any; sendShortcut?: string; consumeCapture?: (value: { documentId: string; selection: any }) => void; conversationId?: string; draggable?: boolean
   /** Other documents on screen beside this one (side-by-side), to switch which one the assistant reads. */
   alternatives?: { id: string; title: string }[]
   /** Every library document, for the history of all conversations. */
-  library?: { id: string; title: string }[] }>()
+  library?: { id: string; title: string }[]
+  /** 附属对话（侧边对话）：嵌在主对话右边的同一种助手，没有分支、没有对话记录，标题栏写明它挂在哪段主对话上。 */
+  side?: boolean; mainTitle?: string }>()
 const emit = defineEmits<{ jump: [value: { page: number; rect?: any; line?: number }]; close: []; settings: []; error: [value: string]; clearSelection: []; conversation: [id: string]; grab: [event: PointerEvent]; switchDocument: [id: string]; openConversation: [value: { documentId: string; conversationId: string }]
   /** 侧边对话打开 / 收起：整个助手窗口要加宽（或收回）的像素数，0 表示收起。 */
   side: [width: number] }>()
 const settings = ref<any>(loadAiSettings())
 // A window that follows the active tab may carry a conversation id from the previous document;
 // only an id that belongs to this document is honoured.
-const ownConversation = (documentId: string, id?: string) => id && conversations(documentId).some(item => item.id === id) ? id : activeConversationId(documentId)
+const ownConversation = (documentId: string, id?: string) => props.side && id ? id : id && conversations(documentId).some(item => item.id === id) ? id : activeConversationId(documentId)
 const conversationId = ref(ownConversation(props.document.id, props.conversationId))
 const state = computed(() => chatState(props.document.id, conversationId.value))
 const messages = computed(() => state.value.messages)
@@ -105,29 +106,24 @@ function relative(time: number) {
   const date = new Date(time)
   return `${date.getMonth() + 1} 月 ${date.getDate()} 日`
 }
-// ---- 侧边对话与引用 --------------------------------------------------------
-// 在回答里选中一段：浮出「添加到对话」（Ctrl+↓）与「在侧边对话提问」（Ctrl+→）；侧边回答里则是「添加到对话」与「返回主对话提问」（Ctrl+←）。
+// ---- 附属对话（侧边对话）与摘录 ---------------------------------------------------
+// 附属对话开着时就在主对话右边，中间一道细线；它开始时继承主对话的上下文，之后两边互不相通，
+// 要读者在回答里选中文字、用 Ctrl+↓（本对话）/ Ctrl+→（带到附属对话）/ Ctrl+←（带回主对话）把内容传过去。
 const SIDE_KEY = 'kaizhi.sideChat.width'
 const sideOpen = ref(false)
-const sideWidth = ref(Math.min(560, Math.max(260, Number(localStorage.getItem(SIDE_KEY)) || 340)))
-const sideChat = ref<{ focus: () => void }>()
-const sideQuote = ref('')
-const mainQuote = ref('')
+const sideWidth = ref(Math.min(640, Math.max(280, Number(localStorage.getItem(SIDE_KEY)) || 380)))
+const sideId = computed(() => sideOpen.value ? sideConversation(props.document.id, state.value.id, true)!.id : '')
 const columns = ref<HTMLElement>()
-// 侧栏是按需加载的组件：第一次打开时等它挂上再把光标放进它的输入框。
-let focusSide = false
-watch(sideChat, chat => { if (chat && focusSide) { focusSide = false; chat.focus() } })
-function openSide(focus = true) {
-  if (!sideOpen.value) { sideOpen.value = true; emit('side', sideWidth.value) }
-  if (!focus) return
-  if (sideChat.value) sideChat.value.focus(); else focusSide = true
+function openSide() {
+  if (props.side || sideOpen.value) return
+  sideOpen.value = true; emit('side', sideWidth.value)
 }
 function closeSide() { if (!sideOpen.value) return; sideOpen.value = false; emit('side', 0); focusPrompt() }
-// 换到另一段主对话：它有侧边对话就照样展开，没有就收起。
+// 换到另一段主对话：它有附属对话就照样展开，没有就收起。
 watch(() => state.value.id, id => {
+  if (props.side) return
   const has = Boolean(sideConversation(props.document.id, id)?.messages.length)
   if (has !== sideOpen.value) { sideOpen.value = has; emit('side', has ? sideWidth.value : 0) }
-  sideQuote.value = ''; mainQuote.value = ''
 })
 // 拖动中间的分隔线：主栏与侧栏此消彼长，整个窗口宽度不变。
 let sideDrag: { x: number; width: number; total: number } | undefined
@@ -138,38 +134,61 @@ function startSideDrag(event: PointerEvent) {
 }
 function moveSideDrag(event: PointerEvent) {
   if (!sideDrag) return
-  sideWidth.value = Math.round(Math.min(sideDrag.total - 300, Math.max(240, sideDrag.width - (event.clientX - sideDrag.x))))
+  sideWidth.value = Math.round(Math.min(sideDrag.total - 300, Math.max(260, sideDrag.width - (event.clientX - sideDrag.x))))
 }
 function endSideDrag() {
   if (!sideDrag) return
   sideDrag = undefined; document.documentElement.classList.remove('resizing-panels')
   try { localStorage.setItem(SIDE_KEY, String(sideWidth.value)) } catch { /* 存不下就只在这次有效 */ }
 }
-type QuotePop = { from: 'main' | 'side'; text: string; left: number; top: number }
+type QuotePop = { from: 'main' | 'side'; text: string; left: number; top: number; rect: DOMRect }
 const quotePop = ref<QuotePop | null>(null)
 function readQuote(): QuotePop | null {
   const selection = window.getSelection()
-  if (!selection || selection.isCollapsed || !selection.rangeCount || !pane.value) return null
+  if (props.side || !selection || selection.isCollapsed || !selection.rangeCount || !pane.value) return null
   const range = selection.getRangeAt(0)
   const anchor = (range.commonAncestorContainer instanceof Element ? range.commonAncestorContainer : range.commonAncestorContainer.parentElement)
   const answer = anchor?.closest('.answer-body')
-  if (!answer || !pane.value.contains(answer)) return null
+  if (!answer || !pane.value.contains(answer) || answer.closest('.summary-card, .btw-card')) return null
   const text = selection.toString().trim()
   if (!text) return null
   const rect = range.getBoundingClientRect(), box = pane.value.getBoundingClientRect()
-  return { from: answer.closest('.side-chat') ? 'side' : 'main', text: text.slice(0, 4000), left: Math.min(box.width - 150, Math.max(150, rect.left + rect.width / 2 - box.left)), top: Math.max(54, rect.top - box.top - 8) }
+  return { from: answer.closest('.ai-pane.embedded') ? 'side' : 'main', text: text.slice(0, 8000), rect, left: Math.min(box.width - 160, Math.max(160, rect.left + rect.width / 2 - box.left)), top: Math.max(54, rect.top - box.top - 8) }
 }
 let quoteFrame = 0
 function selectionChanged() { cancelAnimationFrame(quoteFrame); quoteFrame = requestAnimationFrame(() => { quotePop.value = readQuote() }) }
-function addQuote(target: 'main' | 'side', text: string) {
-  if (target === 'side') { openSide(); sideQuote.value = text }
-  else { mainQuote.value = text; focusPrompt() }
-  window.getSelection()?.removeAllRanges(); quotePop.value = null
+// 摘录飞过去：一张小纸条从选区飞到目标对话的底部，落下后那里出现摘录卡片。
+function fly(text: string, from: DOMRect, target: HTMLElement | null | undefined) {
+  if (!pane.value || !target || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return Promise.resolve()
+  const box = pane.value.getBoundingClientRect(), goal = target.getBoundingClientRect()
+  const slip = document.createElement('div')
+  slip.className = 'note-flyer'
+  slip.textContent = text.length > 60 ? `${text.slice(0, 60)}…` : text
+  pane.value.append(slip)
+  const startX = from.left - box.left, startY = from.top - box.top
+  const endX = goal.left - box.left + 18, endY = goal.bottom - box.top - 64
+  const animation = slip.animate([
+    { transform: `translate(${startX}px, ${startY}px) scale(1)`, opacity: .95 },
+    { transform: `translate(${(startX + endX) / 2}px, ${Math.min(startY, endY) - 40}px) scale(.9) rotate(${endX > startX ? 3 : -3}deg)`, opacity: 1, offset: .45 },
+    { transform: `translate(${endX}px, ${endY}px) scale(.82)`, opacity: .2 },
+  ], { duration: 560, easing: 'cubic-bezier(.3,.7,.2,1)' })
+  return animation.finished.catch(() => {}).finally(() => slip.remove())
 }
-function quoteAction(action: 'add' | 'side' | 'main') {
+const arrivedNote = ref('')
+async function quoteAction(action: 'add' | 'side' | 'main') {
   const pop = quotePop.value ?? readQuote()
   if (!pop) return false
-  addQuote(action === 'add' ? pop.from : action, pop.text)
+  const target = action === 'add' ? pop.from : action
+  window.getSelection()?.removeAllRanges(); quotePop.value = null
+  if (target === 'side') openSide()
+  await nextTick()
+  const targetId = target === 'side' ? sideConversation(props.document.id, state.value.id, true)!.id : state.value.id
+  const list = target === 'side' ? pane.value?.querySelector<HTMLElement>('.ai-pane.embedded .ai-messages') : messageList.value
+  await fly(pop.text, pop.rect, list || pane.value?.querySelector<HTMLElement>('.ai-side'))
+  const note = addNote(props.document.id, targetId, pop.text, action === 'add' ? 'self' : pop.from)
+  if (note) { arrivedNote.value = note.id; setTimeout(() => { if (arrivedNote.value === note.id) arrivedNote.value = '' }, 1200) }
+  if (target === 'main') { follow = true; scheduleScroll(); focusPrompt() }
+  else void nextTick(() => pane.value?.querySelector<HTMLTextAreaElement>('.ai-pane.embedded .prompt-box textarea')?.focus())
   return true
 }
 // Ctrl+↓ / Ctrl+→ / Ctrl+←：只在选中了这个窗口里回答的文字时接管，平时仍是书签跳转等原来的快捷键。
@@ -181,9 +200,10 @@ function quoteKeys(event: KeyboardEvent) {
   if (!pop || (action === 'side' && pop.from !== 'main') || (action === 'main' && pop.from !== 'side')) return
   event.preventDefault(); event.stopPropagation()
   quotePop.value = pop
-  quoteAction(action)
+  void quoteAction(action)
 }
-onMounted(() => { document.addEventListener('selectionchange', selectionChanged); window.addEventListener('keydown', quoteKeys, true) })
+const noteLabel = (message: Message) => message.note === 'main' ? '从主对话带来' : message.note === 'side' ? '从附属对话带回' : '摘录'
+onMounted(() => { if (props.side) return; document.addEventListener('selectionchange', selectionChanged); window.addEventListener('keydown', quoteKeys, true) })
 onBeforeUnmount(() => { cancelAnimationFrame(quoteFrame); document.removeEventListener('selectionchange', selectionChanged); window.removeEventListener('keydown', quoteKeys, true) })
 
 // ---- Regenerate, branch and edit ----------------------------------------
@@ -210,11 +230,11 @@ function editKeydown(event: KeyboardEvent, message: Message) {
   if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancelEdit() }
   else if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); submitEdit(message) }
 }
-function questionOf(answer: Message) { const index = messages.value.indexOf(answer); return messages.value.slice(0, index).reverse().find(item => item.role === 'user') }
+function questionOf(answer: Message) { const index = messages.value.indexOf(answer); return messages.value.slice(0, index).reverse().find(item => item.role === 'user' && !item.note) }
 function regenerate(answer: Message) { const question = questionOf(answer); if (question) resend(question, question.content) }
 function branchFrom(message: Message) { useConversation(branchConversation(props.document.id, state.value.id, message.id).id) }
 const isLastAnswer = (message: Message) => message === messages.value.at(-1)
-const lastQuestionId = computed(() => [...messages.value].reverse().find(item => item.role === 'user')?.id)
+const lastQuestionId = computed(() => [...messages.value].reverse().find(item => item.role === 'user' && !item.note)?.id)
 
 watch(() => props.document.id, id => {
   rememberScroll()
@@ -656,14 +676,12 @@ function send(question?: string) {
   const usesSelection = includeSelection.value && Boolean(selection?.image || selection?.text)
   const consumeCapture = props.consumeCapture
   const sentImages = [...attachments.value]
-  const sentQuote = mainQuote.value
   follow = true
   return sendChat({ ...props.document }, { ...props.context }, () => { if (id === props.document.id) emit('settings') }, () => {
     // The request can be accepted after this pane closes or switches files.
     if (usesSelection) consumeCapture?.({ documentId: id, selection })
     if (sentImages.length) attachments.value = attachments.value.filter(image => !sentImages.includes(image))
-    if (sentQuote && mainQuote.value === sentQuote) mainQuote.value = ''
-  }, question, { conversationId: state.value.id, attachments: sentImages, quote: sentQuote })
+  }, question, { conversationId: state.value.id, attachments: sentImages })
 }
 // ---- Predicted next question --------------------------------------------------
 const prediction = ref('')
@@ -679,7 +697,7 @@ function predictContext() {
   return { document: { ...props.document }, page: props.context?.page || 1, includePage: includeDocument.value, selection: selected.value.text || '', history: messages.value.filter(item => item.content && !item.failed).map(item => ({ role: item.role, content: item.content })) }
 }
 // 只有真正的上下文——已经有对话，或选中了文字——才预判；空白的新对话不猜。输入、发送、换页都会取消在途请求。
-const predictable = computed(() => preferences.value.assistant.predictQuestions && !busy.value && !prompt.value && (Boolean(selected.value.text) || messages.value.some(item => item.content && !item.failed)))
+const predictable = computed(() => !props.side && preferences.value.assistant.predictQuestions && !busy.value && !prompt.value && (Boolean(selected.value.text) || messages.value.some(item => item.content && !item.failed)))
 // 「Tab / Enter 采用」只在前三次出现预判时提示，之后只留淡色的问题本身。
 const HINT_KEY = 'kaizhi.predictionHints.v1'
 const showHint = ref(false)
@@ -713,8 +731,16 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
 </script>
 
 <template>
-  <aside ref="pane" class="ai-pane" aria-label="AI 阅读助手">
-    <header class="ai-header" :class="{ draggable }" @pointerdown.self="draggable && emit('grab', $event)">
+  <aside ref="pane" class="ai-pane" :class="{ embedded: side }" :aria-label="side ? '附属对话' : 'AI 阅读助手'">
+
+    <div ref="columns" class="ai-columns" :class="{ 'with-side': sideOpen }">
+    <div class="ai-main">
+    <header v-if="side" class="ai-header side-header">
+      <span class="side-badge"><AppIcon name="branch" :size="13" />附属对话</span>
+      <span class="side-of" :title="mainTitle">挂在「{{ mainTitle || '新对话' }}」旁边 · 不含之后的主对话</span>
+      <button class="header-button close-assistant" data-tip="收起附属对话（内容会保留）" aria-label="收起附属对话" @click="emit('close')"><AppIcon name="close" :size="15" /></button>
+    </header>
+    <header v-else class="ai-header" :class="{ draggable }" @pointerdown.self="draggable && emit('grab', $event)">
       <span v-if="draggable" class="drag-grip" data-tip="拖动调整位置" aria-hidden="true" @pointerdown.stop="emit('grab', $event)"><AppIcon name="grip" :size="14" /></span>
       <div class="history-host">
         <button class="conversation-title" :aria-expanded="historyOpen" aria-label="对话记录" data-tip="对话记录" @click="historyOpen = !historyOpen"><span class="title-text">{{ title }}</span><small>{{ document.title }}</small></button>
@@ -744,30 +770,30 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
       <button class="header-button" aria-label="新对话" data-tip="新对话" :disabled="!messages.length" @click="startConversation"><AppIcon name="compose" :size="16" /></button>
       <button class="header-button close-assistant" data-tip="关闭阅读助手" aria-label="关闭阅读助手" @click="emit('close')"><AppIcon name="close" :size="15" /></button>
     </header>
-
-    <div ref="columns" class="ai-columns" :class="{ 'with-side': sideOpen }">
-    <div class="ai-main">
     <div class="ai-body">
       <div ref="messageList" class="ai-messages" data-glass-still @scroll.passive="onScroll" @click="answerClick">
         <div v-if="!messages.length" class="ai-welcome">
           <AssistantMark :kind="avatar.kind" :image="avatar.image" :size="56" class="ai-welcome-mark" />
           <h2 class="ai-welcome-lead" :lang="greeting.lang === 'zh' ? 'zh-CN' : 'en'">{{ greeting.text }}</h2>
         </div>
-        <article v-for="message in messages" :key="message.id" class="ai-message" :class="[message.role, { compressed: message.compressed, summary: message.summary }]" :data-id="message.id">
-          <template v-if="message.role === 'user'">
+        <article v-for="message in messages" :key="message.id" class="ai-message" :class="[message.note ? 'note' : message.role, { compressed: message.compressed, summary: message.summary, arrived: arrivedNote === message.id }]" :data-id="message.id">
+          <div v-if="message.note" class="note-card">
+            <p class="note-head"><AppIcon :name="message.note === 'self' ? 'pin' : 'branch'" :size="11" />{{ noteLabel(message) }}<span>之后的提问会带上它</span><button type="button" class="meta-button" aria-label="移除这条摘录" data-tip="移除这条摘录" @click="removeMessage(document.id, state.id, message.id)"><AppIcon name="close" :size="11" /></button></p>
+            <p class="note-text">{{ message.content }}</p>
+          </div>
+          <template v-else-if="message.role === 'user'">
             <div v-if="editing === message.id" class="question-editor">
               <textarea ref="editor" v-model="editText" rows="3" aria-label="编辑问题" @keydown="editKeydown($event, message)" />
               <div class="editor-actions"><button class="frost-button" @click="cancelEdit">取消</button><button class="frost-button primary" :disabled="!editText.trim()" @click="submitEdit(message)">发送</button></div>
             </div>
             <template v-else>
               <div class="user-question">{{ message.content }}</div>
-              <div v-if="message.ask?.text || message.ask?.quote || message.images?.length || message.ask?.includeDocument" class="sent-context" aria-label="随问题发送的上下文">
-                <span v-if="message.ask?.quote" class="sent-quote quoted" :title="message.ask.quote"><AppIcon name="branch" :size="10" />{{ message.ask.quote.slice(0, 60) }}{{ message.ask.quote.length > 60 ? '…' : '' }}</span>
+              <div v-if="message.ask?.text || message.images?.length || message.ask?.includeDocument" class="sent-context" aria-label="随问题发送的上下文">
                 <img v-for="(image, index) in (message.images || []).slice(0, 5)" :key="index" :src="image" alt="随问题发送的图片" />
                 <span v-if="message.ask?.text" class="sent-quote" :title="message.ask.text">“{{ message.ask.text.slice(0, 60) }}{{ message.ask.text.length > 60 ? '…' : '' }}”</span>
                 <span v-if="message.ask?.includeDocument" class="sent-doc"><AppIcon name="book" :size="11" />{{ document.kind === 'pdf' ? `文档 · 第 ${message.ask.page || 1} 页` : '文档' }}</span>
               </div>
-              <div class="question-actions"><button class="meta-button" :disabled="busy && message.id === lastQuestionId" aria-label="编辑问题" data-tip="编辑后重新回答" @click="startEdit(message)"><AppIcon name="edit" :size="13" /></button><button class="meta-button" aria-label="复制问题" data-tip="复制" @click="copy(message.content)"><AppIcon name="copy" :size="13" /></button></div>
+              <div class="question-actions"><button v-if="!side || message.id === lastQuestionId" class="meta-button" :disabled="busy && message.id === lastQuestionId" aria-label="编辑问题" data-tip="编辑后重新回答" @click="startEdit(message)"><AppIcon name="edit" :size="13" /></button><button class="meta-button" aria-label="复制问题" data-tip="复制" @click="copy(message.content)"><AppIcon name="copy" :size="13" /></button></div>
             </template>
           </template>
           <div v-else-if="message.summary" class="summary-card">
@@ -788,8 +814,8 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
             <div v-if="message.content" v-answer="message" class="answer-body" />
             <div v-if="!live(message)" class="answer-meta">
               <button v-if="message.content" class="meta-button" aria-label="复制回答" data-tip="复制回答" @click="copy(message.content)"><AppIcon name="copy" :size="13" /></button>
-              <button class="meta-button" :disabled="busy && isLastAnswer(message)" aria-label="重新生成" :data-tip="isLastAnswer(message) ? '重新生成' : '在新分支中重新生成'" @click="regenerate(message)"><AppIcon name="retry" :size="13" /></button>
-              <button class="meta-button" aria-label="从这里分支" data-tip="从这里开一个分支对话" @click="branchFrom(message)"><AppIcon name="branch" :size="13" /></button>
+              <button v-if="!side || isLastAnswer(message)" class="meta-button" :disabled="busy && isLastAnswer(message)" aria-label="重新生成" :data-tip="isLastAnswer(message) ? '重新生成' : '在新分支中重新生成'" @click="regenerate(message)"><AppIcon name="retry" :size="13" /></button>
+              <button v-if="!side" class="meta-button" aria-label="从这里分支" data-tip="从这里开一个分支对话" @click="branchFrom(message)"><AppIcon name="branch" :size="13" /></button>
               <span v-if="message.stopped" class="meta-flag">已停止</span>
               <span v-else-if="message.failed" class="meta-flag error">未完成</span>
             </div>
@@ -837,7 +863,6 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
         <div v-if="attachments.length" class="ai-attachments" aria-label="附上的图片">
           <span v-for="(image, index) in attachments" :key="image.slice(-48) + index" class="attachment"><img :src="image" alt="附上的图片" /><button type="button" class="chip-remove" :aria-label="`移除第 ${index + 1} 张图片`" data-tip="移除这张图片" @click="removeAttachment(index)"><AppIcon name="close" :size="11" /></button></span>
         </div>
-        <div v-if="mainQuote" class="quote-chip"><AppIcon name="branch" :size="11" /><span :title="mainQuote">{{ mainQuote }}</span><button type="button" class="chip-remove" aria-label="移除引用" data-tip="移除引用" @click="mainQuote = ''"><AppIcon name="close" :size="11" /></button></div>
         <div class="prompt-box">
           <textarea ref="input" v-model="prompt" @paste="pasteImages" :style="{ height: `${composerHeight}px` }" :placeholder="prediction ? '' : placeholder" aria-label="向 AI 提问" :aria-describedby="prediction ? `prediction-${state.id}` : undefined" @keydown="keydown" />
           <!-- 预判的问题：像 Claude Code 一样以淡色出现在空输入框里，按 Tab 或回车采用。 -->
@@ -863,15 +888,15 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
     </div>
     </div>
     <Transition name="side-col">
-      <div v-if="sideOpen" class="ai-side" :style="{ width: `${sideWidth}px` }">
-        <div class="side-divider" role="separator" aria-orientation="vertical" aria-label="拖动调整主对话与侧边对话的宽度" data-tip="拖动调整宽度" @pointerdown="startSideDrag" @pointermove="moveSideDrag" @pointerup="endSideDrag" @pointercancel="endSideDrag" />
-        <SideChat ref="sideChat" v-model:quote="sideQuote" :document="document" :main-id="state.id" :context="context" @close="closeSide" @settings="emit('settings')" />
+      <div v-if="sideOpen && sideId" class="ai-side" :style="{ width: `${sideWidth}px` }">
+        <div class="side-divider" role="separator" aria-orientation="vertical" aria-label="拖动调整主对话与附属对话的宽度" data-tip="拖动调整宽度" @pointerdown="startSideDrag" @pointermove="moveSideDrag" @pointerup="endSideDrag" @pointercancel="endSideDrag" />
+        <AiPane side class="embedded" :document="document" :context="context" :conversation-id="sideId" :main-title="title" :send-shortcut="sendShortcut" :consume-capture="consumeCapture" @close="closeSide" @settings="emit('settings')" @jump="value => emit('jump', value)" @clear-selection="emit('clearSelection')" />
       </div>
     </Transition>
     </div>
     <UsagePanel v-if="usageOpen" :context-used="contextUsed" :context-limit="contextLimit" :model="modelLabel" @close="usageOpen = false; focusPrompt()" />
     <Transition name="quote-pop">
-      <div v-if="quotePop" class="quote-pop" :style="{ left: `${quotePop.left}px`, top: `${quotePop.top}px` }" role="toolbar" aria-label="引用所选文字" @pointerdown.prevent>
+      <div v-if="quotePop && !side" class="quote-pop" :style="{ left: `${quotePop.left}px`, top: `${quotePop.top}px` }" role="toolbar" aria-label="引用所选文字" @pointerdown.prevent>
         <button type="button" @click="quoteAction('add')"><AppIcon name="plus" :size="13" />添加到对话<kbd>Ctrl ↓</kbd></button>
         <button v-if="quotePop.from === 'main'" type="button" @click="quoteAction('side')"><AppIcon name="branch" :size="13" />在侧边对话提问<kbd>Ctrl →</kbd></button>
         <button v-else type="button" @click="quoteAction('main')"><AppIcon name="arrow" :size="13" class="flip" />返回主对话提问<kbd>Ctrl ←</kbd></button>
@@ -969,7 +994,21 @@ button:disabled{opacity:.4;cursor:default}
 .command-pop-enter-from,.command-pop-leave-to{opacity:0;translate:0 6px}
 .ai-main{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}
 .ai-side{position:relative;flex:0 0 auto;min-width:0;min-height:0;display:flex;padding-left:1px}
-.ai-side>:deep(.side-chat){flex:1;min-width:240px}
+.ai-side>.ai-pane{flex:1;min-width:260px}
+/* 嵌在主对话右边的附属对话：同一种助手，去掉自己的外框与底板，和主对话共用一张纸 / 一块玻璃。 */
+.ai-pane.embedded{background:none;border:0;border-radius:0;box-shadow:none;-webkit-backdrop-filter:none;backdrop-filter:none}
+.side-header{gap:8px}
+.side-badge{display:inline-flex;align-items:center;gap:6px;flex-shrink:0;padding:3px 9px 3px 7px;border-radius:999px;background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--ink);font-size:12.5px;font-weight:650}
+.side-of{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:11.5px}
+/* 摘录卡片：从回答里带过来的一段，像贴进对话里的一张小纸条。 */
+.note-card{margin-left:auto;width:fit-content;max-width:92%;padding:7px 10px 9px 12px;border-left:2px solid color-mix(in srgb,var(--accent) 65%,transparent);border-radius:4px 10px 10px 4px;background:color-mix(in srgb,var(--accent) 7%,transparent)}
+.note-head{display:flex;align-items:center;gap:5px;margin:0 0 3px;color:var(--secondary);font-size:11.5px;font-weight:600}
+.note-head span{flex:1;font-weight:400;color:var(--muted)}
+.note-head .meta-button{width:20px;height:20px}
+.note-text{margin:0;font-size:13px;line-height:1.6;color:var(--ink);white-space:pre-wrap;display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden}
+.ai-message.note.arrived .note-card{animation:note-arrive 1.1s var(--ease-out)}
+@keyframes note-arrive{0%{background:color-mix(in srgb,var(--accent) 26%,transparent);scale:.96}30%{scale:1.02}100%{scale:1}}
+.ai-pane :deep(.note-flyer){position:absolute;left:0;top:0;z-index:60;max-width:240px;padding:6px 10px;border-radius:8px;background:var(--surface);color:var(--surface-ink);font-size:12px;line-height:1.45;box-shadow:0 10px 26px -10px rgb(0 0 0 / .45);border-left:3px solid var(--accent);pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* 主栏与侧栏之间就是一道细线；指针靠近时线变粗，可以左右拖。 */
 .side-divider{position:absolute;left:-5px;top:8px;bottom:8px;z-index:12;width:11px;cursor:col-resize;touch-action:none}
 .side-divider::before{content:'';position:absolute;left:5px;top:0;bottom:0;width:1px;background:var(--hairline);transition:background var(--dur-1) var(--ease-soft),width var(--dur-1) var(--ease-soft),left var(--dur-1) var(--ease-soft)}
@@ -985,9 +1024,6 @@ button:disabled{opacity:.4;cursor:default}
 .quote-pop-enter-active{transition:opacity var(--dur-1) var(--ease-soft),scale var(--dur-2) var(--spring-snappy)}
 .quote-pop-leave-active{transition:opacity var(--dur-1) var(--ease-soft)}
 .quote-pop-enter-from{opacity:0;scale:.92}.quote-pop-leave-to{opacity:0}
-.quote-chip{display:flex;align-items:center;gap:6px;margin:8px 10px 0;padding:4px 6px 4px 9px;border-radius:9px;background:color-mix(in srgb,var(--accent) 10%,transparent);color:var(--secondary);font-size:12px}
-.quote-chip span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sent-quote.quoted{display:inline-flex;align-items:center;gap:4px}
 .ai-body{position:relative;flex:1;min-height:0;display:flex;-webkit-mask-image:linear-gradient(180deg,transparent 0,#000 14px,#000 calc(100% - 14px),transparent 100%);mask-image:linear-gradient(180deg,transparent 0,#000 14px,#000 calc(100% - 14px),transparent 100%)}
 /* 上下沿的淡出遮罩挂在外层 .ai-body 上，而不是滚动容器本身。对话列表单独成一层（will-change）：
    半透明玻璃上的文字默认不走合成滚动，滚轮每动一帧都要把整屏文字重新栅格化，长回答里就一顿一顿的。 */

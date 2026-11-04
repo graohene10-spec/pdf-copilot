@@ -10,11 +10,13 @@ export type Message = {
   /** Live progress of an answer: wall-clock timing, token use and the current activity line. */
   startedAt?: number; firstTokenAt?: number; finishedAt?: number; usage?: Usage; activity?: string; stopped?: boolean
   /** How a question was asked, so it can be regenerated or edited the same way. */
-  ask?: { includeDocument: boolean; selectionOnly?: boolean; page?: number; text?: string; quote?: string }
+  ask?: { includeDocument: boolean; selectionOnly?: boolean; page?: number; text?: string }
   /** 钉住的提问在右侧导航刻度旁多一个圆点。 */
   pinned?: boolean
   /** /compress 之后：被压缩进摘要的消息仍显示，但不再随请求发出；summary 是那条摘要。 */
   compressed?: boolean; summary?: boolean
+  /** 摘录卡片：读者用 Ctrl+↓ / → / ← 从回答里带过来的一段文字（self 本对话、main 来自主对话、side 来自附属对话），随之后的提问一起发出。 */
+  note?: 'self' | 'main' | 'side'
 }
 type Request = { controller: AbortController; phase: string }
 export type ChatState = {
@@ -24,6 +26,8 @@ export type ChatState = {
   branchOf?: { conversationId: string; title: string }
   /** 侧边对话：挂在一段主对话旁边，不出现在对话记录里，跟主对话一起保存、一起删除。 */
   sideOf?: string
+  /** 侧边对话开始时主对话的上下文快照：之后主对话再说什么，侧边看不到，要读者自己带过去。 */
+  inherited?: { role: 'user' | 'assistant'; content: string }[]
 }
 type DocumentChats = { list: ChatState[]; activeId: string; loaded: boolean; loading?: Promise<void> }
 
@@ -65,10 +69,47 @@ export function sideConversation(documentId: string, mainId: string, create = fa
   let side = entry.list.find(item => item.sideOf === mainId)
   if (!side && create) {
     side = blank(documentId)
-    side.sideOf = mainId; side.includeDocument = false
+    const main = entry.list.find(item => item.id === mainId)
+    side.sideOf = mainId; side.includeDocument = main?.includeDocument ?? true
+    side.inherited = main ? inheritedContext(main) : []
     entry.list.push(side)
   }
   return side
+}
+/** 主对话此刻的上下文（压缩过的部分只带摘要），最多 12 条、约 30000 字。 */
+function inheritedContext(main: ChatState) {
+  const kept: { role: 'user' | 'assistant'; content: string }[] = []
+  let chars = 0
+  for (const message of [...main.messages].reverse()) {
+    if (message.compressed || (message.failed && !message.content) || !message.content) continue
+    const content = wireText(message)
+    if (kept.length >= 12 || chars + content.length > 30000) break
+    kept.unshift({ role: message.summary || message.note ? 'user' : message.role, content }); chars += content.length
+  }
+  return kept
+}
+const NOTE_LABEL = { self: '读者从这段对话里摘出来、要接着讨论的片段', main: '读者从主对话带过来的片段', side: '读者从附属对话带回来的片段' } as const
+/** 一条消息发给模型时的文字：摘要、摘录卡片带上说明。 */
+function wireText(message: Message) {
+  if (message.summary) return `[此前对话的摘要，供参考]\n${message.content}`
+  if (message.note) return `[${NOTE_LABEL[message.note]}]\n${message.content}`
+  return message.content
+}
+/** 放一张摘录卡片进对话（不发请求）；之后的提问会一起带上它。 */
+export function addNote(documentId: string, conversationId: string, text: string, from: 'self' | 'main' | 'side') {
+  const state = chatState(documentId, conversationId)
+  const content = text.trim().slice(0, 8000)
+  if (!content) return null
+  const note: Message = { id: crypto.randomUUID(), role: 'user', content, sources: [], note: from }
+  state.messages.push(note)
+  state.updatedAt = Date.now()
+  schedulePersist(documentId)
+  return note
+}
+export function removeMessage(documentId: string, conversationId: string, messageId: string) {
+  const state = chatState(documentId, conversationId)
+  const index = state.messages.findIndex(item => item.id === messageId)
+  if (index >= 0) { state.messages.splice(index, 1); schedulePersist(documentId) }
 }
 export function activeConversationId(documentId: string) { return chats(documentId).activeId }
 export function selectConversation(documentId: string, conversationId: string) {
@@ -166,7 +207,7 @@ function serialize(entry: DocumentChats) {
   const kept = new Set(mains.map(item => item.id))
   const sides = entry.list.filter(item => item.sideOf && kept.has(item.sideOf) && item.messages.length)
   return JSON.stringify({ activeId: entry.activeId, list: [...mains, ...sides].map(item => ({
-    id: item.id, title: item.title, createdAt: item.createdAt, updatedAt: item.updatedAt, branchOf: item.branchOf, sideOf: item.sideOf,
+    id: item.id, title: item.title, createdAt: item.createdAt, updatedAt: item.updatedAt, branchOf: item.branchOf, sideOf: item.sideOf, inherited: item.inherited,
     messages: item.messages.filter(message => !message.failed || message.content).slice(-MAX_MESSAGES).map(({ images: _images, activity: _activity, ...message }) => ({ ...message, content: message.content.slice(0, 60000), reasoning: message.reasoning?.slice(0, 20000), sources: message.sources.slice(0, 24).map(source => ({ ...source, text: String(source.text || '').slice(0, 600) })) })),
   })) })
 }
@@ -197,7 +238,7 @@ export function loadConversations(documentId: string): Promise<void> {
       for (const item of Array.isArray(stored?.list) ? stored.list : []) {
         if (!item || typeof item.id !== 'string' || known.has(item.id) || !Array.isArray(item.messages)) continue
         const conversation = blank(documentId)
-        Object.assign(conversation, { id: item.id, title: String(item.title || ''), sideOf: typeof item.sideOf === 'string' ? item.sideOf : undefined, includeDocument: typeof item.sideOf === 'string' ? false : conversation.includeDocument, branchOf: item.branchOf && typeof item.branchOf.conversationId === 'string' ? { conversationId: item.branchOf.conversationId, title: String(item.branchOf.title || '') } : undefined, createdAt: Number(item.createdAt) || Date.now(), updatedAt: Number(item.updatedAt) || Date.now(),
+        Object.assign(conversation, { id: item.id, title: String(item.title || ''), sideOf: typeof item.sideOf === 'string' ? item.sideOf : undefined, inherited: Array.isArray(item.inherited) ? item.inherited.filter((entry: any) => entry && typeof entry.content === 'string' && (entry.role === 'user' || entry.role === 'assistant')) : undefined, branchOf: item.branchOf && typeof item.branchOf.conversationId === 'string' ? { conversationId: item.branchOf.conversationId, title: String(item.branchOf.title || '') } : undefined, createdAt: Number(item.createdAt) || Date.now(), updatedAt: Number(item.updatedAt) || Date.now(),
           messages: item.messages.filter((message: any) => message && (message.role === 'user' || message.role === 'assistant')).map((message: any) => ({ ...message, content: String(message.content || ''), sources: Array.isArray(message.sources) ? message.sources : [] })) })
         entry.list.push(conversation)
       }
@@ -243,8 +284,7 @@ function titleFrom(question: string) {
 }
 
 // selectionOnly: a quick capture question sends just the question and the selected region.
-// quote：从助手回答里选出来「添加到对话」的片段，随问题一起发出，在问题气泡下面显示。
-type SendOptions = { conversationId?: string; includeDocument?: boolean; includeSelection?: boolean; selectionOnly?: boolean; images?: string[]; attachments?: string[]; quote?: string }
+type SendOptions = { conversationId?: string; includeDocument?: boolean; includeSelection?: boolean; selectionOnly?: boolean; images?: string[]; attachments?: string[] }
 export async function sendChat(descriptor: { id: string; title: string; kind: string }, source: any, onSettings: () => void, onAccepted?: () => void, explicitQuestion?: string, sendOptions: SendOptions = {}) {
   const state = chatState(descriptor.id, sendOptions.conversationId), question = (explicitQuestion ?? state.draft).trim()
   if (!question || state.request) return
@@ -277,13 +317,11 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
     const attached = (sendOptions.attachments || []).slice(0, MAX_ATTACHMENTS)
     const images = [...(selection.image ? [selection.image] : []), ...attached]
     if (images.reduce((sum, image) => sum + image.length, 0) > 8 * 1024 * 1024) throw new Error('图片总量太大，请减少几张或换小一点的图片。')
-    const quote = sendOptions.quote?.trim().slice(0, 12000) || undefined
-    const user: Message = { id: crypto.randomUUID(), role: 'user', content: question, sources: [], images, ask: { includeDocument, selectionOnly: sendOptions.selectionOnly, page: context.page, text: selection.text ? String(selection.text).slice(0, 20000) : undefined, quote } }
-    const quoted = quote ? `\n\n[读者引用的助手回答片段]\n${quote}` : ''
+    const user: Message = { id: crypto.randomUUID(), role: 'user', content: question, sources: [], images, ask: { includeDocument, selectionOnly: sendOptions.selectionOnly, page: context.page, text: selection.text ? String(selection.text).slice(0, 20000) : undefined } }
     const wireContent = sendOptions.selectionOnly
       ? `${question}${selection.text ? '\n\n[用户选中的内容]\n' + selection.text : ''}${selection.image ? '\n\n[附图是用户在文档里框选的区域，问题针对它]' : ''}${attached.length ? `\n\n[用户附上了 ${attached.length} 张图片]` : ''}`
-      : `${question}${quoted}\n\n[用户当前阅读的文档]\n${descriptor.title}${descriptor.kind === 'pdf' ? ` · 物理 PDF 第 ${context.page} 页` : ' · Markdown 文档'}${selection.text ? '\n\n[用户选中的内容]\n' + selection.text : ''}${attached.length ? `\n\n[用户附上了 ${attached.length} 张图片]` : ''}${state.sideOf ? '\n\n[这是挂在主对话旁边的侧边对话：围绕引用的片段简短作答]' : ''}`
-    const history = boundedHistory([...state.messages.filter(message => !message.failed && !message.compressed).map(({ role, content, sources, summary, ask }) => summary ? { role: 'user', content: `[此前对话的摘要，供参考]\n${content}` } : ({ role, content: content + (role === 'user' && ask?.quote ? `\n\n[读者引用的助手回答片段]\n${ask.quote}` : '') + (sources.length ? '\n[此前查到的相关位置]\n' + JSON.stringify(sources.slice(0, 8).map(item => ({ sourceId: item.sourceId, page: item.page, line: item.line, text: item.text.slice(0, 400) }))) : '') })), { ...user, content: wireContent }])
+      : `${question}\n\n[用户当前阅读的文档]\n${descriptor.title}${descriptor.kind === 'pdf' ? ` · 物理 PDF 第 ${context.page} 页` : ' · Markdown 文档'}${selection.text ? '\n\n[用户选中的内容]\n' + selection.text : ''}${attached.length ? `\n\n[用户附上了 ${attached.length} 张图片]` : ''}${state.sideOf ? '\n\n[这是挂在主对话旁边的附属对话（侧边对话）]' : ''}`
+    const history = boundedHistory([...(state.inherited || []).map(item => ({ role: item.role, content: `[主对话里的内容（开启附属对话时）]\n${item.content}` })), ...state.messages.filter(message => !message.failed && !message.compressed).map(message => message.summary || message.note ? { role: 'user', content: wireText(message) } : ({ role: message.role, content: message.content + (message.sources.length ? '\n[此前查到的相关位置]\n' + JSON.stringify(message.sources.slice(0, 8).map(item => ({ sourceId: item.sourceId, page: item.page, line: item.line, text: item.text.slice(0, 400) }))) : '') })), { ...user, content: wireContent }])
     // The scheduler reports the first queue position before the answer bubble exists.
     let waiting = ''
     ticket = scheduler.acquire({ owner: `${descriptor.id}:${state.id}`, provider: snapshot.provider, signal, onState: (value: any) => {
@@ -370,7 +408,7 @@ export function resendQuestion(descriptor: { id: string; title: string; kind: st
   const index = state.messages.findIndex(message => message.id === userMessageId)
   const user = state.messages[index]
   if (!user || user.role !== 'user' || !question.trim()) return
-  const lastUser = state.messages.map(message => message.role).lastIndexOf('user')
+  const lastUser = state.messages.map(message => message.role === 'user' && !message.note ? 'user' : '').lastIndexOf('user')
   let target = state
   if (index === lastUser) {
     if (state.request) return

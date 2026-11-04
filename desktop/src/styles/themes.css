@@ -1655,3 +1655,10 @@
 :root[data-style='sketch'] .usage-bar:is(.warm) i { background: repeating-linear-gradient(-55deg, rgb(214 150 40 / .9) 0 2px, transparent 2px 5px); }
 :root[data-style='sketch'] .usage-bar:is(.hot) i { background: repeating-linear-gradient(-55deg, color-mix(in srgb, var(--red-pencil) 90%, transparent) 0 2px, transparent 2px 5px); }
 :root[data-style='sketch'] .usage-bar:is(.warm, .hot, .calm, .daily) { background: transparent; }
+
+/* 附属对话嵌在主对话里：不再是一张单独的纸 / 面板。 */
+:root[data-style='warm'] .ai-pane.embedded { border-left: 0; background: none; }
+:root[data-style='sketch'] .ai-pane.embedded { rotate: 0deg; background: none; box-shadow: none; border: 0; }
+:root[data-style='sketch'] .ai-pane.embedded::after { content: none; }
+:root[data-style='sketch'] .note-card { border-left: 2px solid var(--red-pencil); background: color-mix(in srgb, var(--sticky) 45%, transparent); rotate: .4deg; }
+:root[data-style='sketch'] .note-flyer { background: var(--sticky); color: var(--pencil); border-left: 0; border-radius: 2px; font-family: 'Caveat', var(--font-ui); font-size: 15px; }
