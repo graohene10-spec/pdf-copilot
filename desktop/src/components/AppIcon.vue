@@ -3,6 +3,7 @@ withDefaults(defineProps<{ name: string; size?: number }>(), { size: 20 })
 const paths: Record<string, string> = {
   book: 'M4 4h6a3 3 0 0 1 3 3v13a3 3 0 0 0-3-3H4z M20 4h-5a2 2 0 0 0-2 2v14a3 3 0 0 1 3-3h4z',
   library: 'M4 4v16 M9 4v16 M14 4v16 M18 4l3 16',
+  translate: 'M4 5h9 M8.5 3v2 M11 5c-.8 3.6-3.2 6.4-6.5 8 M6.6 8.4c1.3 2 3 3.4 5 4.2 M12 21l4-9 4 9 M13.4 18h5.2',
   search: 'M10.5 17a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13z M16 16l5 5',
   plus: 'M12 5v14 M5 12h14',
   arrow: 'M14 6l-6 6 6 6',

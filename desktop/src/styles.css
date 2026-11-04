@@ -3895,3 +3895,33 @@ kbd {
 .batch-tag input { width: 168px; height: 32px; padding: 0 10px; border: 1px solid var(--line-soft); border-radius: calc(var(--r-lg) - 6px); background: color-mix(in srgb, var(--surface) 70%, transparent); color: inherit; font: inherit; }
 .batch-enter-active, .batch-leave-active { transition: opacity var(--dur-2) var(--ease-soft), translate var(--dur-3) var(--spring-snappy); }
 .batch-enter-from, .batch-leave-to { opacity: 0; translate: 0 14px; }
+
+/* ---- 左侧的翻译栏：从侧栏边上推出来，阅读区跟着让出位置 ---------------------------------- */
+.translate-column {
+  flex: 0 0 auto;
+  width: 340px;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+.translate-column > .translate-pane { min-width: 340px; }
+.translate-pane-enter-active,
+.translate-pane-leave-active {
+  overflow: hidden;
+  transition: width var(--dur-bounce) var(--spring-snappy), margin-right var(--dur-bounce) var(--spring-snappy), opacity var(--dur-2) var(--ease-soft), translate var(--dur-bounce) var(--spring-snappy);
+}
+.translate-pane-leave-active { transition-duration: var(--dur-3), var(--dur-3), var(--dur-2), var(--dur-3); transition-timing-function: var(--ease-out); }
+.translate-pane-enter-from,
+.translate-pane-leave-to {
+  width: 0;
+  margin-right: -10px;
+  opacity: 0;
+  translate: -28px 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .translate-pane-enter-active, .translate-pane-leave-active { transition: none; }
+}
+
+/* 侧边对话展开时助手窗口可以更宽；展开 / 收起的那一下用弹簧把宽度拉过去。 */
+.ai-panel.with-side { max-width: min(92vw, calc(100vw - 320px)); }
+.ai-panel.side-animating { transition: width var(--dur-bounce) var(--spring-snappy); }

@@ -3,7 +3,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, defineAsync
 import 'katex/dist/katex.min.css'
 import { getProvider, getNativeModels, getNativeStatus } from '../ai/providers.mjs'
 import { nativeModelInventory, registerNativeModelInventory } from '../ai/native-models'
-import { chatState, sendChat, stopChat, configureRequests, taskSummary, conversations, activeConversationId, selectConversation, newConversation, deleteConversation, loadConversations, conversationTokens, contextWindow, branchConversation, resendQuestion, watchConversation, allConversations, pinMessage, MAX_ATTACHMENTS, type Message, type ChatState } from '../ai/workspace'
+import { compressConversation, sideConversation, chatState, sendChat, stopChat, configureRequests, taskSummary, conversations, activeConversationId, selectConversation, newConversation, deleteConversation, loadConversations, conversationTokens, contextWindow, branchConversation, resendQuestion, watchConversation, allConversations, pinMessage, MAX_ATTACHMENTS, type Message, type ChatState } from '../ai/workspace'
 import { renderMarkdown, renderDiagrams } from '../ai/render'
 import { nudgeGlassMotion } from '../ui/glass-motion'
 import { vMarquee } from '../ui/marquee'
@@ -15,13 +15,17 @@ import { greetingFor, placeholderFor, thinkingVerb, spinnerFor } from '../ai/gre
 import { predictQuestion, predictionKey } from '../ai/predict'
 import { cropImageAsync } from '../reader/crop'
 const ModelPicker = defineAsyncComponent(() => import('./ModelPicker.vue'))
+const SideChat = defineAsyncComponent(() => import('./SideChat.vue'))
+const UsagePanel = defineAsyncComponent(() => import('./UsagePanel.vue'))
 
 const props = defineProps<{ document: { id: string; title: string; kind: string }; context: any; sendShortcut?: string; consumeCapture?: (value: { documentId: string; selection: any }) => void; conversationId?: string; draggable?: boolean
   /** Other documents on screen beside this one (side-by-side), to switch which one the assistant reads. */
   alternatives?: { id: string; title: string }[]
   /** Every library document, for the history of all conversations. */
   library?: { id: string; title: string }[] }>()
-const emit = defineEmits<{ jump: [value: { page: number; rect?: any; line?: number }]; close: []; settings: []; error: [value: string]; clearSelection: []; conversation: [id: string]; grab: [event: PointerEvent]; switchDocument: [id: string]; openConversation: [value: { documentId: string; conversationId: string }] }>()
+const emit = defineEmits<{ jump: [value: { page: number; rect?: any; line?: number }]; close: []; settings: []; error: [value: string]; clearSelection: []; conversation: [id: string]; grab: [event: PointerEvent]; switchDocument: [id: string]; openConversation: [value: { documentId: string; conversationId: string }]
+  /** 侧边对话打开 / 收起：整个助手窗口要加宽（或收回）的像素数，0 表示收起。 */
+  side: [width: number] }>()
 const settings = ref<any>(loadAiSettings())
 // A window that follows the active tab may carry a conversation id from the previous document;
 // only an id that belongs to this document is honoured.
@@ -101,6 +105,87 @@ function relative(time: number) {
   const date = new Date(time)
   return `${date.getMonth() + 1} 月 ${date.getDate()} 日`
 }
+// ---- 侧边对话与引用 --------------------------------------------------------
+// 在回答里选中一段：浮出「添加到对话」（Ctrl+↓）与「在侧边对话提问」（Ctrl+→）；侧边回答里则是「添加到对话」与「返回主对话提问」（Ctrl+←）。
+const SIDE_KEY = 'kaizhi.sideChat.width'
+const sideOpen = ref(false)
+const sideWidth = ref(Math.min(560, Math.max(260, Number(localStorage.getItem(SIDE_KEY)) || 340)))
+const sideChat = ref<{ focus: () => void }>()
+const sideQuote = ref('')
+const mainQuote = ref('')
+const columns = ref<HTMLElement>()
+// 侧栏是按需加载的组件：第一次打开时等它挂上再把光标放进它的输入框。
+let focusSide = false
+watch(sideChat, chat => { if (chat && focusSide) { focusSide = false; chat.focus() } })
+function openSide(focus = true) {
+  if (!sideOpen.value) { sideOpen.value = true; emit('side', sideWidth.value) }
+  if (!focus) return
+  if (sideChat.value) sideChat.value.focus(); else focusSide = true
+}
+function closeSide() { if (!sideOpen.value) return; sideOpen.value = false; emit('side', 0); focusPrompt() }
+// 换到另一段主对话：它有侧边对话就照样展开，没有就收起。
+watch(() => state.value.id, id => {
+  const has = Boolean(sideConversation(props.document.id, id)?.messages.length)
+  if (has !== sideOpen.value) { sideOpen.value = has; emit('side', has ? sideWidth.value : 0) }
+  sideQuote.value = ''; mainQuote.value = ''
+})
+// 拖动中间的分隔线：主栏与侧栏此消彼长，整个窗口宽度不变。
+let sideDrag: { x: number; width: number; total: number } | undefined
+function startSideDrag(event: PointerEvent) {
+  sideDrag = { x: event.clientX, width: sideWidth.value, total: columns.value?.clientWidth || 800 }
+  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+  document.documentElement.classList.add('resizing-panels')
+}
+function moveSideDrag(event: PointerEvent) {
+  if (!sideDrag) return
+  sideWidth.value = Math.round(Math.min(sideDrag.total - 300, Math.max(240, sideDrag.width - (event.clientX - sideDrag.x))))
+}
+function endSideDrag() {
+  if (!sideDrag) return
+  sideDrag = undefined; document.documentElement.classList.remove('resizing-panels')
+  try { localStorage.setItem(SIDE_KEY, String(sideWidth.value)) } catch { /* 存不下就只在这次有效 */ }
+}
+type QuotePop = { from: 'main' | 'side'; text: string; left: number; top: number }
+const quotePop = ref<QuotePop | null>(null)
+function readQuote(): QuotePop | null {
+  const selection = window.getSelection()
+  if (!selection || selection.isCollapsed || !selection.rangeCount || !pane.value) return null
+  const range = selection.getRangeAt(0)
+  const anchor = (range.commonAncestorContainer instanceof Element ? range.commonAncestorContainer : range.commonAncestorContainer.parentElement)
+  const answer = anchor?.closest('.answer-body')
+  if (!answer || !pane.value.contains(answer)) return null
+  const text = selection.toString().trim()
+  if (!text) return null
+  const rect = range.getBoundingClientRect(), box = pane.value.getBoundingClientRect()
+  return { from: answer.closest('.side-chat') ? 'side' : 'main', text: text.slice(0, 4000), left: Math.min(box.width - 150, Math.max(150, rect.left + rect.width / 2 - box.left)), top: Math.max(54, rect.top - box.top - 8) }
+}
+let quoteFrame = 0
+function selectionChanged() { cancelAnimationFrame(quoteFrame); quoteFrame = requestAnimationFrame(() => { quotePop.value = readQuote() }) }
+function addQuote(target: 'main' | 'side', text: string) {
+  if (target === 'side') { openSide(); sideQuote.value = text }
+  else { mainQuote.value = text; focusPrompt() }
+  window.getSelection()?.removeAllRanges(); quotePop.value = null
+}
+function quoteAction(action: 'add' | 'side' | 'main') {
+  const pop = quotePop.value ?? readQuote()
+  if (!pop) return false
+  addQuote(action === 'add' ? pop.from : action, pop.text)
+  return true
+}
+// Ctrl+↓ / Ctrl+→ / Ctrl+←：只在选中了这个窗口里回答的文字时接管，平时仍是书签跳转等原来的快捷键。
+function quoteKeys(event: KeyboardEvent) {
+  if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.defaultPrevented) return
+  const action = event.key === 'ArrowDown' ? 'add' : event.key === 'ArrowRight' ? 'side' : event.key === 'ArrowLeft' ? 'main' : null
+  if (!action) return
+  const pop = readQuote()
+  if (!pop || (action === 'side' && pop.from !== 'main') || (action === 'main' && pop.from !== 'side')) return
+  event.preventDefault(); event.stopPropagation()
+  quotePop.value = pop
+  quoteAction(action)
+}
+onMounted(() => { document.addEventListener('selectionchange', selectionChanged); window.addEventListener('keydown', quoteKeys, true) })
+onBeforeUnmount(() => { cancelAnimationFrame(quoteFrame); document.removeEventListener('selectionchange', selectionChanged); window.removeEventListener('keydown', quoteKeys, true) })
+
 // ---- Regenerate, branch and edit ----------------------------------------
 const pane = ref<HTMLElement>()
 let unwatch: (() => void) | undefined
@@ -439,6 +524,12 @@ function stop() { stopChat(props.document.id, state.value.id) }
 function applySettings(value: any) { settings.value = value; configureRequests(value) }
 function keydown(event: KeyboardEvent) {
   const plain = !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey && !event.isComposing && event.keyCode !== 229
+  if (commandMatches.value.length && plain) {
+    const total = commandMatches.value.length
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); commandIndex.value = (commandIndex.value + (event.key === 'ArrowDown' ? 1 : total - 1)) % total; return }
+    if (event.key === 'Tab' || event.key === 'Enter') { event.preventDefault(); pickCommand(); return }
+  }
+  if (event.key === 'Escape' && btw.value && !prompt.value) { event.preventDefault(); event.stopPropagation(); closeBtw(); return }
   if (preferences.value.assistant.predictQuestions && prediction.value && !prompt.value) {
     // Tab 或回车：采用预判的问题，放进输入框里可以再改；发送仍用发送键。
     if ((event.key === 'Tab' || event.key === 'Enter') && plain) { event.preventDefault(); prompt.value = prediction.value; return }
@@ -495,7 +586,68 @@ function pickImages(event: Event) {
   void addImages(files)
 }
 function removeAttachment(index: number) { attachments.value = attachments.value.filter((_, item) => item !== index) }
+// ---- 斜杠命令：/btw 顺便问、/compress 压缩对话、/usage 用量 ------------------------------
+const COMMANDS = [
+  { name: '/btw', args: '问题', label: '顺便问一句', hint: '快速问一个旁支问题，回答不写进对话记录' },
+  { name: '/compress', args: '要求（可选）', label: '压缩对话', hint: '把目前的对话写成摘要，之后只带摘要发送，省上下文' },
+  { name: '/usage', args: '', label: '查看用量', hint: '本次会话的 token 用量、上下文占用与明细' },
+]
+const commandIndex = ref(0)
+// 只有还在输入命令名（以 / 开头、还没有空格）时才弹出命令列表。
+const commandMatches = computed(() => {
+  const text = prompt.value
+  if (!text.startsWith('/') || /\s/.test(text)) return []
+  return COMMANDS.filter(item => item.name.startsWith(text.toLowerCase()))
+})
+watch(commandMatches, () => { commandIndex.value = 0 })
+function pickCommand(item = commandMatches.value[commandIndex.value]) {
+  if (!item) return
+  if (!item.args) { prompt.value = ''; void runCommand(item.name.slice(1), ''); return }
+  prompt.value = `${item.name} `
+  focusPrompt()
+}
+const usageOpen = ref(false)
+const compressing = ref<AbortController | null>(null)
+type Btw = { question: string; answer: string; running: boolean; error: string; controller: AbortController }
+const btw = ref<Btw | null>(null)
+function closeBtw() { btw.value?.controller.abort(); btw.value = null }
+async function runCommand(name: string, args: string) {
+  state.value.error = false; state.value.status = ''
+  if (name === 'usage') { usageOpen.value = true; return }
+  if (name === 'compress') {
+    if (busy.value || compressing.value) { attachNote('请等这一轮回答结束再压缩。'); return }
+    const controller = new AbortController(); compressing.value = controller
+    follow = true; scheduleScroll()
+    try { await compressConversation({ ...props.document }, state.value.id, args, controller.signal) }
+    catch (error: any) { if (!controller.signal.aborted) attachNote(error?.message || String(error)) }
+    finally { if (compressing.value === controller) compressing.value = null; scheduleScroll() }
+    return
+  }
+  if (name === 'btw') {
+    if (!args) { attachNote('在 /btw 后面写上要顺便问的问题。'); prompt.value = '/btw '; return }
+    closeBtw()
+    const item = ref<Btw>({ question: args, answer: '', running: true, error: '', controller: new AbortController() })
+    btw.value = item.value
+    const current = btw.value!
+    const recent = messages.value.filter(message => !message.compressed && message.content).slice(-6).map(message => `${message.summary ? '【摘要】' : message.role === 'user' ? '读者' : '助手'}：${message.content.slice(0, 1500)}`).join('\n\n')
+    try {
+      const { complete } = await import('../ai/complete')
+      await complete({ kind: 'btw', signal: current.controller.signal, messages: [{ role: 'user', content: [
+        '[顺便问：这是读者插进来的一个旁支问题，回答不会写进对话记录。请简短、直接地回答。]',
+        `[正在读的文档]《${props.document.title}》`,
+        selected.value.text && `[读者选中的文字]\n${String(selected.value.text).slice(0, 1500)}`,
+        recent && `[最近的对话，仅供参考]\n${recent}`,
+        `问题：${args}`,
+      ].filter(Boolean).join('\n\n') }], onDelta: (_delta, all) => { if (btw.value === current) current.answer = all } })
+    } catch (error: any) { if (btw.value === current && !current.controller.signal.aborted) current.error = error?.message || String(error) }
+    finally { if (btw.value === current) current.running = false }
+  }
+}
+const compressedBefore = (message: Message) => { const index = messages.value.indexOf(message); return messages.value.slice(0, index).filter(item => item.compressed && !item.summary).length }
 function send(question?: string) {
+  // 斜杠命令在本地处理，不当作问题发出去。
+  const command = question === undefined ? prompt.value.trim().match(/^\/(btw|compress|usage)(?:\s+([\s\S]*))?$/i) : null
+  if (command) { prompt.value = ''; void runCommand(command[1]!.toLowerCase(), (command[2] || '').trim()); return }
   // 输入框空着而有预判的问题时，按发送键直接发送它。
   if (preferences.value.assistant.predictQuestions && question === undefined && !prompt.value.trim() && prediction.value) question = prediction.value
   const id = props.document.id
@@ -504,12 +656,14 @@ function send(question?: string) {
   const usesSelection = includeSelection.value && Boolean(selection?.image || selection?.text)
   const consumeCapture = props.consumeCapture
   const sentImages = [...attachments.value]
+  const sentQuote = mainQuote.value
   follow = true
   return sendChat({ ...props.document }, { ...props.context }, () => { if (id === props.document.id) emit('settings') }, () => {
     // The request can be accepted after this pane closes or switches files.
     if (usesSelection) consumeCapture?.({ documentId: id, selection })
     if (sentImages.length) attachments.value = attachments.value.filter(image => !sentImages.includes(image))
-  }, question, { conversationId: state.value.id, attachments: sentImages })
+    if (sentQuote && mainQuote.value === sentQuote) mainQuote.value = ''
+  }, question, { conversationId: state.value.id, attachments: sentImages, quote: sentQuote })
 }
 // ---- Predicted next question --------------------------------------------------
 const prediction = ref('')
@@ -555,7 +709,7 @@ onMounted(() => {
   if (messageList.value) observer.observe(messageList.value)
 })
 onBeforeUnmount(() => { unwatch?.(); cancelAnimationFrame(scrollFrame); rememberScroll(); clearInterval(ticker); clearTimeout(predictTimer); predicting?.abort(); observer?.disconnect(); if (renderFrame) cancelAnimationFrame(renderFrame); pickerRequest?.abort(); document.removeEventListener('pointerdown', pickerOutside, true); window.removeEventListener('keydown', strayEscape, true); document.removeEventListener('pointerdown', historyOutside, true) })
-defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startConversation })
+defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startConversation, closeSide })
 </script>
 
 <template>
@@ -591,13 +745,15 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
       <button class="header-button close-assistant" data-tip="关闭阅读助手" aria-label="关闭阅读助手" @click="emit('close')"><AppIcon name="close" :size="15" /></button>
     </header>
 
+    <div ref="columns" class="ai-columns" :class="{ 'with-side': sideOpen }">
+    <div class="ai-main">
     <div class="ai-body">
       <div ref="messageList" class="ai-messages" data-glass-still @scroll.passive="onScroll" @click="answerClick">
         <div v-if="!messages.length" class="ai-welcome">
           <AssistantMark :kind="avatar.kind" :image="avatar.image" :size="56" class="ai-welcome-mark" />
           <h2 class="ai-welcome-lead" :lang="greeting.lang === 'zh' ? 'zh-CN' : 'en'">{{ greeting.text }}</h2>
         </div>
-        <article v-for="message in messages" :key="message.id" class="ai-message" :class="message.role" :data-id="message.id">
+        <article v-for="message in messages" :key="message.id" class="ai-message" :class="[message.role, { compressed: message.compressed, summary: message.summary }]" :data-id="message.id">
           <template v-if="message.role === 'user'">
             <div v-if="editing === message.id" class="question-editor">
               <textarea ref="editor" v-model="editText" rows="3" aria-label="编辑问题" @keydown="editKeydown($event, message)" />
@@ -605,7 +761,8 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
             </div>
             <template v-else>
               <div class="user-question">{{ message.content }}</div>
-              <div v-if="message.ask?.text || message.images?.length || message.ask?.includeDocument" class="sent-context" aria-label="随问题发送的上下文">
+              <div v-if="message.ask?.text || message.ask?.quote || message.images?.length || message.ask?.includeDocument" class="sent-context" aria-label="随问题发送的上下文">
+                <span v-if="message.ask?.quote" class="sent-quote quoted" :title="message.ask.quote"><AppIcon name="branch" :size="10" />{{ message.ask.quote.slice(0, 60) }}{{ message.ask.quote.length > 60 ? '…' : '' }}</span>
                 <img v-for="(image, index) in (message.images || []).slice(0, 5)" :key="index" :src="image" alt="随问题发送的图片" />
                 <span v-if="message.ask?.text" class="sent-quote" :title="message.ask.text">“{{ message.ask.text.slice(0, 60) }}{{ message.ask.text.length > 60 ? '…' : '' }}”</span>
                 <span v-if="message.ask?.includeDocument" class="sent-doc"><AppIcon name="book" :size="11" />{{ document.kind === 'pdf' ? `文档 · 第 ${message.ask.page || 1} 页` : '文档' }}</span>
@@ -613,6 +770,10 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
               <div class="question-actions"><button class="meta-button" :disabled="busy && message.id === lastQuestionId" aria-label="编辑问题" data-tip="编辑后重新回答" @click="startEdit(message)"><AppIcon name="edit" :size="13" /></button><button class="meta-button" aria-label="复制问题" data-tip="复制" @click="copy(message.content)"><AppIcon name="copy" :size="13" /></button></div>
             </template>
           </template>
+          <div v-else-if="message.summary" class="summary-card">
+            <p class="summary-head"><AppIcon name="history" :size="13" />对话摘要<span>以上 {{ compressedBefore(message) }} 条消息已压缩，之后只带这份摘要</span></p>
+            <div v-answer="message" class="answer-body" />
+          </div>
           <template v-else>
             <button v-if="live(message) || message.reasoning || message.sources.length" class="thinking" :class="{ live: live(message), open: expanded.has(message.id) }" :aria-expanded="expanded.has(message.id)" @click="toggleReasoning(message.id)">
               <span class="thinking-star" aria-hidden="true">{{ live(message) ? spinner(message) : '✻' }}</span>
@@ -634,6 +795,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
             </div>
           </template>
         </article>
+        <p v-if="compressing" class="compressing-line"><span class="thinking-star" aria-hidden="true">✻</span>正在压缩对话…<button type="button" class="meta-button" aria-label="取消压缩" data-tip="取消" @click="compressing?.abort()"><AppIcon name="close" :size="12" /></button></p>
         <p v-if="errorText" class="ai-error">{{ errorText }}</p>
         <p class="ai-status" role="status" aria-live="polite">{{ liveStatus }}</p>
       </div>
@@ -649,7 +811,23 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
       </div></Transition>
     </div>
 
+    <Transition name="btw-pop">
+      <div v-if="btw" class="btw-card" role="status" aria-live="polite">
+        <p class="btw-head"><span class="btw-tag">/btw</span><span class="btw-question">{{ btw.question }}</span><button type="button" class="meta-button" aria-label="关闭顺便问" data-tip="关闭" data-tip-key="Esc" @click="closeBtw"><AppIcon name="close" :size="12" /></button></p>
+        <div v-if="btw.answer" class="answer-body btw-answer" v-html="renderMarkdown(btw.answer)"></div>
+        <p v-else-if="btw.running" class="btw-wait"><span class="thinking-star">✻</span>想一想…</p>
+        <p v-if="btw.error" class="ai-error">{{ btw.error }}</p>
+        <p class="btw-note">不会写进对话记录 · Esc 关闭</p>
+      </div>
+    </Transition>
     <div class="ai-composer">
+      <Transition name="command-pop">
+        <div v-if="commandMatches.length" class="command-menu" role="listbox" aria-label="斜杠命令">
+          <button v-for="(item, index) in commandMatches" :key="item.name" type="button" role="option" :aria-selected="index === commandIndex" :class="{ on: index === commandIndex }" @pointerdown.prevent @click="pickCommand(item)" @pointerenter="commandIndex = index">
+            <b>{{ item.name }}</b><span v-if="item.args" class="command-args">{{ item.args }}</span><span class="command-label">{{ item.label }}</span><small>{{ item.hint }}</small>
+          </button>
+        </div>
+      </Transition>
       <div ref="composerField" class="composer-field" :class="{ busy, expanded: pickerOpen }" @keydown.esc="drawerEscape" @dragover="dragImages" @drop="dropImages">
         <div class="composer-resize" role="separator" aria-orientation="horizontal" aria-label="拖动调整输入框高度" data-tip="拖动调整高度，双击恢复" @pointerdown="startResize" @pointermove="resize" @pointerup="endResize" @pointercancel="endResize" @dblclick="resetResize" />
         <div v-if="hasSelection" class="ai-selection-context">
@@ -659,6 +837,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
         <div v-if="attachments.length" class="ai-attachments" aria-label="附上的图片">
           <span v-for="(image, index) in attachments" :key="image.slice(-48) + index" class="attachment"><img :src="image" alt="附上的图片" /><button type="button" class="chip-remove" :aria-label="`移除第 ${index + 1} 张图片`" data-tip="移除这张图片" @click="removeAttachment(index)"><AppIcon name="close" :size="11" /></button></span>
         </div>
+        <div v-if="mainQuote" class="quote-chip"><AppIcon name="branch" :size="11" /><span :title="mainQuote">{{ mainQuote }}</span><button type="button" class="chip-remove" aria-label="移除引用" data-tip="移除引用" @click="mainQuote = ''"><AppIcon name="close" :size="11" /></button></div>
         <div class="prompt-box">
           <textarea ref="input" v-model="prompt" @paste="pasteImages" :style="{ height: `${composerHeight}px` }" :placeholder="prediction ? '' : placeholder" aria-label="向 AI 提问" :aria-describedby="prediction ? `prediction-${state.id}` : undefined" @keydown="keydown" />
           <!-- 预判的问题：像 Claude Code 一样以淡色出现在空输入框里，按 Tab 或回车采用。 -->
@@ -682,6 +861,22 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
         </div>
       </div>
     </div>
+    </div>
+    <Transition name="side-col">
+      <div v-if="sideOpen" class="ai-side" :style="{ width: `${sideWidth}px` }">
+        <div class="side-divider" role="separator" aria-orientation="vertical" aria-label="拖动调整主对话与侧边对话的宽度" data-tip="拖动调整宽度" @pointerdown="startSideDrag" @pointermove="moveSideDrag" @pointerup="endSideDrag" @pointercancel="endSideDrag" />
+        <SideChat ref="sideChat" v-model:quote="sideQuote" :document="document" :main-id="state.id" :context="context" @close="closeSide" @settings="emit('settings')" />
+      </div>
+    </Transition>
+    </div>
+    <UsagePanel v-if="usageOpen" :context-used="contextUsed" :context-limit="contextLimit" :model="modelLabel" @close="usageOpen = false; focusPrompt()" />
+    <Transition name="quote-pop">
+      <div v-if="quotePop" class="quote-pop" :style="{ left: `${quotePop.left}px`, top: `${quotePop.top}px` }" role="toolbar" aria-label="引用所选文字" @pointerdown.prevent>
+        <button type="button" @click="quoteAction('add')"><AppIcon name="plus" :size="13" />添加到对话<kbd>Ctrl ↓</kbd></button>
+        <button v-if="quotePop.from === 'main'" type="button" @click="quoteAction('side')"><AppIcon name="branch" :size="13" />在侧边对话提问<kbd>Ctrl →</kbd></button>
+        <button v-else type="button" @click="quoteAction('main')"><AppIcon name="arrow" :size="13" class="flip" />返回主对话提问<kbd>Ctrl ←</kbd></button>
+      </div>
+    </Transition>
   </aside>
 </template>
 
@@ -746,6 +941,53 @@ button:disabled{opacity:.4;cursor:default}
 .history-pop-leave-active{transition:opacity var(--dur-1) var(--ease-out),transform var(--dur-1) var(--ease-out)}
 .history-pop-enter-from,.history-pop-leave-to{opacity:0;transform:translateY(-6px) scale(.95)}
 /* 消息区；原生滚动条隐藏，右侧导航条代替。 */
+.ai-columns{position:relative;flex:1;min-height:0;display:flex}
+.ai-message.compressed{opacity:.5}
+.summary-card{padding:10px 13px 12px;border-radius:12px;border:1px dashed var(--hairline);background:color-mix(in srgb,var(--ink) 3%,transparent)}
+.summary-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 6px;font-size:12.5px;font-weight:650}
+.summary-head span{font-weight:400;color:var(--muted);font-size:11.5px}
+.compressing-line{display:flex;align-items:center;gap:6px;color:var(--secondary);font-size:12.5px}
+.btw-card{position:relative;margin:0 12px 6px;padding:9px 12px 8px;max-height:40%;overflow:auto;border-radius:12px;border:1px solid var(--hairline);background:var(--bar-glass);box-shadow:0 8px 22px -14px rgb(0 0 0 / .3)}
+.btw-head{display:flex;align-items:center;gap:7px;margin:0 0 5px;font-size:12.5px}
+.btw-tag{padding:1px 6px;border-radius:5px;background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);font:600 11px var(--font-mono,ui-monospace,monospace)}
+.btw-question{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--secondary)}
+.btw-answer{font-size:13.5px;line-height:1.65}
+.btw-wait{display:flex;gap:6px;margin:2px 0;color:var(--muted);font-size:12.5px}
+.btw-note{margin:6px 0 0;color:var(--muted);font-size:10.5px}
+.btw-pop-enter-active{transition:opacity var(--dur-2) var(--ease-soft),translate var(--dur-3) var(--spring-snappy)}
+.btw-pop-leave-active{transition:opacity var(--dur-1) var(--ease-soft)}
+.btw-pop-enter-from{opacity:0;translate:0 10px}.btw-pop-leave-to{opacity:0}
+.ai-composer{position:relative}
+.command-menu{position:absolute;left:12px;right:12px;bottom:calc(100% - 4px);z-index:20;display:grid;gap:2px;padding:5px;border-radius:12px;background:color-mix(in srgb,var(--surface) 95%,transparent);background-image:var(--popup-sheen,none);-webkit-backdrop-filter:blur(var(--popup-blur,18px)) saturate(var(--glass-sat,1.4));backdrop-filter:blur(var(--popup-blur,18px)) saturate(var(--glass-sat,1.4));border:1px solid var(--glass-outline);box-shadow:0 16px 36px -16px rgb(0 0 0 / .35)}
+.command-menu button{display:grid;grid-template-columns:auto auto 1fr;align-items:baseline;column-gap:8px;padding:7px 10px;border:0;border-radius:9px;background:none;box-shadow:none;text-align:left}
+.command-menu button.on{background:color-mix(in srgb,var(--ink) 8%,transparent)}
+.command-menu b{font:600 12.5px var(--font-mono,ui-monospace,monospace)}
+.command-args{color:var(--muted);font-size:11.5px}
+.command-label{font-size:12.5px;justify-self:end;color:var(--secondary)}
+.command-menu small{grid-column:1/-1;color:var(--muted);font-size:11px;margin-top:2px}
+.command-pop-enter-active,.command-pop-leave-active{transition:opacity var(--dur-1) var(--ease-soft),translate var(--dur-2) var(--spring-snappy)}
+.command-pop-enter-from,.command-pop-leave-to{opacity:0;translate:0 6px}
+.ai-main{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}
+.ai-side{position:relative;flex:0 0 auto;min-width:0;min-height:0;display:flex;padding-left:1px}
+.ai-side>:deep(.side-chat){flex:1;min-width:240px}
+/* 主栏与侧栏之间就是一道细线；指针靠近时线变粗，可以左右拖。 */
+.side-divider{position:absolute;left:-5px;top:8px;bottom:8px;z-index:12;width:11px;cursor:col-resize;touch-action:none}
+.side-divider::before{content:'';position:absolute;left:5px;top:0;bottom:0;width:1px;background:var(--hairline);transition:background var(--dur-1) var(--ease-soft),width var(--dur-1) var(--ease-soft),left var(--dur-1) var(--ease-soft)}
+.side-divider:hover::before,.side-divider:active::before{left:4px;width:3px;border-radius:2px;background:color-mix(in srgb,var(--ink) 30%,transparent)}
+.side-col-enter-active,.side-col-leave-active{overflow:hidden;transition:width var(--dur-bounce) var(--spring-snappy),opacity var(--dur-2) var(--ease-soft)}
+.side-col-leave-active{transition-duration:var(--dur-3),var(--dur-2);transition-timing-function:var(--ease-out)}
+.side-col-enter-from,.side-col-leave-to{width:0 !important;opacity:0}
+.quote-pop{position:absolute;z-index:30;display:flex;gap:2px;padding:4px;border-radius:12px;translate:-50% -100%;background:color-mix(in srgb,var(--surface) 95%,transparent);background-image:var(--popup-sheen,none);-webkit-backdrop-filter:blur(var(--popup-blur,18px)) saturate(var(--glass-sat,1.4));backdrop-filter:blur(var(--popup-blur,18px)) saturate(var(--glass-sat,1.4));border:1px solid var(--glass-outline);box-shadow:0 12px 30px -12px rgb(0 0 0 / .35),var(--glass-edge,none)}
+.quote-pop button{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px;border:0;border-radius:9px;background:none;box-shadow:none;font-size:12.5px;white-space:nowrap}
+.quote-pop button:hover{background:color-mix(in srgb,var(--ink) 8%,transparent)}
+.quote-pop kbd{margin-left:2px;padding:1px 5px;border-radius:5px;background:color-mix(in srgb,var(--ink) 7%,transparent);color:var(--muted);font:500 10.5px var(--font-ui)}
+.quote-pop .flip{rotate:180deg}
+.quote-pop-enter-active{transition:opacity var(--dur-1) var(--ease-soft),scale var(--dur-2) var(--spring-snappy)}
+.quote-pop-leave-active{transition:opacity var(--dur-1) var(--ease-soft)}
+.quote-pop-enter-from{opacity:0;scale:.92}.quote-pop-leave-to{opacity:0}
+.quote-chip{display:flex;align-items:center;gap:6px;margin:8px 10px 0;padding:4px 6px 4px 9px;border-radius:9px;background:color-mix(in srgb,var(--accent) 10%,transparent);color:var(--secondary);font-size:12px}
+.quote-chip span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sent-quote.quoted{display:inline-flex;align-items:center;gap:4px}
 .ai-body{position:relative;flex:1;min-height:0;display:flex;-webkit-mask-image:linear-gradient(180deg,transparent 0,#000 14px,#000 calc(100% - 14px),transparent 100%);mask-image:linear-gradient(180deg,transparent 0,#000 14px,#000 calc(100% - 14px),transparent 100%)}
 /* 上下沿的淡出遮罩挂在外层 .ai-body 上，而不是滚动容器本身。对话列表单独成一层（will-change）：
    半透明玻璃上的文字默认不走合成滚动，滚轮每动一帧都要把整屏文字重新栅格化，长回答里就一顿一顿的。 */

@@ -91,7 +91,10 @@ export async function predictQuestion(context: PredictContext, signal: AbortSign
   } catch (error) {
     // 读到第一行后主动停下也算成功；其他失败（没网、额度）就不显示建议。
     if (!reply || signal.aborted) throw error
-  } finally { clearTimeout(timer); signal.removeEventListener('abort', stop) }
+  } finally {
+    clearTimeout(timer); signal.removeEventListener('abort', stop)
+    if (reply) { const { recordUsage } = await import('./usage'); recordUsage({ kind: 'predict', provider: settings.provider, model: fastModel(settings).model || settings.model || '', ms: 0, estimated: true, input: Math.ceil(prompt.length / 2), output: Math.ceil(reply.length / 2), reasoning: 0 }) }
+  }
   signal.throwIfAborted()
   const question = cleanQuestion(reply)
   if (question) remember(key, question)
