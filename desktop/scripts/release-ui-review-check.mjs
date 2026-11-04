@@ -65,7 +65,7 @@ try {
   await picker().click(); await modelList();
   await menu().getByRole('option', { name: '评审模型 6', exact: true }).waitFor();
   assert.equal(await menu().getByRole('option').count(), 9);
-  assert.deepEqual(await page.evaluate(() => window.__reviewDiscovery.calls), ['status', 'models']);
+  assert.deepEqual(await page.evaluate(() => window.__reviewDiscovery.calls), ['status', 'status', 'models'] /* 打开面板时先预热 Codex */);
   assert.equal(await page.evaluate(() => localStorage.getItem('paperdesk.ai.settings.v1')), before);
   checks.push('Cold composer discovers every Codex model without opening settings or changing stored configuration.');
   await menu().getByRole('option', { name: '评审模型 5', exact: true }).click();
@@ -76,7 +76,7 @@ try {
   assert.deepEqual(chosen, { ...JSON.parse(before), model: 'review-5', effort: 'low' });
   assert.equal(await pane().getByRole('textbox', { name: '向 AI 提问', exact: true }).inputValue(), '保留用户草稿');
   await closeMenu(); await picker().click();
-  assert.deepEqual(await page.evaluate(() => window.__reviewDiscovery.calls), ['status', 'models']);
+  assert.deepEqual(await page.evaluate(() => window.__reviewDiscovery.calls), ['status', 'status', 'models']);
   await closeMenu();
   checks.push('Model switch adapts supported efforts, writes only model/effort, retains the draft and uses the cached inventory.');
 
