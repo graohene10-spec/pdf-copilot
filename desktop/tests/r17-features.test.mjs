@@ -48,3 +48,9 @@ test('machine translation: Google reply parsing, chunking and the Youdao v3 sign
   assert.equal(youdaoInput('hello'), 'hello')
   assert.equal(youdaoInput('abcdefghijklmnopqrstuvwxyz'), 'abcdefghij26qrstuvwxyz')
 })
+
+test('Google Cloud Translation v2: translations are joined and entities decoded; API errors surface their message', async () => {
+  const { parseGoogleCloud } = await import('../src/ai/machine-translate.ts')
+  assert.equal(parseGoogleCloud({ data: { translations: [{ translatedText: '结果是 &quot;本征值&quot; &amp; 更多' }] } }), '结果是 "本征值" & 更多')
+  assert.throws(() => parseGoogleCloud({ error: { code: 400, message: 'API key not valid.' } }), /API key not valid/)
+})

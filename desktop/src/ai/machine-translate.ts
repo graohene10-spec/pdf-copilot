@@ -29,17 +29,42 @@ export function parseGoogle(data: unknown): string {
   return data[0].map((segment: any) => Array.isArray(segment) && typeof segment[0] === 'string' ? segment[0] : '').join('')
 }
 
-async function google(text: string, target: Target, signal: AbortSignal) {
-  const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${GOOGLE[target]}&dt=t`
-  let response: Response
+/** 一次请求最多等这么久：直连谷歌被墙时不必傻等。 */
+const TIMEOUT = 12_000
+async function post(url: string, signal: AbortSignal, init: RequestInit, service: string): Promise<Response> {
+  const timer = AbortSignal.timeout(TIMEOUT)
   try {
-    response = await transportFetch(url, { method: 'POST', signal, headers: { 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8' }, body: `q=${encodeURIComponent(text)}` })
+    return await transportFetch(url, { ...init, method: 'POST', signal: AbortSignal.any([signal, timer]) })
   } catch (error: any) {
     if (signal.aborted) throw error
-    throw new Error('连不上谷歌翻译。网络无法访问谷歌时，可以在翻译栏底部改用「有道」。')
+    if (timer.aborted) throw new Error(`${service}：${TIMEOUT / 1000} 秒内没有响应。直连多半被墙了，开代理后再试。`)
+    throw new Error(`${service}：连不上（${String(error?.message || error).slice(0, 80)}）`)
   }
-  if (!response.ok) throw new Error(response.status === 429 ? '谷歌翻译请求太频繁，请稍后再试，或改用「有道」。' : `谷歌翻译返回了错误（HTTP ${response.status}）`)
+}
+
+/** 免密钥的公开接口：谷歌按出口 IP 限流，代理节点很多人共用一个 IP 时常被拒（429）。 */
+async function google(text: string, target: Target, signal: AbortSignal) {
+  const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${GOOGLE[target]}&dt=t`
+  const response = await post(url, signal, { headers: { 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8' }, body: `q=${encodeURIComponent(text)}` }, '谷歌')
+  if (response.status === 429 || response.status === 403) throw new Error(`谷歌拒绝了这次请求（HTTP ${response.status}）：免密钥接口按出口 IP 限流，共用的代理节点常被限。换个节点，或改用「谷歌云」（自己的 API 密钥）/「有道」。`)
+  if (!response.ok) throw new Error(`谷歌返回了错误（HTTP ${response.status}）`)
   return parseGoogle(await response.json())
+}
+
+/** 官方 Cloud Translation（v2）：用自己的 API 密钥，按密钥计量，不受共用 IP 限流影响。 */
+export function parseGoogleCloud(data: any): string {
+  if (data?.error) throw new Error(`谷歌云：${data.error.message || data.error.status || data.error.code}`)
+  const list = data?.data?.translations
+  if (!Array.isArray(list)) throw new Error('谷歌云返回的结果无法识别')
+  return list.map((item: any) => decodeEntities(String(item.translatedText || ''))).join('\n')
+}
+const decodeEntities = (text: string) => text.replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code))).replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+async function googleCloud(text: string, target: Target, signal: AbortSignal, key: string) {
+  if (!key) throw new Error('请先在翻译栏底部填好谷歌云的 API 密钥。')
+  const response = await post(`https://translation.googleapis.com/language/translate/v2?key=${encodeURIComponent(key)}`, signal, { headers: { 'content-type': 'application/json' }, body: JSON.stringify({ q: [text], target: GOOGLE[target], format: 'text' }) }, '谷歌云')
+  const data = await response.json().catch(() => null)
+  if (!response.ok && !data?.error) throw new Error(`谷歌云返回了错误（HTTP ${response.status}）`)
+  return parseGoogleCloud(data)
 }
 
 const YOUDAO_ERRORS: Record<string, string> = {
@@ -61,13 +86,7 @@ async function youdao(text: string, target: Target, signal: AbortSignal, credent
   const salt = crypto.randomUUID(), curtime = String(Math.floor(Date.now() / 1000))
   const sign = await sha256(appKey + youdaoInput(text) + salt + curtime + secret)
   const body = new URLSearchParams({ q: text, from: 'auto', to: YOUDAO[target], appKey, salt, sign, signType: 'v3', curtime })
-  let response: Response
-  try {
-    response = await transportFetch('https://openapi.youdao.com/api', { method: 'POST', signal, headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: body.toString() })
-  } catch (error: any) {
-    if (signal.aborted) throw error
-    throw new Error('连不上有道翻译，请检查网络。')
-  }
+  const response = await post('https://openapi.youdao.com/api', signal, { headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: body.toString() }, '有道')
   const data: any = await response.json().catch(() => null)
   if (!data) throw new Error(`有道翻译返回了错误（HTTP ${response.status}）`)
   if (data.errorCode !== '0') throw new Error(`有道翻译：${YOUDAO_ERRORS[data.errorCode] || `错误 ${data.errorCode}`}`)
@@ -75,11 +94,12 @@ async function youdao(text: string, target: Target, signal: AbortSignal, credent
 }
 
 /** 按块翻译，每翻完一块就回调一次已有的全部译文（翻译栏里逐段出现）。 */
-export async function machineTranslate(engine: 'google' | 'youdao', text: string, target: Target, signal: AbortSignal, credential = '', onPartial?: (all: string) => void) {
+export type MachineEngine = 'google' | 'google-api' | 'youdao'
+export async function machineTranslate(engine: MachineEngine, text: string, target: Target, signal: AbortSignal, credential = '', onPartial?: (all: string) => void) {
   const parts: string[] = []
   for (const chunk of chunks(text)) {
     signal.throwIfAborted()
-    parts.push(engine === 'google' ? await google(chunk, target, signal) : await youdao(chunk, target, signal, credential))
+    parts.push(engine === 'google' ? await google(chunk, target, signal) : engine === 'google-api' ? await googleCloud(chunk, target, signal, credential) : await youdao(chunk, target, signal, credential))
     onPartial?.(parts.join('\n\n'))
   }
   return parts.join('\n\n')
