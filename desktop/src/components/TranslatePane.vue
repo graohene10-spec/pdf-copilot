@@ -4,7 +4,7 @@
 import { nextTick, ref, watch } from 'vue'
 import AppIcon from './AppIcon.vue'
 import { renderMarkdown } from '../ai/render'
-import { translator, translate, stopTranslation, removeTranslation, clearTranslations, TARGETS, type Translation } from '../ai/translate'
+import { translator, translate, stopTranslation, removeTranslation, clearTranslations, youdaoCredential, saveYoudaoCredential, TARGETS, ENGINES, type Translation } from '../ai/translate'
 
 defineProps<{ shortcut?: string }>()
 const emit = defineEmits<{ close: [] }>()
@@ -13,6 +13,20 @@ const list = ref<HTMLElement>()
 const field = ref<HTMLTextAreaElement>()
 const copied = ref('')
 const LABEL: Record<string, string> = { zh: '中文', en: 'English', ja: '日本語' }
+const ENGINE_LABEL: Record<string, string> = { google: '谷歌', youdao: '有道', ai: 'AI' }
+// 有道需要应用 ID 与应用密钥：选了有道而还没填时，底部展开一张小表单。
+const youdaoReady = ref(false)
+const youdaoForm = ref(false)
+const appKey = ref('')
+const appSecret = ref('')
+const savingKey = ref(false)
+async function checkYoudao() { youdaoReady.value = Boolean(await youdaoCredential().catch(() => '')) ; if (translator.engine === 'youdao' && !youdaoReady.value) youdaoForm.value = true }
+watch(() => translator.engine, () => { youdaoForm.value = false; void checkYoudao() }, { immediate: true })
+async function saveYoudao() {
+  if (!appKey.value.trim() || !appSecret.value.trim()) return
+  savingKey.value = true
+  try { await saveYoudaoCredential(appKey.value, appSecret.value); appKey.value = ''; appSecret.value = ''; youdaoReady.value = true; youdaoForm.value = false } finally { savingKey.value = false }
+}
 
 // 新译文出现、或正在翻译的那条变长时，滚到底部。
 watch(() => [translator.items.length, translator.items.at(-1)?.result.length], () => {
@@ -56,7 +70,7 @@ defineExpose({ focus })
       </div>
       <article v-for="item in translator.items" :key="item.id" class="tp-card" :class="item.status">
         <p class="tp-source" :title="item.source">{{ item.source }}</p>
-        <div class="tp-arrow" aria-hidden="true"><span>{{ LABEL[item.target] }}</span></div>
+        <div class="tp-arrow" aria-hidden="true"><span>{{ item.engine ? `${ENGINE_LABEL[item.engine]} · ` : '' }}{{ LABEL[item.target] }}</span></div>
         <div v-if="item.result" class="tp-result" v-html="renderMarkdown(item.result)"></div>
         <p v-else-if="item.status === 'running'" class="tp-pending"><span class="tp-dot"></span><span class="tp-dot"></span><span class="tp-dot"></span></p>
         <p v-if="item.status === 'error'" class="tp-error">{{ item.error || '翻译失败' }}</p>
@@ -71,6 +85,19 @@ defineExpose({ focus })
       </article>
     </div>
 
+    <div class="tp-engine">
+      <span>翻译服务</span>
+      <div class="tp-targets" role="radiogroup" aria-label="翻译服务">
+        <button v-for="item in ENGINES" :key="item.value" type="button" role="radio" :aria-checked="translator.engine === item.value" :class="{ on: translator.engine === item.value }" :data-tip="item.value === 'google' ? '谷歌翻译：免密钥，最快' : item.value === 'youdao' ? '有道智云：需要应用 ID 与密钥' : '用阅读助手的 AI 模型翻译：慢一些，公式与术语更讲究'" @click="translator.engine = item.value">{{ item.label }}</button>
+      </div>
+      <button v-if="translator.engine === 'youdao' && youdaoReady" type="button" class="tp-link" @click="youdaoForm = !youdaoForm">{{ youdaoForm ? '收起' : '更换密钥' }}</button>
+    </div>
+    <form v-if="translator.engine === 'youdao' && youdaoForm" class="tp-keys" @submit.prevent="saveYoudao">
+      <p>在有道智云（ai.youdao.com）创建应用并开通「文本翻译」，把应用 ID 和应用密钥填在这里。密钥加密保存在本机。</p>
+      <input v-model="appKey" placeholder="应用 ID" aria-label="有道应用 ID" autocomplete="off" />
+      <input v-model="appSecret" type="password" placeholder="应用密钥" aria-label="有道应用密钥" autocomplete="off" />
+      <button type="submit" :disabled="savingKey || !appKey.trim() || !appSecret.trim()">保存</button>
+    </form>
     <form class="tp-composer" @submit.prevent="submit">
       <textarea ref="field" v-model="draft" rows="3" placeholder="输入或粘贴要翻译的文字，回车翻译" aria-label="要翻译的文字" @keydown="keydown"></textarea>
       <button type="submit" class="tp-send" :disabled="!draft.trim()" aria-label="开始翻译" data-tip="翻译（回车）"><AppIcon name="arrow-up" :size="16" /></button>
@@ -109,6 +136,13 @@ defineExpose({ focus })
 .tp-actions{display:flex;justify-content:flex-end;gap:2px;margin-top:4px;opacity:.55;transition:opacity var(--dur-1) var(--ease-soft)}
 .tp-card:hover .tp-actions,.tp-card:focus-within .tp-actions{opacity:1}
 .tp-actions .tp-icon{width:26px;height:24px}
+.tp-engine{display:flex;align-items:center;gap:8px;flex-shrink:0;margin:6px 12px 0;color:var(--muted);font-size:11.5px}
+.tp-link{margin-left:auto;padding:0;border:0;background:none;box-shadow:none;color:var(--secondary);font-size:11.5px;text-decoration:underline;text-underline-offset:2px}
+.tp-keys{display:grid;grid-template-columns:1fr 1fr auto;gap:6px;flex-shrink:0;margin:8px 12px 0;padding:10px;border-radius:12px;background:color-mix(in srgb,var(--surface) 70%,transparent);border:.5px solid var(--line-soft)}
+.tp-keys p{grid-column:1/-1;margin:0 0 2px;color:var(--secondary);font-size:11.5px;line-height:1.5}
+.tp-keys input{min-width:0;height:30px;padding:0 8px;border-radius:8px;border:.5px solid var(--line-soft);background:var(--surface);color:inherit;font:inherit;font-size:12.5px}
+.tp-keys button{height:30px;padding:0 12px;border-radius:8px;border:0;background:var(--surface-ink);color:var(--surface);box-shadow:none;font-size:12.5px}
+.tp-keys button:disabled{opacity:.4}
 .tp-composer{position:relative;flex-shrink:0;margin:8px 12px 12px;border-radius:14px;border:.5px solid var(--line-soft);background:color-mix(in srgb,var(--surface) 80%,transparent)}
 .tp-composer textarea{display:block;width:100%;min-height:64px;max-height:180px;padding:10px 44px 10px 12px;border:0;background:none;resize:none;color:inherit;font:inherit;font-size:13.5px;line-height:1.55;outline:none}
 .tp-send{position:absolute;right:8px;bottom:8px;display:grid;place-items:center;width:30px;height:30px;padding:0;border:0;border-radius:50%;background:var(--surface-ink);color:var(--surface);box-shadow:none}

@@ -36,3 +36,15 @@ test('Ctrl+T is the default translate shortcut and can be bound', () => {
   assert.equal(DEFAULT_SHORTCUTS.translate, 'Ctrl+KeyT')
   assert.equal(normalizeShortcut('Ctrl+KeyT'), 'Ctrl+KeyT')
 })
+
+test('machine translation: Google reply parsing, chunking and the Youdao v3 sign input', async () => {
+  const { parseGoogle, chunks, youdaoInput } = await import('../src/ai/machine-translate.ts')
+  assert.equal(parseGoogle([[['测量结果', 'The results', null], ['是本征值。', ' are eigenvalues.', null]], null, 'en']), '测量结果是本征值。')
+  assert.throws(() => parseGoogle({ error: 1 }))
+  const long = Array.from({ length: 5 }, (_, k) => `段落${k} ` + 'x'.repeat(3000)).join('\n\n')
+  const parts = chunks(long, 4500)
+  assert.ok(parts.length >= 4 && parts.every(part => part.length <= 4500))
+  assert.equal(parts.join('\n\n').replace(/\s/g, '').length, long.replace(/\s/g, '').length)
+  assert.equal(youdaoInput('hello'), 'hello')
+  assert.equal(youdaoInput('abcdefghijklmnopqrstuvwxyz'), 'abcdefghij26qrstuvwxyz')
+})

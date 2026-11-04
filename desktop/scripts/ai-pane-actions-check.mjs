@@ -131,13 +131,14 @@ try {
   await picker.click();
   const menu = pane().getByRole('group', { name: '模型与思考强度', exact: true });
   await menu.waitFor();
-  const slider = menu.getByRole('slider', { name: '思考强度', exact: true });
-  await slider.focus(); await slider.press('Home');
-  for (let step = 0; step < 8 && await slider.getAttribute('aria-valuetext') !== '低'; step++) await slider.press('ArrowRight');
+  // 思考强度是一排分段按钮（radiogroup），点「低」即可。
+  const efforts = menu.getByRole('radiogroup', { name: '思考强度', exact: true });
+  const low = efforts.getByRole('radio', { name: '低', exact: true });
+  await low.click();
   const afterPick = await stored();
   assert.equal(afterPick.effort, 'low');
   assert.deepEqual({ ...afterPick, effort: beforePick.effort }, beforePick, 'Only the effort changed in stored AI settings.');
-  assert.equal(await slider.getAttribute('aria-valuetext'), '低');
+  assert.equal(await low.getAttribute('aria-checked'), 'true');
   assert.match(await picker.innerText(), /低/);
   await page.keyboard.press('Escape');
   await menu.waitFor({ state: 'hidden' });
@@ -194,8 +195,9 @@ try {
   const selectedNative = await stored();
   assert.equal(selectedNative.effort, 'high', 'Choosing a limited model normalizes an unsupported effort.');
   assert.deepEqual({ ...selectedNative, model: codexBefore.model, effort: codexBefore.effort }, codexBefore, 'Model choice preserves every unrelated field.');
-  assert.equal(await nativeMenu.getByRole('slider', { name: '思考强度', exact: true }).getAttribute('aria-valuemax'), '2', 'Efforts follow the model: default, low, high.');
-  assert.equal(await nativeMenu.getByRole('slider', { name: '思考强度', exact: true }).getAttribute('aria-valuetext'), '高');
+  const nativeEfforts = nativeMenu.getByRole('radiogroup', { name: '思考强度', exact: true }).getByRole('radio');
+  assert.equal(await nativeEfforts.count(), 3, 'Efforts follow the model: default, low, high.');
+  assert.equal(await nativeMenu.getByRole('radio', { name: '高', exact: true }).getAttribute('aria-checked'), 'true');
   await modelView();
   await page.evaluate(() => window.__pickerDiscovery.models.push({ id: 'picker-native-7', name: '新增菜单模型', efforts: ['low', 'high'], defaultEffort: 'low', vision: true }));
   await nativeMenu.getByRole('button', { name: '重新读取本机模型', exact: true }).click();

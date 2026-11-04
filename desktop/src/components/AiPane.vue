@@ -1148,7 +1148,7 @@ button:disabled{opacity:.4;cursor:default}
 .ai-composer{flex-shrink:0;padding:6px 10px 10px;container:composer / inline-size}
 /* 输入栏很窄时（最小窗口）芯片才允许省略文字；平时完整显示「文档上下文」，由模型按钮先让出宽度。 */
 @container composer (max-width: 300px){.context-switch{flex-shrink:1}}
-@container composer (max-width: 250px){.context-label{display:none}.context-switch{padding:0 7px}}
+@container composer (max-width: 290px){.context-label{display:none}.context-switch{padding:0 7px}}
 .composer-field{position:relative;border:1px solid var(--hairline);border-radius:var(--r-lg);background:var(--bar-glass);box-shadow:inset 0 1px 0 var(--glass-rim-soft),0 1px 2px rgb(0 0 0 / .04);transition:border-color var(--dur-2) var(--ease-out),background var(--dur-2) var(--ease-out)}
 .composer-field:focus-within{border-color:color-mix(in srgb,var(--ink) 24%,transparent)}
 .composer-resize{position:absolute;left:50%;top:-6px;width:56px;height:12px;margin-left:-28px;cursor:ns-resize;z-index:2;touch-action:none}
