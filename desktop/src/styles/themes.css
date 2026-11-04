@@ -1662,3 +1662,12 @@
 :root[data-style='sketch'] .ai-pane.embedded::after { content: none; }
 :root[data-style='sketch'] .note-card { border-left: 2px solid var(--red-pencil); background: color-mix(in srgb, var(--sticky) 45%, transparent); rotate: .4deg; }
 :root[data-style='sketch'] .note-flyer { background: var(--sticky); color: var(--pencil); border-left: 0; border-radius: 2px; font-family: 'Caveat', var(--font-ui); font-size: 15px; }
+
+/* 草稿 · 列表视图：选中的行像被荧光笔涂过，左边一道红铅笔竖线，不画会压到邻行的圈。 */
+:root[data-style='sketch'] .document-collection.list .document-card.picked {
+  outline: none;
+  border-radius: inherit;
+  background-color: color-mix(in srgb, var(--sticky) 55%, var(--paper));
+  box-shadow: inset 3px 0 0 var(--red-pencil);
+}
+:root[data-style='warm'] .document-collection.list .document-card.picked { background-color: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
