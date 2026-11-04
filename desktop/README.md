@@ -1,8 +1,8 @@
-# 开智 0.7.1
+# 开智 0.11.0
 
 开智是一款 Windows PDF / Markdown 阅读与管理工具，支持并排阅读、同书多开、本机手写标记和 AI 文档问答。界面采用可调节的液态玻璃材质，文档库、阅读进度、设置和对话记录保存在本机。
 
-[下载 0.7.1](https://github.com/graohene10-spec/pdf-copilot/releases/tag/desktop-v0.7.1) · [本版更新](RELEASE_NOTES_0.7.1.md) · [0.7.0 更新](RELEASE_NOTES_0.7.0.md) · [升级指南](docs/UPDATING.md) · [隐私与数据](docs/PRIVACY.md) · [构建与发布](docs/RELEASING.md)
+[下载 0.11.0](https://github.com/graohene10-spec/pdf-copilot/releases/tag/desktop-v0.11.0) · [本版更新](RELEASE_NOTES_0.11.0.md) · [0.7.0 更新](RELEASE_NOTES_0.7.0.md) · [升级指南](docs/UPDATING.md) · [隐私与数据](docs/PRIVACY.md) · [构建与发布](docs/RELEASING.md)
 
 ## 0.7.1 更新
 
@@ -17,12 +17,12 @@
 
 | GitHub 附件 | 用途 |
 | --- | --- |
-| [kaizhi_0.7.1_x64-setup.exe](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.7.1/kaizhi_0.7.1_x64-setup.exe) | Windows x64 安装版 |
-| [kaizhi_0.7.1_x64-portable.zip](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.7.1/kaizhi_0.7.1_x64-portable.zip) | 免安装版；解压后运行 `开智-portable/开智.exe` |
-| [kaizhi_0.7.1_source.zip](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.7.1/kaizhi_0.7.1_source.zip) | 完整源码，供开发者构建 |
+| [kaizhi_0.11.0_x64-setup.exe](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.11.0/kaizhi_0.11.0_x64-setup.exe) | Windows x64 安装版 |
+| [kaizhi_0.11.0_x64-portable.zip](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.11.0/kaizhi_0.11.0_x64-portable.zip) | 免安装版；解压后运行 `OpenIntelligence-portable/OpenIntelligence.exe` |
+| [kaizhi_0.11.0_source.zip](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.11.0/kaizhi_0.11.0_source.zip) | 完整源码，供开发者构建 |
 | manifest.json / SHA256SUMS.txt | 文件清单、源码提交和附件校验值 |
 
-1. 安装程序，或将免安装 ZIP 全部解压，保留 `开智.exe` 旁的 `native-host/` 文件夹。
+1. 安装程序，或将免安装 ZIP 全部解压，保留 `OpenIntelligence.exe` 旁的 `native-host/` 文件夹。
 2. 点击左栏「加入文档」、按 `Ctrl + O`，或把多个 PDF / MD / Markdown 文件拖入窗口。也可先打开包内 `samples/` 中的示例。
 3. 在「设置 → AI」选择服务商并填写配置；API 服务使用自己的密钥，Codex 使用本机登录。可用服务与协议见下方说明。
 4. 打开文档，点击「阅读助手」，输入问题并发送。需要结合当前页和原文检索时，开启输入区的文档上下文选项。
@@ -168,7 +168,7 @@ npm test
 cargo test --release --locked --manifest-path src-tauri/Cargo.toml
 npm run desktop:build
 npm run package:desktop
-node scripts/release-assets.mjs --tag desktop-v0.7.1
+node scripts/release-assets.mjs --tag desktop-v0.11.0
 ```
 
 本机测试使用 release 配置可复用正式构建缓存；CI 当前使用默认测试配置。工具不在 PATH 时可使用 `scripts/build-windows.ps1`。本机构建产物在 `release/` 中使用中文名称；`release/github/` 中整理为上方表格的英文附件名。程序运行时可加 `package:desktop -- --staging` 先输出至 `artifacts/package-staging/`。

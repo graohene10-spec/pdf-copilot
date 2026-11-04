@@ -4,6 +4,11 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import AppIcon from './AppIcon.vue'
 import { renderMarkdown } from '../ai/render'
+import ModelPicker from './ModelPicker.vue'
+import { getProvider } from '../ai/providers.mjs'
+import { nativeModelInventory } from '../ai/native-models'
+import { loadAiSettings, translationSettings, saveTranslationChoice, supportsFast } from '../ai/settings.mjs'
+import { warmNative } from '../ai/native.mjs'
 import { translator, translate, stopTranslation, removeTranslation, clearTranslations, credential, saveCredential, TARGETS, ENGINES, type Translation } from '../ai/translate'
 
 defineProps<{ shortcut?: string }>()
@@ -14,7 +19,26 @@ const field = ref<HTMLTextAreaElement>()
 const copied = ref('')
 const LABEL: Record<string, string> = { zh: '中文', en: 'English', ja: '日本語' }
 const ENGINE_LABEL: Record<string, string> = { google: '谷歌', 'google-api': '谷歌云', youdao: '有道', ai: 'AI' }
-const ENGINE_TIP: Record<string, string> = { google: '谷歌免密钥接口：最快，但共用的代理 IP 常被谷歌限流', 'google-api': '谷歌云 Cloud Translation：用自己的 API 密钥，稳定（每月前 50 万字符免费）', youdao: '有道智云：需要应用 ID 与密钥，国内直连', ai: '用阅读助手的 AI 模型翻译：慢，公式与术语更讲究' }
+const ENGINE_TIP: Record<string, string> = { google: '谷歌免密钥接口：最快，但共用的代理 IP 常被谷歌限流', 'google-api': '谷歌云 Cloud Translation：用自己的 API 密钥，稳定（每月前 50 万字符免费）', youdao: '有道智云：需要应用 ID 与密钥，国内直连', ai: 'AI 翻译：较慢，公式与术语更讲究；服务商在 设置 → AI → 翻译用的 AI' }
+// AI 翻译自己的模型、思考强度与 Fast（服务商默认与阅读助手共用）。
+const aiSettings = ref<any>(translationSettings(loadAiSettings()))
+const aiPicker = ref(false)
+watch(() => translator.engine, engine => {
+  if (engine !== 'ai') { aiPicker.value = false; return }
+  aiSettings.value = translationSettings(loadAiSettings())
+  if (aiSettings.value.provider === 'codex') void warmNative()
+}, { immediate: true })
+const aiModels = computed<any[]>(() => {
+  const list: any[] = aiSettings.value.provider === 'codex' ? nativeModelInventory.value : getProvider(aiSettings.value.provider)?.models || []
+  const current = aiSettings.value.model || ''
+  return [{ id: '', name: '自动（小模型）' }, ...(current && !list.some(item => item.id === current) ? [{ id: current, name: current }] : []), ...list.filter(item => item.id)]
+})
+const aiLabel = computed(() => `${getProvider(aiSettings.value.provider)?.name || aiSettings.value.provider} · ${aiModels.value.find(item => item.id === (aiSettings.value.model || ''))?.name || aiSettings.value.model}`)
+const aiFast = computed(() => supportsFast(aiSettings.value.provider) ? Boolean(aiSettings.value.fast) : undefined)
+function chooseAi(patch: Record<string, unknown>) {
+  if ('model' in patch) { const model = aiModels.value.find(item => item.id === patch.model); if (aiSettings.value.effort && model?.efforts && !model.efforts.includes(aiSettings.value.effort)) patch.effort = '' }
+  saveTranslationChoice(patch); aiSettings.value = translationSettings(loadAiSettings())
+}
 // 谷歌云 / 有道需要密钥：选了而还没填时，底部展开一张小表单。
 const keyed = computed(() => translator.engine === 'google-api' || translator.engine === 'youdao' ? translator.engine : null)
 const keyReady = ref(false)
@@ -97,6 +121,10 @@ defineExpose({ focus })
       </div>
       <button v-if="keyed && keyReady" type="button" class="tp-link" @click="keyForm = !keyForm">{{ keyForm ? '收起' : '更换密钥' }}</button>
     </div>
+    <div v-if="translator.engine === 'ai'" class="tp-ai">
+      <button type="button" class="tp-ai-chip" :aria-expanded="aiPicker" aria-label="翻译用的模型、思考强度与 Fast" @click="aiPicker = !aiPicker"><span>{{ aiLabel }}</span><AppIcon v-if="aiFast" name="bolt" :size="11" class="tp-ai-fast" /><AppIcon name="down" :size="11" /></button>
+      <ModelPicker v-if="aiPicker" :model="aiSettings.model || ''" :effort="aiSettings.effort || ''" :models="aiModels" :fast="aiFast" @model="id => chooseAi({ model: id })" @effort="value => chooseAi({ effort: value })" @fast="value => chooseAi({ fast: value })" @close="aiPicker = false" />
+    </div>
     <form v-if="keyed && keyForm" class="tp-keys" :class="{ single: keyed === 'google-api' }" @submit.prevent="saveKey">
       <p v-if="keyed === 'google-api'">在 Google Cloud 控制台启用 Cloud Translation API，创建一个 API 密钥填在这里。密钥加密保存在本机。</p>
       <p v-else>在有道智云（ai.youdao.com）创建应用并开通「文本翻译」，填应用 ID 和应用密钥。密钥加密保存在本机。</p>
@@ -118,6 +146,11 @@ defineExpose({ focus })
 .tp-targets{display:flex;gap:2px;padding:2px;border-radius:var(--r-control);background:color-mix(in srgb,var(--surface-ink) 6%,transparent)}
 .tp-targets button{height:24px;padding:0 8px;border:0;border-radius:calc(var(--r-control) - 2px);background:none;box-shadow:none;font-size:11.5px;color:var(--secondary);white-space:nowrap}
 .tp-targets button.on{background:var(--surface);color:var(--surface-ink);box-shadow:0 1px 2px rgb(0 0 0 / .12)}
+.tp-ai{padding:0 12px 6px}
+.tp-ai-chip{display:inline-flex;align-items:center;gap:5px;max-width:100%;height:24px;padding:0 8px;border:0;border-radius:var(--r-sm);background:color-mix(in srgb,var(--surface-ink) 6%,transparent);box-shadow:none;color:var(--secondary);font-size:11.5px}
+.tp-ai-chip span{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.tp-ai-chip:hover{color:var(--ink)}
+.tp-ai-fast{color:var(--accent)}
 .tp-icon{display:grid;place-items:center;width:28px;height:28px;padding:0;border:0;border-radius:8px;background:none;box-shadow:none;color:var(--secondary)}
 .tp-icon:hover:not(:disabled){background:color-mix(in srgb,var(--surface-ink) 8%,transparent);color:var(--ink)}
 .tp-icon:disabled{opacity:.4}

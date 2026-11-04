@@ -189,7 +189,8 @@ try {
   const options = () => nativeMenu.getByRole('option');
   await modelView();
   await until(() => options().count().then(count => count === 8));
-  assert.deepEqual(await page.evaluate(() => window.__pickerDiscovery.calls), ['status', 'models']);
+  // 第一个 status 是面板打开时预热 Codex 小助手；之后才是选择器的读取。
+  assert.deepEqual(await page.evaluate(() => window.__pickerDiscovery.calls), ['status', 'status', 'models']);
   assert.deepEqual(await stored(), codexBefore, 'Discovering models never rewrites saved configuration.');
   await nativeMenu.getByRole('option', { name: '菜单测试模型 5', exact: true }).click();
   const selectedNative = await stored();

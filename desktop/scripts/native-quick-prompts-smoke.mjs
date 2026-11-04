@@ -58,7 +58,7 @@ try {
   let occupied = false;
   try { occupied = (await fetch(`http://127.0.0.1:${debugPort}/json/version`, { signal: AbortSignal.timeout(600) })).ok; } catch { }
   assert.equal(occupied, false, 'Refuse to attach to an existing process');
-  const executable = resolve('release', '开智-portable', '开智.exe');
+  const executable = resolve('release', 'OpenIntelligence-portable', 'OpenIntelligence.exe');
   application = spawn(executable, [], { cwd: dirname(executable), windowsHide: true, stdio: 'ignore', env: {
     ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-address=127.0.0.1 --remote-debugging-port=${debugPort}`,
   } });

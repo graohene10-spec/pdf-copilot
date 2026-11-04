@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "开智",
+  "productName": "OpenIntelligence",
   "version": "0.10.1",
   "identifier": "com.phydog.reading",
   "build": {
@@ -51,7 +51,8 @@
           "SimpChinese",
           "English"
         ],
-        "displayLanguageSelector": false
+        "displayLanguageSelector": false,
+        "installerHooks": "./windows/hooks.nsh"
       }
     }
   }

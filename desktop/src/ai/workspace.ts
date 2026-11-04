@@ -17,7 +17,11 @@ export type Message = {
   compressed?: boolean; summary?: boolean
   /** 摘录卡片：读者用 Ctrl+↓ / → / ← 从回答里带过来的一段文字（self 本对话、main 来自主对话、side 来自附属对话），随之后的提问一起发出。 */
   note?: 'self' | 'main' | 'side'
+  /** 随这个问题一起发出的摘录（在输入框里攒的引用片段）。 */
+  excerpts?: Excerpt[]
 }
+/** 读者用 Ctrl+↓ / → / ← 从回答里摘出的一段文字，先放进输入框，随下一个问题发出。 */
+export type Excerpt = { id: string; text: string; from: 'self' | 'main' | 'side' }
 type Request = { controller: AbortController; phase: string }
 export type ChatState = {
   id: string; documentId: string; title: string; createdAt: number; updatedAt: number
@@ -28,6 +32,8 @@ export type ChatState = {
   sideOf?: string
   /** 侧边对话开始时主对话的上下文快照：之后主对话再说什么，侧边看不到，要读者自己带过去。 */
   inherited?: { role: 'user' | 'assistant'; content: string }[]
+  /** 输入框里还没发出去的摘录。 */
+  excerpts?: Excerpt[]
 }
 type DocumentChats = { list: ChatState[]; activeId: string; loaded: boolean; loading?: Promise<void> }
 
@@ -93,7 +99,23 @@ const NOTE_LABEL = { self: '读者从这段对话里摘出来、要接着讨论�
 function wireText(message: Message) {
   if (message.summary) return `[此前对话的摘要，供参考]\n${message.content}`
   if (message.note) return `[${NOTE_LABEL[message.note]}]\n${message.content}`
-  return message.content
+  return message.content + excerptText(message.excerpts)
+}
+function excerptText(excerpts: Excerpt[] | undefined) {
+  return excerpts?.length ? excerpts.map(item => `\n\n[${NOTE_LABEL[item.from]}]\n${item.text}`).join('') : ''
+}
+/** 把一段摘录放进对话的输入框（不发请求）；下一个问题会带上它。 */
+export function addExcerpt(documentId: string, conversationId: string, text: string, from: Excerpt['from']) {
+  const state = chatState(documentId, conversationId)
+  const content = text.trim().slice(0, 8000)
+  if (!content) return null
+  const excerpt: Excerpt = { id: crypto.randomUUID(), text: content, from }
+  state.excerpts = [...(state.excerpts || []), excerpt].slice(-8)
+  return excerpt
+}
+export function removeExcerpt(documentId: string, conversationId: string, excerptId: string) {
+  const state = chatState(documentId, conversationId)
+  state.excerpts = (state.excerpts || []).filter(item => item.id !== excerptId)
 }
 /** 放一张摘录卡片进对话（不发请求）；之后的提问会一起带上它。 */
 export function addNote(documentId: string, conversationId: string, text: string, from: 'self' | 'main' | 'side') {
@@ -284,7 +306,7 @@ function titleFrom(question: string) {
 }
 
 // selectionOnly: a quick capture question sends just the question and the selected region.
-type SendOptions = { conversationId?: string; includeDocument?: boolean; includeSelection?: boolean; selectionOnly?: boolean; images?: string[]; attachments?: string[] }
+type SendOptions = { conversationId?: string; includeDocument?: boolean; includeSelection?: boolean; selectionOnly?: boolean; images?: string[]; attachments?: string[]; excerpts?: Excerpt[] }
 export async function sendChat(descriptor: { id: string; title: string; kind: string }, source: any, onSettings: () => void, onAccepted?: () => void, explicitQuestion?: string, sendOptions: SendOptions = {}) {
   const state = chatState(descriptor.id, sendOptions.conversationId), question = (explicitQuestion ?? state.draft).trim()
   if (!question || state.request) return
@@ -296,6 +318,9 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
   const snapshot = { ...settings, documentLimits: { ...settings.documentLimits } }
   const includeDocument = sendOptions.includeDocument ?? state.includeDocument
   const includeSelection = sendOptions.includeSelection ?? state.includeSelection
+  // 输入框里攒的摘录随这个问题发出；重新回答时用原问题带过的那几段。
+  const excerpts = (sendOptions.excerpts ?? state.excerpts ?? []).map(item => ({ ...item }))
+  const pendingExcerpts = sendOptions.excerpts ? [] : excerpts.map(item => item.id)
   const selection = sendOptions.images?.length ? { image: sendOptions.images[0], page: source?.page, text: source?.selection?.text } : includeSelection ? { ...source?.selection, rect: source?.selection?.rect && { ...source.selection.rect } } : {}
   const context = { page: selection.page || source?.page || 1, selection }
   const request = reactive<Request>({ controller: markRaw(new AbortController()), phase: 'preparing' })
@@ -317,11 +342,11 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
     const attached = (sendOptions.attachments || []).slice(0, MAX_ATTACHMENTS)
     const images = [...(selection.image ? [selection.image] : []), ...attached]
     if (images.reduce((sum, image) => sum + image.length, 0) > 8 * 1024 * 1024) throw new Error('图片总量太大，请减少几张或换小一点的图片。')
-    const user: Message = { id: crypto.randomUUID(), role: 'user', content: question, sources: [], images, ask: { includeDocument, selectionOnly: sendOptions.selectionOnly, page: context.page, text: selection.text ? String(selection.text).slice(0, 20000) : undefined } }
+    const user: Message = { id: crypto.randomUUID(), role: 'user', content: question, sources: [], images, ...(excerpts.length ? { excerpts } : {}), ask: { includeDocument, selectionOnly: sendOptions.selectionOnly, page: context.page, text: selection.text ? String(selection.text).slice(0, 20000) : undefined } }
     const wireContent = sendOptions.selectionOnly
-      ? `${question}${selection.text ? '\n\n[用户选中的内容]\n' + selection.text : ''}${selection.image ? '\n\n[附图是用户在文档里框选的区域，问题针对它]' : ''}${attached.length ? `\n\n[用户附上了 ${attached.length} 张图片]` : ''}`
-      : `${question}\n\n[用户当前阅读的文档]\n${descriptor.title}${descriptor.kind === 'pdf' ? ` · 物理 PDF 第 ${context.page} 页` : ' · Markdown 文档'}${selection.text ? '\n\n[用户选中的内容]\n' + selection.text : ''}${attached.length ? `\n\n[用户附上了 ${attached.length} 张图片]` : ''}${state.sideOf ? '\n\n[这是挂在主对话旁边的附属对话（侧边对话）]' : ''}`
-    const history = boundedHistory([...(state.inherited || []).map(item => ({ role: item.role, content: `[主对话里的内容（开启附属对话时）]\n${item.content}` })), ...state.messages.filter(message => !message.failed && !message.compressed).map(message => message.summary || message.note ? { role: 'user', content: wireText(message) } : ({ role: message.role, content: message.content + (message.sources.length ? '\n[此前查到的相关位置]\n' + JSON.stringify(message.sources.slice(0, 8).map(item => ({ sourceId: item.sourceId, page: item.page, line: item.line, text: item.text.slice(0, 400) }))) : '') })), { ...user, content: wireContent }])
+      ? `${question}${excerptText(excerpts)}${selection.text ? '\n\n[用户选中的内容]\n' + selection.text : ''}${selection.image ? '\n\n[附图是用户在文档里框选的区域，问题针对它]' : ''}${attached.length ? `\n\n[用户附上了 ${attached.length} 张图片]` : ''}`
+      : `${question}${excerptText(excerpts)}\n\n[用户当前阅读的文档]\n${descriptor.title}${descriptor.kind === 'pdf' ? ` · 物理 PDF 第 ${context.page} 页` : ' · Markdown 文档'}${selection.text ? '\n\n[用户选中的内容]\n' + selection.text : ''}${attached.length ? `\n\n[用户附上了 ${attached.length} 张图片]` : ''}${state.sideOf ? '\n\n[这是挂在主对话旁边的附属对话（侧边对话）]' : ''}`
+    const history = boundedHistory([...(state.inherited || []).map(item => ({ role: item.role, content: `[主对话里的内容（开启附属对话时）]\n${item.content}` })), ...state.messages.filter(message => !message.failed && !message.compressed).map(message => message.summary || message.note ? { role: 'user', content: wireText(message) } : ({ role: message.role, content: wireText(message) + (message.sources.length ? '\n[此前查到的相关位置]\n' + JSON.stringify(message.sources.slice(0, 8).map(item => ({ sourceId: item.sourceId, page: item.page, line: item.line, text: item.text.slice(0, 400) }))) : '') })), { ...user, content: wireContent }])
     // The scheduler reports the first queue position before the answer bubble exists.
     let waiting = ''
     ticket = scheduler.acquire({ owner: `${descriptor.id}:${state.id}`, provider: snapshot.provider, signal, onState: (value: any) => {
@@ -331,6 +356,7 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
       activity(waiting)
     } })
     const startedAt = Date.now()
+    if (pendingExcerpts.length) state.excerpts = (state.excerpts || []).filter(item => !pendingExcerpts.includes(item.id))
     state.messages.push(user, { id: crypto.randomUUID(), role: 'assistant', content: '', reasoning: '', sources: [], startedAt, activity: waiting || '准备上下文', usage: { estimated: true, input: estimateTokens(history.map(item => item.content).join('\n')) } })
     answer = state.messages.at(-1)!
     if (!state.title) state.title = titleFrom(question)
@@ -417,7 +443,7 @@ export function resendQuestion(descriptor: { id: string; title: string; kind: st
   } else target = branchConversation(descriptor.id, state.id, index > 0 ? state.messages[index - 1].id : null)
   const ask = user.ask
   void sendChat(descriptor, { page: ask?.page || 1, selection: ask?.text ? { text: ask.text, page: ask.page } : {} }, onSettings, undefined, question.trim(), {
-    conversationId: target.id, includeDocument: ask?.includeDocument ?? target.includeDocument, includeSelection: Boolean(ask?.text), selectionOnly: ask?.selectionOnly, images: user.images?.length ? [user.images[0]!] : undefined, attachments: user.images?.slice(1),
+    conversationId: target.id, includeDocument: ask?.includeDocument ?? target.includeDocument, includeSelection: Boolean(ask?.text), selectionOnly: ask?.selectionOnly, images: user.images?.length ? [user.images[0]!] : undefined, attachments: user.images?.slice(1), excerpts: user.excerpts || [],
   })
   return target.id
 }

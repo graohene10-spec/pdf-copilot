@@ -139,6 +139,8 @@ async fn http_cancel(window: tauri::Window,state: State<'_,AppState>,id: String)
 }
 
 pub fn run() {
+    // 0.10 → 0.11 改名过渡：以旧名 开智.exe 启动的新程序转交给 OpenIntelligence.exe 后退出。
+    #[cfg(windows)] if updater::migrate_legacy() { return; }
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
