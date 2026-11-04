@@ -86,7 +86,7 @@ try {
   await dialog.getByLabel('模型', { exact: true }).waitFor();
   await page.evaluate(() => window.__reviewDiscovery.models = [{ id: 'new-inventory', name: '新读取的模型', efforts: ['low', 'high'], defaultEffort: 'high', vision: true }]);
   await dialog.getByRole('button', { name: '检查登录并读取模型', exact: true }).click();
-  await dialog.getByRole('option', { name: '新读取的模型', exact: true }).waitFor({ state: 'attached' });
+  await dialog.getByLabel('模型', { exact: true }).getByRole('option', { name: '新读取的模型', exact: true }).waitFor({ state: 'attached' });
   await dialog.getByRole('button', { name: '取消', exact: true }).click();
   await dialog.waitFor({ state: 'detached' });
   await picker().click(); await modelList();
