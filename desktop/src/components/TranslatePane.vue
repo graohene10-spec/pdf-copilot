@@ -1,10 +1,10 @@
 <script setup lang="ts">
 // 左侧的翻译栏：像阅读助手一样的一列，译文按卡片从上往下排，底下可以直接输入要翻译的文字。
 // 与阅读助手共用外壳的主题样式（.ai-pane），内部元素用 tp- 前缀，互不干扰。
-import { nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import AppIcon from './AppIcon.vue'
 import { renderMarkdown } from '../ai/render'
-import { translator, translate, stopTranslation, removeTranslation, clearTranslations, youdaoCredential, saveYoudaoCredential, TARGETS, ENGINES, type Translation } from '../ai/translate'
+import { translator, translate, stopTranslation, removeTranslation, clearTranslations, credential, saveCredential, TARGETS, ENGINES, type Translation } from '../ai/translate'
 
 defineProps<{ shortcut?: string }>()
 const emit = defineEmits<{ close: [] }>()
@@ -13,19 +13,23 @@ const list = ref<HTMLElement>()
 const field = ref<HTMLTextAreaElement>()
 const copied = ref('')
 const LABEL: Record<string, string> = { zh: '中文', en: 'English', ja: '日本語' }
-const ENGINE_LABEL: Record<string, string> = { google: '谷歌', youdao: '有道', ai: 'AI' }
-// 有道需要应用 ID 与应用密钥：选了有道而还没填时，底部展开一张小表单。
-const youdaoReady = ref(false)
-const youdaoForm = ref(false)
-const appKey = ref('')
-const appSecret = ref('')
+const ENGINE_LABEL: Record<string, string> = { google: '谷歌', 'google-api': '谷歌云', youdao: '有道', ai: 'AI' }
+const ENGINE_TIP: Record<string, string> = { google: '谷歌免密钥接口：最快，但共用的代理 IP 常被谷歌限流', 'google-api': '谷歌云 Cloud Translation：用自己的 API 密钥，稳定（每月前 50 万字符免费）', youdao: '有道智云：需要应用 ID 与密钥，国内直连', ai: '用阅读助手的 AI 模型翻译：慢，公式与术语更讲究' }
+// 谷歌云 / 有道需要密钥：选了而还没填时，底部展开一张小表单。
+const keyed = computed(() => translator.engine === 'google-api' || translator.engine === 'youdao' ? translator.engine : null)
+const keyReady = ref(false)
+const keyForm = ref(false)
+const field1 = ref('')
+const field2 = ref('')
 const savingKey = ref(false)
-async function checkYoudao() { youdaoReady.value = Boolean(await youdaoCredential().catch(() => '')) ; if (translator.engine === 'youdao' && !youdaoReady.value) youdaoForm.value = true }
-watch(() => translator.engine, () => { youdaoForm.value = false; void checkYoudao() }, { immediate: true })
-async function saveYoudao() {
-  if (!appKey.value.trim() || !appSecret.value.trim()) return
+async function checkKey() { const engine = keyed.value; keyReady.value = engine ? Boolean(await credential(engine)) : false; keyForm.value = Boolean(engine) && !keyReady.value }
+watch(keyed, () => { field1.value = ''; field2.value = ''; void checkKey() }, { immediate: true })
+const canSave = computed(() => keyed.value === 'youdao' ? Boolean(field1.value.trim() && field2.value.trim()) : Boolean(field1.value.trim()))
+async function saveKey() {
+  const engine = keyed.value
+  if (!engine || !canSave.value) return
   savingKey.value = true
-  try { await saveYoudaoCredential(appKey.value, appSecret.value); appKey.value = ''; appSecret.value = ''; youdaoReady.value = true; youdaoForm.value = false } finally { savingKey.value = false }
+  try { await saveCredential(engine, engine === 'youdao' ? `${field1.value.trim()}\n${field2.value.trim()}` : field1.value); field1.value = ''; field2.value = ''; keyReady.value = true; keyForm.value = false } finally { savingKey.value = false }
 }
 
 // 新译文出现、或正在翻译的那条变长时，滚到底部。
@@ -74,6 +78,7 @@ defineExpose({ focus })
         <div v-if="item.result" class="tp-result" v-html="renderMarkdown(item.result)"></div>
         <p v-else-if="item.status === 'running'" class="tp-pending"><span class="tp-dot"></span><span class="tp-dot"></span><span class="tp-dot"></span></p>
         <p v-if="item.status === 'error'" class="tp-error">{{ item.error || '翻译失败' }}</p>
+        <p v-if="item.fallback" class="tp-fallback" :data-tip="item.fallback">谷歌免密钥接口没成功，已改用{{ ENGINE_LABEL[item.engine || ''] }}</p>
         <div class="tp-actions">
           <button v-if="item.status === 'running'" type="button" class="tp-icon" aria-label="停止" data-tip="停止" @click="stopTranslation(item.id)"><AppIcon name="stop" :size="14" /></button>
           <template v-else>
@@ -88,15 +93,16 @@ defineExpose({ focus })
     <div class="tp-engine">
       <span>翻译服务</span>
       <div class="tp-targets" role="radiogroup" aria-label="翻译服务">
-        <button v-for="item in ENGINES" :key="item.value" type="button" role="radio" :aria-checked="translator.engine === item.value" :class="{ on: translator.engine === item.value }" :data-tip="item.value === 'google' ? '谷歌翻译：免密钥，最快' : item.value === 'youdao' ? '有道智云：需要应用 ID 与密钥' : '用阅读助手的 AI 模型翻译：慢一些，公式与术语更讲究'" @click="translator.engine = item.value">{{ item.label }}</button>
+        <button v-for="item in ENGINES" :key="item.value" type="button" role="radio" :aria-checked="translator.engine === item.value" :class="{ on: translator.engine === item.value }" :data-tip="ENGINE_TIP[item.value]" @click="translator.engine = item.value">{{ item.label }}</button>
       </div>
-      <button v-if="translator.engine === 'youdao' && youdaoReady" type="button" class="tp-link" @click="youdaoForm = !youdaoForm">{{ youdaoForm ? '收起' : '更换密钥' }}</button>
+      <button v-if="keyed && keyReady" type="button" class="tp-link" @click="keyForm = !keyForm">{{ keyForm ? '收起' : '更换密钥' }}</button>
     </div>
-    <form v-if="translator.engine === 'youdao' && youdaoForm" class="tp-keys" @submit.prevent="saveYoudao">
-      <p>在有道智云（ai.youdao.com）创建应用并开通「文本翻译」，把应用 ID 和应用密钥填在这里。密钥加密保存在本机。</p>
-      <input v-model="appKey" placeholder="应用 ID" aria-label="有道应用 ID" autocomplete="off" />
-      <input v-model="appSecret" type="password" placeholder="应用密钥" aria-label="有道应用密钥" autocomplete="off" />
-      <button type="submit" :disabled="savingKey || !appKey.trim() || !appSecret.trim()">保存</button>
+    <form v-if="keyed && keyForm" class="tp-keys" :class="{ single: keyed === 'google-api' }" @submit.prevent="saveKey">
+      <p v-if="keyed === 'google-api'">在 Google Cloud 控制台启用 Cloud Translation API，创建一个 API 密钥填在这里。密钥加密保存在本机。</p>
+      <p v-else>在有道智云（ai.youdao.com）创建应用并开通「文本翻译」，填应用 ID 和应用密钥。密钥加密保存在本机。</p>
+      <input v-model="field1" :type="keyed === 'google-api' ? 'password' : 'text'" :placeholder="keyed === 'google-api' ? 'API 密钥' : '应用 ID'" :aria-label="keyed === 'google-api' ? '谷歌云 API 密钥' : '有道应用 ID'" autocomplete="off" />
+      <input v-if="keyed === 'youdao'" v-model="field2" type="password" placeholder="应用密钥" aria-label="有道应用密钥" autocomplete="off" />
+      <button type="submit" :disabled="savingKey || !canSave">保存</button>
     </form>
     <form class="tp-composer" @submit.prevent="submit">
       <textarea ref="field" v-model="draft" rows="3" placeholder="输入或粘贴要翻译的文字，回车翻译" aria-label="要翻译的文字" @keydown="keydown"></textarea>
@@ -139,6 +145,8 @@ defineExpose({ focus })
 .tp-engine{display:flex;align-items:center;gap:8px;flex-shrink:0;margin:6px 12px 0;color:var(--muted);font-size:11.5px}
 .tp-link{margin-left:auto;padding:0;border:0;background:none;box-shadow:none;color:var(--secondary);font-size:11.5px;text-decoration:underline;text-underline-offset:2px}
 .tp-keys{display:grid;grid-template-columns:1fr 1fr auto;gap:6px;flex-shrink:0;margin:8px 12px 0;padding:10px;border-radius:12px;background:color-mix(in srgb,var(--surface) 70%,transparent);border:.5px solid var(--line-soft)}
+.tp-keys.single{grid-template-columns:1fr auto}
+.tp-fallback{margin:6px 0 0;color:var(--muted);font-size:11px}
 .tp-keys p{grid-column:1/-1;margin:0 0 2px;color:var(--secondary);font-size:11.5px;line-height:1.5}
 .tp-keys input{min-width:0;height:30px;padding:0 8px;border-radius:8px;border:.5px solid var(--line-soft);background:var(--surface);color:inherit;font:inherit;font-size:12.5px}
 .tp-keys button{height:30px;padding:0 12px;border-radius:8px;border:0;background:var(--surface-ink);color:var(--surface);box-shadow:none;font-size:12.5px}

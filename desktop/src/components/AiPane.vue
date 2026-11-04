@@ -202,7 +202,8 @@ function quoteKeys(event: KeyboardEvent) {
   quotePop.value = pop
   void quoteAction(action)
 }
-const noteLabel = (message: Message) => message.note === 'main' ? '从主对话带来' : message.note === 'side' ? '从附属对话带回' : '摘录'
+// 摘录只占一行：图标表示来处，悬停看全文。
+const noteLabel = (message: Message) => message.note === 'main' ? '来自主对话' : message.note === 'side' ? '来自附属对话' : '摘录'
 onMounted(() => { if (props.side) return; document.addEventListener('selectionchange', selectionChanged); window.addEventListener('keydown', quoteKeys, true) })
 onBeforeUnmount(() => { cancelAnimationFrame(quoteFrame); document.removeEventListener('selectionchange', selectionChanged); window.removeEventListener('keydown', quoteKeys, true) })
 
@@ -737,7 +738,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
     <div class="ai-main">
     <header v-if="side" class="ai-header side-header">
       <span class="side-badge"><AppIcon name="branch" :size="13" />附属对话</span>
-      <span class="side-of" :title="mainTitle">挂在「{{ mainTitle || '新对话' }}」旁边 · 不含之后的主对话</span>
+      <span class="side-of" :title="mainTitle">挂在「{{ mainTitle || '新对话' }}」旁边</span>
       <button class="header-button close-assistant" data-tip="收起附属对话（内容会保留）" aria-label="收起附属对话" @click="emit('close')"><AppIcon name="close" :size="15" /></button>
     </header>
     <header v-else class="ai-header" :class="{ draggable }" @pointerdown.self="draggable && emit('grab', $event)">
@@ -777,9 +778,10 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
           <h2 class="ai-welcome-lead" :lang="greeting.lang === 'zh' ? 'zh-CN' : 'en'">{{ greeting.text }}</h2>
         </div>
         <article v-for="message in messages" :key="message.id" class="ai-message" :class="[message.note ? 'note' : message.role, { compressed: message.compressed, summary: message.summary, arrived: arrivedNote === message.id }]" :data-id="message.id">
-          <div v-if="message.note" class="note-card">
-            <p class="note-head"><AppIcon :name="message.note === 'self' ? 'pin' : 'branch'" :size="11" />{{ noteLabel(message) }}<span>之后的提问会带上它</span><button type="button" class="meta-button" aria-label="移除这条摘录" data-tip="移除这条摘录" @click="removeMessage(document.id, state.id, message.id)"><AppIcon name="close" :size="11" /></button></p>
-            <p class="note-text">{{ message.content }}</p>
+          <div v-if="message.note" class="note-card" :data-tip="`${noteLabel(message)}：${message.content.slice(0, 300)}`">
+            <AppIcon class="note-icon" :name="message.note === 'self' ? 'pin' : 'branch'" :size="11" />
+            <span class="note-text">{{ message.content }}</span>
+            <button type="button" class="note-remove" aria-label="移除这条摘录" @click="removeMessage(document.id, state.id, message.id)"><AppIcon name="close" :size="10" /></button>
           </div>
           <template v-else-if="message.role === 'user'">
             <div v-if="editing === message.id" class="question-editor">
@@ -1001,11 +1003,13 @@ button:disabled{opacity:.4;cursor:default}
 .side-badge{display:inline-flex;align-items:center;gap:6px;flex-shrink:0;padding:3px 9px 3px 7px;border-radius:999px;background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--ink);font-size:12.5px;font-weight:650}
 .side-of{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:11.5px}
 /* 摘录卡片：从回答里带过来的一段，像贴进对话里的一张小纸条。 */
-.note-card{margin-left:auto;width:fit-content;max-width:92%;padding:7px 10px 9px 12px;border-left:2px solid color-mix(in srgb,var(--accent) 65%,transparent);border-radius:4px 10px 10px 4px;background:color-mix(in srgb,var(--accent) 7%,transparent)}
-.note-head{display:flex;align-items:center;gap:5px;margin:0 0 3px;color:var(--secondary);font-size:11.5px;font-weight:600}
-.note-head span{flex:1;font-weight:400;color:var(--muted)}
-.note-head .meta-button{width:20px;height:20px}
-.note-text{margin:0;font-size:13px;line-height:1.6;color:var(--ink);white-space:pre-wrap;display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden}
+.ai-message.note{margin-bottom:10px}
+.note-card{display:flex;align-items:center;gap:6px;margin-left:auto;width:fit-content;max-width:86%;height:26px;padding:0 4px 0 9px;border-left:2px solid color-mix(in srgb,var(--accent) 65%,transparent);border-radius:3px 8px 8px 3px;background:color-mix(in srgb,var(--accent) 7%,transparent);color:var(--secondary);font-size:12px}
+.note-icon{flex-shrink:0;color:var(--muted)}
+.note-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.note-remove{display:grid;place-items:center;flex-shrink:0;width:18px;height:18px;padding:0;border:0;border-radius:50%;background:none;box-shadow:none;color:var(--muted);opacity:0;transition:opacity var(--dur-1) var(--ease-soft)}
+.note-card:hover .note-remove,.note-remove:focus-visible{opacity:1}
+.note-remove:hover{background:color-mix(in srgb,var(--ink) 9%,transparent);color:var(--ink)}
 .ai-message.note.arrived .note-card{animation:note-arrive 1.1s var(--ease-out)}
 @keyframes note-arrive{0%{background:color-mix(in srgb,var(--accent) 26%,transparent);scale:.96}30%{scale:1.02}100%{scale:1}}
 .ai-pane :deep(.note-flyer){position:absolute;left:0;top:0;z-index:60;max-width:240px;padding:6px 10px;border-radius:8px;background:var(--surface);color:var(--surface-ink);font-size:12px;line-height:1.45;box-shadow:0 10px 26px -10px rgb(0 0 0 / .45);border-left:3px solid var(--accent);pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

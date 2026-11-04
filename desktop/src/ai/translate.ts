@@ -7,9 +7,11 @@ import { reactive, watch } from 'vue'
 export type TranslateTarget = 'auto' | 'zh' | 'en' | 'ja'
 export const TARGETS: { value: TranslateTarget; label: string }[] = [{ value: 'auto', label: '自动' }, { value: 'zh', label: '中文' }, { value: 'en', label: 'English' }, { value: 'ja', label: '日本語' }]
 const NAMES: Record<Exclude<TranslateTarget, 'auto'>, string> = { zh: '简体中文', en: 'English', ja: '日本語' }
-export type TranslateEngine = 'google' | 'youdao' | 'ai'
-export const ENGINES: { value: TranslateEngine; label: string }[] = [{ value: 'google', label: '谷歌' }, { value: 'youdao', label: '有道' }, { value: 'ai', label: 'AI' }]
-export type Translation = { id: string; source: string; result: string; target: Exclude<TranslateTarget, 'auto'>; engine?: TranslateEngine; status: 'running' | 'done' | 'error'; error?: string; at: number }
+export type TranslateEngine = 'google' | 'google-api' | 'youdao' | 'ai'
+export const ENGINES: { value: TranslateEngine; label: string }[] = [{ value: 'google', label: '谷歌' }, { value: 'google-api', label: '谷歌云' }, { value: 'youdao', label: '有道' }, { value: 'ai', label: 'AI' }]
+export type Translation = { id: string; source: string; result: string; target: Exclude<TranslateTarget, 'auto'>; engine?: TranslateEngine; status: 'running' | 'done' | 'error'; error?: string; at: number
+  /** 免密钥谷歌失败、自动改用已配好的服务时记下原因。 */
+  fallback?: string }
 
 const STORAGE_KEY = 'kaizhi.translate.v1'
 const KEEP = 40
@@ -60,8 +62,17 @@ export async function translate(text: string, target = translator.target): Promi
       const { complete } = await import('./complete')
       await complete({ kind: 'translate', fast: true, signal: controller.signal, messages: [{ role: 'user', content: translationPrompt(source, item.target) }], onDelta: (_delta, all) => { item.result = all } })
     } else {
-      const [{ machineTranslate }, credential] = await Promise.all([import('./machine-translate'), engine === 'youdao' ? youdaoCredential() : Promise.resolve('')])
-      item.result = await machineTranslate(engine, source, item.target, controller.signal, credential, all => { item.result = all })
+      const { machineTranslate } = await import('./machine-translate')
+      const run = async (which: Exclude<TranslateEngine, 'ai'>) => machineTranslate(which, source, item.target, controller.signal, await credential(which), all => { item.result = all })
+      try { item.result = await run(engine) }
+      catch (error: any) {
+        // 免密钥谷歌被墙或被限流时，配好了谷歌云或有道就自动换过去，卡片上注明原因。
+        const backup = engine === 'google' && !controller.signal.aborted ? (await credential('google-api') ? 'google-api' : await credential('youdao') ? 'youdao' : null) : null
+        if (!backup) throw error
+        item.fallback = error?.message || String(error)
+        item.engine = backup
+        item.result = await run(backup)
+      }
     }
     item.status = 'done'
   } catch (error: any) {
@@ -73,12 +84,13 @@ export function stopTranslation(id: string) { controllers.get(id)?.abort() }
 export function removeTranslation(id: string) { stopTranslation(id); const index = translator.items.findIndex(item => item.id === id); if (index >= 0) translator.items.splice(index, 1) }
 export function clearTranslations() { for (const id of controllers.keys()) stopTranslation(id); translator.items.splice(0) }
 
-/** 有道智云的应用 ID 与应用密钥（一行一个），桌面版加密保存在本机。 */
-export async function youdaoCredential(): Promise<string> {
+/** 各翻译服务的密钥，桌面版加密保存在本机：谷歌云是 API 密钥，有道是「应用 ID\n应用密钥」。 */
+export async function credential(engine: Exclude<TranslateEngine, 'ai'>): Promise<string> {
+  if (engine === 'google') return ''
   const { loadApiKey } = await import('./settings.mjs')
-  return (await loadApiKey('youdao')) || ''
+  return (await loadApiKey(engine === 'google-api' ? 'google' : 'youdao').catch(() => '')) || ''
 }
-export async function saveYoudaoCredential(appKey: string, secret: string) {
-  const { saveCredential } = await import('./settings.mjs')
-  await saveCredential('youdao', appKey.trim() && secret.trim() ? `${appKey.trim()}\n${secret.trim()}` : '')
+export async function saveCredential(engine: 'google-api' | 'youdao', value: string) {
+  const { saveCredential: save } = await import('./settings.mjs')
+  await save(engine === 'google-api' ? 'google' : 'youdao', value.trim())
 }
