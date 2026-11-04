@@ -18,7 +18,8 @@ async function settle() { await page.waitForTimeout(650); }
 async function closeMenu() { if (await menu().isVisible()) await page.keyboard.press('Escape'); await menu().waitFor({ state: 'hidden' }); }
 // 模型胶囊直接排在抽屉里，不再需要先切到列表。
 const modelList = async () => {};
-const effortSlider = () => menu().getByRole('slider', { name: '思考强度', exact: true });
+// 思考强度是一排分段按钮（radiogroup）。
+const efforts = () => menu().getByRole('radiogroup', { name: '思考强度', exact: true });
 
 try {
   await mkdir(artifacts, { recursive: true });
@@ -69,9 +70,9 @@ try {
   assert.equal(await page.evaluate(() => localStorage.getItem('paperdesk.ai.settings.v1')), before);
   checks.push('Cold composer discovers every Codex model without opening settings or changing stored configuration.');
   await menu().getByRole('option', { name: '评审模型 5', exact: true }).click();
-  assert.equal(await effortSlider().getAttribute('aria-valuemax'), '2', 'Efforts follow the model: default, low, high.');
-  await effortSlider().focus(); await effortSlider().press('Home'); await effortSlider().press('ArrowRight');
-  assert.equal(await effortSlider().getAttribute('aria-valuetext'), '低');
+  assert.equal(await efforts().getByRole('radio').count(), 3, 'Efforts follow the model: default, low, high.');
+  await efforts().getByRole('radio', { name: '低', exact: true }).click();
+  assert.equal(await efforts().getByRole('radio', { name: '低', exact: true }).getAttribute('aria-checked'), 'true');
   const chosen = await page.evaluate(() => JSON.parse(localStorage.getItem('paperdesk.ai.settings.v1')));
   assert.deepEqual(chosen, { ...JSON.parse(before), model: 'review-5', effort: 'low' });
   assert.equal(await pane().getByRole('textbox', { name: '向 AI 提问', exact: true }).inputValue(), '保留用户草稿');
