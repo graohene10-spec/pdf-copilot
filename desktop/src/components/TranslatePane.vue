@@ -5,8 +5,9 @@ import { computed, nextTick, ref, watch } from 'vue'
 import AppIcon from './AppIcon.vue'
 import { renderMarkdown } from '../ai/render'
 import ModelPicker from './ModelPicker.vue'
-import { getProvider } from '../ai/providers.mjs'
-import { nativeModelInventory } from '../ai/native-models'
+import { getProvider, getNativeModels } from '../ai/providers.mjs'
+import { nativeModelInventory, registerNativeModelInventory } from '../ai/native-models'
+import { concreteChoice, lowestEffort } from '../ai/translate-model'
 import { loadAiSettings, translationSettings, saveTranslationChoice, supportsFast } from '../ai/settings.mjs'
 import { warmNative } from '../ai/native.mjs'
 import { translator, translate, stopTranslation, removeTranslation, clearTranslations, credential, saveCredential, TARGETS, ENGINES, type Translation } from '../ai/translate'
@@ -23,20 +24,37 @@ const ENGINE_TIP: Record<string, string> = { google: '谷歌免密钥接口：�
 // AI 翻译自己的模型、思考强度与 Fast（服务商默认与阅读助手共用）。
 const aiSettings = ref<any>(translationSettings(loadAiSettings()))
 const aiPicker = ref(false)
-watch(() => translator.engine, engine => {
+const EFFORT_NAME: Record<string, string> = { none: '不思考', minimal: '极低', low: '低', medium: '中', high: '高', xhigh: '很高', max: '最高', ultra: '极致' }
+// 模型只列具体的模型，没有「自动」：用哪个、什么强度都写在标签上。
+const aiModels = computed<any[]>(() => {
+  const list: any[] = (aiSettings.value.provider === 'codex' ? nativeModelInventory.value : getProvider(aiSettings.value.provider)?.models || []).filter((item: any) => item.id)
+  const current = aiSettings.value.model || ''
+  return [...(current && !list.some(item => item.id === current) ? [{ id: current, name: current }] : []), ...list]
+})
+const listed = (id: string) => (aiSettings.value.provider === 'codex' ? nativeModelInventory.value : getProvider(aiSettings.value.provider)?.models || []).some((item: any) => item.id === id)
+// 没选过（或 Codex 的模型已不在本机列表里）：换成具体的默认模型与最低强度，并记下来。
+function settleChoice() {
+  const choice = concreteChoice(aiModels.value.filter(item => item.id !== aiSettings.value.model || listed(item.id)), aiSettings.value.model || '', aiSettings.value.effort || '', getProvider(aiSettings.value.provider)?.defaultModel, aiSettings.value.provider !== 'codex')
+  if (choice.model && (choice.model !== aiSettings.value.model || choice.effort !== aiSettings.value.effort)) { saveTranslationChoice(choice); aiSettings.value = translationSettings(loadAiSettings()) }
+}
+async function loadCodexModels() {
+  if (aiSettings.value.provider !== 'codex' || nativeModelInventory.value.some((item: any) => item.id)) return
+  try { registerNativeModelInventory(await getNativeModels()) } catch { /* 读不到就等用户在设置里检查登录 */ }
+}
+watch(() => translator.engine, async engine => {
   if (engine !== 'ai') { aiPicker.value = false; return }
   aiSettings.value = translationSettings(loadAiSettings())
-  if (aiSettings.value.provider === 'codex') void warmNative()
+  if (aiSettings.value.provider === 'codex') { void warmNative(); await loadCodexModels() }
+  settleChoice()
 }, { immediate: true })
-const aiModels = computed<any[]>(() => {
-  const list: any[] = aiSettings.value.provider === 'codex' ? nativeModelInventory.value : getProvider(aiSettings.value.provider)?.models || []
-  const current = aiSettings.value.model || ''
-  return [{ id: '', name: '自动（小模型）' }, ...(current && !list.some(item => item.id === current) ? [{ id: current, name: current }] : []), ...list.filter(item => item.id)]
+watch(() => nativeModelInventory.value, () => { if (translator.engine === 'ai') settleChoice() })
+const aiLabel = computed(() => {
+  const model = aiModels.value.find(item => item.id === aiSettings.value.model)
+  return [getProvider(aiSettings.value.provider)?.name || aiSettings.value.provider, model?.name || aiSettings.value.model || '未选模型', EFFORT_NAME[aiSettings.value.effort]].filter(Boolean).join(' · ')
 })
-const aiLabel = computed(() => `${getProvider(aiSettings.value.provider)?.name || aiSettings.value.provider} · ${aiModels.value.find(item => item.id === (aiSettings.value.model || ''))?.name || aiSettings.value.model}`)
 const aiFast = computed(() => supportsFast(aiSettings.value.provider) ? Boolean(aiSettings.value.fast) : undefined)
 function chooseAi(patch: Record<string, unknown>) {
-  if ('model' in patch) { const model = aiModels.value.find(item => item.id === patch.model); if (aiSettings.value.effort && model?.efforts && !model.efforts.includes(aiSettings.value.effort)) patch.effort = '' }
+  if ('model' in patch) { const model = aiModels.value.find(item => item.id === patch.model); if (model?.efforts && !model.efforts.includes(aiSettings.value.effort)) patch.effort = lowestEffort(model) }
   saveTranslationChoice(patch); aiSettings.value = translationSettings(loadAiSettings())
 }
 // 谷歌云 / 有道需要密钥：选了而还没填时，底部展开一张小表单。
@@ -98,7 +116,7 @@ defineExpose({ focus })
       </div>
       <article v-for="item in translator.items" :key="item.id" class="tp-card" :class="item.status">
         <p class="tp-source" :title="item.source">{{ item.source }}</p>
-        <div class="tp-arrow" aria-hidden="true"><span>{{ item.engine ? `${ENGINE_LABEL[item.engine]} · ` : '' }}{{ LABEL[item.target] }}</span></div>
+        <div class="tp-arrow" aria-hidden="true"><span>{{ item.engine ? `${ENGINE_LABEL[item.engine]} · ` : '' }}{{ LABEL[item.target] }}{{ item.ms && item.status === 'done' ? ` · ${(item.ms / 1000).toFixed(1)}s` : '' }}</span></div>
         <div v-if="item.result" class="tp-result" v-html="renderMarkdown(item.result)"></div>
         <p v-else-if="item.status === 'running'" class="tp-pending"><span class="tp-dot"></span><span class="tp-dot"></span><span class="tp-dot"></span></p>
         <p v-if="item.status === 'error'" class="tp-error">{{ item.error || '翻译失败' }}</p>
@@ -123,7 +141,7 @@ defineExpose({ focus })
     </div>
     <div v-if="translator.engine === 'ai'" class="tp-ai">
       <button type="button" class="tp-ai-chip" :aria-expanded="aiPicker" aria-label="翻译用的模型、思考强度与 Fast" @click="aiPicker = !aiPicker"><span>{{ aiLabel }}</span><AppIcon v-if="aiFast" name="bolt" :size="11" class="tp-ai-fast" /><AppIcon name="down" :size="11" /></button>
-      <ModelPicker v-if="aiPicker" :model="aiSettings.model || ''" :effort="aiSettings.effort || ''" :models="aiModels" :fast="aiFast" @model="id => chooseAi({ model: id })" @effort="value => chooseAi({ effort: value })" @fast="value => chooseAi({ fast: value })" @close="aiPicker = false" />
+      <ModelPicker v-if="aiPicker" :model="aiSettings.model || ''" :effort="aiSettings.effort || ''" :models="aiModels" :fast="aiFast" no-default @model="id => chooseAi({ model: id })" @effort="value => chooseAi({ effort: value })" @fast="value => chooseAi({ fast: value })" @close="aiPicker = false" />
     </div>
     <form v-if="keyed && keyForm" class="tp-keys" :class="{ single: keyed === 'google-api' }" @submit.prevent="saveKey">
       <p v-if="keyed === 'google-api'">在 Google Cloud 控制台启用 Cloud Translation API，创建一个 API 密钥填在这里。密钥加密保存在本机。</p>

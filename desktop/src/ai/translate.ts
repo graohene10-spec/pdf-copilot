@@ -11,7 +11,9 @@ export type TranslateEngine = 'google' | 'google-api' | 'youdao' | 'ai'
 export const ENGINES: { value: TranslateEngine; label: string }[] = [{ value: 'google', label: '谷歌' }, { value: 'google-api', label: '谷歌云' }, { value: 'youdao', label: '有道' }, { value: 'ai', label: 'AI' }]
 export type Translation = { id: string; source: string; result: string; target: Exclude<TranslateTarget, 'auto'>; engine?: TranslateEngine; status: 'running' | 'done' | 'error'; error?: string; at: number
   /** 免密钥谷歌失败、自动改用已配好的服务时记下原因。 */
-  fallback?: string }
+  fallback?: string
+  /** 从发出到译完用了多久（毫秒）。 */
+  ms?: number }
 
 const STORAGE_KEY = 'kaizhi.translate.v1'
 const KEEP = 40
@@ -78,7 +80,7 @@ export async function translate(text: string, target = translator.target): Promi
   } catch (error: any) {
     item.status = item.result && controller.signal.aborted ? 'done' : 'error'
     if (item.status === 'error') item.error = controller.signal.aborted ? '已停止' : error?.message || String(error)
-  } finally { controllers.delete(item.id) }
+  } finally { controllers.delete(item.id); item.ms = Date.now() - item.at }
 }
 export function stopTranslation(id: string) { controllers.get(id)?.abort() }
 export function removeTranslation(id: string) { stopTranslation(id); const index = translator.items.findIndex(item => item.id === id); if (index >= 0) translator.items.splice(index, 1) }
