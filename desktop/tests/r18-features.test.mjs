@@ -44,3 +44,15 @@ test('fonts: common Latin fonts are offered everywhere and survive normalization
   assert.equal(normalized.appearance.readingFont, times.id)
   assert.equal(normalized.appearance.sketchAnswerFont, prefs.appearance.sketchAnswerFont)
 })
+
+test('translation model: never empty — falls back to the default model at its lowest effort', async () => {
+  const { concreteChoice, lowestEffort } = await import('../src/ai/translate-model.ts')
+  const codex = [{ id: 'gpt-6-astra', efforts: ['low', 'medium', 'high'] }, { id: 'gpt-6-luna', efforts: ['none', 'low', 'high'] }]
+  assert.deepEqual(concreteChoice(codex, '', ''), { model: 'gpt-6-astra', effort: 'low' })
+  assert.deepEqual(concreteChoice(codex, 'gpt-6-luna', 'low'), { model: 'gpt-6-luna', effort: 'low' })
+  assert.deepEqual(concreteChoice(codex, 'gpt-6-luna', 'medium'), { model: 'gpt-6-luna', effort: 'none' })
+  assert.deepEqual(concreteChoice(codex, 'gone-model', 'high', 'gpt-6-luna'), { model: 'gpt-6-luna', effort: 'high' })
+  assert.equal(lowestEffort({ id: 'x', efforts: ['medium', 'high'] }), 'medium')
+  // 自定义接口没有列表：保留填写的名称
+  assert.deepEqual(concreteChoice([], 'my-model', 'low'), { model: 'my-model', effort: 'low' })
+})

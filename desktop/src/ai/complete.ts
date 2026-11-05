@@ -6,6 +6,18 @@ import { loadAiSettings, loadApiKey, translationSettings } from './settings.mjs'
 import { fastModel } from './predict'
 import { estimateTokens } from './workspace'
 import { recordUsage, type UsageKind } from './usage'
+import { concreteChoice } from './translate-model'
+import { nativeModelInventory, registerNativeModelInventory } from './native-models'
+
+/** 翻译一定用具体的模型与强度：Codex 还没读过模型列表就先读一次，不把空模型交给 Codex 的默认配置。 */
+async function translationChoice(settings: any) {
+  const { getProvider, getNativeModels } = await import('./providers.mjs')
+  let models: any[] = settings.provider === 'codex' ? nativeModelInventory.value : getProvider(settings.provider)?.models || []
+  if (settings.provider === 'codex' && !models.length) { models = await getNativeModels(); registerNativeModelInventory(models) }
+  const choice = concreteChoice(models, settings.model || '', settings.effort || '', getProvider(settings.provider)?.defaultModel, settings.provider !== 'codex')
+  if (!choice.model) throw new Error('请先在 设置 → AI → 翻译用的 AI 里选一个模型。')
+  return choice
+}
 
 export type CompleteOptions = { kind: UsageKind; messages: { role: 'user' | 'assistant' | 'system'; content: string }[]; fast?: boolean; signal: AbortSignal; onDelta?: (text: string, all: string) => void }
 
@@ -16,8 +28,7 @@ export async function complete(options: CompleteOptions): Promise<string> {
   const keyless = settings.provider === 'custom' && /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/i.test(settings.baseUrl || '')
   if (settings.provider !== 'codex' && !apiKey && !keyless) throw new Error('请先在设置里连接 AI 服务。')
   options.signal.throwIfAborted()
-  const choice = options.kind === 'translate'
-    ? (settings.model ? { model: settings.model, effort: settings.effort || '' } : { ...fastModel(settings), ...(settings.effort ? { effort: settings.effort } : {}) })
+  const choice = options.kind === 'translate' ? await translationChoice(settings)
     : options.fast ? fastModel(settings) : { model: settings.model || '', effort: settings.effort || '' }
   const { streamChat } = await import('./providers.mjs')
   let text = '', reported: { input?: number; output?: number; reasoning?: number } | undefined

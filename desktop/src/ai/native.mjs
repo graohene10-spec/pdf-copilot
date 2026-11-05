@@ -35,9 +35,9 @@ async function openPort() {
   };
 }
 
-// 小助手（以及它背后的 codex app-server）冷启动要好几秒：用完的连接留着复用，空闲 5 分钟才关。
+// 小助手（以及它背后的 codex app-server）冷启动要好几秒：用完的连接留着复用，空闲 20 分钟才关。
 // 小助手一次只跑一段对话，所以并发的请求各拿一条连接。
-const IDLE_MS = 5 * 60000, MAX_IDLE = 2;
+const IDLE_MS = 20 * 60000, MAX_IDLE = 2;
 const idle = [];
 async function acquire() {
   while (idle.length) {

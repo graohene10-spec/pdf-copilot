@@ -3,6 +3,7 @@ import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { PROVIDERS, PROTOCOLS, getProvider, getNativeModels, getNativeStatus } from '../ai/providers.mjs'
 import { nativeModelInventory, registerNativeModelInventory } from '../ai/native-models'
 import { loadAiSettings, loadApiKey, saveAiSettings, saveCredential, supportsFast, TRANSLATION_DEFAULTS } from '../ai/settings.mjs'
+import { concreteChoice } from '../ai/translate-model'
 import { DOCUMENT_LIMIT_FIELDS } from '../../../extension/common/document-limits.mjs'
 import { apiOrigin } from '../../../extension/common/settings.js'
 import { normalizeRequestLimits } from '../../../extension/common/request-queue.mjs'
@@ -73,7 +74,7 @@ onBeforeUnmount(() => { disposed = true; keyEpoch++; modelRequest?.abort() })
 const tr = computed<any>(() => settings.value.translation)
 const trProvider = computed<any>(() => getProvider(tr.value.share ? settings.value.provider : tr.value.provider))
 const trModels = computed<any[]>(() => trProvider.value?.id === 'codex' ? nativeModels.value : trProvider.value?.models || [])
-const trEfforts = computed<string[]>(() => trModels.value.find(item => item.id === tr.value.model)?.efforts || ['none', 'low', 'medium', 'high'])
+const trEfforts = computed<string[]>(() => (trModels.value.find(item => item.id === tr.value.model)?.efforts || ['none', 'low', 'medium', 'high']).filter(Boolean))
 const trNeedsKey = computed(() => !tr.value.share && tr.value.provider !== 'codex' && tr.value.provider !== settings.value.provider)
 const trKey = ref('')
 let trKeyEpoch = 0
@@ -84,6 +85,15 @@ watch(() => tr.value.provider, async (value, previous) => {
   try { const result = await loadApiKey(value); if (epoch === trKeyEpoch) trKey.value = result } catch { /* 读不到就留空 */ }
 }, { immediate: true })
 watch(() => tr.value.share, () => { tr.value.model = ''; tr.value.effort = '' })
+// 共用服务商时，阅读助手换了服务商，翻译的模型也要跟着换成新服务商的。
+watch(() => settings.value.provider, (value, previous) => { if (previous && value !== previous && tr.value.share) { tr.value.model = ''; tr.value.effort = '' } })
+// 没有「自动」：模型空着（或 Codex 的模型不在列表里）就填上该服务商的默认模型与最低思考强度。
+watch([trModels, () => tr.value.model, () => tr.value.share], () => {
+  const list = trModels.value.filter(item => item.id)
+  if (!list.length) return
+  const choice = concreteChoice(list, tr.value.model, tr.value.effort, trProvider.value?.defaultModel, trProvider.value?.id !== 'codex')
+  if (choice.model !== tr.value.model || choice.effort !== tr.value.effort) Object.assign(tr.value, choice)
+}, { immediate: true })
 async function save() {
   saving.value = true; status.value = ''; error.value = false
   try {
@@ -136,9 +146,9 @@ defineExpose({ save, hasChanges: () => edited.value })
         <label v-if="tr.provider !== 'codex'">API 地址<input v-model="tr.baseUrl" aria-label="翻译 API 地址" type="url" /></label>
         <label v-if="trNeedsKey">API Key<input v-model="trKey" aria-label="翻译 API Key" type="password" autocomplete="off" placeholder="加密保存在本机" /></label>
       </template>
-      <label>模型<select v-if="trProvider?.id === 'codex'" v-model="tr.model" aria-label="翻译模型"><option value="">自动（小模型）</option><option v-for="item in trModels" :key="item.id" :value="item.id">{{ item.name || item.id }}</option></select><input v-else v-model="tr.model" aria-label="翻译模型" list="tr-model-list" placeholder="留空自动用小模型" /></label>
+      <label>模型<select v-if="trProvider?.id === 'codex'" v-model="tr.model" aria-label="翻译模型"><option v-for="item in trModels.filter(item => item.id)" :key="item.id" :value="item.id">{{ item.name || item.id }}</option></select><input v-else v-model="tr.model" aria-label="翻译模型" list="tr-model-list" placeholder="模型名称" /></label>
       <datalist id="tr-model-list"><option v-for="item in trModels" :key="item.id" :value="item.id">{{ item.name }}</option></datalist>
-      <label>思考强度<select v-model="tr.effort" aria-label="翻译思考强度"><option value="">自动</option><option v-for="item in trEfforts.filter(Boolean)" :key="item" :value="item">{{ ({ none:'不思考',low:'低',medium:'中',high:'高',xhigh:'很高',max:'最高',minimal:'极低',ultra:'极高' } as any)[item] || item }}</option></select></label>
+      <label>思考强度<select v-model="tr.effort" aria-label="翻译思考强度"><option v-for="item in trEfforts" :key="item" :value="item">{{ ({ none:'不思考',low:'低',medium:'中',high:'高',xhigh:'很高',max:'最高',minimal:'极低',ultra:'极高' } as any)[item] || item }}</option></select></label>
       <label v-if="supportsFast(trProvider?.id)" class="check"><input v-model="tr.fast" type="checkbox" /> Fast</label>
     </details>
     <details class="limit-settings"><summary>每题阅读预算</summary><label v-for="field in DOCUMENT_LIMIT_FIELDS" :key="field.key">{{ field.label }}<input v-model.number="settings.documentLimits[field.key]" type="number" :min="field.min" :max="field.max" :step="field.step || 1" /></label></details>

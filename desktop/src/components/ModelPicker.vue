@@ -6,12 +6,14 @@ import AppIcon from './AppIcon.vue'
 // 服务商、密钥与预算都在设置里，这里不再放入口。
 type Model = { id: string; name: string; efforts?: string[]; defaultEffort?: string }
 // fast：服务商支持优先通道（Codex / OpenAI）时才传，undefined 就不显示开关。
-const props = defineProps<{ model: string; effort: string; models: Model[]; loading?: boolean; error?: string; canRefresh?: boolean; fast?: boolean }>()
+const props = defineProps<{ model: string; effort: string; models: Model[]; loading?: boolean; error?: string; canRefresh?: boolean; fast?: boolean
+  /** 不提供「默认」档：翻译要明确的思考强度。 */
+  noDefault?: boolean }>()
 const emit = defineEmits<{ model: [id: string]; effort: [value: string]; fast: [value: boolean]; refresh: []; close: [] }>()
 const EFFORT_LABELS: Record<string, string> = { '': '默认', none: '关', minimal: '极简', low: '低', medium: '中', high: '高', xhigh: '超高', max: '最高', ultra: '极致' }
 const chips = ref<HTMLElement>()
 const current = computed(() => props.models.find(item => item.id === props.model))
-const steps = computed(() => ['', ...(current.value?.efforts || ['none', 'low', 'medium', 'high', 'xhigh']).filter(Boolean)])
+const steps = computed(() => [...(props.noDefault ? [] : ['']), ...(current.value?.efforts || ['none', 'low', 'medium', 'high', 'xhigh']).filter(Boolean)])
 const index = computed(() => Math.max(0, steps.value.indexOf(props.effort)))
 const label = (value: string) => EFFORT_LABELS[value] ?? value
 function key(event: KeyboardEvent) {
