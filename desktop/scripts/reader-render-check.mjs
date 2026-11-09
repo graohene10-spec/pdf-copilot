@@ -301,7 +301,7 @@ try {
     const text = page.locator('#text-layer span').filter({ hasText: 'Document rendering test' }).first();
     await text.waitFor();
     await text.evaluate(element => { const range = document.createRange(); range.selectNodeContents(element); const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range); element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true })); });
-    await page.getByRole('button', { name: '用所选文字向 AI 提问', exact: true }).click();
+    await text.click({ button: 'right' }); await page.getByRole('menuitem', { name: /问阅读助手/ }).click();
     await page.locator('[data-tip="清除选区"]').click();
     const internal = page.locator('#link-layer button').first();
     await internal.click();

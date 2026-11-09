@@ -155,11 +155,21 @@ function readQuote(): QuotePop | null {
   if (!answer || !pane.value.contains(answer) || answer.closest('.summary-card, .btw-card')) return null
   const text = selection.toString().trim()
   if (!text) return null
-  const rect = range.getBoundingClientRect(), box = pane.value.getBoundingClientRect()
-  return { from: answer.closest('.ai-pane.embedded') ? 'side' : 'main', text: text.slice(0, 8000), rect, left: Math.min(box.width - 160, Math.max(160, rect.left + rect.width / 2 - box.left)), top: Math.max(54, rect.top - box.top - 8) }
+  // 浮条挂在窗口最上层（不被助手窗口的边框裁掉），坐标按整个窗口算。
+  const rect = range.getBoundingClientRect()
+  return { from: answer.closest('.ai-pane.embedded') ? 'side' : 'main', text: text.slice(0, 8000), rect, left: rect.left + rect.width / 2, top: Math.max(48, rect.top - 8) }
 }
 let quoteFrame = 0
 function selectionChanged() { cancelAnimationFrame(quoteFrame); quoteFrame = requestAnimationFrame(() => { quotePop.value = readQuote() }) }
+// 量出浮条的实际宽度（手写体更宽）：太靠近窗口左右边缘就往里挪，始终一行、不被截断。
+const quoteEl = ref<HTMLElement>()
+watch(quotePop, () => void nextTick(() => {
+  const pop = quotePop.value, element = quoteEl.value, box = document.documentElement.clientWidth
+  if (!pop || !element || !box) return
+  const half = element.offsetWidth / 2
+  const left = Math.max(8 + half, Math.min(box - 8 - half, pop.left))
+  if (Math.abs(left - pop.left) > .5) quotePop.value = { ...pop, left }
+}))
 // 摘录飞过去：一张小纸条从选区飞进目标对话的输入框，落下后输入框上方多一枚摘录。
 function fly(text: string, from: DOMRect, target: HTMLElement | null | undefined) {
   if (!pane.value || !target || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return Promise.resolve()
@@ -640,9 +650,17 @@ function pickCommand(item = commandMatches.value[commandIndex.value]) {
 }
 const usageOpen = ref(false)
 const compressing = ref<AbortController | null>(null)
-type Btw = { question: string; answer: string; running: boolean; error: string; controller: AbortController }
+type Btw = { id: string; startedAt: number; question: string; answer: string; running: boolean; error: string; controller: AbortController }
 const btw = ref<Btw | null>(null)
 function closeBtw() { btw.value?.controller.abort(); btw.value = null }
+// /btw 等第一个字时，也像主对话一样走动星标、计时和 Thinking… 动词。
+let btwTicker: ReturnType<typeof setInterval> | undefined
+watch(() => Boolean(btw.value?.running && !btw.value.answer), waiting => {
+  clearInterval(btwTicker); btwTicker = undefined
+  if (waiting && !ticker) btwTicker = setInterval(() => { now.value = Date.now() }, 120)
+  now.value = Date.now()
+})
+onBeforeUnmount(() => clearInterval(btwTicker))
 async function runCommand(name: string, args: string) {
   state.value.error = false; state.value.status = ''
   if (name === 'usage') { usageOpen.value = true; return }
@@ -658,7 +676,7 @@ async function runCommand(name: string, args: string) {
   if (name === 'btw') {
     if (!args) { attachNote('在 /btw 后面写上要顺便问的问题。'); prompt.value = '/btw '; return }
     closeBtw()
-    const item = ref<Btw>({ question: args, answer: '', running: true, error: '', controller: new AbortController() })
+    const item = ref<Btw>({ id: crypto.randomUUID(), startedAt: Date.now(), question: args, answer: '', running: true, error: '', controller: new AbortController() })
     btw.value = item.value
     const current = btw.value!
     const recent = messages.value.filter(message => !message.compressed && message.content).slice(-6).map(message => `${message.summary ? '【摘要】' : message.role === 'user' ? '读者' : '助手'}：${message.content.slice(0, 1500)}`).join('\n\n')
@@ -855,7 +873,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
       <div v-if="btw" class="btw-card" role="status" aria-live="polite">
         <p class="btw-head"><span class="btw-tag">/btw</span><span class="btw-question">{{ btw.question }}</span><button type="button" class="meta-button" aria-label="关闭顺便问" data-tip="关闭" data-tip-key="Esc" @click="closeBtw"><AppIcon name="close" :size="12" /></button></p>
         <div v-if="btw.answer" class="answer-body btw-answer" v-html="renderMarkdown(btw.answer)"></div>
-        <p v-else-if="btw.running" class="btw-wait"><span class="thinking-star">✻</span>想一想…</p>
+        <p v-else-if="btw.running" class="thinking live btw-wait"><span class="thinking-star" aria-hidden="true">{{ spinnerFor(btw.id)[Math.floor(now / 120) % spinnerFor(btw.id).length] }}</span><span class="thinking-label">{{ thinkingVerb(btw.id) }}…</span><span class="thinking-meta">{{ seconds(now - btw.startedAt) }}</span></p>
         <p v-if="btw.error" class="ai-error">{{ btw.error }}</p>
         <p class="btw-note">不会写进对话记录 · Esc 关闭</p>
       </div>
@@ -916,13 +934,13 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
     </Transition>
     </div>
     <UsagePanel v-if="usageOpen" :context-used="contextUsed" :context-limit="contextLimit" :model="modelLabel" @close="usageOpen = false; focusPrompt()" />
-    <Transition name="quote-pop">
-      <div v-if="quotePop && !side" class="quote-pop" :style="{ left: `${quotePop.left}px`, top: `${quotePop.top}px` }" role="toolbar" aria-label="引用所选文字" @pointerdown.prevent>
+    <Teleport to="body"><Transition name="quote-pop">
+      <div v-if="quotePop && !side" ref="quoteEl" class="quote-pop" :style="{ left: `${quotePop.left}px`, top: `${quotePop.top}px` }" role="toolbar" aria-label="引用所选文字" @pointerdown.prevent>
         <button type="button" @click="quoteAction('add')"><AppIcon name="plus" :size="13" />添加到对话<kbd>Ctrl ↓</kbd></button>
         <button v-if="quotePop.from === 'main'" type="button" @click="quoteAction('side')"><AppIcon name="branch" :size="13" />在侧边对话提问<kbd>Ctrl →</kbd></button>
         <button v-else type="button" @click="quoteAction('main')"><AppIcon name="arrow" :size="13" class="flip" />返回主对话提问<kbd>Ctrl ←</kbd></button>
       </div>
-    </Transition>
+    </Transition></Teleport>
   </aside>
 </template>
 
@@ -998,7 +1016,8 @@ button:disabled{opacity:.4;cursor:default}
 .btw-tag{padding:1px 6px;border-radius:5px;background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);font:600 11px var(--font-mono,ui-monospace,monospace)}
 .btw-question{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--secondary)}
 .btw-answer{font-size:13.5px;line-height:1.65}
-.btw-wait{display:flex;gap:6px;margin:2px 0;color:var(--muted);font-size:12.5px}
+.btw-wait{margin:2px 0;padding-left:0}
+.btw-wait:hover{background:none}
 .btw-note{margin:6px 0 0;color:var(--muted);font-size:10.5px}
 .btw-pop-enter-active{transition:opacity var(--dur-2) var(--ease-soft),translate var(--dur-3) var(--spring-snappy)}
 .btw-pop-leave-active{transition:opacity var(--dur-1) var(--ease-soft)}
@@ -1039,7 +1058,7 @@ button:disabled{opacity:.4;cursor:default}
 .side-col-enter-active,.side-col-leave-active{overflow:hidden;transition:width var(--dur-bounce) var(--spring-snappy),opacity var(--dur-2) var(--ease-soft)}
 .side-col-leave-active{transition-duration:var(--dur-3),var(--dur-2);transition-timing-function:var(--ease-out)}
 .side-col-enter-from,.side-col-leave-to{width:0 !important;opacity:0}
-.quote-pop{position:absolute;z-index:30;display:flex;gap:2px;padding:4px;border-radius:12px;translate:-50% -100%;background:color-mix(in srgb,var(--surface) 95%,transparent);background-image:var(--popup-sheen,none);-webkit-backdrop-filter:blur(var(--popup-blur,18px)) saturate(var(--glass-sat,1.4));backdrop-filter:blur(var(--popup-blur,18px)) saturate(var(--glass-sat,1.4));border:1px solid var(--glass-outline);box-shadow:0 12px 30px -12px rgb(0 0 0 / .35),var(--glass-edge,none)}
+.quote-pop{position:fixed;z-index:400;display:flex;gap:2px;padding:4px;border-radius:12px;translate:-50% -100%;background:color-mix(in srgb,var(--surface) 95%,transparent);background-image:var(--popup-sheen,none);-webkit-backdrop-filter:blur(var(--popup-blur,18px)) saturate(var(--glass-sat,1.4));backdrop-filter:blur(var(--popup-blur,18px)) saturate(var(--glass-sat,1.4));border:1px solid var(--glass-outline);box-shadow:0 12px 30px -12px rgb(0 0 0 / .35),var(--glass-edge,none)}
 .quote-pop button{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px;border:0;border-radius:9px;background:none;box-shadow:none;font-size:12.5px;white-space:nowrap}
 .quote-pop button:hover{background:color-mix(in srgb,var(--ink) 8%,transparent)}
 .quote-pop kbd{margin-left:2px;padding:1px 5px;border-radius:5px;background:color-mix(in srgb,var(--ink) 7%,transparent);color:var(--muted);font:500 10.5px var(--font-ui)}

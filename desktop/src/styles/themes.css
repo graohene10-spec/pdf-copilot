@@ -152,8 +152,8 @@
 :root[data-style='warm'][data-theme='dark'] { --pencil: #c2c0b6; --red-pencil: #d97757; }
 :root[data-style='warm'] .manifold-doodle { font-family: var(--doodle-font); }
 :root[data-style='warm'] .manifold-note { font-size: 14.5px; font-style: italic; letter-spacing: .01em; rotate: none; }
-/* 外壳与页面同色：外壳不再铺底色，底板上的动画（z-index 在外壳之下）才露得出来。 */
-:root[data-style='warm'] body, :root[data-style='warm'] .app-shell { background-color: transparent; }
+/* 外壳自成一层叠放上下文：底板动画（z-index: -1）画在外壳底色之上、所有面板之下。 */
+:root[data-style='warm'] .app-shell { isolation: isolate; }
 
 :root[data-style='warm'] .app-shell { padding: 0; gap: 0; }
 :root[data-style='warm'] .app-main { gap: 0; }
@@ -1568,6 +1568,15 @@
 /* 草稿风格像拿荧光笔划过：黄色、带一点透明，铅笔字仍然清楚。 */
 :root[data-style='sketch'] { --selection: rgb(255 214 64 / .5); }
 :root[data-style='sketch'][data-theme='dark'] { --selection: rgb(240 196 70 / .3); }
+/* 正文、回答、译文里用不透明的同色：行框或行内代码块彼此叠住时不再一块深一块浅（PDF 文字层盖在画面上，仍用半透明）。 */
+:root { --selection-solid: color-mix(in srgb, var(--accent) 24%, #fff); }
+:root[data-theme='dark'] { --selection-solid: color-mix(in srgb, var(--accent) 34%, #1c1c1e); }
+:root[data-style='warm'] { --selection-solid: #f1d9b8; }
+:root[data-style='warm'][data-theme='dark'] { --selection-solid: #5a3d33; }
+:root[data-style='sketch'] { --selection-solid: #fbe691; }
+:root[data-style='sketch'][data-theme='dark'] { --selection-solid: #5c5130; }
+:is(.answer-body, .markdown-paper, .tp-result, .tp-source, .user-question) ::selection,
+:is(.answer-body, .markdown-paper, .tp-result, .tp-source, .user-question)::selection { background: var(--selection-solid); }
 
 /* ---- 文档库框选：暖色是琥珀色的框，草稿是铅笔虚线框 ------------------------------------- */
 :root[data-style='warm'] .rubber-band-box { border-color: color-mix(in srgb, var(--accent) 75%, transparent); background: color-mix(in srgb, var(--accent) 10%, transparent); border-radius: 6px; }
