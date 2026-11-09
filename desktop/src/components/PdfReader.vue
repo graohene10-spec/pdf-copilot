@@ -671,9 +671,15 @@ function setPageLayout(pageLayout: 'single' | 'spread', coverAlone = props.cover
 function closePageMenu(event: PointerEvent) { const target = event.target as Node; if (!pageMenuHost.value?.contains(target) && !pageMenuPanel.value?.contains(target)) pageMenu.value = false }
 watch(pageMenu, open => { if (open) document.addEventListener('pointerdown', closePageMenu, true); else document.removeEventListener('pointerdown', closePageMenu, true) })
 onBeforeUnmount(() => document.removeEventListener('pointerdown', closePageMenu, true))
-watch(() => [props.pageLayout, props.coverAlone] as const, ([layout, cover]) => {
-  if (!viewer?.setSpread(layout === 'spread', cover) || !active || loading.value || !viewer.pdf) return
-  if (fitMode) { lastAvailableWidth = readingWidth(); void renderZoom(viewer.getFitScale(readingWidth())) }
+// 切换时页面先按旧比例排成新版式，要等新比例画好才铺满：这段时间先把页面藏起来，排好后淡入，不让它飞到一边。
+watch(() => [props.pageLayout, props.coverAlone] as const, async ([layout, cover]) => {
+  const stack: HTMLElement | undefined = viewer?.stack
+  const hide = Boolean(stack && fitMode && active && !loading.value && viewer?.pdf)
+  if (hide) stack!.classList.add('relayout')
+  try {
+    if (!viewer?.setSpread(layout === 'spread', cover) || !active || loading.value || !viewer.pdf) return
+    if (fitMode) { lastAvailableWidth = readingWidth(); await renderZoom(viewer.getFitScale(readingWidth())) }
+  } finally { if (hide) requestAnimationFrame(() => stack!.classList.remove('relayout')) }
 })
 watch(() => props.initialZoom, value => { if (active && !loading.value && viewer?.pdf) void zoom(value === 'fit' ? null : value) })
 watch(() => props.fitRequest, requestPanelFit)

@@ -1176,10 +1176,10 @@ async function removeDocument(quiet = false, target = removeTarget.value) {
 }
 let appliedBackground: string | undefined
 let glassContrast: ReturnType<typeof installGlassContrast> | undefined
-// 铅笔草稿的格子纸上那个自转的流形：文档库默认显示，阅读时默认不显示（设置里可改）。
+// 铅笔草稿与暖色极简的底板上那个自转的流形 / 训练中的神经网络：文档库默认显示，阅读时默认不显示（设置里可改）。液态玻璃不画。
 const manifoldVisible = computed(() => {
   const appearance = effectiveAppearance.value
-  return appearance.style === 'sketch' && appearance.manifold.show && (!active.value || appearance.manifold.reader)
+  return (appearance.style === 'sketch' || appearance.style === 'warm') && appearance.manifold.show && (!active.value || appearance.manifold.reader)
 })
 function applyTheme() {
   const appearance = effectiveAppearance.value

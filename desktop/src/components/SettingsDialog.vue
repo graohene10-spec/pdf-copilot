@@ -340,6 +340,8 @@ function dialogKeydown(event: KeyboardEvent) {
             <template v-else-if="draft.appearance.style === 'sketch'">
               <label class="setting-row"><span>回答字体</span><select v-model="draft.appearance.sketchAnswerFont" :disabled="saving" aria-label="回答字体"><option v-for="item in SKETCH_ANSWER_FONTS" :key="item.id" :value="item.id">{{ item.label }}</option></select></label>
               <p class="answer-font-preview" :style="{ fontFamily: sketchAnswerStack }">换别的形状也行，定律照样成立——只是没法算。Gauss 1835</p>
+            </template>
+            <template v-if="draft.appearance.style === 'sketch' || draft.appearance.style === 'warm'">
               <label class="setting-check"><input v-model="draft.appearance.manifold.show" type="checkbox" :disabled="saving" aria-label="格子纸上显示旋转的流形" /><span>背景动画</span></label>
               <label class="setting-check"><input v-model="draft.appearance.manifold.reader" type="checkbox" :disabled="saving || !draft.appearance.manifold.show" aria-label="阅读时也显示流形" /><span>阅读时也显示</span></label>
               <div class="manifold-picks" role="group" aria-label="轮换的流形"><span class="manifold-picks-label">轮换</span><button v-for="item in SCENES" :key="item.id" type="button" :aria-pressed="draft.appearance.manifold.shapes.includes(item.id)" :disabled="saving || !draft.appearance.manifold.show" @click="toggleManifold(item.id)">{{ item.name }}</button></div>
