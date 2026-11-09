@@ -1,6 +1,6 @@
 /**
  * 机翻：选中文字后右键「机翻」或按 Ctrl+T，左侧的翻译栏里给出译文，按卡片排列，最近 40 条存在本机。
- * 默认用谷歌翻译（免 key、很快）；也可以换成有道智云（应用 ID + 密钥），或让 AI 模型翻译（慢一些，公式术语更讲究）。
+ * 默认用 AI 翻译（公式术语更讲究）；也可以换成谷歌（免 key、很快）、谷歌云或有道智云。
  */
 import { reactive, watch } from 'vue'
 
@@ -21,8 +21,8 @@ function load(): { items: Translation[]; target: TranslateTarget; engine: Transl
   try {
     const value = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}')
     const items = Array.isArray(value.items) ? value.items.filter((item: any) => item && typeof item.source === 'string' && typeof item.result === 'string').map((item: any) => ({ ...item, status: item.status === 'running' ? 'error' : item.status, error: item.status === 'running' ? '上次关闭时还没翻完' : item.error })) : []
-    return { items, target: TARGETS.some(item => item.value === value.target) ? value.target : 'auto', engine: ENGINES.some(item => item.value === value.engine) ? value.engine : 'google' }
-  } catch { return { items: [], target: 'auto', engine: 'google' } }
+    return { items, target: TARGETS.some(item => item.value === value.target) ? value.target : 'auto', engine: ENGINES.some(item => item.value === value.engine) ? value.engine : 'ai' }
+  } catch { return { items: [], target: 'auto', engine: 'ai' } }
 }
 const stored = load()
 export const translator = reactive({ open: false, items: stored.items as Translation[], target: stored.target as TranslateTarget, engine: stored.engine as TranslateEngine })

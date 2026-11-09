@@ -1022,11 +1022,8 @@ function selectedContext(value: typeof selection.value) {
         monitorCaptureQuick()
       } else notify('选区位置已变化，可在阅读助手中继续提问。')
     } else if (preferences.value.pdf.openAssistantOnCapture) openAssistant(true)
-  } else if (value?.text) {
-    const native = window.getSelection()
-    const rect = native?.rangeCount ? native.getRangeAt(0).getBoundingClientRect() : null
-    if (rect?.width) selectionAction.value = { left: Math.max(8, Math.min(window.innerWidth - 88, rect.right - 70)), top: Math.max(8, Math.min(window.innerHeight - 40, rect.bottom + 5)) }
   }
+  // 选中文字不再浮出「问 AI」按钮：右键菜单里有「问阅读助手」。
 }
 function dismissCaptureQuick(clear = false) {
   const current = captureQuick.value
@@ -1509,7 +1506,7 @@ onBeforeUnmount(() => { stopAutoCheck(); for (const timer of pillTimers.values()
     </Transition>
 
     <Transition name="translate-pane" @before-enter="paneResizeStart($event, true)" @before-leave="paneResizeStart($event, false)" @after-enter="paneResizeEnd" @after-leave="paneResizeEnd" @enter-cancelled="paneResizeEnd($event, true)" @leave-cancelled="paneResizeEnd($event, true)">
-      <div v-if="translator.open" class="translate-column"><TranslatePane ref="translatePane" :shortcut="preferences.shortcuts.translate ? shortcut('translate') : ''" @close="translator.open = false" /></div>
+      <div v-if="translator.open" class="translate-column"><TranslatePane ref="translatePane" :shortcut="preferences.shortcuts.translate ? shortcut('translate') : ''" @close="translator.open = false" @settings="openSettings('ai')" /></div>
     </Transition>
 
     <main class="app-main">
@@ -1604,7 +1601,6 @@ onBeforeUnmount(() => { stopAutoCheck(); for (const timer of pillTimers.values()
     <SplitPicker v-if="splitPicker && active" :anchor="splitPicker" :candidates="splitCandidates" :full="paneIds.length >= MAX_PANES" :limit="MAX_PANES" @pick="openBeside" @close="splitPicker = undefined" />
     <Transition name="capture-focus"><CaptureQuickPrompt v-if="captureQuick && !settingsOpen" :frame="captureQuick.frame" :prompts="preferences.assistant.captureQuestions" :busy="captureQuickBusy" :status="captureQuickStatus" @ask="askCaptureQuick" @continue="continueCaptureQuick" @cancel="dismissCaptureQuick()" /></Transition>
     <div v-if="draggingFiles" class="file-drop-overlay" aria-live="polite"><div class="file-drop-target"><AppIcon name="plus" :size="32" /><strong>加入文档库</strong><span>松开以加入 PDF / Markdown 文档</span></div></div>
-    <button v-if="selectionAction && selection?.text && !aiOpen && active" class="selection-ask" :style="{ left: selectionAction.left + 'px', top: selectionAction.top + 'px' }" @mousedown.prevent @click="openAssistant(true)" aria-label="用所选文字向 AI 提问"><AppIcon name="sparkle" :size="14" />问 AI</button>
     <UpdateCard v-if="!settingsOpen" />
     <TransitionGroup tag="div" name="notice" class="notice-stack" aria-live="polite">
       <div v-for="notice in notices" :key="notice.id" class="answer-notice" role="status" @pointerenter="holdNotice(notice.id, true)" @pointerleave="holdNotice(notice.id, false)">

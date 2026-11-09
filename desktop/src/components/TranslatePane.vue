@@ -13,7 +13,7 @@ import { warmNative } from '../ai/native.mjs'
 import { translator, translate, stopTranslation, removeTranslation, clearTranslations, credential, saveCredential, TARGETS, ENGINES, type Translation } from '../ai/translate'
 
 defineProps<{ shortcut?: string }>()
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: []; settings: [] }>()
 const draft = ref('')
 const list = ref<HTMLElement>()
 const field = ref<HTMLTextAreaElement>()
@@ -52,6 +52,12 @@ const aiLabel = computed(() => {
   const model = aiModels.value.find(item => item.id === aiSettings.value.model)
   return [getProvider(aiSettings.value.provider)?.name || aiSettings.value.provider, model?.name || aiSettings.value.model || '未选模型', EFFORT_NAME[aiSettings.value.effort]].filter(Boolean).join(' · ')
 })
+// 翻译用的是 Codex 时提醒一次：Codex 翻译慢，建议换成国产大模型。关掉后不再出现。
+const HINT_KEY = 'kaizhi.translate.codexHint.v1'
+const hintDismissed = ref((() => { try { return localStorage.getItem(HINT_KEY) === '1' } catch { return false } })())
+const codexHint = computed(() => translator.engine === 'ai' && aiSettings.value.provider === 'codex' && !hintDismissed.value)
+function dismissHint() { hintDismissed.value = true; try { localStorage.setItem(HINT_KEY, '1') } catch { /* 只在这次有效 */ } }
+function openAiSettings() { dismissHint(); emit('settings') }
 const aiFast = computed(() => supportsFast(aiSettings.value.provider) ? Boolean(aiSettings.value.fast) : undefined)
 function chooseAi(patch: Record<string, unknown>) {
   if ('model' in patch) { const model = aiModels.value.find(item => item.id === patch.model); if (model?.efforts && !model.efforts.includes(aiSettings.value.effort)) patch.effort = lowestEffort(model) }
@@ -139,6 +145,7 @@ defineExpose({ focus })
       </div>
       <button v-if="keyed && keyReady" type="button" class="tp-link" @click="keyForm = !keyForm">{{ keyForm ? '收起' : '更换密钥' }}</button>
     </div>
+    <Transition name="tp-hint"><p v-if="codexHint" class="tp-hint" role="note">Codex 翻译较慢，建议换成 DeepSeek、Kimi 等国产大模型。<button type="button" class="tp-link" @click="openAiSettings">去设置</button><button type="button" class="tp-hint-close" aria-label="不再提醒" data-tip="不再提醒" @click="dismissHint"><AppIcon name="close" :size="11" /></button></p></Transition>
     <div v-if="translator.engine === 'ai'" class="tp-ai">
       <button type="button" class="tp-ai-chip" :aria-expanded="aiPicker" aria-label="翻译用的模型、思考强度与 Fast" @click="aiPicker = !aiPicker"><span>{{ aiLabel }}</span><AppIcon v-if="aiFast" name="bolt" :size="11" class="tp-ai-fast" /><AppIcon name="down" :size="11" /></button>
       <ModelPicker v-if="aiPicker" :model="aiSettings.model || ''" :effort="aiSettings.effort || ''" :models="aiModels" :fast="aiFast" no-default @model="id => chooseAi({ model: id })" @effort="value => chooseAi({ effort: value })" @fast="value => chooseAi({ fast: value })" @close="aiPicker = false" />
@@ -165,6 +172,15 @@ defineExpose({ focus })
 .tp-targets button{height:24px;padding:0 8px;border:0;border-radius:calc(var(--r-control) - 2px);background:none;box-shadow:none;font-size:11.5px;color:var(--secondary);white-space:nowrap}
 .tp-targets button.on{background:var(--surface);color:var(--surface-ink);box-shadow:0 1px 2px rgb(0 0 0 / .12)}
 .tp-ai{padding:0 12px 6px}
+/* 小气泡：尖角朝下指向下面的模型标签。 */
+.tp-hint{position:relative;display:flex;align-items:center;gap:6px;margin:4px 12px 8px;padding:7px 8px 7px 11px;border-radius:10px;background:color-mix(in srgb,var(--accent) 12%,var(--surface));border:1px solid color-mix(in srgb,var(--accent) 28%,transparent);color:var(--surface-ink);font-size:12px;line-height:1.45}
+.tp-hint::after{content:'';position:absolute;left:22px;bottom:-6px;width:10px;height:10px;background:inherit;border-right:inherit;border-bottom:inherit;rotate:45deg;border-radius:0 0 3px 0}
+.tp-hint .tp-link{flex:none;margin-left:auto}
+.tp-hint-close{display:grid;place-items:center;flex:none;width:20px;height:20px;padding:0;border:0;border-radius:50%;background:none;box-shadow:none;color:var(--muted)}
+.tp-hint-close:hover{background:color-mix(in srgb,var(--surface-ink) 8%,transparent);color:var(--ink)}
+.tp-hint-enter-active{transition:opacity var(--dur-2) var(--ease-soft),translate var(--dur-3) var(--spring-snappy)}
+.tp-hint-leave-active{transition:opacity var(--dur-1) var(--ease-soft)}
+.tp-hint-enter-from{opacity:0;translate:0 6px}.tp-hint-leave-to{opacity:0}
 .tp-ai-chip{display:inline-flex;align-items:center;gap:5px;max-width:100%;height:24px;padding:0 8px;border:0;border-radius:var(--r-sm);background:color-mix(in srgb,var(--surface-ink) 6%,transparent);box-shadow:none;color:var(--secondary);font-size:11.5px}
 .tp-ai-chip span{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .tp-ai-chip:hover{color:var(--ink)}

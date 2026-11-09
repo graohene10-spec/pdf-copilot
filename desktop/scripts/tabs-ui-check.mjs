@@ -134,7 +134,7 @@ try {
   // Ordinary selection stays quiet and exposes a single action near the range.
   await page.locator('#text-layer span').first().evaluate(el=>{const range=document.createRange();range.selectNodeContents(el);const selection=getSelection();selection.removeAllRanges();selection.addRange(range);el.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));});
   assert.equal(await page.locator('.ai-pane').count(),0);
-  await page.getByRole('button',{name:'用所选文字向 AI 提问',exact:true}).click();
+  await page.locator('#text-layer span').first().evaluate(el=>{const r=el.getBoundingClientRect();el.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:r.left+2,clientY:r.top+2}));}); await page.getByRole('menuitem',{name:/问阅读助手/}).click();
   await page.getByRole('textbox',{name:'向 AI 提问'}).waitFor();
   await page.waitForFunction(()=>document.activeElement?.getAttribute('aria-label')==='向 AI 提问');
   await page.locator('[data-tip="清除选区"]').click();
