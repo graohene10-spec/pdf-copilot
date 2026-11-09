@@ -147,6 +147,14 @@
   --warm-selected: rgb(222 220 209 / .08);
 }
 
+/* 底板上的流形与神经网络：暖色极简用墨棕色线条、陶土色标注、衬线字的知识注记（不旋转、不手写）。 */
+:root[data-style='warm'] { --pencil: #5e5040; --red-pencil: #c96442; --doodle-font: 'Anthropic Serif', 'Tiempos Text', Georgia, 'Source Han Serif SC', serif; }
+:root[data-style='warm'][data-theme='dark'] { --pencil: #c2c0b6; --red-pencil: #d97757; }
+:root[data-style='warm'] .manifold-doodle { font-family: var(--doodle-font); }
+:root[data-style='warm'] .manifold-note { font-size: 14.5px; font-style: italic; letter-spacing: .01em; rotate: none; }
+/* 外壳与页面同色：外壳不再铺底色，底板上的动画（z-index 在外壳之下）才露得出来。 */
+:root[data-style='warm'] body, :root[data-style='warm'] .app-shell { background-color: transparent; }
+
 :root[data-style='warm'] .app-shell { padding: 0; gap: 0; }
 :root[data-style='warm'] .app-main { gap: 0; }
 :root[data-style='warm'] :is(.reading-workspace, .reader-panes) { gap: 0; }

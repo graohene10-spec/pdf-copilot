@@ -3819,13 +3819,18 @@ kbd {
 .page-stack.spread {
   display: grid;
   grid-template-columns: max-content max-content;
-  justify-content: center;
+  /* safe：两页比阅读区宽时贴左排，不往左溢出到滚不到的地方。 */
+  justify-content: safe center;
   align-items: start;
 }
 
 .page-stack.spread > .page-slot {
   margin: 0;
 }
+
+/* 单页 / 双页切换：新比例画好前先藏起来，排好后淡入。 */
+.page-stack { transition: opacity var(--dur-2, 180ms) var(--ease-out, ease-out); }
+.page-stack.relayout { opacity: 0; transition: none; }
 
 /* ---- 文档库框选 ------------------------------------------------------------------------ */
 :root.rubber-banding, :root.rubber-banding * { -webkit-user-select: none; user-select: none; }

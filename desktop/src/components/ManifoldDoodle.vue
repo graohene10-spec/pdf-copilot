@@ -37,7 +37,7 @@ let noteTimer: ReturnType<typeof setTimeout> | undefined
 let noteKey = 0, slotIndex = 0
 let bag: Knowledge[] = []
 const recent: string[] = []
-let ink = '#2e2d2a', red = '#c8553d'
+let ink = '#2e2d2a', red = '#c8553d', hand = "Caveat, 'Long Cang', cursive"
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)')
 const timers = new Set<ReturnType<typeof setTimeout>>()
 
@@ -101,6 +101,8 @@ function readInk() {
   const style = getComputedStyle(document.documentElement)
   ink = style.getPropertyValue('--pencil').trim() || '#2e2d2a'
   red = style.getPropertyValue('--red-pencil').trim() || '#c8553d'
+  // 草稿用手写体；暖色极简用衬线斜体（--doodle-font）。
+  hand = style.getPropertyValue('--doodle-font').trim() || "Caveat, 'Long Cang', cursive"
 }
 
 // ---- 向量小工具 ----
@@ -325,7 +327,7 @@ function drawLoss(context: CanvasRenderingContext2D, state: Training) {
   const span = Math.max(30, state.losses.length - 1) // 横轴随训练拉长，最多保留 120 步
   state.losses.forEach((loss, k) => { const x = x0 + (k / span) * w, y = y0 - (loss / max) * h; if (k) context.lineTo(x, y); else context.moveTo(x, y) })
   context.stroke()
-  context.globalAlpha = .4; context.fillStyle = ink; context.font = `15px Caveat, 'Long Cang', cursive`
+  context.globalAlpha = .4; context.fillStyle = ink; context.font = `15px ${hand}`
   context.fillText('loss', x0 + 6, y0 - h + 4)
   context.fillText(`step ${state.step}`, x0 + w - 48, y0 + 16)
   context.restore()
@@ -390,7 +392,7 @@ function drawVisual(context: CanvasRenderingContext2D, item: Drawing, now: numbe
   context.strokeStyle = red
   context.fillStyle = red
   context.lineWidth = 1.6
-  context.font = `17px Caveat, 'Long Cang', cursive`
+  context.font = `17px ${hand}`
   const line = (pts: Vec[], close = false, dashed = false) => {
     context.setLineDash(dashed ? [5, 4] : [])
     context.beginPath()
