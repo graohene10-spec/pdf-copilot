@@ -149,6 +149,7 @@ defineExpose({ focus })
       <div class="tp-targets" role="radiogroup" aria-label="翻译服务">
         <button v-for="item in ENGINES" :key="item.value" type="button" role="radio" :aria-checked="translator.engine === item.value" :class="{ on: translator.engine === item.value }" :data-tip="ENGINE_TIP[item.value]" @click="translator.engine = item.value">{{ item.label }}</button>
       </div>
+      <button type="button" class="tp-auto" role="switch" :aria-checked="translator.auto" :class="{ on: translator.auto }" data-tip="选中文字后自动翻译，译文显示在鼠标旁" @click="translator.auto = !translator.auto"><i aria-hidden="true"></i>翻译模式</button>
       <button v-if="keyed && keyReady" type="button" class="tp-link" @click="keyForm = !keyForm">{{ keyForm ? '收起' : '更换密钥' }}</button>
     </div>
     <Transition name="tp-hint"><p v-if="codexHint" class="tp-hint" role="note">Codex 翻译较慢，建议换成 DeepSeek、Kimi 等国产大模型。<button type="button" class="tp-link" @click="openAiSettings">去设置</button><button type="button" class="tp-hint-close" aria-label="不再提醒" data-tip="不再提醒" @click="dismissHint"><AppIcon name="close" :size="11" /></button></p></Transition>
@@ -178,6 +179,12 @@ defineExpose({ focus })
 .tp-targets button{height:24px;padding:0 8px;border:0;border-radius:calc(var(--r-control) - 2px);background:none;box-shadow:none;font-size:11.5px;color:var(--secondary);white-space:nowrap}
 .tp-targets button.on{background:var(--surface);color:var(--surface-ink);box-shadow:0 1px 2px rgb(0 0 0 / .12)}
 .tp-ai{padding:0 12px 6px}
+.tp-auto{display:inline-flex;align-items:center;gap:6px;margin-left:auto;height:24px;padding:0 8px 0 6px;border:0;border-radius:999px;background:transparent;color:var(--secondary);font:inherit;font-size:12px;white-space:nowrap;cursor:pointer}
+.tp-auto i{position:relative;width:24px;height:14px;border-radius:999px;background:var(--fill-1);transition:background var(--dur-2) var(--ease-out)}
+.tp-auto i::after{content:'';position:absolute;left:2px;top:2px;width:10px;height:10px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgb(0 0 0 / .3);transition:translate var(--dur-2) var(--spring-snappy)}
+.tp-auto.on{color:var(--control-ink)}
+.tp-auto.on i{background:var(--accent)}
+.tp-auto.on i::after{translate:10px 0}
 /* 小气泡：尖角朝下指向下面的模型标签。 */
 .tp-hint{position:relative;display:flex;align-items:center;gap:6px;margin:4px 12px 8px;padding:7px 8px 7px 11px;border-radius:10px;background:color-mix(in srgb,var(--accent) 12%,var(--surface));border:1px solid color-mix(in srgb,var(--accent) 28%,transparent);color:var(--surface-ink);font-size:12px;line-height:1.45}
 .tp-hint::after{content:'';position:absolute;left:22px;bottom:-6px;width:10px;height:10px;background:inherit;border-right:inherit;border-bottom:inherit;rotate:45deg;border-radius:0 0 3px 0}

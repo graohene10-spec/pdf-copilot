@@ -19,7 +19,8 @@ import { useFullscreen } from './ui/fullscreen'
 import { vLiquidSelection } from './ui/liquid-selection'
 import { useReorder } from './ui/reorder'
 import { useRubberBand } from './ui/rubber-band'
-import { translator, translate } from './ai/translate'
+import { translator, translate, type Translation } from './ai/translate'
+import SelectionTranslation from './components/SelectionTranslation.vue'
 import { startAutoCheck, stopAutoCheck } from './ui/updater'
 import { registerCustomFonts } from './ui/custom-fonts'
 import { covers, loadCovers, setCover, imageCover, pageCover, type Cover } from './library/covers'
@@ -661,6 +662,25 @@ function moveTab(direction: number) {
 // 每本书的书签列表（同一本书的副本共用）；右侧细条上的位置由阅读器按当前排版换算，翻页、缩放后重算。
 const bookmarkTick = ref(0)
 const editingBookmark = ref<string | null>(null)
+// 翻译模式：在文档里选中文字后自动翻译，译文浮在鼠标旁（不打开翻译栏）。
+const hoverTranslation = shallowRef<{ item: Translation; x: number; y: number }>()
+let hoverSource = ''
+function autoTranslate(event: MouseEvent) {
+  if (!translator.auto || event.button !== 0) return
+  const target = event.target as HTMLElement | null
+  if (!target?.closest?.('.reader-pane') || target.closest('.selection-translation, input, textarea, button')) return
+  const x = event.clientX, y = event.clientY
+  // 等浏览器把这次拖选落定再读选区。
+  setTimeout(() => {
+    const text = window.getSelection()?.toString().trim() || ''
+    if (!text || text.length > 3000) { hoverSource = ''; return }
+    if (text === hoverSource && hoverTranslation.value) return
+    hoverSource = text
+    void translate(text, translator.target, false, { quiet: true, onItem: item => { hoverTranslation.value = { item, x, y } } })
+  }, 0)
+}
+function closeHoverTranslation() { hoverTranslation.value = undefined; hoverSource = '' }
+watch(() => translator.auto, value => { if (!value) closeHoverTranslation() })
 // 右键拖动截图：按文档单独开启（给没有文字层的扫描版 PDF 用），记在本机。
 const RIGHT_CAPTURE_KEY = 'kaizhi.rightCapture.v1'
 const rightCaptureDocs = ref(new Set<string>((() => { try { const value = JSON.parse(localStorage.getItem(RIGHT_CAPTURE_KEY) || '[]'); return Array.isArray(value) ? value.filter(item => typeof item === 'string').slice(0, 500) : [] } catch { return [] } })()))
@@ -1518,6 +1538,7 @@ onMounted(async () => {
   glassContrast.setBackground(appliedBackground ?? null)
   document.addEventListener('keydown', keydown)
   document.addEventListener('contextmenu', appContextMenu)
+  document.addEventListener('mouseup', autoTranslate)
   document.addEventListener('wheel', wheel, { capture: true, passive: false })
   document.addEventListener('dragenter', dragEnter)
   document.addEventListener('dragover', dragOver)
@@ -1537,7 +1558,7 @@ onMounted(async () => {
   void loadCovers()
   await refresh()
 })
-onBeforeUnmount(() => { stopAutoCheck(); clearTimeout(enteringTimer); disposed = true; ++openEpoch; dismissCaptureQuick(); stopDropListening?.(); clearWheelZoom(); readerInstances.clear(); glassContrast?.dispose(); document.removeEventListener('keydown', keydown); document.removeEventListener('contextmenu', appContextMenu); document.removeEventListener('wheel', wheel, true); document.removeEventListener('dragenter', dragEnter); document.removeEventListener('dragover', dragOver); document.removeEventListener('dragleave', dragLeave); document.removeEventListener('drop', fileDrop); document.removeEventListener('selectionchange', selectionChanged); document.removeEventListener('scroll', dismissSelectionAction, true); document.removeEventListener('scroll', captureViewportChanged, true); window.removeEventListener('resize', dismissSelectionAction); window.removeEventListener('resize', captureViewportChanged); closeAllChats(); forgetAllPasswords(); systemTheme.removeEventListener('change', applyTheme); flushProgress(); for (const timer of indexTimers.values()) clearTimeout(timer); clearTimeout(queryTimer); clearTimeout(toastTimer) })
+onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); stopAutoCheck(); clearTimeout(enteringTimer); disposed = true; ++openEpoch; dismissCaptureQuick(); stopDropListening?.(); clearWheelZoom(); readerInstances.clear(); glassContrast?.dispose(); document.removeEventListener('keydown', keydown); document.removeEventListener('contextmenu', appContextMenu); document.removeEventListener('wheel', wheel, true); document.removeEventListener('dragenter', dragEnter); document.removeEventListener('dragover', dragOver); document.removeEventListener('dragleave', dragLeave); document.removeEventListener('drop', fileDrop); document.removeEventListener('selectionchange', selectionChanged); document.removeEventListener('scroll', dismissSelectionAction, true); document.removeEventListener('scroll', captureViewportChanged, true); window.removeEventListener('resize', dismissSelectionAction); window.removeEventListener('resize', captureViewportChanged); closeAllChats(); forgetAllPasswords(); systemTheme.removeEventListener('change', applyTheme); flushProgress(); for (const timer of indexTimers.values()) clearTimeout(timer); clearTimeout(queryTimer); clearTimeout(toastTimer) })
 </script>
 
 <template>
@@ -1655,6 +1676,7 @@ onBeforeUnmount(() => { stopAutoCheck(); clearTimeout(enteringTimer); disposed =
     <ContextMenu v-if="contextMenu" :x="contextMenu.x" :y="contextMenu.y" :items="contextMenu.items" @close="contextMenu = undefined" />
     <div v-if="tabDrop" class="tab-drop-zone" :style="{ left: `${tabDrop.left}px`, top: `${tabDrop.top}px`, width: `${tabDrop.width}px`, height: `${tabDrop.height}px` }"><span>{{ tabDrop.side === 'left' ? '放在左侧' : '放在右侧' }}</span></div>
     <SplitPicker v-if="splitPicker && active" :anchor="splitPicker" :candidates="splitCandidates" :full="paneIds.length >= MAX_PANES" :limit="MAX_PANES" @pick="openBeside" @close="splitPicker = undefined" />
+    <SelectionTranslation v-if="hoverTranslation" :key="hoverTranslation.item.id" :item="hoverTranslation.item" :x="hoverTranslation.x" :y="hoverTranslation.y" @close="closeHoverTranslation" />
     <Transition name="capture-focus"><CaptureQuickPrompt v-if="captureQuick && !settingsOpen" :frame="captureQuick.frame" :prompts="preferences.assistant.captureQuestions" :busy="captureQuickBusy" :status="captureQuickStatus" @ask="askCaptureQuick" @continue="continueCaptureQuick" @cancel="dismissCaptureQuick()" /></Transition>
     <div v-if="draggingFiles" class="file-drop-overlay" aria-live="polite"><div class="file-drop-target"><AppIcon name="plus" :size="32" /><strong>加入文档库</strong><span>松开以加入 PDF / Markdown 文档</span></div></div>
     <UpdateCard v-if="!settingsOpen" />
