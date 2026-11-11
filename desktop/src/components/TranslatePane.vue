@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 左侧的翻译栏：像阅读助手一样的一列，译文按卡片从上往下排，底下可以直接输入要翻译的文字。
 // 与阅读助手共用外壳的主题样式（.ai-pane），内部元素用 tp- 前缀，互不干扰。
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import AppIcon from './AppIcon.vue'
 import { renderMarkdown } from '../ai/render'
 import ModelPicker from './ModelPicker.vue'
@@ -10,6 +10,7 @@ import { nativeModelInventory, registerNativeModelInventory } from '../ai/native
 import { concreteChoice, lowestEffort } from '../ai/translate-model'
 import { loadAiSettings, translationSettings, saveTranslationChoice, supportsFast } from '../ai/settings.mjs'
 import { warmNative } from '../ai/native.mjs'
+import { warmTranslation } from '../ai/complete'
 import { translator, translate, stopTranslation, removeTranslation, clearTranslations, credential, saveCredential, TARGETS, ENGINES, type Translation } from '../ai/translate'
 
 defineProps<{ shortcut?: string }>()
@@ -45,8 +46,13 @@ watch(() => translator.engine, async engine => {
   if (engine !== 'ai') { aiPicker.value = false; return }
   aiSettings.value = translationSettings(loadAiSettings())
   if (aiSettings.value.provider === 'codex') { void warmNative(); await loadCodexModels() }
+  else warmTranslation()
   settleChoice()
 }, { immediate: true })
+// 翻译栏开着的时候保持连接是热的：隔一阵补一次握手（内部限流，每 4 分钟至多一次）。
+function keepWarm() { if (translator.engine === 'ai') warmTranslation() }
+const warmTimer = setInterval(keepWarm, 60_000)
+onBeforeUnmount(() => clearInterval(warmTimer))
 watch(() => nativeModelInventory.value, () => { if (translator.engine === 'ai') settleChoice() })
 const aiLabel = computed(() => {
   const model = aiModels.value.find(item => item.id === aiSettings.value.model)
@@ -98,13 +104,13 @@ function keydown(event: KeyboardEvent) {
 async function copy(item: Translation) {
   try { await navigator.clipboard.writeText(item.result); copied.value = item.id; setTimeout(() => { if (copied.value === item.id) copied.value = '' }, 1400) } catch { /* 剪贴板不可用时什么也不做 */ }
 }
-function again(item: Translation) { void translate(item.source) }
+function again(item: Translation) { void translate(item.source, translator.target, true) }
 function focus() { void nextTick(() => field.value?.focus()) }
 defineExpose({ focus })
 </script>
 
 <template>
-  <aside class="ai-pane translate-pane" role="complementary" aria-label="翻译">
+  <aside class="ai-pane translate-pane" role="complementary" aria-label="翻译" @pointerenter="keepWarm" @focusin="keepWarm">
     <header class="tp-header">
       <span class="tp-title"><AppIcon name="translate" :size="17" />翻译</span>
       <div class="tp-targets" role="radiogroup" aria-label="译成">
@@ -122,7 +128,7 @@ defineExpose({ focus })
       </div>
       <article v-for="item in translator.items" :key="item.id" class="tp-card" :class="item.status">
         <p class="tp-source" :title="item.source">{{ item.source }}</p>
-        <div class="tp-arrow" aria-hidden="true"><span>{{ item.engine ? `${ENGINE_LABEL[item.engine]} · ` : '' }}{{ LABEL[item.target] }}{{ item.ms && item.status === 'done' ? ` · ${(item.ms / 1000).toFixed(1)}s` : '' }}</span></div>
+        <div class="tp-arrow" aria-hidden="true"><span>{{ item.engine ? `${ENGINE_LABEL[item.engine]} · ` : '' }}{{ LABEL[item.target] }}{{ item.cached ? ' · 刚翻过' : item.ms && item.status === 'done' ? ` · ${(item.ms / 1000).toFixed(1)}s` : '' }}</span></div>
         <div v-if="item.result" class="tp-result" v-html="renderMarkdown(item.result)"></div>
         <p v-else-if="item.status === 'running'" class="tp-pending"><span class="tp-dot"></span><span class="tp-dot"></span><span class="tp-dot"></span></p>
         <p v-if="item.status === 'error'" class="tp-error">{{ item.error || '翻译失败' }}</p>

@@ -2,9 +2,32 @@ import { selectionRect, canvasCrop, dataUrlBytes, MAX_IMAGE_BYTES, MAX_IMAGE_DAT
 
 // The overlay receives pointer events only in capture mode, preserving the
 // standard PDF.js text selection in normal reading mode.
+// Right-button drags (opt-in per selector) share one document-level guard: the
+// context menu belongs to a plain right click, never to the end of a drag.
+// Windows raises `contextmenu` on release, Linux and macOS on press, so a menu
+// raised while the button is still down is held back and replayed on a plain click.
+let rightDrag = null;
+let swallowMenuUntil = 0;
+let menuGuard = false;
+function guardContextMenu() {
+  if (menuGuard || typeof document === 'undefined') return;
+  menuGuard = true;
+  document.addEventListener('contextmenu', event => {
+    if (event.replayed) return;
+    if (rightDrag) rightDrag.menu = { target: event.target, x: event.clientX, y: event.clientY };
+    else if (performance.now() >= swallowMenuUntil) return;
+    swallowMenuUntil = 0;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }, true);
+}
+const DRAG_START = 6;
+
 export function rectangleSelector(surface, overlay, onSelect) {
   let start = null;
   let active = false;
+  let secondary = false;
+  let drag = null;
   let pointerId = null;
   const point = event => {
     const box = surface.getBoundingClientRect();
@@ -19,10 +42,21 @@ export function rectangleSelector(surface, overlay, onSelect) {
   };
   const clear = () => {
     start = null; overlay.hidden = true;
+    if (drag && rightDrag === drag) rightDrag = null;
+    drag = null;
     if (pointerId !== null && surface.hasPointerCapture(pointerId)) surface.releasePointerCapture(pointerId);
     pointerId = null;
   };
   const down = event => {
+    if (secondary && event.button === 2) {
+      // Nothing is drawn until the pointer really moves: a plain right click keeps its menu.
+      clear();
+      start = point(event);
+      pointerId = event.pointerId;
+      drag = rightDrag = { moved: false, menu: null };
+      surface.setPointerCapture(event.pointerId);
+      return;
+    }
     if (!active || event.button !== 0) return;
     event.preventDefault();
     start = point(event);
@@ -32,6 +66,12 @@ export function rectangleSelector(surface, overlay, onSelect) {
   };
   const move = event => {
     if (!start) return;
+    if (drag && !drag.moved) {
+      const now = point(event);
+      if (Math.hypot(now.x - start.x, now.y - start.y) < DRAG_START) return;
+      drag.moved = true;
+      surface.classList.add('capture-drag');
+    }
     const box = surface.getBoundingClientRect();
     paint(selectionRect(start, point(event), box.width, box.height));
   };
@@ -39,7 +79,22 @@ export function rectangleSelector(surface, overlay, onSelect) {
     if (!start) return;
     const box = surface.getBoundingClientRect();
     const rect = selectionRect(start, point(event), box.width, box.height);
+    const right = drag;
     clear();
+    if (right) {
+      surface.classList.remove('capture-drag');
+      if (surface.hasPointerCapture(event.pointerId)) surface.releasePointerCapture(event.pointerId);
+      if (right.moved) {
+        // The menu Windows raises on release belongs to this drag, not to a click.
+        swallowMenuUntil = performance.now() + 400;
+        if (rect.width >= 8 && rect.height >= 8) onSelect(rect);
+      } else if (right.menu) {
+        const menu = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: right.menu.x, clientY: right.menu.y });
+        menu.replayed = true;
+        (right.menu.target.isConnected ? right.menu.target : surface).dispatchEvent(menu);
+      }
+      return;
+    }
     if (surface.hasPointerCapture(event.pointerId)) surface.releasePointerCapture(event.pointerId);
     if (rect.width >= 4 && rect.height >= 4) onSelect(rect);
   };
@@ -53,9 +108,17 @@ export function rectangleSelector(surface, overlay, onSelect) {
       clear();
       surface.classList.toggle('capture-mode', value);
     },
+    /** Right-button drags frame a region even outside capture mode (for scanned pages without a text layer). */
+    setSecondary(value) {
+      secondary = Boolean(value);
+      if (secondary) guardContextMenu();
+      else if (drag) { clear(); surface.classList.remove('capture-drag'); }
+    },
     clear,
     dispose() {
       active = false;
+      secondary = false;
+      surface.classList.remove('capture-drag');
       clear();
       surface.classList.remove('capture-mode');
       surface.removeEventListener('pointerdown', down);

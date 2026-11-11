@@ -2063,6 +2063,13 @@ kbd {
   pointer-events: none;
 }
 
+/* 右键拖动截图进行中：与框选模式同样的十字光标，拖动时不选中文字。 */
+.capture-drag {
+  cursor: url('./assets/capture-cursor.svg') 16 16, crosshair;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 .selection-box {
   position: absolute;
   border: 2px solid var(--accent);
