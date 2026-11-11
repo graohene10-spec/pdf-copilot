@@ -19,6 +19,26 @@ async function translationChoice(settings: any) {
   return choice
 }
 
+// 翻译用的连接预热：提前和服务商握手（TCP + TLS），真正翻译时直接复用，不必再等建连。
+const warmed = new Map<string, number>()
+const WARM_FOR = 240_000
+function originOf(baseUrl: string) { try { return new URL(baseUrl).origin } catch { return '' } }
+/** 只发一个不带密钥的小请求；连接留在 Rust 端的连接池里。浏览器预览里不做（跨域只会报错）。 */
+export function warmTranslation() {
+  if (!(globalThis as any).__TAURI_INTERNALS__) return
+  const settings: any = translationSettings(loadAiSettings())
+  const origin = settings.provider === 'codex' ? '' : originOf(settings.baseUrl || '')
+  if (!origin || Date.now() - (warmed.get(origin) || 0) < WARM_FOR) return
+  warmed.set(origin, Date.now())
+  void (async () => {
+    try {
+      const { transportFetch } = await import('./transport.mjs')
+      const response = await transportFetch(String(settings.baseUrl).replace(/\/+$/, '') + '/models', { method: 'GET', signal: AbortSignal.timeout(8000) })
+      await response.text()
+    } catch { warmed.delete(origin) }
+  })()
+}
+
 export type CompleteOptions = { kind: UsageKind; messages: { role: 'user' | 'assistant' | 'system'; content: string }[]; fast?: boolean; signal: AbortSignal; onDelta?: (text: string, all: string) => void }
 
 export async function complete(options: CompleteOptions): Promise<string> {
@@ -37,6 +57,8 @@ export async function complete(options: CompleteOptions): Promise<string> {
     await streamChat({ ...settings, ...choice, fast: options.kind === 'translate' ? settings.fast : options.fast ? false : settings.fast, apiKey, signal: options.signal, messages: options.messages,
       onDelta: (delta: string) => { text += delta; options.onDelta?.(delta, text) },
       onUsage: (usage: { input?: number; output?: number; reasoning?: number }) => { reported = { input: (reported?.input || 0) + (usage.input || 0), output: (reported?.output || 0) + (usage.output || 0), reasoning: (reported?.reasoning || 0) + (usage.reasoning || 0) } } })
+    // 刚用过的连接还在池里，不必马上再预热。
+    if (options.kind === 'translate') { const origin = originOf(settings.baseUrl || ''); if (origin) warmed.set(origin, Date.now()) }
   } finally {
     recordUsage({ kind: options.kind, provider: settings.provider, model: choice.model || settings.model || '', ms: Date.now() - started, estimated: !reported,
       input: reported?.input ?? estimateTokens(options.messages.map(item => item.content).join('\n')), output: reported?.output ?? estimateTokens(text), reasoning: reported?.reasoning || 0 })

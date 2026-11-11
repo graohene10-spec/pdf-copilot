@@ -43,8 +43,16 @@ impl HttpBridge {
     pub fn new() -> Result<Self> {
         // System proxy and verified TLS are supported; the caller cannot supply
         // proxy settings, disable certificate validation, or follow redirects.
+        // Keep idle connections for five minutes (with keep-alive probes), so a
+        // short request such as a one-word translation reuses a warm TLS session
+        // instead of paying for a new handshake every time.
         let client = Client::builder().redirect(reqwest::redirect::Policy::none())
-            .connect_timeout(Duration::from_secs(30)).build()
+            .connect_timeout(Duration::from_secs(30))
+            .pool_idle_timeout(Duration::from_secs(300))
+            .tcp_keepalive(Duration::from_secs(30)).tcp_nodelay(true)
+            .http2_keep_alive_interval(Duration::from_secs(30))
+            .http2_keep_alive_timeout(Duration::from_secs(10))
+            .http2_keep_alive_while_idle(true).build()
             .map_err(|_| "无法初始化网络连接")?;
         Ok(Self { client,active: Arc::new(Mutex::new(HashMap::new())) })
     }

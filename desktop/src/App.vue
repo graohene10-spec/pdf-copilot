@@ -661,6 +661,31 @@ function moveTab(direction: number) {
 // 每本书的书签列表（同一本书的副本共用）；右侧细条上的位置由阅读器按当前排版换算，翻页、缩放后重算。
 const bookmarkTick = ref(0)
 const editingBookmark = ref<string | null>(null)
+// 右键拖动截图：按文档单独开启（给没有文字层的扫描版 PDF 用），记在本机。
+const RIGHT_CAPTURE_KEY = 'kaizhi.rightCapture.v1'
+const rightCaptureDocs = ref(new Set<string>((() => { try { const value = JSON.parse(localStorage.getItem(RIGHT_CAPTURE_KEY) || '[]'); return Array.isArray(value) ? value.filter(item => typeof item === 'string').slice(0, 500) : [] } catch { return [] } })()))
+function toggleRightCapture(id: string) {
+  const next = new Set(rightCaptureDocs.value)
+  if (!next.delete(id)) next.add(id)
+  rightCaptureDocs.value = next
+  try { localStorage.setItem(RIGHT_CAPTURE_KEY, JSON.stringify([...next])) } catch { /* 存不下也照常用到关闭为止 */ }
+  notify(next.has(id) ? '已开启：在这份文档里按住右键拖动即可截图给阅读助手。' : '已关闭右键拖动截图。')
+}
+// 框选后是否先弹出快捷提问；关掉后截图直接进阅读助手。
+async function toggleCaptureQuickAsk() {
+  const on = !preferences.value.pdf.quickAskOnCapture
+  try { await savePreferences({ ...preferences.value, pdf: { ...preferences.value.pdf, quickAskOnCapture: on, openAssistantOnCapture: on ? preferences.value.pdf.openAssistantOnCapture : true } }) }
+  catch (error) { notify(reason(error)) }
+}
+/** 文档里右键菜单中与截图有关的两项。 */
+function captureMenuItems(target: HTMLElement): MenuItem[] {
+  const pane = target.closest<HTMLElement>('[data-pane-id]')?.dataset.paneId
+  const id = sourceId(pane || active.value?.id)
+  const items: MenuItem[] = []
+  if (id) items.push({ label: rightCaptureDocs.value.has(id) ? '关闭右键拖动截图' : '开启右键拖动截图', icon: 'crop', separator: true, action: () => toggleRightCapture(id) })
+  items.push({ label: preferences.value.pdf.quickAskOnCapture ? '关闭框选快捷提问' : '开启框选快捷提问', icon: 'sparkle', separator: !id, action: () => { void toggleCaptureQuickAsk() } })
+  return items
+}
 watch(() => paneIds.value.join(), () => { for (const id of paneIds.value) void loadBookmarks(sourceId(id)).then(() => bookmarkTick.value++) }, { immediate: true })
 function paneBookmarks(id: string) {
   void bookmarkTick.value
@@ -905,11 +930,15 @@ function appContextMenu(event: MouseEvent) {
     items.push({ label: '复制', icon: 'copy', hint: 'Ctrl+C', disabled: !selected, action: () => { field.focus(); document.execCommand('copy') } })
     items.push({ label: '粘贴', icon: 'doc', hint: 'Ctrl+V', disabled: !editable, action: () => { void navigator.clipboard.readText().then(value => { field.focus(); document.execCommand('insertText', false, value) }).catch(() => notify('无法读取剪贴板，请用 Ctrl+V 粘贴。')) } })
     items.push({ label: '全选', icon: 'check', hint: 'Ctrl+A', separator: true, action: () => { field.focus(); field.select() } })
+  } else if (target.closest('.crop-toggle')) {
+    // 右键「框选」按钮：选择框选后要不要先弹出快捷提问。
+    items.push(...captureMenuItems(target))
   } else if (text.trim()) {
     items.push({ label: '复制', icon: 'copy', hint: 'Ctrl+C', action: () => { void navigator.clipboard.writeText(text).catch(() => document.execCommand('copy')) } })
     items.push({ label: '机翻', icon: 'translate', hint: shortcut('translate'), action: () => { void translate(text) } })
     if (active.value && target.closest('.reader-pane')) items.push({ label: '问阅读助手', icon: 'sparkle', action: () => openAssistant(true) })
     if (active.value && target.closest('.reader-pane')) { const pane = target.closest<HTMLElement>('[data-pane-id]')?.dataset.paneId; items.push({ label: '在这里加书签', icon: 'star', hint: shortcut('bookmark'), action: () => addBookmarkHere(pane || active.value?.id) }) }
+    if (active.value && target.closest('.reader-pane')) items.push(...captureMenuItems(target))
   } else if (!active.value && target.closest('.document-card')) {
     const card = target.closest<HTMLElement>('.document-card')!
     const doc = visibleDocuments.value.find(item => item.id === card.dataset.reorderId)
@@ -926,7 +955,8 @@ function appContextMenu(event: MouseEvent) {
     if (!aiOpen.value) items.push({ label: '打开阅读助手', icon: 'sparkle', hint: shortcut('ai'), action: () => openAssistant(true) })
     items.push({ label: '并排阅读…', icon: 'split', hint: shortcut('split'), action: () => toggleSplitPicker() })
     items.push({ label: fullscreen.value ? '退出全屏' : '进入全屏', icon: fullscreen.value ? 'exit-fullscreen' : 'fullscreen', hint: shortcut('fullscreen'), separator: true, action: () => { void toggleFullscreen() } })
-    items.push({ label: '设置', icon: 'settings', hint: shortcut('settings'), action: () => openSettings() })
+    if (target.closest('.reader-pane')) items.push(...captureMenuItems(target))
+    items.push({ label: '设置', icon: 'settings', hint: shortcut('settings'), separator: Boolean(target.closest('.reader-pane')), action: () => openSettings() })
   } else {
     items.push({ label: '加入文档', icon: 'plus', hint: shortcut('import'), action: () => { void importDocuments() } })
     items.push({ label: theme.value === 'dark' ? '切换浅色主题' : '切换深色主题', icon: theme.value === 'dark' ? 'sun' : 'moon', action: () => { void toggleTheme() } })
@@ -1598,7 +1628,7 @@ onBeforeUnmount(() => { stopAutoCheck(); clearTimeout(enteringTimer); disposed =
           <TransitionGroup tag="div" name="pane" class="reader-panes" :class="{ split: splitView, multi: multiPanel, dragging: draggingPanel }" @before-enter="panelResizeStart($event, true)" @before-leave="panelResizeStart($event, false)" @after-enter="panelResizeEnd($event)" @after-leave="panelResizeEnd($event)" @enter-cancelled="panelResizeEnd($event, true)" @leave-cancelled="panelResizeEnd($event, true)">
             <section v-for="entry in readerCache" v-show="paneVisible(entry.id)" :key="entry.id" class="reader-pane" :class="{ focused: splitView && stageDoc!.id === entry.id, entering: enteringPane === entry.id, lifted: draggingPanel === `doc:${entry.id}` }" :style="{ order: panelOrder(`doc:${entry.id}`) }" :data-pane-id="entry.id" :data-panel-key="`doc:${entry.id}`" :aria-label="splitView ? `并排阅读：${entry.doc.name}` : undefined" @pointerdown.capture="pointerFocusPane($event, entry.id)" @pointerdown="paneToolbarGrab($event, entry.id)" @focusin="focusPane(entry.id)">
               <KeepAlive>
-                <component v-if="paneVisible(entry.id)" :is="entry.doc.kind === 'pdf' ? PdfReader : MarkdownReader" :ref="value => bindReader(entry.id, value)" :key="entry.id" :data="entry.bytes" :document-id="sourceId(entry.id)" :initial-page="entry.doc.page || 1" :initial-progress="entry.doc.progress || 0" :sidebar-fit-enabled="preferences.pdf.fitOnPanelOverflow" :initial-zoom="preferences.pdf.initialZoom === 'fit-width' ? 'fit' : preferences.pdf.initialZoom / 100" :zoom-step="preferences.pdf.zoomStep / 100" :fit-request="fitRequest" :font-size="preferences.markdown.fontSize" :content-width="preferences.markdown.contentWidth" :find-shortcut="preferences.shortcuts.find ? shortcut('find') : ''" :shortcuts="tipKeys" :initial-view="entry.view" :page-layout="preferences.pdf.pageLayout" :cover-alone="preferences.pdf.coverAlone" v-on="entry.events" @page-layout="setPageLayout" />
+                <component v-if="paneVisible(entry.id)" :is="entry.doc.kind === 'pdf' ? PdfReader : MarkdownReader" :ref="value => bindReader(entry.id, value)" :key="entry.id" :data="entry.bytes" :document-id="sourceId(entry.id)" :initial-page="entry.doc.page || 1" :initial-progress="entry.doc.progress || 0" :sidebar-fit-enabled="preferences.pdf.fitOnPanelOverflow" :initial-zoom="preferences.pdf.initialZoom === 'fit-width' ? 'fit' : preferences.pdf.initialZoom / 100" :zoom-step="preferences.pdf.zoomStep / 100" :fit-request="fitRequest" :font-size="preferences.markdown.fontSize" :content-width="preferences.markdown.contentWidth" :find-shortcut="preferences.shortcuts.find ? shortcut('find') : ''" :shortcuts="tipKeys" :initial-view="entry.view" :page-layout="preferences.pdf.pageLayout" :cover-alone="preferences.pdf.coverAlone" :right-capture="rightCaptureDocs.has(sourceId(entry.id))" v-on="entry.events" @page-layout="setPageLayout" />
               </KeepAlive>
               <BookmarkRail v-if="paneVisible(entry.id)" :marks="paneBookmarks(entry.id)" :editing="editingBookmark" @jump="markId => jumpBookmark(entry.id, markId)" @menu="(markId, event) => bookmarkMenu(entry.id, markId, event)" @rename="(markId, name) => finishRename(entry.id, markId, name)" @remove="markId => deleteBookmark(entry.id, markId)" @cancel="editingBookmark = null" />
               <div v-if="tabDoc(entry.id)" class="reading-pill" :class="{ awake: splitView }" :data-tip="splitView ? entry.doc.name : undefined" role="status" :aria-label="`阅读位置自动保存 · ${tabDoc(entry.id)!.kind === 'pdf' ? `第 ${tabDoc(entry.id)!.page || 1} / ${tabDoc(entry.id)!.pageCount || '—'} 页 · ` : ''}已读 ${progressPercent(tabDoc(entry.id)!)}%`">

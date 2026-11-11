@@ -29,7 +29,9 @@ const props = withDefaults(defineProps<{
   initialView?: { page: number; fraction: number; scale: number | null; outlineOpen: boolean; search?: { query: string; current: number } }
   pageLayout?: 'single' | 'spread'
   coverAlone?: boolean
-}>(), { pageLayout: 'single', coverAlone: false, initialPage: 1, sidebarFitEnabled: true, initialZoom: 'fit', zoomStep: .1, fitRequest: 0 })
+  /** 这份文档开了「右键拖动截图」：按住右键拖出一块区域交给阅读助手（给没有文字层的扫描版用）。 */
+  rightCapture?: boolean
+}>(), { pageLayout: 'single', coverAlone: false, rightCapture: false, initialPage: 1, sidebarFitEnabled: true, initialZoom: 'fit', zoomStep: .1, fitRequest: 0 })
 const emit = defineEmits<{
   ready: [value: { pdf: any; page: number }]
   progress: [value: { page: number; pageCount: number; progress: number }]
@@ -646,6 +648,7 @@ onMounted(async () => {
     onSelectionPending() {},
     onError(reason: any) { if (active) emit('error', reason?.message || String(reason)) },
   })
+  viewer.secondaryCapture(props.rightCapture)
   viewer.setSpread(props.pageLayout === 'spread', props.coverAlone)
   observer = new ResizeObserver(() => { if (active) { positionFrozenViewport(); scheduleLayout() } })
   // 切到深色主题时给已经画好的页面补上彩色图片层（浅色主题里不做任何像素判断）。
@@ -672,6 +675,7 @@ function closePageMenu(event: PointerEvent) { const target = event.target as Nod
 watch(pageMenu, open => { if (open) document.addEventListener('pointerdown', closePageMenu, true); else document.removeEventListener('pointerdown', closePageMenu, true) })
 onBeforeUnmount(() => document.removeEventListener('pointerdown', closePageMenu, true))
 // 切换时页面先按旧比例排成新版式，要等新比例画好才铺满：这段时间先把页面藏起来，排好后淡入，不让它飞到一边。
+watch(() => props.rightCapture, value => viewer?.secondaryCapture(value))
 watch(() => [props.pageLayout, props.coverAlone] as const, async ([layout, cover]) => {
   const stack: HTMLElement | undefined = viewer?.stack
   const hide = Boolean(stack && fitMode && active && !loading.value && viewer?.pdf)

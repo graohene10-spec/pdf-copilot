@@ -3,6 +3,7 @@
  * 默认用 AI 翻译（公式术语更讲究）；也可以换成谷歌（免 key、很快）、谷歌云或有道智云。
  */
 import { reactive, watch } from 'vue'
+import { loadAiSettings, translationSettings } from './settings.mjs'
 
 export type TranslateTarget = 'auto' | 'zh' | 'en' | 'ja'
 export const TARGETS: { value: TranslateTarget; label: string }[] = [{ value: 'auto', label: '自动' }, { value: 'zh', label: '中文' }, { value: 'en', label: 'English' }, { value: 'ja', label: '日本語' }]
@@ -13,7 +14,11 @@ export type Translation = { id: string; source: string; result: string; target: 
   /** 免密钥谷歌失败、自动改用已配好的服务时记下原因。 */
   fallback?: string
   /** 从发出到译完用了多久（毫秒）。 */
-  ms?: number }
+  ms?: number
+  /** AI 翻译用的服务商、模型与强度；用来判断同一段文字是不是已经用同一套翻过。 */
+  via?: string
+  /** 译文取自刚才翻过的同一段文字，没有再请求一次。 */
+  cached?: boolean }
 
 const STORAGE_KEY = 'kaizhi.translate.v1'
 const KEEP = 40
@@ -49,14 +54,21 @@ export function translationPrompt(text: string, target: Exclude<TranslateTarget,
 }
 
 const controllers = new Map<string, AbortController>()
-export async function translate(text: string, target = translator.target): Promise<void> {
+function aiVia() { const settings: any = translationSettings(loadAiSettings()); return [settings.provider, settings.baseUrl || '', settings.model || '', settings.effort || ''].join('|') }
+/** fresh：不用上次的译文，重新请求（「重新翻译」按钮）。 */
+export async function translate(text: string, target = translator.target, fresh = false): Promise<void> {
   const source = tidySource(text).slice(0, 8000)
   if (!source) return
   translator.open = true
   const engine = translator.engine
-  const item = reactive<Translation>({ id: crypto.randomUUID(), source, result: '', target: resolveTarget(source, target), engine, status: 'running', at: Date.now() })
+  const via = engine === 'ai' ? aiVia() : undefined
+  const resolved = resolveTarget(source, target)
+  // 同一段文字、同一种语言、同一套服务刚翻过：直接用上次的译文，不再等一次模型。
+  const earlier = fresh ? undefined : [...translator.items].reverse().find(old => old.status === 'done' && Boolean(old.result) && !old.fallback && old.source === source && old.target === resolved && old.engine === engine && old.via === via)
+  const item = reactive<Translation>({ id: crypto.randomUUID(), source, result: earlier?.result || '', target: resolved, engine, status: earlier ? 'done' : 'running', at: Date.now(), via, ...(earlier ? { cached: true } : {}) })
   translator.items.push(item)
   if (translator.items.length > KEEP) translator.items.splice(0, translator.items.length - KEEP)
+  if (earlier) return
   const controller = new AbortController()
   controllers.set(item.id, controller)
   try {

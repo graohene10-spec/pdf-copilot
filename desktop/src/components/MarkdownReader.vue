@@ -16,7 +16,7 @@ import ReaderSearch from './ReaderSearch.vue'
 import InkButton from './ink/InkButton.vue'
 import InkPalette from './ink/InkPalette.vue'
 
-const props = withDefaults(defineProps<{ data: Uint8Array; documentId: string; initialProgress?: number; fontSize?: number; contentWidth?: number; findShortcut?: string; shortcuts?: Record<string, string>; zoomStep?: number; initialView?: { progress: number; raw: boolean; outlineOpen: boolean; fontSize: number; zoom?: number; search?: { query: string; current: number } } }>(), { initialProgress: 0, fontSize: 17, contentWidth: 820, findShortcut: 'Ctrl + F', zoomStep: .1 })
+const props = withDefaults(defineProps<{ data: Uint8Array; documentId: string; initialProgress?: number; fontSize?: number; contentWidth?: number; findShortcut?: string; shortcuts?: Record<string, string>; zoomStep?: number; rightCapture?: boolean; initialView?: { progress: number; raw: boolean; outlineOpen: boolean; fontSize: number; zoom?: number; search?: { query: string; current: number } } }>(), { initialProgress: 0, fontSize: 17, contentWidth: 820, findShortcut: 'Ctrl + F', zoomStep: .1 })
 const emit = defineEmits<{
   ready: [value: { text: string; headings: { title: string; id: string; level: number }[] }]
   progress: [value: { page: number; pageCount: number; progress: number }]
@@ -192,6 +192,8 @@ function setCapture(value: boolean) {
   selector?.setActive(value)
 }
 function cancelCapture() { if (!capture.value) return false; setCapture(false); return true }
+// 右键拖动截图：不进入框选模式，按住右键直接拖出一块区域。
+watch(() => props.rightCapture, value => selector?.setSecondary(Boolean(value)))
 async function captured(rect: { x: number; y: number; width: number; height: number }) {
   setCapture(false)
   const article = body.value, host = stage.value
@@ -347,6 +349,7 @@ onMounted(() => {
   selectionBox.hidden = true
   stage.value.append(selectionBox)
   selector = rectangleSelector(stage.value, selectionBox, (rect: { x: number; y: number; width: number; height: number }) => { void captured(rect) })
+  selector.setSecondary(props.rightCapture)
   // Reflow (font size, width, zoom, late images) changes each block's height: redraw the marks on it.
   resize = new ResizeObserver(() => inkSchedule())
   resize.observe(body.value)

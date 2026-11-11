@@ -138,6 +138,7 @@ export class ContinuousPdfViewer {
     slot.append(view.canvas, view.text, view.links, view.overlay);
     view.selector = rectangleSelector(slot, view.overlay, rect => this.select(view, rect).catch(error => this.onError?.(error)));
     view.selector.setActive(this.capturing);
+    view.selector.setSecondary(this.rightCapture);
     this.views.set(number, view);
     view.promise = this.paint(view).catch(error => {
       if (!view.disposed && view.epoch === this.epoch && !['RenderingCancelledException', 'AbortException'].includes(error.name)) this.onError?.(error);
@@ -154,7 +155,7 @@ export class ContinuousPdfViewer {
     }
     // A drag may finish before PDF.js finishes the page. Keep that selection,
     // but never use its geometry after a zoom, document change or cancellation.
-    if (view.disposed || epoch !== this.epoch || pdf !== this.pdf || !this.capturing || selection !== this.selection) return;
+    if (view.disposed || epoch !== this.epoch || pdf !== this.pdf || !(this.capturing || this.rightCapture) || selection !== this.selection) return;
     if (view.ready) this.onSelect?.(view, rect);
   }
 
@@ -248,6 +249,12 @@ export class ContinuousPdfViewer {
     ++this.selection;
     this.capturing = value;
     for (const view of this.views.values()) view.selector.setActive(value);
+  }
+
+  /** Right-button drag frames a region without entering capture mode. */
+  secondaryCapture(value) {
+    this.rightCapture = Boolean(value);
+    for (const view of this.views.values()) view.selector.setSecondary(this.rightCapture);
   }
 
   clearOverlays() { ++this.selection; for (const view of this.views.values()) view.selector.clear(); }
