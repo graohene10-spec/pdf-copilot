@@ -1,13 +1,16 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { defaultPreferences, normalizePreferences, preferenceErrors, UI_STYLES, SKETCH_ANSWER_FONTS } from '../src/settings/model.ts'
+import { defaultPreferences, normalizePreferences, preferenceErrors, UI_STYLES, SKETCH_ANSWER_FONTS, isGlassStyle } from '../src/settings/model.ts'
 
 test('interface style defaults to liquid glass and keeps the sketch answer font choice', () => {
   const defaults = defaultPreferences()
   assert.equal(defaults.appearance.style, 'glass')
   assert.equal(defaults.appearance.sketchAnswerFont, 'mashanzheng')
-  assert.deepEqual(UI_STYLES.map(item => item.id), ['glass', 'warm', 'sketch'])
+  assert.deepEqual(UI_STYLES.map(item => item.id), ['glass', 'crystal', 'warm', 'sketch'])
+  // 新液态玻璃是另一套玻璃材质：能保存，并与原版共用玻璃设置。
+  assert.equal(normalizePreferences({ appearance: { style: 'crystal' } }).appearance.style, 'crystal')
+  assert.deepEqual(UI_STYLES.map(item => isGlassStyle(item.id)), [true, true, false, false])
   const sketch = normalizePreferences({ appearance: { style: 'sketch', sketchAnswerFont: 'xiaowei' } })
   assert.equal(sketch.appearance.style, 'sketch')
   assert.equal(sketch.appearance.sketchAnswerFont, 'xiaowei')

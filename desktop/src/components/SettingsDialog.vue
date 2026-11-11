@@ -6,7 +6,7 @@ import { SCENES } from '../sketch/manifolds'
 import { greetingFor } from '../ai/greeting'
 import { importFontFiles, forgetFontFile, registerCustomFonts } from '../ui/custom-fonts'
 import { vLiquidSelection } from '../ui/liquid-selection'
-import { useSettings, defaultPreferences, normalizePreferences, preferenceErrors, importBackgroundImage, defaultCaptureQuestions, newCaptureQuestion, quickPromptLabelLength, limitQuickPromptLabel, QUICK_PROMPT_LABEL_LIMIT, QUICK_PROMPT_QUESTION_LIMIT, CAPTURE_QUESTION_MIN, CAPTURE_QUESTION_MAX, BACKDROPS, UI_STYLES, SKETCH_ANSWER_FONTS, AVATARS, GREETING_STYLES, GLASS_LEGIBILITY, GLASS_TINTS, MAX_GREETING_CHARS, MAX_CUSTOM_FONTS, fontChoices, MAX_AVATAR_CHARS, validAvatarImage, UI_FONTS, READING_FONTS, MAX_GALLERY, SHORTCUTS, DEFAULT_SHORTCUTS, shortcutLabel, shortcutFromEvent, shortcutFromWheelEvent, type AppPreferences, type BackdropPreset, type BackgroundImage, type ShortcutAction } from '../settings'
+import { useSettings, defaultPreferences, normalizePreferences, preferenceErrors, importBackgroundImage, defaultCaptureQuestions, newCaptureQuestion, quickPromptLabelLength, limitQuickPromptLabel, QUICK_PROMPT_LABEL_LIMIT, QUICK_PROMPT_QUESTION_LIMIT, CAPTURE_QUESTION_MIN, CAPTURE_QUESTION_MAX, BACKDROPS, UI_STYLES, isGlassStyle, SKETCH_ANSWER_FONTS, AVATARS, GREETING_STYLES, GLASS_LEGIBILITY, GLASS_TINTS, MAX_GREETING_CHARS, MAX_CUSTOM_FONTS, fontChoices, MAX_AVATAR_CHARS, validAvatarImage, UI_FONTS, READING_FONTS, MAX_GALLERY, SHORTCUTS, DEFAULT_SHORTCUTS, shortcutLabel, shortcutFromEvent, shortcutFromWheelEvent, type AppPreferences, type BackdropPreset, type BackgroundImage, type ShortcutAction } from '../settings'
 
 type Tab = 'appearance' | 'reading' | 'shortcuts' | 'ai' | 'updates'
 const props = withDefaults(defineProps<{ initialTab?: Tab }>(), { initialTab: 'appearance' })
@@ -331,7 +331,7 @@ function dialogKeydown(event: KeyboardEvent) {
             <div class="settings-group">
             <label class="setting-row"><span>主题</span><select v-model="draft.appearance.theme" :disabled="saving" aria-label="主题"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></label>
             <label class="setting-row"><span>默认文档视图</span><select v-model="draft.appearance.libraryView" :disabled="saving" aria-label="默认文档视图"><option value="grid">卡片</option><option value="list">列表</option></select></label>
-            <template v-if="draft.appearance.style === 'glass'">
+            <template v-if="isGlassStyle(draft.appearance.style)">
             <div class="setting-row transparency-row"><label for="glass-transparency">玻璃透明度</label><div class="transparency-control"><input id="glass-transparency" v-model.number="draft.appearance.glassTransparency" :style="{ '--value': draft.appearance.glassTransparency }" :disabled="saving" type="range" min="0" max="100" step="1" aria-label="玻璃透明度" @pointerdown="peek(true)" @keydown="peek(false)" :aria-valuetext="`${draft.appearance.glassTransparency}%`" /><output for="glass-transparency">{{ draft.appearance.glassTransparency }}%</output><span class="slider-endpoints" aria-hidden="true"><span>实色</span><span>清透</span></span></div></div>
             <div class="setting-row transparency-row"><label for="glass-blur">模糊程度</label><div class="transparency-control"><input id="glass-blur" v-model.number="draft.appearance.glassBlur" :style="{ '--value': draft.appearance.glassBlur }" :disabled="saving || draft.appearance.glassTransparency === 0" type="range" min="0" max="100" step="1" aria-label="模糊程度" @pointerdown="peek(true)" @keydown="peek(false)" :aria-valuetext="`${draft.appearance.glassBlur}%`" /><output for="glass-blur">{{ draft.appearance.glassBlur }}%</output><span class="slider-endpoints" aria-hidden="true"><span>清晰</span><span>朦胧</span></span></div></div>
             <div class="setting-row transparency-row"><label for="glass-highlight">边缘高光</label><div class="transparency-control"><input id="glass-highlight" v-model.number="draft.appearance.glassHighlight" :style="{ '--value': draft.appearance.glassHighlight }" :disabled="saving || draft.appearance.glassTransparency === 0" type="range" min="0" max="100" step="1" aria-label="边缘高光" @pointerdown="peek(true)" @keydown="peek(false)" :aria-valuetext="`${draft.appearance.glassHighlight}%`" /><output for="glass-highlight">{{ draft.appearance.glassHighlight }}%</output><span class="slider-endpoints" aria-hidden="true"><span>柔和</span><span>明亮</span></span></div></div>
@@ -347,7 +347,7 @@ function dialogKeydown(event: KeyboardEvent) {
               <div class="manifold-picks" role="group" aria-label="轮换的流形"><span class="manifold-picks-label">轮换</span><button v-for="item in SCENES" :key="item.id" type="button" :aria-pressed="draft.appearance.manifold.shapes.includes(item.id)" :disabled="saving || !draft.appearance.manifold.show" @click="toggleManifold(item.id)">{{ item.name }}</button></div>
             </template>
             </div>
-            <template v-if="draft.appearance.style === 'glass'">
+            <template v-if="isGlassStyle(draft.appearance.style)">
             <h3 class="section-heading">玻璃可读性</h3>
             <div class="settings-group glass-legibility">
               <label class="setting-row"><span>补偿方式</span><select v-model="draft.appearance.glassLegibility" :disabled="saving || draft.appearance.glassTransparency === 0" aria-label="可读性补偿方式"><option v-for="item in GLASS_LEGIBILITY" :key="item.id" :value="item.id">{{ item.label }}</option></select></label>
@@ -388,7 +388,7 @@ function dialogKeydown(event: KeyboardEvent) {
             <input ref="fontInput" class="background-file" type="file" multiple accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2" tabindex="-1" aria-label="字体文件" @change="chooseFonts" />
             <p v-if="fontStatus" class="settings-help" role="status">{{ fontStatus }}</p>
             <p class="settings-help">阅读字体用于 Markdown 正文与阅读助手的回答；PDF 保持原排版。Anthropic Serif 已随应用内置；也可以导入其他字体文件，只保存在本机。</p>
-            <p v-if="draft.appearance.style === 'glass'" class="settings-help">透明度仅影响侧栏、工具栏与面板，正文保持实色。系统开启「减少透明度」时自动使用实色。为了流畅：用预设底板时，侧栏、顶栏、阅读助手等大面板身后只有柔和的渐变，直接用玻璃底色、不做实时模糊（看不出差别）；模糊与折射作用在弹窗、菜单和页码胶囊上。用图片底板时所有玻璃完整生效，内容滚动或输出时折射会短暂停一下。</p>
+            <p v-if="isGlassStyle(draft.appearance.style)" class="settings-help">透明度仅影响侧栏、工具栏与面板，正文保持实色。系统开启「减少透明度」时自动使用实色。为了流畅：用预设底板时，侧栏、顶栏、阅读助手等大面板身后只有柔和的渐变，直接用玻璃底色、不做实时模糊（看不出差别）；模糊与折射作用在弹窗、菜单和页码胶囊上。用图片底板时所有玻璃完整生效，内容滚动或输出时折射会短暂停一下。</p>
             <p v-else-if="draft.appearance.style === 'sketch'" class="settings-help">铅笔草稿的界面文字用龙藏体手写；回答字体只用于阅读助手的回答，Markdown 正文仍用阅读字体。手写字体均随应用内置（SIL OFL）。</p>
             <p v-else class="settings-help">暖色极简用 Anthropic Serif 排标题与回答，界面用无衬线字；玻璃、底板等设置只在液态玻璃下生效。</p>
           </template>
@@ -562,7 +562,7 @@ button{color:var(--control-ink)}
 .backdrop-swatch:focus-visible .swatch-art{outline:2px solid var(--accent);outline-offset:3px}
 .custom-swatch .swatch-art{background:var(--fill-3);border-style:dashed}
 .custom-swatch[aria-checked='true'] .swatch-art{border-style:solid}
-.style-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:0 0 14px}
+.style-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0 0 14px}
 .style-card{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:0;height:auto;padding:0;border:0;background:transparent;box-shadow:none;color:var(--control-ink);text-align:left;cursor:pointer;animation:zg-settle-in var(--dur-smooth) var(--spring-smooth) both;animation-delay:calc(var(--i, 0) * 35ms)}
 .style-card:disabled{cursor:default;opacity:.6}
 .style-card:hover:not(:disabled){background:transparent;border-color:transparent}
@@ -574,6 +574,9 @@ button{color:var(--control-ink)}
 .style-glass .style-art{background:var(--bd-mist)}
 .style-glass .style-art i{border-radius:7px;background:rgb(255 255 255 / .55);box-shadow:inset 0 1px 0 rgb(255 255 255 / .9),0 0 0 .5px rgb(30 40 60 / .14),0 4px 10px -4px rgb(30 40 60 / .3)}
 .style-glass .style-art .art-page{background:#fff;border-radius:2px}
+.style-crystal .style-art{background:radial-gradient(ellipse 70% 80% at 0% 0%,rgb(96 150 255 / .8),transparent 70%),radial-gradient(ellipse 70% 80% at 100% 100%,rgb(168 120 255 / .66),transparent 72%),radial-gradient(ellipse 50% 60% at 90% 0%,rgb(255 150 120 / .66),transparent 70%),linear-gradient(135deg,#e6edfb,#f3e9f1)}
+.style-crystal .style-art i{border-radius:9px;background:rgb(255 255 255 / .3);box-shadow:inset 1px 1px 0 rgb(255 255 255 / .95),inset -1px -1px 0 rgb(255 255 255 / .6),0 5px 12px -5px rgb(30 44 110 / .45)}
+.style-crystal .style-art .art-page{background:#fff;border-radius:2px}
 .style-warm .style-art{background:#f5f0e8}
 .style-warm .style-art i{background:#fffdf9;border:1px solid rgb(31 30 29 / .15);border-radius:6px}
 .style-warm .style-art .art-page{border-radius:2px}

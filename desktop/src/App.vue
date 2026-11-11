@@ -7,7 +7,7 @@ import FileTabs from './components/FileTabs.vue'
 import CaptureQuickPrompt from './components/CaptureQuickPrompt.vue'
 import { chatPhase, chatState, sendChat, closeChat, closeAllChats, configureRequests, stopChat, notices, dismissNotice, selectConversation, type Notice } from './ai/workspace'
 import { forgetPassword, forgetAllPasswords } from './document/passwords.mjs'
-import { useSettings, matchShortcut, matchWheelShortcut, shortcutFromEvent, shortcutLabel, UI_FONTS, READING_FONTS, SKETCH_ANSWER_FONTS, fontChoices } from './settings'
+import { useSettings, matchShortcut, matchWheelShortcut, shortcutFromEvent, shortcutLabel, UI_FONTS, READING_FONTS, SKETCH_ANSWER_FONTS, fontChoices, isGlassStyle } from './settings'
 import { retainReaderEntries } from './reader/cache-policy.mjs'
 import { installGlassContrast } from './ui/glass-contrast'
 import { restoreLeavingPanel } from './ui/panel-transition'
@@ -1197,8 +1197,10 @@ function applyTheme() {
   const root = document.documentElement
   root.dataset.theme = theme.value
   // 暖色极简与铅笔草稿不用玻璃：按实色材质处理，玻璃运行时（折射、字色采样、镜面环）随之停下。
-  const glass = appearance.style === 'glass'
-  root.dataset.style = appearance.style
+  const glass = isGlassStyle(appearance.style)
+  // 新液态玻璃沿用液态玻璃的全部样式与运行时，只多一个材质标记。
+  root.dataset.style = glass ? 'glass' : appearance.style
+  root.dataset.material = appearance.style === 'crystal' ? 'crystal' : 'classic'
   root.dataset.glass = !glass || appearance.glassTransparency === 0 ? 'solid' : 'custom'
   root.style.setProperty('--glass-transparency', String(appearance.glassTransparency / 100))
   // 模糊程度 50% 是默认强度；0 不模糊，100% 为两倍。
@@ -1310,7 +1312,19 @@ const tipKeys = computed<Record<string, string>>(() => Object.fromEntries(Object
 function tipKey(action: keyof typeof preferences.value.shortcuts) { return tipKeys.value[action] || undefined }
 // 发布到 GitHub Releases 的新版本：启动后与每隔几小时检查一次，可在设置里关闭或改收测试版。
 watch(() => `${preferences.value.updates.autoCheck}|${preferences.value.updates.prerelease}`, () => startAutoCheck({ enabled: isDesktop && preferences.value.updates.autoCheck, includePrerelease: preferences.value.updates.prerelease }), { immediate: true })
-watch(effectiveAppearance, () => { applyTheme(); display.value = effectiveAppearance.value.libraryView }, { immediate: true })
+// 换界面风格时整屏交叉淡化（视图过渡，只合成两张快照）；其余外观改动直接生效。
+let appliedStyle: string | undefined
+function applyAppearance() {
+  const style = effectiveAppearance.value.style, root = document.documentElement
+  const start = (document as any).startViewTransition?.bind(document)
+  const animate = appliedStyle !== undefined && appliedStyle !== style && start && !root.dataset.themeTransition && !root.dataset.viewSwitch && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  appliedStyle = style
+  if (!animate) { applyTheme(); return }
+  root.dataset.viewSwitch = 'style'
+  const transition = start(async () => { applyTheme(); await nextTick() })
+  void transition.finished.catch(() => {}).finally(() => { delete root.dataset.viewSwitch })
+}
+watch(effectiveAppearance, () => { applyAppearance(); display.value = effectiveAppearance.value.libraryView }, { immediate: true })
 // A tab may mount its reader while several panels are still transitioning.
 watch(reader, value => {
   if (active.value?.kind === 'pdf' && resizingPanels.size && !window.matchMedia('(max-width: 720px)').matches) value?.holdPanelResize?.(true)

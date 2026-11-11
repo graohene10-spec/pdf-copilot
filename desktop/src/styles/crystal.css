@@ -1,0 +1,187 @@
+/*
+ * 新液态玻璃：与原版液态玻璃共用全部布局与运行时（data-style 仍是 glass），
+ * 只换材质——更饱和的底板光斑、更薄更清的玻璃、更亮的镜面边、带一点蓝的悬浮投影、更圆的角。
+ * 系统要求减少透明度 / 提高对比度时不生效，沿用 tokens.css 的实色兜底。
+ */
+@media (prefers-reduced-transparency: no-preference) and (prefers-contrast: no-preference) and (forced-colors: none) {
+  :root[data-material='crystal'] {
+    --bd-mist:
+      radial-gradient(ellipse 54% 60% at 2% 0%, rgb(96 150 255 / .78), transparent 70%),
+      radial-gradient(ellipse 50% 56% at 100% 100%, rgb(168 120 255 / .62), transparent 72%),
+      radial-gradient(ellipse 40% 44% at 86% 2%, rgb(255 150 120 / .62), transparent 70%),
+      radial-gradient(ellipse 46% 50% at 22% 106%, rgb(70 210 190 / .5), transparent 70%),
+      radial-gradient(ellipse 30% 34% at 52% 46%, rgb(255 255 255 / .55), transparent 70%),
+      linear-gradient(135deg, #e6edfb, #e9e6f8 52%, #f3e9f1);
+    --bd-dawn:
+      radial-gradient(ellipse 54% 60% at 2% 0%, rgb(255 138 104 / .74), transparent 70%),
+      radial-gradient(ellipse 50% 56% at 100% 100%, rgb(244 104 158 / .6), transparent 72%),
+      radial-gradient(ellipse 40% 44% at 86% 2%, rgb(255 204 104 / .66), transparent 70%),
+      radial-gradient(ellipse 46% 50% at 22% 106%, rgb(176 132 248 / .48), transparent 70%),
+      radial-gradient(ellipse 30% 34% at 52% 46%, rgb(255 255 255 / .55), transparent 70%),
+      linear-gradient(135deg, #fbeae2, #f9e3e6 52%, #f4e4f0);
+    --bd-mint:
+      radial-gradient(ellipse 54% 60% at 2% 0%, rgb(64 208 160 / .7), transparent 70%),
+      radial-gradient(ellipse 50% 56% at 100% 100%, rgb(72 156 240 / .6), transparent 72%),
+      radial-gradient(ellipse 40% 44% at 86% 2%, rgb(196 232 96 / .56), transparent 70%),
+      radial-gradient(ellipse 46% 50% at 22% 106%, rgb(60 196 216 / .5), transparent 70%),
+      radial-gradient(ellipse 30% 34% at 52% 46%, rgb(255 255 255 / .55), transparent 70%),
+      linear-gradient(135deg, #e2f4ee, #e0f0f2 52%, #e4eef8);
+    --bd-lavender:
+      radial-gradient(ellipse 54% 60% at 2% 0%, rgb(150 112 255 / .72), transparent 70%),
+      radial-gradient(ellipse 50% 56% at 100% 100%, rgb(244 116 200 / .58), transparent 72%),
+      radial-gradient(ellipse 40% 44% at 86% 2%, rgb(104 150 255 / .62), transparent 70%),
+      radial-gradient(ellipse 46% 50% at 22% 106%, rgb(204 150 255 / .5), transparent 70%),
+      radial-gradient(ellipse 30% 34% at 52% 46%, rgb(255 255 255 / .55), transparent 70%),
+      linear-gradient(135deg, #ece6fb, #eee2f8 52%, #f6e4f2);
+    --bd-graphite:
+      radial-gradient(ellipse 56% 62% at 2% 0%, rgb(150 164 190 / .8), transparent 70%),
+      radial-gradient(ellipse 50% 56% at 100% 100%, rgb(164 172 196 / .72), transparent 72%),
+      radial-gradient(ellipse 40% 44% at 86% 2%, rgb(206 212 224 / .8), transparent 70%),
+      radial-gradient(ellipse 30% 34% at 52% 46%, rgb(255 255 255 / .6), transparent 70%),
+      linear-gradient(135deg, #e6e9ee, #dfe3ea 52%, #e8eaf0);
+  }
+  :root[data-material='crystal'][data-theme='dark'] {
+    --bd-mist:
+      radial-gradient(ellipse 46% 66% at 92% 8%, rgb(60 104 255 / .62), transparent 74%),
+      radial-gradient(ellipse 48% 54% at 2% 20%, rgb(136 84 232 / .46), transparent 76%),
+      radial-gradient(ellipse 36% 58% at 10% 100%, rgb(26 160 176 / .42), transparent 78%),
+      radial-gradient(ellipse 40% 44% at 78% 104%, rgb(226 96 120 / .3), transparent 76%),
+      radial-gradient(ellipse 26% 60% at 54% 20%, rgb(0 2 10 / .5), transparent 77%),
+      linear-gradient(128deg, #0d1020, #141932 40%, #181c3a 72%, #10132a);
+    --bd-dawn:
+      radial-gradient(ellipse 46% 66% at 92% 8%, rgb(232 84 104 / .56), transparent 74%),
+      radial-gradient(ellipse 48% 54% at 2% 20%, rgb(236 136 60 / .42), transparent 76%),
+      radial-gradient(ellipse 36% 58% at 10% 100%, rgb(150 70 190 / .42), transparent 78%),
+      radial-gradient(ellipse 40% 44% at 78% 104%, rgb(240 170 80 / .26), transparent 76%),
+      radial-gradient(ellipse 26% 60% at 54% 20%, rgb(8 2 4 / .5), transparent 77%),
+      linear-gradient(128deg, #1a0f14, #26151c 40%, #2a1722 72%, #1c1018);
+    --bd-mint:
+      radial-gradient(ellipse 46% 66% at 92% 8%, rgb(34 172 132 / .56), transparent 74%),
+      radial-gradient(ellipse 48% 54% at 2% 20%, rgb(40 120 200 / .44), transparent 76%),
+      radial-gradient(ellipse 36% 58% at 10% 100%, rgb(120 170 60 / .32), transparent 78%),
+      radial-gradient(ellipse 40% 44% at 78% 104%, rgb(40 170 200 / .3), transparent 76%),
+      radial-gradient(ellipse 26% 60% at 54% 20%, rgb(0 6 6 / .5), transparent 77%),
+      linear-gradient(128deg, #0a1616, #10221f 40%, #122722 72%, #0c1a1a);
+    --bd-lavender:
+      radial-gradient(ellipse 46% 66% at 92% 8%, rgb(130 84 244 / .6), transparent 74%),
+      radial-gradient(ellipse 48% 54% at 2% 20%, rgb(214 80 176 / .42), transparent 76%),
+      radial-gradient(ellipse 36% 58% at 10% 100%, rgb(70 100 230 / .44), transparent 78%),
+      radial-gradient(ellipse 40% 44% at 78% 104%, rgb(236 110 190 / .28), transparent 76%),
+      radial-gradient(ellipse 26% 60% at 54% 20%, rgb(6 2 12 / .5), transparent 77%),
+      linear-gradient(128deg, #120e20, #1b1530 40%, #1f1736 72%, #151026);
+    --bd-graphite:
+      radial-gradient(ellipse 46% 66% at 92% 8%, rgb(120 134 164 / .42), transparent 74%),
+      radial-gradient(ellipse 48% 54% at 2% 20%, rgb(92 102 128 / .42), transparent 76%),
+      radial-gradient(ellipse 26% 60% at 54% 20%, rgb(0 0 0 / .45), transparent 77%),
+      linear-gradient(128deg, #121418, #1a1d23 40%, #1e2229 72%, #14171b);
+  }
+
+  /* 更圆的同心圆角。 */
+  :root[data-material='crystal'] {
+    --r-xs: 8px; --r-sm: 10px; --r-md: 14px; --r-lg: 18px; --r-xl: 26px; --r-2xl: 30px; --r-bar: 22px; --r-control: 14px;
+  }
+
+  :root[data-material='crystal'][data-glass='custom']:not([data-contrast='high']) {
+    /* 设置里的「边缘高光」默认 50% 对应这里的满强度，拉满再亮三成。 */
+    --lg-h: min(1.3, calc(var(--glass-highlight) * 2));
+    --glass-sat: 210%;
+    --glass-1-blur: calc((3px + var(--glass-transparency) * 13px) * var(--glass-blur-scale));
+    --glass-2-blur: calc((4px + var(--glass-transparency) * 14.5px) * var(--glass-blur-scale));
+    --glass-3-blur: calc((5px + var(--glass-transparency) * 18.5px) * var(--glass-blur-scale));
+    --glass-a1: clamp(.05, calc(1 - var(--glass-transparency) * 1.22), 1);
+    --glass-a2: clamp(.1, calc(1 - var(--glass-transparency) * 1.14), 1);
+    --glass-a3: clamp(.18, calc(1 - var(--glass-transparency) * 1), 1);
+    /* 底板更艳、玻璃更薄，弹窗和菜单要更厚一些才压得住身后的内容。 */
+    --popup-alpha: calc(1 - var(--glass-transparency) * var(--glass-transparency) * .42);
+    --popup-blur: calc((28px + var(--glass-transparency) * 20px) * max(.35, var(--glass-blur-scale)));
+  }
+
+  :root[data-material='crystal'][data-glass='custom']:not([data-contrast='high'], [data-theme='dark']) {
+    --glass-outline: rgb(255 255 255 / .62);
+    --glass-sheen:
+      radial-gradient(130% 85% at 0% 0%, rgb(255 255 255 / .46), rgb(255 255 255 / 0) 48%),
+      radial-gradient(90% 70% at 100% 100%, rgb(255 255 255 / .2), rgb(255 255 255 / 0) 55%),
+      linear-gradient(180deg, rgb(255 255 255 / .14), rgb(255 255 255 / 0) 42%);
+    --rim-stops:
+      rgb(255 255 255 / calc(.98 * var(--lg-h))), rgb(255 255 255 / calc(.6 * var(--lg-h))) 16%, rgb(255 255 255 / calc(.16 * var(--lg-h))) 40%,
+      rgb(255 255 255 / calc(.1 * var(--lg-h))) 60%, rgb(255 255 255 / calc(.5 * var(--lg-h))) 86%, rgb(255 255 255 / calc(.9 * var(--lg-h)));
+    --glass-edge:
+      inset 1.5px 1.5px .5px -.5px rgb(255 255 255 / calc(.98 * var(--lg-h))),
+      inset -1.5px -1.5px .5px -.5px rgb(255 255 255 / calc(.66 * var(--lg-h))),
+      inset 0 0 0 1px rgb(255 255 255 / calc(.16 * var(--lg-h))),
+      inset 0 14px 22px -16px rgb(255 255 255 / calc(.6 * var(--lg-h))),
+      inset 0 -20px 26px -20px rgb(120 150 255 / calc(.26 * var(--lg-h))),
+      inset 0 0 26px rgb(255 255 255 / calc(.2 * var(--lg-h)));
+    --glass-control-edge:
+      inset 1px 1px .5px -.5px rgb(255 255 255 / calc(.98 * var(--lg-h))),
+      inset -1px -1px .5px -.5px rgb(255 255 255 / calc(.6 * var(--lg-h))),
+      inset 0 0 12px rgb(255 255 255 / calc(.22 * var(--lg-h)));
+    --glass-control-shadow: 0 1px 2px rgb(24 36 80 / .08), 0 6px 14px -6px rgb(24 36 80 / .28), var(--glass-control-edge);
+    --glass-hover-shadow: 0 2px 4px rgb(24 36 80 / .08), 0 12px 24px -8px rgb(24 36 80 / .36), var(--glass-control-edge);
+    --glass-specular: linear-gradient(115deg, rgb(255 255 255 / 0) 30%, rgb(255 255 255 / .4) 48%, rgb(255 255 255 / 0) 66%);
+    --shadow-1: 0 1px 2px rgb(24 36 80 / .06), 0 8px 16px -8px rgb(30 44 110 / .22);
+    --shadow-2: 0 2px 5px rgb(24 36 80 / .06), 0 16px 34px -14px rgb(30 44 110 / .34);
+    --shadow-3: 0 4px 12px rgb(24 36 80 / .08), 0 30px 66px -18px rgb(30 44 110 / .42);
+    --shadow-pane: 0 2px 5px rgb(24 36 80 / .07), 0 20px 44px -16px rgb(30 44 110 / .38), 0 44px 80px -44px rgb(30 44 110 / .34);
+    --control-hover: rgb(255 255 255 / .28);
+    --control-selected: rgb(255 255 255 / .5);
+    --control-selected-hover: rgb(255 255 255 / .6);
+  }
+
+  :root[data-material='crystal'][data-glass='custom'][data-theme='dark']:not([data-contrast='high']) {
+    --glass-sat: 190%;
+    --glass-rgb-1: 46 52 78;
+    --glass-rgb-2: 42 48 72;
+    --glass-rgb-3: 30 34 54;
+    --glass-a1: clamp(.1, calc(1 - var(--glass-transparency) * 1.1), 1);
+    --glass-a2: clamp(.14, calc(1 - var(--glass-transparency) * 1.04), 1);
+    --glass-a3: clamp(.22, calc(1 - var(--glass-transparency) * .9), 1);
+    --glass-outline: rgb(255 255 255 / .12);
+    --glass-sheen:
+      radial-gradient(130% 85% at 0% 0%, rgb(255 255 255 / .12), rgb(255 255 255 / 0) 48%),
+      radial-gradient(90% 70% at 100% 100%, rgb(150 170 255 / .08), rgb(255 255 255 / 0) 55%),
+      linear-gradient(180deg, rgb(255 255 255 / .04), rgb(255 255 255 / 0) 42%, rgb(0 0 0 / .08));
+    --rim-stops:
+      rgb(236 242 255 / calc(.7 * var(--lg-h))), rgb(236 242 255 / calc(.28 * var(--lg-h))) 18%, rgb(236 242 255 / calc(.07 * var(--lg-h))) 42%,
+      rgb(236 242 255 / calc(.04 * var(--lg-h))) 60%, rgb(236 242 255 / calc(.2 * var(--lg-h))) 86%, rgb(236 242 255 / calc(.46 * var(--lg-h)));
+    --glass-edge:
+      inset 1.5px 1.5px .5px -.5px rgb(236 242 255 / calc(.44 * var(--lg-h))),
+      inset -1.5px -1.5px .5px -.5px rgb(236 242 255 / calc(.16 * var(--lg-h))),
+      inset 0 14px 22px -16px rgb(236 242 255 / calc(.16 * var(--lg-h))),
+      inset 0 -20px 26px -20px rgb(110 140 255 / calc(.22 * var(--lg-h))),
+      inset 0 -2px 4px rgb(0 0 0 / .18);
+    --glass-control-edge:
+      inset 1px 1px .5px -.5px rgb(236 242 255 / calc(.42 * var(--lg-h))),
+      inset -1px -1px .5px -.5px rgb(236 242 255 / calc(.14 * var(--lg-h))),
+      inset 0 -1px 2px rgb(0 0 0 / .24);
+    --glass-control-shadow: 0 1px 2px rgb(0 0 0 / .28), 0 6px 14px -6px rgb(0 0 10 / .6), var(--glass-control-edge);
+    --glass-hover-shadow: 0 2px 4px rgb(0 0 0 / .26), 0 12px 24px -8px rgb(0 0 10 / .66), var(--glass-control-edge);
+    --glass-specular: linear-gradient(115deg, rgb(255 255 255 / 0) 30%, rgb(255 255 255 / .16) 48%, rgb(255 255 255 / 0) 66%);
+    --shadow-1: 0 1px 2px rgb(0 0 0 / .3), 0 8px 16px -8px rgb(0 0 12 / .5);
+    --shadow-2: 0 2px 6px rgb(0 0 0 / .28), 0 16px 34px -12px rgb(0 0 12 / .62);
+    --shadow-3: 0 4px 12px rgb(0 0 0 / .32), 0 30px 66px -16px rgb(0 0 12 / .72);
+    --shadow-pane: 0 2px 8px rgb(0 0 0 / .26), 0 22px 48px -18px rgb(0 0 12 / .68), 0 44px 80px -44px rgb(0 0 20 / .6);
+  }
+
+  /* 书卡悬停：一道斜向镜面高光从左到右扫过封面与卡身，只动背景位置，不重排。 */
+  :root[data-material='crystal'][data-glass='custom'] .document-collection.grid .document-card::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    pointer-events: none;
+    border-radius: inherit;
+    background: var(--glass-specular) no-repeat 140% 0 / 260% 100%;
+    opacity: 0;
+    transition: opacity var(--dur-2) var(--ease-out), background-position 0s var(--dur-2);
+  }
+  :root[data-material='crystal'][data-glass='custom'] .document-collection.grid .document-card:hover::after {
+    opacity: 1;
+    background-position: -40% 0;
+    transition: opacity var(--dur-1) var(--ease-out), background-position 820ms var(--ease-out);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-material='crystal'] .document-collection.grid .document-card::after { display: none; }
+}

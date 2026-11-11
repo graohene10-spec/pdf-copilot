@@ -74,13 +74,16 @@ export const READING_FONTS: FontChoice[] = [
   font('source-han-sans', '思源黑体', ['Source Han Sans SC', 'Noto Sans CJK SC', 'Noto Sans SC', '思源黑体']),
   ...latin(SYSTEM_SANS, ['Times New Roman', 'Georgia', 'Garamond', 'Palatino Linotype', 'Cambria', 'Book Antiqua', 'Arial', 'Calibri', 'Verdana', 'Segoe UI']),
 ]
-/** 界面风格：与液态玻璃并列的整套外观。暖色极简与铅笔草稿不使用玻璃材质，玻璃相关设置只在液态玻璃下生效。 */
-export type UiStyle = 'glass' | 'warm' | 'sketch'
+/** 界面风格：与液态玻璃并列的整套外观。新液态玻璃是液态玻璃的另一套材质；暖色极简与铅笔草稿不使用玻璃材质，玻璃相关设置只在两种液态玻璃下生效。 */
+export type UiStyle = 'glass' | 'crystal' | 'warm' | 'sketch'
 export const UI_STYLES: { id: UiStyle; label: string; hint: string }[] = [
   { id: 'glass', label: '液态玻璃', hint: '通透的玻璃材质' },
+  { id: 'crystal', label: '新液态玻璃', hint: '更清透，镜面更亮' },
   { id: 'warm', label: '暖色极简', hint: '象牙白、细线与衬线' },
   { id: 'sketch', label: '铅笔草稿', hint: '手写字与纸叠纸' },
 ]
+/** 两种液态玻璃共用玻璃材质、底板与全部玻璃设置，只是材质配方不同。 */
+export function isGlassStyle(style: UiStyle) { return style === 'glass' || style === 'crystal' }
 /* 铅笔草稿里 AI 回答的字体（随应用内置，SIL OFL）；界面文字固定用龙藏体手写。 */
 const HAND_LATIN = "'Patrick Hand', 'Caveat'"
 export const SKETCH_ANSWER_FONTS: FontChoice[] = [
