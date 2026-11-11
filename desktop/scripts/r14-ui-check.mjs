@@ -60,15 +60,16 @@ try {
 
   // ---- The style picker sits beside liquid glass; glass-only settings leave with it ------------------------------
   const group = dialog.getByRole('radiogroup', { name: '界面风格', exact: true });
-  assert.equal(await group.getByRole('radio').count(), 3);
-  assert.equal(await group.getByRole('radio', { name: '液态玻璃风格' }).getAttribute('aria-checked'), 'true');
+  assert.equal(await group.getByRole('radio').count(), 4);
+  assert.equal(await group.getByRole('radio', { name: '液态玻璃风格', exact: true }).getAttribute('aria-checked'), 'true');
   assert.equal(await dialog.getByLabel('玻璃透明度', { exact: true }).count(), 1);
   await group.getByRole('radio', { name: '铅笔草稿风格' }).click();
   assert.equal(await dialog.getByLabel('玻璃透明度', { exact: true }).count(), 0);
   assert.equal(await dialog.getByRole('radiogroup', { name: '底板', exact: true }).count(), 0);
   const answerFont = dialog.getByLabel('回答字体', { exact: true });
   assert.equal(await answerFont.inputValue(), 'mashanzheng');
-  assert.equal(await page.evaluate(() => document.documentElement.dataset.style), 'sketch', 'The style previews while choosing.');
+  // 换风格带一次整屏淡入淡出，新风格在下一帧生效。
+  await page.waitForFunction(() => document.documentElement.dataset.style === 'sketch' && !document.documentElement.dataset.viewSwitch, null, { timeout: 15000 });
   checks.push('界面风格 offers 液态玻璃 / 暖色极简 / 铅笔草稿; glass sliders and backdrops only show for liquid glass; the sketch answer font defaults to 马善政楷书.');
   await dialog.getByRole('button', { name: '保存', exact: true }).click(); await dialog.waitFor({ state: 'detached' });
 
@@ -111,6 +112,7 @@ try {
   await dialog.getByLabel('主题', { exact: true }).selectOption('dark');
   await dialog.getByRole('button', { name: '保存', exact: true }).click(); await dialog.waitFor({ state: 'detached' });
   await page.waitForTimeout(500);
+  await page.waitForFunction(() => document.documentElement.dataset.style === 'warm' && !document.documentElement.dataset.viewSwitch, null, { timeout: 15000 });
   const warm = await page.evaluate(() => ({ style: document.documentElement.dataset.style, accent: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(), display: getComputedStyle(document.documentElement).getPropertyValue('--font-display'), answer: getComputedStyle(document.querySelector('.answer-body')).fontFamily }));
   assert.equal(warm.style, 'warm'); assert.equal(warm.accent, '#d97757');
   assert.match(warm.display, /Anthropic Serif/); assert.doesNotMatch(warm.answer, /XiaoWei/);

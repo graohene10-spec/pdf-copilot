@@ -1090,15 +1090,16 @@
 :root[data-style='sketch'] .reader-panes > .ai-panel { padding-top: 14px; }
 :root[data-style='sketch'] .reader-panes > .ai-panel:is(.pane-enter-from, .pane-leave-to) { padding-top: 14px; }
 
-/* 回形针真的别在本子上：外圈压在纸面上（带一点投影），里圈从纸的上沿绕到纸背后，只露出纸外的一截。 */
+/* 回形针别在标题框上：上半截露在框的上沿之外，下半截压在框的左侧（带一点投影）。 */
 :root[data-style='sketch'] .ai-pane::after {
   content: '';
   position: absolute;
-  top: -16px;
-  left: 10px;
-  width: 28px;
-  height: 64px;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='64' viewBox='0 0 28 64'%3E%3Cpath d='M8 13 V50 a6.5 6.5 0 0 0 13 0 V10 a4.5 4.5 0 0 0 -9 0 V19' stroke='%238d8b85' stroke-width='2.3' fill='none' stroke-linecap='round'/%3E%3Cpath d='M8.6 13 V49' stroke='%23d6d3cc' stroke-width='.8' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat;
+  top: -1px;
+  left: 22px;
+  width: 23px;
+  height: 52px;
+  rotate: -3deg;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='64' viewBox='0 0 28 64'%3E%3Cpath d='M8 13 V50 a6.5 6.5 0 0 0 13 0 V10 a4.5 4.5 0 0 0 -9 0 V19' stroke='%238d8b85' stroke-width='2.3' fill='none' stroke-linecap='round'/%3E%3Cpath d='M8.6 13 V49' stroke='%23d6d3cc' stroke-width='.8' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat center / 100% 100%;
   filter: drop-shadow(1px 1.5px 0 rgb(60 50 30 / .22));
   pointer-events: none;
   z-index: 9;
@@ -1148,9 +1149,10 @@
 
 :root[data-style='sketch'] .answer-body :is(p, ul, ol) { margin-top: 0; margin-bottom: 0; }
 
+/* 标题框在纸上左右居中；左边留出回形针的位置，抓手和标题从回形针右边开始。 */
 :root[data-style='sketch'] .ai-header {
-  margin: 12px 14px 4px 38px;
-  padding: 0 6px 0 4px;
+  margin: 14px 16px 4px;
+  padding: 0 6px 0 30px;
   background: var(--paper);
   border-color: transparent;
   border-radius: 0;
