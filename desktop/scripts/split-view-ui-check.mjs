@@ -54,9 +54,12 @@ try {
   await page.locator('.reader-pane:visible .pdf-scroll').evaluate(element => { element.scrollTop = element.scrollHeight / 2; });
   await page.waitForFunction(() => /第 [23] \/ 4 页/.test(document.querySelector('.reader-pane:not([style*="display: none"]) .reading-pill')?.getAttribute('aria-label') || ''));
   await page.waitForTimeout(500);
-  assert.ok((await pill.boundingBox()).width > 60, 'Turning the page expands the pill with the page number.');
+  assert.ok((await pill.boundingBox()).width < 48, 'Scrolling to another page keeps the pill a quiet ring.');
+  await pill.hover(); await page.waitForTimeout(500);
+  assert.ok((await pill.boundingBox()).width > 60, 'Hovering the ring expands it with the page number.');
   await shot('split-view-pill.png');
-  checks.push('Reading position moved from a footer bar into a floating ring that expands on page change and collapses when idle.');
+  await page.mouse.move(700, 450); await page.waitForTimeout(500);
+  checks.push('Reading position is a floating ring that stays collapsed while scrolling and expands on hover.');
 
   // Add B beside A from the picker; the new pane takes focus.
   await page.locator('[data-split-anchor]').click();

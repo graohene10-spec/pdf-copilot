@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, shallowRef, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick, defineAsyncComponent, toRaw, triggerRef } from 'vue'
+import { ref, shallowRef, computed, watch, onMounted, onBeforeUnmount, nextTick, defineAsyncComponent, toRaw, triggerRef } from 'vue'
 import { library, isDesktop, importDroppedDocuments } from './sdk'
 import type { Doc } from './sdk/types'
 import AppIcon from './components/AppIcon.vue'
@@ -124,14 +124,7 @@ watch(group, value => {
   const next = [...rest.slice(0, first), ...members, ...rest.slice(first)]
   if (next.some((tab, index) => tab !== tabs.value[index])) tabs.value = next
 }, { flush: 'sync' })
-/* 阅读位置胶囊：翻页或保存后展开约两秒，随后收成一颗进度环。 */
-const pillAwake = reactive<Record<string, boolean>>({})
-const pillTimers = new Map<string, ReturnType<typeof setTimeout>>()
-function wakePill(id: string) {
-  pillAwake[id] = true
-  clearTimeout(pillTimers.get(id))
-  pillTimers.set(id, setTimeout(() => { pillAwake[id] = false; pillTimers.delete(id) }, 2200))
-}
+/* 阅读位置胶囊：平时是一颗进度环，滚动、翻页时不再弹开；鼠标移上去（或并排阅读时）才展开页码 / 百分比。 */
 function tabDoc(id: string) { return tabs.value.find(tab => tab.doc.id === id)?.doc }
 // 同一本书再开一份时，标签用 `原编号~序号`：文件、对话、标记都按原编号共用，阅读位置各自独立、不写回文档库。
 function sourceId(id: string): string; function sourceId(id: string | undefined): string | undefined
@@ -416,7 +409,7 @@ async function flushProgress() {
 function writeReadingUpdate(id: string, patch: Partial<Doc>, message: string) {
   if (isCopy(id)) return Promise.resolve()
   const write = (progressWrites.get(id) || Promise.resolve()).then(async () => {
-    try { updateLocal(await library.update(id, patch)); if ('page' in patch && paneVisible(id)) wakePill(id) }
+    try { updateLocal(await library.update(id, patch)) }
     catch (error) { notify(`${message}：${reason(error)}`) }
   })
   progressWrites.set(id, write)
@@ -1128,7 +1121,6 @@ function readingProgress(id: string, value: { page: number; pageCount: number; p
   if (active.value?.id === id) active.value = tab.doc
   const local = documents.value.find(doc => doc.id === id)
   if (local) Object.assign(local, patch)
-  if (moved) wakePill(id)
   if (isCopy(id)) return
   pendingProgress.set(id, patch)
   clearTimeout(progressTimer); progressTimer = setTimeout(flushProgress, 800)
@@ -1481,7 +1473,7 @@ onMounted(async () => {
   void loadCovers()
   await refresh()
 })
-onBeforeUnmount(() => { stopAutoCheck(); for (const timer of pillTimers.values()) clearTimeout(timer); clearTimeout(enteringTimer); disposed = true; ++openEpoch; dismissCaptureQuick(); stopDropListening?.(); clearWheelZoom(); readerInstances.clear(); glassContrast?.dispose(); document.removeEventListener('keydown', keydown); document.removeEventListener('contextmenu', appContextMenu); document.removeEventListener('wheel', wheel, true); document.removeEventListener('dragenter', dragEnter); document.removeEventListener('dragover', dragOver); document.removeEventListener('dragleave', dragLeave); document.removeEventListener('drop', fileDrop); document.removeEventListener('selectionchange', selectionChanged); document.removeEventListener('scroll', dismissSelectionAction, true); document.removeEventListener('scroll', captureViewportChanged, true); window.removeEventListener('resize', dismissSelectionAction); window.removeEventListener('resize', captureViewportChanged); closeAllChats(); forgetAllPasswords(); systemTheme.removeEventListener('change', applyTheme); flushProgress(); for (const timer of indexTimers.values()) clearTimeout(timer); clearTimeout(queryTimer); clearTimeout(toastTimer) })
+onBeforeUnmount(() => { stopAutoCheck(); clearTimeout(enteringTimer); disposed = true; ++openEpoch; dismissCaptureQuick(); stopDropListening?.(); clearWheelZoom(); readerInstances.clear(); glassContrast?.dispose(); document.removeEventListener('keydown', keydown); document.removeEventListener('contextmenu', appContextMenu); document.removeEventListener('wheel', wheel, true); document.removeEventListener('dragenter', dragEnter); document.removeEventListener('dragover', dragOver); document.removeEventListener('dragleave', dragLeave); document.removeEventListener('drop', fileDrop); document.removeEventListener('selectionchange', selectionChanged); document.removeEventListener('scroll', dismissSelectionAction, true); document.removeEventListener('scroll', captureViewportChanged, true); window.removeEventListener('resize', dismissSelectionAction); window.removeEventListener('resize', captureViewportChanged); closeAllChats(); forgetAllPasswords(); systemTheme.removeEventListener('change', applyTheme); flushProgress(); for (const timer of indexTimers.values()) clearTimeout(timer); clearTimeout(queryTimer); clearTimeout(toastTimer) })
 </script>
 
 <template>
@@ -1575,7 +1567,7 @@ onBeforeUnmount(() => { stopAutoCheck(); for (const timer of pillTimers.values()
                 <component v-if="paneVisible(entry.id)" :is="entry.doc.kind === 'pdf' ? PdfReader : MarkdownReader" :ref="value => bindReader(entry.id, value)" :key="entry.id" :data="entry.bytes" :document-id="sourceId(entry.id)" :initial-page="entry.doc.page || 1" :initial-progress="entry.doc.progress || 0" :sidebar-fit-enabled="preferences.pdf.fitOnPanelOverflow" :initial-zoom="preferences.pdf.initialZoom === 'fit-width' ? 'fit' : preferences.pdf.initialZoom / 100" :zoom-step="preferences.pdf.zoomStep / 100" :fit-request="fitRequest" :font-size="preferences.markdown.fontSize" :content-width="preferences.markdown.contentWidth" :find-shortcut="preferences.shortcuts.find ? shortcut('find') : ''" :shortcuts="tipKeys" :initial-view="entry.view" :page-layout="preferences.pdf.pageLayout" :cover-alone="preferences.pdf.coverAlone" v-on="entry.events" @page-layout="setPageLayout" />
               </KeepAlive>
               <BookmarkRail v-if="paneVisible(entry.id)" :marks="paneBookmarks(entry.id)" :editing="editingBookmark" @jump="markId => jumpBookmark(entry.id, markId)" @menu="(markId, event) => bookmarkMenu(entry.id, markId, event)" @rename="(markId, name) => finishRename(entry.id, markId, name)" @remove="markId => deleteBookmark(entry.id, markId)" @cancel="editingBookmark = null" />
-              <div v-if="tabDoc(entry.id)" class="reading-pill" :class="{ awake: pillAwake[entry.id] || splitView }" :data-tip="splitView ? entry.doc.name : undefined" role="status" :aria-label="`阅读位置自动保存 · ${tabDoc(entry.id)!.kind === 'pdf' ? `第 ${tabDoc(entry.id)!.page || 1} / ${tabDoc(entry.id)!.pageCount || '—'} 页 · ` : ''}已读 ${progressPercent(tabDoc(entry.id)!)}%`">
+              <div v-if="tabDoc(entry.id)" class="reading-pill" :class="{ awake: splitView }" :data-tip="splitView ? entry.doc.name : undefined" role="status" :aria-label="`阅读位置自动保存 · ${tabDoc(entry.id)!.kind === 'pdf' ? `第 ${tabDoc(entry.id)!.page || 1} / ${tabDoc(entry.id)!.pageCount || '—'} 页 · ` : ''}已读 ${progressPercent(tabDoc(entry.id)!)}%`">
                 <svg class="pill-ring" viewBox="0 0 24 24" aria-hidden="true"><circle class="pill-ring-track" cx="12" cy="12" r="9" /><circle class="pill-ring-value" cx="12" cy="12" r="9" pathLength="100" :style="{ strokeDashoffset: 100 - progressPercent(tabDoc(entry.id)!) }" /></svg>
                 <span class="pill-text" aria-hidden="true"><span v-if="tabDoc(entry.id)!.kind === 'pdf'" class="pill-page"><b :key="tabDoc(entry.id)!.page || 1">{{ tabDoc(entry.id)!.page || 1 }}</b><i>/</i>{{ tabDoc(entry.id)!.pageCount || '—' }}</span><span v-else class="pill-page"><b :key="progressPercent(tabDoc(entry.id)!)">{{ progressPercent(tabDoc(entry.id)!) }}</b><i>%</i></span></span>
                 <button v-if="splitView" class="pill-close" :data-tip="`移出并排`" :aria-label="`关闭并排的 ${entry.doc.name}`" @click.stop="closePane(entry.id)"><AppIcon name="close" :size="11" /></button>
