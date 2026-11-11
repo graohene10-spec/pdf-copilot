@@ -1102,10 +1102,12 @@ button:disabled{opacity:.4;cursor:default}
    古诗没有对应的西文字形，退到宋体 / 思源宋体，仍是衬线。 */
 .ai-welcome-lead{max-width:100%;margin:0;font-family:'Anthropic Serif','Source Han Serif SC','Noto Serif CJK SC','Noto Serif SC','Songti SC','STSong','SimSun',serif;font-size:27px;font-weight:400;line-height:1.35;letter-spacing:-.012em;text-wrap:balance;font-optical-sizing:auto}
 .ai-welcome-lead:lang(zh-CN){font-size:22px;letter-spacing:.06em;line-height:1.6}
-.ai-message{margin-bottom:22px;animation:zg-rise-in var(--dur-3) var(--ease-out) backwards}
-.ai-message.user{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+.ai-message{margin-bottom:18px;animation:zg-rise-in var(--dur-3) var(--ease-out) backwards}
+/* 问题和它的回答挨得近一些：问题下面的操作按钮浮在间隙里，不再单独占一行。 */
+.ai-message.user{position:relative;display:flex;flex-direction:column;align-items:flex-end;gap:2px;margin-bottom:10px}
 .user-question{max-width:88%;padding:9px 14px;border-radius:var(--r-lg) var(--r-lg) var(--r-xs) var(--r-lg);background:color-mix(in srgb,var(--ink) 9%,transparent);border:1px solid var(--hairline);font-size:13.5px;line-height:1.75;white-space:pre-wrap;overflow-wrap:anywhere}
-.question-actions{display:flex;gap:2px;opacity:0;transition:opacity var(--dur-2) var(--ease-out)}
+.question-actions{position:absolute;right:0;top:100%;z-index:2;display:flex;gap:2px;opacity:0;pointer-events:none;transition:opacity var(--dur-2) var(--ease-out)}
+.ai-message.user:hover .question-actions,.question-actions:focus-within{pointer-events:auto}
 .ai-message.user:hover .question-actions,.question-actions:focus-within{opacity:1}
 .question-editor{width:min(100%,520px);padding:8px;border-radius:var(--r-lg);background:color-mix(in srgb,var(--ink) 7%,transparent);border:1px solid var(--hairline);animation:zg-pop-in var(--dur-3) var(--spring-snappy) both}
 .question-editor textarea{min-height:64px;padding:6px 8px;border-radius:var(--r-sm)}
