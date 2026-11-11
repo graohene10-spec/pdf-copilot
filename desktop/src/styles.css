@@ -3903,13 +3903,18 @@ kbd {
 
 /* ---- 左侧的翻译栏：从侧栏边上推出来，阅读区跟着让出位置 ---------------------------------- */
 .translate-column {
+  position: relative;
   flex: 0 0 auto;
-  width: 340px;
+  width: var(--translate-width, 340px);
   min-width: 0;
   min-height: 0;
   display: flex;
 }
-.translate-column > .translate-pane { min-width: 340px; }
+.translate-column > .translate-pane { min-width: var(--translate-width, 340px); }
+/* 右缘的拖拽条：拖动改变翻译栏宽度，双击恢复默认。 */
+.translate-resizer { position: absolute; top: 40px; bottom: 40px; right: -9px; z-index: 7; width: 12px; cursor: col-resize; touch-action: none; }
+.translate-resizer::after { content: ''; position: absolute; top: 50%; left: 4px; width: 4px; height: 44px; margin-top: -22px; border-radius: 999px; background: color-mix(in srgb, var(--control-ink) 35%, transparent); opacity: 0; transition: opacity var(--dur-2) var(--ease-out); }
+.translate-resizer:hover::after, .resizing-panels .translate-resizer::after { opacity: 1; }
 .translate-pane-enter-active,
 .translate-pane-leave-active {
   overflow: hidden;

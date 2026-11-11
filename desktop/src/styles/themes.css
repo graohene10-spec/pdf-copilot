@@ -165,6 +165,7 @@
 /* 没有间距时，拖拽条挪进助手一侧，别压在阅读区的滚动条上。 */
 :root[data-style='warm'] .panel-resizer[data-edge='left'] { left: 0; }
 :root[data-style='warm'] .panel-resizer[data-edge='right'] { right: 0; }
+:root[data-style='warm'] .translate-resizer { right: 0; }
 
 :root[data-style='warm'] .app-sidebar {
   padding: 22px 14px 16px;

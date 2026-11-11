@@ -358,6 +358,26 @@ function chooseCategory(value: string) { category.value = value; tagFilter.value
 function chooseTag(value: string) { tagFilter.value = value; category.value = 'all'; closeReader() }
 // ---- 机翻：左侧的翻译栏 ----------------------------------------------------
 const translatePane = ref<{ focus: () => void }>()
+// 翻译栏宽度可拖：记在本机；开合或拖完后让 PDF 重新适应宽度，书紧贴着翻译栏铺满，不留空白。
+const TRANSLATE_WIDTH_KEY = 'kaizhi.translate.width'
+const translateWidth = ref((() => { try { const value = Number(localStorage.getItem(TRANSLATE_WIDTH_KEY)); return value >= 280 && value <= 720 ? value : 340 } catch { return 340 } })())
+let translateDrag: { x: number; width: number } | undefined
+function refitReaders() { for (const instance of visibleReaders()) void instance.fitWidth?.() }
+function startTranslateDrag(event: PointerEvent) {
+  translateDrag = { x: event.clientX, width: translateWidth.value }
+  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+  document.documentElement.classList.add('resizing-panels')
+}
+function moveTranslateDrag(event: PointerEvent) { if (translateDrag) translateWidth.value = Math.round(Math.min(720, Math.max(280, translateDrag.width + event.clientX - translateDrag.x))) }
+function endTranslateDrag() {
+  if (!translateDrag) return
+  translateDrag = undefined; document.documentElement.classList.remove('resizing-panels')
+  try { localStorage.setItem(TRANSLATE_WIDTH_KEY, String(translateWidth.value)) } catch { /* 只在这次有效 */ }
+  refitReaders()
+}
+function resetTranslateWidth() { translateWidth.value = 340; try { localStorage.removeItem(TRANSLATE_WIDTH_KEY) } catch { /* 忽略 */ } refitReaders() }
+let translateFit: ReturnType<typeof setTimeout> | undefined
+watch(() => translator.open, () => { clearTimeout(translateFit); translateFit = setTimeout(refitReaders, 750) })
 function toggleTranslate() { translator.open = !translator.open; if (translator.open) void nextTick(() => translatePane.value?.focus()) }
 /** 选中的文字（阅读区、Markdown、阅读助手的回答）：有就翻译它，没有就开关翻译栏。 */
 function translateSelection(text = window.getSelection()?.toString() || '') {
@@ -1498,7 +1518,7 @@ onBeforeUnmount(() => { stopAutoCheck(); clearTimeout(enteringTimer); disposed =
     </Transition>
 
     <Transition name="translate-pane" @before-enter="paneResizeStart($event, true)" @before-leave="paneResizeStart($event, false)" @after-enter="paneResizeEnd" @after-leave="paneResizeEnd" @enter-cancelled="paneResizeEnd($event, true)" @leave-cancelled="paneResizeEnd($event, true)">
-      <div v-if="translator.open" class="translate-column"><TranslatePane ref="translatePane" :shortcut="preferences.shortcuts.translate ? shortcut('translate') : ''" @close="translator.open = false" @settings="openSettings('ai')" /></div>
+      <div v-if="translator.open" class="translate-column" :style="{ '--translate-width': `${translateWidth}px` }"><div class="translate-resizer" role="separator" aria-orientation="vertical" aria-label="拖动调整翻译栏宽度" data-tip="拖动调整宽度，双击恢复" @pointerdown.stop="startTranslateDrag" @pointermove="moveTranslateDrag" @pointerup="endTranslateDrag" @pointercancel="endTranslateDrag" @dblclick="resetTranslateWidth" /><TranslatePane ref="translatePane" :shortcut="preferences.shortcuts.translate ? shortcut('translate') : ''" @close="translator.open = false" @settings="openSettings('ai')" /></div>
     </Transition>
 
     <main class="app-main">
