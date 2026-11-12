@@ -716,6 +716,7 @@ function send(question?: string) {
 // ---- Predicted next question --------------------------------------------------
 const prediction = ref('')
 let predicting: AbortController | undefined
+let predictionOwner = ''
 let predictTimer: ReturnType<typeof setTimeout> | undefined
 let dismissed = ''
 watch(() => preferences.value.assistant.predictQuestions, enabled => {
@@ -742,12 +743,16 @@ watch(prediction, (value, previous) => {
 watch(() => [predictable.value, state.value.id, props.document.id, props.context?.page, selected.value.text, messages.value.length, messages.value.at(-1)?.finishedAt] as const, () => {
   clearTimeout(predictTimer); predicting?.abort(); predicting = undefined
   const context = predictContext(), key = predictionKey(context)
-  if (!predictable.value) { if (prompt.value || busy.value) prediction.value = ''; return }
+  // 猜测只属于它算出来的那场对话、那份文档：换了对话或文档立刻清掉，不把别处的问题带过来。
+  const owner = `${state.value.id}|${props.document.id}`
+  if (owner !== predictionOwner) { prediction.value = ''; predictionOwner = owner }
+  // 没有上下文（空白的新对话、没选中文字）、正在输入或回答中：不显示猜测。
+  if (!predictable.value) { prediction.value = ''; return }
   if (key === dismissed) { prediction.value = ''; return }
-  // 换页、来新消息时先留着上一条猜测，等新的算出来再替换，不在猜测和默认提示之间来回跳。
+  // 同一场对话里换页、来新消息时先留着上一条猜测，等新的算出来再替换；新的没算出来就撤掉旧的。
   predictTimer = setTimeout(() => {
     const request = new AbortController(); predicting = request
-    predictQuestion(context, request.signal).then(question => { if (predicting === request && !request.signal.aborted && preferences.value.assistant.predictQuestions && !prompt.value && !busy.value && question) prediction.value = question }).catch(() => {}).finally(() => { if (predicting === request) predicting = undefined })
+    predictQuestion(context, request.signal).then(question => { if (predicting === request && !request.signal.aborted && preferences.value.assistant.predictQuestions && !prompt.value && !busy.value) prediction.value = question || '' }).catch(() => { if (predicting === request && !request.signal.aborted) prediction.value = '' }).finally(() => { if (predicting === request) predicting = undefined })
   }, 1200)
 }, { immediate: true })
 onMounted(() => {
@@ -1125,7 +1130,7 @@ button:disabled{opacity:.4;cursor:default}
 .thinking-chevron{opacity:.55;transition:transform var(--dur-3) var(--spring-snappy)}
 .thinking.open .thinking-chevron{transform:rotate(180deg)}
 .thinking-direction{margin:-2px 0 8px 10px;padding-left:12px;border-left:2px solid var(--hairline);font-size:12px;line-height:1.6;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;animation:zg-fade-in var(--dur-2) var(--ease-out)}
-.reasoning-body{margin:0 0 10px 10px;padding:2px 0 2px 12px;border-left:2px solid var(--hairline);font-size:12px;line-height:1.75;color:var(--muted);white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow:auto;scrollbar-width:thin}
+.reasoning-body{margin:0 0 10px 10px;padding:2px 0 2px 12px;border-left:2px solid var(--hairline);font-size:12px;line-height:1.75;color:var(--muted);white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow:auto}
 /* 回答正文：衬线正文（Anthropic Serif 一类），表格与代码参照 Claude 的排法。 */
 .answer-body{font-size:14.5px;line-height:1.75;overflow-wrap:anywhere;font-family:var(--font-answer, var(--font-reading));letter-spacing:.005em}
 .answer-body :deep(>:first-child){margin-top:0}
@@ -1152,10 +1157,10 @@ button:disabled{opacity:.4;cursor:default}
 .answer-body :deep(.answer-copy.copied .copy-idle){opacity:0;scale:.6}
 .answer-body :deep(.answer-copy.copied .copy-done){opacity:1;scale:1;color:var(--success,#3f8f5a)}
 .answer-body :deep(.answer-copy:hover){background:var(--fill-3);color:var(--surface-ink)}
-.answer-body :deep(pre.answer-code){margin:0;padding:10px 12px;overflow:auto;font-size:12px;line-height:1.6;scrollbar-width:thin}
+.answer-body :deep(pre.answer-code){margin:0;padding:10px 12px;overflow:auto;font-size:12px;line-height:1.6}
 .answer-body :deep(pre.answer-code code){padding:0;border:0;background:none;font-size:inherit}
 /* 表格：外框圆角细线、表头浅底、只有横线，与 Claude 的回答一致。 */
-.answer-body :deep(.answer-table){overflow:auto;margin:.2em 0 1em;border:1px solid var(--hairline);border-radius:var(--r-md);scrollbar-width:thin}
+.answer-body :deep(.answer-table){overflow:auto;margin:.2em 0 1em;border:1px solid var(--hairline);border-radius:var(--r-md)}
 .answer-body :deep(table){border-collapse:collapse;min-width:100%;font-family:var(--font-reading);font-size:13.5px;font-variant-numeric:tabular-nums}
 .answer-body :deep(th),.answer-body :deep(td){padding:9px 14px;border-bottom:1px solid var(--hairline);text-align:left;vertical-align:top}
 .answer-body :deep(th){background:color-mix(in srgb,var(--ink) 5%,transparent);font-weight:500;color:var(--secondary)}

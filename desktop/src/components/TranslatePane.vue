@@ -201,7 +201,7 @@ defineExpose({ focus })
 .tp-icon{display:grid;place-items:center;width:28px;height:28px;padding:0;border:0;border-radius:8px;background:none;box-shadow:none;color:var(--secondary)}
 .tp-icon:hover:not(:disabled){background:color-mix(in srgb,var(--surface-ink) 8%,transparent);color:var(--ink)}
 .tp-icon:disabled{opacity:.4}
-.tp-list{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:14px 14px 6px;scrollbar-width:thin;will-change:transform}
+.tp-list{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:14px 14px 6px;will-change:transform}
 .tp-empty{display:grid;justify-items:center;gap:8px;margin-top:22vh;padding:0 18px;text-align:center;color:var(--secondary);font-size:13px;line-height:1.6}
 .tp-empty p{margin:0}
 .tp-muted{color:var(--muted)}

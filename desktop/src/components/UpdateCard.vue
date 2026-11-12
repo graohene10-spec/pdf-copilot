@@ -96,7 +96,7 @@ function notesClick(event: MouseEvent) {
 .update-title h2{display:flex;align-items:center;gap:8px;margin:0;font-family:var(--font-display);font-size:15px;font-weight:700;letter-spacing:-.1px;line-height:1.3}
 .update-title p{margin:2px 0 0;font-size:11.5px;color:var(--surface-muted);font-variant-numeric:tabular-nums}
 .update-badge{display:inline-flex;align-items:center;height:19px;padding:0 8px;border-radius:var(--r-full);font-size:10.5px;font-weight:650;letter-spacing:.3px;color:var(--warning);background:color-mix(in srgb,var(--warning) 14%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--warning) 28%,transparent)}
-.update-notes{max-height:180px;overflow:auto;overscroll-behavior:contain;margin:0 -4px;padding:8px 12px;border-radius:12px;background:var(--fill-4);font-size:12.5px;line-height:1.7;color:var(--surface-secondary);overflow-wrap:anywhere;scrollbar-width:thin}
+.update-notes{max-height:180px;overflow:auto;overscroll-behavior:contain;margin:0 -4px;padding:8px 12px;border-radius:12px;background:var(--fill-4);font-size:12.5px;line-height:1.7;color:var(--surface-secondary);overflow-wrap:anywhere}
 .update-notes:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .update-notes :deep(:first-child){margin-top:0}
 .update-notes :deep(:last-child){margin-bottom:0}

@@ -549,7 +549,6 @@ kbd {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  scrollbar-width: thin;
 }
 
 .tag-nav button {
@@ -2107,7 +2106,6 @@ kbd {
   box-shadow: var(--shadow-2), var(--glass-edge);
   overflow: auto;
   padding: 12px 8px 16px;
-  scrollbar-width: thin;
   color: var(--surface-ink);
   font-family: var(--font-ui);
 }
@@ -2921,7 +2919,6 @@ kbd {
   box-shadow: var(--shadow-pane), var(--glass-edge), inset 0 0 0 1px var(--glass-rim-soft), inset 0 1px 0 var(--glass-rim);
   padding: 18px 20px;
   overflow: auto;
-  scrollbar-width: thin;
 }
 
 .details-heading {
@@ -3333,20 +3330,31 @@ kbd {
 
 /* ---- 滚动条 ---------------------------------------------------------- */
 
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+/* 颜色、粗细、形状走变量，各界面风格在 themes.css 里换；默认很淡，指上去才加深。
+   不用 scrollbar-width / scrollbar-color：它们会让 Chromium 换回系统样式的滚动条。 */
+:root {
+  --scroll-size: 10px;
+  --scroll-thumb: color-mix(in srgb, var(--n-500) 26%, transparent);
+  --scroll-thumb-hover: color-mix(in srgb, var(--n-500) 52%, transparent);
+  --scroll-radius: var(--r-full);
 }
 
+::-webkit-scrollbar {
+  width: var(--scroll-size);
+  height: var(--scroll-size);
+}
+
+::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+
 ::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--n-500) 34%, transparent);
-  border-radius: var(--r-full);
+  background: var(--scroll-thumb);
+  border-radius: var(--scroll-radius);
   border: 3px solid transparent;
   background-clip: content-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--n-500) 56%, transparent);
+  background: var(--scroll-thumb-hover);
   background-clip: content-box;
 }
 
@@ -3354,6 +3362,33 @@ kbd {
 ::-webkit-scrollbar-corner {
   background: transparent;
 }
+
+/* 阅读区的滚动条平时不显示，滚动时才出现（停下约一秒后隐去）；鼠标指到滚动条上也会显出来。 */
+:is(.pdf-scroll, .markdown-scroll):not([data-scrolling])::-webkit-scrollbar-thumb:not(:hover):not(:active) { background: transparent; }
+.pdf-hscroll { opacity: 0; transition: opacity var(--dur-3) var(--ease-out); }
+.pdf-viewport:has(> .pdf-scroll[data-scrolling]) .pdf-hscroll,
+.pdf-hscroll:hover,
+.pdf-hscroll.dragging { opacity: 1; transition-duration: var(--dur-1); }
+
+/* ---- 代码语法高亮 ----------------------------------------------------- */
+/* 颜色走变量：浅色 / 深色各一套，暖色极简与铅笔草稿在 themes.css 里换成自己的色调。 */
+:root {
+  --code-comment: #7d8590; --code-keyword: #b3327a; --code-string: #2f7d4f; --code-number: #a05a12;
+  --code-function: #2f5fc4; --code-type: #7a52c7; --code-meta: #5f6b7a;
+}
+:root[data-theme='dark'] {
+  --code-comment: #8b949e; --code-keyword: #ff8cc0; --code-string: #8fd6a3; --code-number: #f0b072;
+  --code-function: #8db2ff; --code-type: #c4a7ff; --code-meta: #a3adba;
+}
+.hljs-comment, .hljs-quote { color: var(--code-comment); font-style: italic; }
+.hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-doctag, .hljs-section, .hljs-name, .hljs-deletion { color: var(--code-keyword); }
+.hljs-string, .hljs-regexp, .hljs-addition, .hljs-attribute, .hljs-template-tag, .hljs-symbol, .hljs-bullet, .hljs-link { color: var(--code-string); }
+.hljs-number, .hljs-variable.constant_, .hljs-template-variable { color: var(--code-number); }
+.hljs-title, .hljs-title.function_, .hljs-selector-id, .hljs-selector-class { color: var(--code-function); }
+.hljs-type, .hljs-built_in, .hljs-title.class_, .hljs-attr, .hljs-params .hljs-type { color: var(--code-type); }
+.hljs-meta, .hljs-operator, .hljs-punctuation, .hljs-subst { color: var(--code-meta); }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 600; }
 
 /* ---- 深色微调 -------------------------------------------------------- */
 

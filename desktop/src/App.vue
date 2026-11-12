@@ -1134,6 +1134,15 @@ function monitorCaptureQuick() {
 }
 // 窗口尺寸变化（包括全屏切换）、正文滚动（包括重新排版时程序设置的滚动位置）：都只重新定位卡片，
 // 选区真的移出视野时由上面的检查收起。
+// 阅读区的滚动条只在滚动时显示：滚动中的容器带上 data-scrolling，停下约一秒后去掉。
+const scrollingTimers = new WeakMap<Element, ReturnType<typeof setTimeout>>()
+function markScrolling(event: Event) {
+  const element = event.target
+  if (!(element instanceof HTMLElement) || !element.matches('.pdf-scroll, .markdown-scroll')) return
+  if (!scrollingTimers.has(element)) element.dataset.scrolling = ''
+  clearTimeout(scrollingTimers.get(element))
+  scrollingTimers.set(element, setTimeout(() => { scrollingTimers.delete(element); delete element.dataset.scrolling }, 1000))
+}
 function captureViewportChanged() { if (captureQuick.value) scheduleCaptureCheck() }
 function continueCaptureQuick() { dismissCaptureQuick(); openAssistant(true) }
 async function askCaptureQuick(question: string) {
@@ -1548,6 +1557,7 @@ onMounted(async () => {
   document.addEventListener('selectionchange', selectionChanged)
   document.addEventListener('scroll', dismissSelectionAction, true)
   document.addEventListener('scroll', captureViewportChanged, true)
+  document.addEventListener('scroll', markScrolling, true)
   window.addEventListener('resize', dismissSelectionAction)
   window.addEventListener('resize', captureViewportChanged)
   systemTheme.addEventListener('change', applyTheme)

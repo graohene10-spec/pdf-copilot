@@ -503,7 +503,7 @@ button{color:var(--control-ink)}
 .settings-tabs button.selected{background-color:var(--control-selected);background-image:var(--glass-sheen);color:var(--control-ink);font-weight:600;box-shadow:var(--glass-control-shadow)}
 .settings-tabs button.selected:hover:not(:disabled){background-color:var(--control-selected-hover);color:var(--control-ink)}
 .settings-tabs.has-indicator button.selected,.settings-tabs.has-indicator button.selected:hover:not(:disabled){background:transparent;box-shadow:none}
-.settings-content{flex:1;min-width:0;overflow:auto;padding:14px 26px 26px 22px;scrollbar-width:thin;-webkit-mask-image:linear-gradient(180deg,transparent 0,#000 14px,#000 calc(100% - 14px),transparent 100%);mask-image:linear-gradient(180deg,transparent 0,#000 14px,#000 calc(100% - 14px),transparent 100%)}
+.settings-content{flex:1;min-width:0;overflow:auto;padding:14px 26px 26px 22px;-webkit-mask-image:linear-gradient(180deg,transparent 0,#000 14px,#000 calc(100% - 14px),transparent 100%);mask-image:linear-gradient(180deg,transparent 0,#000 14px,#000 calc(100% - 14px),transparent 100%)}
 .settings-content h3{font-size:12px;font-weight:600;letter-spacing:.3px;color:var(--muted);margin:6px 0 8px 14px}
 /* 内嵌分组：一块圆角的浅填充，行间以细线分隔。 */
 .settings-group{position:relative;border-radius:var(--r-lg);background-color:color-mix(in srgb,var(--glass-2) 60%,var(--fill-4));background-image:var(--glass-sheen);box-shadow:var(--glass-control-edge);padding:2px 16px;margin-bottom:8px}

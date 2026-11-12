@@ -12,6 +12,7 @@ import { rectangleSelector } from '../../../extension/reader/selection.mjs'
 import { regionText, captureRegion } from '../reader/markdown-capture'
 import { usePdfInk } from '../reader/ink/use-ink'
 import AppIcon from './AppIcon.vue'
+import { highlightCode } from '../ai/highlight'
 import ReaderSearch from './ReaderSearch.vue'
 import InkButton from './ink/InkButton.vue'
 import InkPalette from './ink/InkPalette.vue'
@@ -60,7 +61,7 @@ let searchTimer: ReturnType<typeof setTimeout> | undefined
 let searchPending = false
 let searchIndex: ReturnType<typeof markdownTextIndex> | undefined
 const transientMarkers = new Set<() => void>()
-const markdown = new MarkdownIt({ html: false, linkify: true, typographer: true })
+const markdown = new MarkdownIt({ html: false, linkify: true, typographer: true, highlight: (code, language) => highlightCode(code, language.trim().split(/\s+/)[0].toLowerCase()) })
 installMarkdownMath(markdown)
 installGithubFlavor(markdown)
 installCjkEmphasis(markdown)
