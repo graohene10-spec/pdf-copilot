@@ -122,12 +122,13 @@ function openSide() {
   sideOpen.value = true; emit('side', sideWidth.value)
 }
 function closeSide() { if (!sideOpen.value) return; sideOpen.value = false; emit('side', 0); focusPrompt() }
-// 换到另一段主对话：它有附属对话就照样展开，没有就收起。
+// 换到另一段主对话（或另一本书）：附属对话不再自己弹出来；原来开着而新对话没有附属内容时收起。要看就点标题栏的图标。
 watch(() => state.value.id, id => {
-  if (props.side) return
-  const has = Boolean(sideConversation(props.document.id, id)?.messages.length)
-  if (has !== sideOpen.value) { sideOpen.value = has; emit('side', has ? sideWidth.value : 0) }
+  if (props.side || !sideOpen.value) return
+  if (!sideConversation(props.document.id, id)?.messages.length) { sideOpen.value = false; emit('side', 0) }
 })
+const hasSideContent = computed(() => !props.side && Boolean(sideConversation(props.document.id, state.value.id)?.messages.length))
+function toggleSide() { if (sideOpen.value) closeSide(); else openSide() }
 // 拖动中间的分隔线：主栏与侧栏此消彼长，整个窗口宽度不变。
 let sideDrag: { x: number; width: number; total: number } | undefined
 function startSideDrag(event: PointerEvent) {
@@ -306,19 +307,24 @@ const answerKey = (message: Message) => `${message.content.length}:${message.con
 function renderAnswer(element: HTMLElement, message: Message) {
   renderedKeys.set(element, answerKey(message))
   element.innerHTML = renderMarkdown(message.content)
-  const sourceMap = new Map(message.sources.map(source => [source.sourceId, source]))
-  if (sourceMap.size) {
+  // 模型有时引用前几轮回答里的来源，甚至写出不存在的编号：先在整场对话的来源里找，找不到就把编号去掉，绝不把 [S…] 原样留在正文里。
+  const sourceMap = new Map([...messages.value.flatMap(item => item.sources || []), ...message.sources].map(source => [source.sourceId, source]))
+  {
     const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT), nodes: Node[] = []
     while (walker.nextNode()) if (!(walker.currentNode.parentElement?.closest('pre,code,.katex,button'))) nodes.push(walker.currentNode)
     for (const node of nodes) {
-      const text = node.textContent || '', pattern = /\[(S[a-zA-Z0-9]+-\d+)\]/g, fragment = document.createDocumentFragment()
+      // 一对方括号里可以有一个或多个编号：[S12ab-3]、[S12ab-3, S12ab-4]。
+      const text = node.textContent || '', pattern = /\s?[\[【]\s*(S[a-zA-Z0-9]+-\d+(?:\s*[,，、;；]\s*S[a-zA-Z0-9]+-\d+)*)\s*[\]】]/g, fragment = document.createDocumentFragment()
       let match: RegExpExecArray | null, last = 0
       while ((match = pattern.exec(text))) {
-        const source: any = sourceMap.get(match[1]); if (!source) continue
         fragment.append(document.createTextNode(text.slice(last, match.index)))
-        const button = document.createElement('button')
-        button.className = 'inline-citation'; button.textContent = source.line ? `第 ${source.line} 行` : `第 ${source.page} 页`; button.dataset.tip = source.text
-        button.onclick = () => jump(source); fragment.append(button); last = pattern.lastIndex
+        for (const id of match[1].split(/[,，、;；]/).map(item => item.trim())) {
+          const source: any = sourceMap.get(id); if (!source) continue
+          const button = document.createElement('button')
+          button.className = 'inline-citation'; button.textContent = source.line ? `第 ${source.line} 行` : `第 ${source.page} 页`; button.dataset.tip = source.text
+          button.onclick = () => jump(source); fragment.append(button)
+        }
+        last = pattern.lastIndex
       }
       if (last) { fragment.append(document.createTextNode(text.slice(last))); node.parentNode?.replaceChild(fragment, node) }
     }
@@ -802,6 +808,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
         </Transition>
       </div>
       <span v-if="taskSummary.running || taskSummary.queued" class="task-summary" :data-tip="`同时最多 ${taskSummary.limits.concurrent} 题，Codex ${taskSummary.limits.codex} 题`">{{ taskSummary.running }} 运行<template v-if="taskSummary.queued"> · {{ taskSummary.queued }} 等待</template></span>
+      <button class="header-button side-toggle" :class="{ on: sideOpen, has: hasSideContent && !sideOpen }" :aria-pressed="sideOpen" :aria-label="sideOpen ? '收起附属对话' : '打开附属对话'" :data-tip="sideOpen ? '收起附属对话' : hasSideContent ? '打开附属对话（有内容）' : '打开附属对话'" @click="toggleSide"><AppIcon name="branch" :size="15" /></button>
       <button class="header-button" aria-label="新对话" data-tip="新对话" :disabled="!messages.length" @click="startConversation"><AppIcon name="compose" :size="16" /></button>
       <button class="header-button close-assistant" data-tip="关闭阅读助手" aria-label="关闭阅读助手" @click="emit('close')"><AppIcon name="close" :size="15" /></button>
     </header>
@@ -977,6 +984,9 @@ button:disabled{opacity:.4;cursor:default}
 .title-text{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;font-weight:700;letter-spacing:.1px}
 .conversation-title small{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--muted)}
 .header-button{display:grid;place-items:center;flex:0 0 32px;width:32px;height:32px;padding:0;border:1px solid transparent;border-radius:var(--r-control);background:none;box-shadow:none;color:var(--secondary)}
+.side-toggle{position:relative}
+.side-toggle.on{background:var(--frost);border-color:var(--hairline);color:var(--ink)}
+.side-toggle.has::after{content:'';position:absolute;right:6px;top:6px;width:5px;height:5px;border-radius:50%;background:var(--accent)}
 .header-button:hover:not(:disabled){background:var(--frost);border-color:var(--hairline);color:var(--ink)}
 .task-summary{flex:0 0 auto;padding:3px 8px;border-radius:var(--r-xs);background:var(--frost);font-size:10.5px;font-weight:600;color:var(--secondary);white-space:nowrap;font-variant-numeric:tabular-nums}
 /* 弹出的对话记录与问题预览：更厚的弹层玻璃。 */
