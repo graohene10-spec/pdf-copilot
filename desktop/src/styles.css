@@ -3954,6 +3954,13 @@ kbd {
   display: flex;
 }
 .translate-column > .translate-pane { min-width: var(--translate-width, 340px); }
+/* 拖到右边：排到阅读区后面，拖宽度的抓手换到左缘。 */
+.translate-column.right { order: 99; }
+.translate-column.right .translate-resizer { right: auto; left: -6px; }
+/* 拖着标题栏移动时整栏跟着指针走；越过中线（松手会换边）时描一圈主题色。 */
+.translate-column.moving { z-index: 60; translate: var(--translate-dx, 0) 0; cursor: grabbing; opacity: .92; }
+.translate-column.moving .tp-header { cursor: grabbing; }
+.translate-column.moving.drop-other > .translate-pane { outline: 2px solid var(--accent); outline-offset: -2px; }
 /* 右缘的拖拽条：拖动改变翻译栏宽度，双击恢复默认。 */
 /* 整条右缘都能抓，压在翻译栏和阅读区之上，不会被哪一边盖住。 */
 .translate-resizer { position: absolute; top: 0; bottom: 0; right: -6px; z-index: 40; width: 12px; cursor: col-resize; touch-action: none; }

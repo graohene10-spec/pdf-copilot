@@ -1630,6 +1630,7 @@
 
 /* ---- 翻译栏：与阅读助手同一种纸 / 面板，放在左边所以线和回形针换到另一侧 ------------------ */
 :root[data-style='warm'] .translate-pane { border-left: 0; border-right: .5px solid var(--warm-rule); }
+:root[data-style='warm'] .translate-column.right .translate-pane { border-right: 0; border-left: .5px solid var(--warm-rule); }
 :root[data-style='sketch'] .translate-pane { rotate: -.5deg; }
 /* 回形针会压住右上角的按钮：翻译栏改用一条胶带贴在上沿。 */
 :root[data-style='sketch'] .translate-pane::after {

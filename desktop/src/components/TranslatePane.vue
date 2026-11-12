@@ -14,7 +14,9 @@ import { warmTranslation } from '../ai/complete'
 import { translator, translate, stopTranslation, removeTranslation, clearTranslations, credential, saveCredential, TARGETS, ENGINES, type Translation } from '../ai/translate'
 
 defineProps<{ shortcut?: string }>()
-const emit = defineEmits<{ close: []; settings: [] }>()
+const emit = defineEmits<{ close: []; settings: []; grab: [event: PointerEvent] }>()
+// 按住标题栏空白处拖动：把整个翻译栏拖到阅读区的另一侧。
+function grab(event: PointerEvent) { if (event.button === 0 && !(event.target as HTMLElement).closest('button, input, textarea, select, a')) emit('grab', event) }
 const draft = ref('')
 const list = ref<HTMLElement>()
 const field = ref<HTMLTextAreaElement>()
@@ -111,7 +113,7 @@ defineExpose({ focus })
 
 <template>
   <aside class="ai-pane translate-pane" role="complementary" aria-label="翻译" @pointerenter="keepWarm" @focusin="keepWarm">
-    <header class="tp-header">
+    <header class="tp-header" data-tip="拖动可换到另一侧" @pointerdown="grab">
       <span class="tp-title"><AppIcon name="translate" :size="17" />翻译</span>
       <div class="tp-targets" role="radiogroup" aria-label="译成">
         <button v-for="item in TARGETS" :key="item.value" type="button" role="radio" :aria-checked="translator.target === item.value" :class="{ on: translator.target === item.value }" @click="translator.target = item.value">{{ item.label }}</button>
@@ -172,7 +174,7 @@ defineExpose({ focus })
 
 <style scoped>
 .translate-pane{display:flex;flex-direction:column;width:100%;height:100%;min-width:0;background-color:var(--glass-3);background-image:var(--glass-sheen);-webkit-backdrop-filter:var(--glass-filter-3);backdrop-filter:var(--glass-filter-3);border:1px solid var(--glass-outline);border-radius:var(--r-xl);box-shadow:var(--shadow-pane),var(--glass-edge);color:var(--ink);overflow:hidden;font-family:var(--font-ui)}
-.tp-header{display:flex;align-items:center;gap:6px;height:52px;padding:0 10px 0 16px;border-bottom:.5px solid var(--hairline,var(--line-soft));flex-shrink:0}
+.tp-header{cursor:grab;touch-action:none;-webkit-user-select:none;user-select:none;display:flex;align-items:center;gap:6px;height:52px;padding:0 10px 0 16px;border-bottom:.5px solid var(--hairline,var(--line-soft));flex-shrink:0}
 .tp-title{display:inline-flex;align-items:center;gap:7px;font-weight:650;font-size:14px;margin-right:auto;white-space:nowrap}
 .tp-targets{display:flex;gap:2px;padding:2px;border-radius:var(--r-control);background:color-mix(in srgb,var(--surface-ink) 6%,transparent)}
 .tp-targets button{height:24px;padding:0 8px;border:0;border-radius:calc(var(--r-control) - 2px);background:none;box-shadow:none;font-size:11.5px;color:var(--secondary);white-space:nowrap}

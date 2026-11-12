@@ -364,12 +364,30 @@ const TRANSLATE_WIDTH_KEY = 'kaizhi.translate.width'
 const translateWidth = ref((() => { try { const value = Number(localStorage.getItem(TRANSLATE_WIDTH_KEY)); return value >= 280 && value <= 720 ? value : 340 } catch { return 340 } })())
 let translateDrag: { x: number; width: number } | undefined
 function refitReaders() { for (const instance of visibleReaders()) void instance.fitWidth?.() }
+// 翻译栏可以放在阅读区的左边或右边：按住它的标题栏拖过窗口中线再松手就换边，位置记在本机。
+const TRANSLATE_SIDE_KEY = 'kaizhi.translate.side'
+const translateSide = ref<'left' | 'right'>((() => { try { return localStorage.getItem(TRANSLATE_SIDE_KEY) === 'right' ? 'right' : 'left' } catch { return 'left' } })())
+const translateMove = ref<{ x: number; dx: number; target: 'left' | 'right' }>()
+function startTranslateMove(event: PointerEvent) {
+  translateMove.value = { x: event.clientX, dx: 0, target: translateSide.value }
+  const move = (next: PointerEvent) => { const current = translateMove.value; if (current) translateMove.value = { ...current, dx: next.clientX - current.x, target: next.clientX > window.innerWidth / 2 ? 'right' : 'left' } }
+  const end = () => {
+    window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', end); window.removeEventListener('pointercancel', end)
+    const current = translateMove.value
+    translateMove.value = undefined
+    if (!current || Math.abs(current.dx) < 8 || current.target === translateSide.value) return
+    translateSide.value = current.target
+    try { localStorage.setItem(TRANSLATE_SIDE_KEY, current.target) } catch { /* 只在这次有效 */ }
+    void nextTick(refitReaders)
+  }
+  window.addEventListener('pointermove', move); window.addEventListener('pointerup', end); window.addEventListener('pointercancel', end)
+}
 function startTranslateDrag(event: PointerEvent) {
   translateDrag = { x: event.clientX, width: translateWidth.value }
   ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
   document.documentElement.classList.add('resizing-panels')
 }
-function moveTranslateDrag(event: PointerEvent) { if (translateDrag) translateWidth.value = Math.round(Math.min(720, Math.max(280, translateDrag.width + event.clientX - translateDrag.x))) }
+function moveTranslateDrag(event: PointerEvent) { if (translateDrag) translateWidth.value = Math.round(Math.min(720, Math.max(280, translateDrag.width + (event.clientX - translateDrag.x) * (translateSide.value === 'right' ? -1 : 1)))) }
 function endTranslateDrag() {
   if (!translateDrag) return
   translateDrag = undefined; document.documentElement.classList.remove('resizing-panels')
@@ -1593,7 +1611,7 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
     </Transition>
 
     <Transition name="translate-pane" @before-enter="paneResizeStart($event, true)" @before-leave="paneResizeStart($event, false)" @after-enter="paneResizeEnd" @after-leave="paneResizeEnd" @enter-cancelled="paneResizeEnd($event, true)" @leave-cancelled="paneResizeEnd($event, true)">
-      <div v-if="translator.open" class="translate-column" :style="{ '--translate-width': `${translateWidth}px` }"><div class="translate-resizer" role="separator" aria-orientation="vertical" aria-label="拖动调整翻译栏宽度" data-tip="拖动调整宽度，双击恢复" @pointerdown.stop="startTranslateDrag" @pointermove="moveTranslateDrag" @pointerup="endTranslateDrag" @pointercancel="endTranslateDrag" @dblclick="resetTranslateWidth" /><TranslatePane ref="translatePane" :shortcut="preferences.shortcuts.translate ? shortcut('translate') : ''" @close="translator.open = false" @settings="openSettings('ai')" /></div>
+      <div v-if="translator.open" class="translate-column" :class="{ right: translateSide === 'right', moving: translateMove && Math.abs(translateMove.dx) >= 8, 'drop-other': translateMove && translateMove.target !== translateSide }" :style="{ '--translate-width': `${translateWidth}px`, '--translate-dx': `${translateMove?.dx || 0}px` }"><div class="translate-resizer" role="separator" aria-orientation="vertical" aria-label="拖动调整翻译栏宽度" data-tip="拖动调整宽度，双击恢复" @pointerdown.stop="startTranslateDrag" @pointermove="moveTranslateDrag" @pointerup="endTranslateDrag" @pointercancel="endTranslateDrag" @dblclick="resetTranslateWidth" /><TranslatePane ref="translatePane" :shortcut="preferences.shortcuts.translate ? shortcut('translate') : ''" @close="translator.open = false" @settings="openSettings('ai')" @grab="startTranslateMove" /></div>
     </Transition>
 
     <main class="app-main">
