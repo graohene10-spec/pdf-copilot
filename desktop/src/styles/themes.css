@@ -1694,3 +1694,32 @@
   box-shadow: inset 3px 0 0 var(--red-pencil);
 }
 :root[data-style='warm'] .document-collection.list .document-card.picked { background-color: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+
+/* ---- 滚动条随界面风格 -------------------------------------------------- */
+/* 暖色极简：一道很细的暖灰线。 */
+:root[data-style='warm'] {
+  --scroll-size: 9px;
+  --scroll-thumb: rgb(120 108 92 / .22);
+  --scroll-thumb-hover: rgb(120 108 92 / .46);
+}
+:root[data-style='warm'][data-theme='dark'] { --scroll-thumb: rgb(214 204 190 / .18); --scroll-thumb-hover: rgb(214 204 190 / .4); }
+/* 铅笔草稿：一小段淡淡的铅笔线，两头不圆。 */
+:root[data-style='sketch'] {
+  --scroll-size: 9px;
+  --scroll-thumb: color-mix(in srgb, var(--pencil) 24%, transparent);
+  --scroll-thumb-hover: color-mix(in srgb, var(--pencil) 50%, transparent);
+  --scroll-radius: 2px 5px 3px 4px;
+}
+:root[data-style='warm'] .pdf-hscroll-thumb,
+:root[data-style='sketch'] .pdf-hscroll-thumb { background: var(--scroll-thumb); }
+:root[data-style='sketch'] .pdf-hscroll-thumb { border-radius: 2px 5px 3px 4px; }
+:root[data-style='warm'] .pdf-hscroll:is(:hover, .dragging) .pdf-hscroll-thumb,
+:root[data-style='sketch'] .pdf-hscroll:is(:hover, .dragging) .pdf-hscroll-thumb { background: var(--scroll-thumb-hover); }
+
+/* ---- 代码高亮随界面风格 ------------------------------------------------ */
+/* 暖色极简：陶土、橄榄、赭石，压低饱和度。 */
+:root[data-style='warm'] { --code-comment: #8a8378; --code-keyword: #b5553a; --code-string: #5f7a3a; --code-number: #9a6a1e; --code-function: #3f6792; --code-type: #7b5a8e; --code-meta: #6b655c; }
+:root[data-style='warm'][data-theme='dark'] { --code-comment: #9a9288; --code-keyword: #e8937a; --code-string: #a9c486; --code-number: #e0b36a; --code-function: #9fc0e6; --code-type: #c9a8dc; --code-meta: #b0a89c; }
+/* 铅笔草稿：像用彩色铅笔描过——红、绿、蓝、橙，注释是淡铅笔。 */
+:root[data-style='sketch'] { --code-comment: color-mix(in srgb, var(--pencil) 52%, transparent); --code-keyword: #c8553d; --code-string: #3f8a5a; --code-number: #c07a1a; --code-function: #3567b0; --code-type: #7a4fb0; --code-meta: color-mix(in srgb, var(--pencil) 78%, transparent); }
+:root[data-style='sketch'][data-theme='dark'] { --code-keyword: #ee8a70; --code-string: #8fd0a4; --code-number: #f0b468; --code-function: #94b8f0; --code-type: #c6a6ee; }
