@@ -145,7 +145,6 @@ defineExpose({ focus })
     </div>
 
     <div class="tp-engine">
-      <span>翻译服务</span>
       <div class="tp-targets" role="radiogroup" aria-label="翻译服务">
         <button v-for="item in ENGINES" :key="item.value" type="button" role="radio" :aria-checked="translator.engine === item.value" :class="{ on: translator.engine === item.value }" :data-tip="ENGINE_TIP[item.value]" @click="translator.engine = item.value">{{ item.label }}</button>
       </div>
@@ -165,7 +164,7 @@ defineExpose({ focus })
       <button type="submit" :disabled="savingKey || !canSave">保存</button>
     </form>
     <form class="tp-composer" @submit.prevent="submit">
-      <textarea ref="field" v-model="draft" rows="3" placeholder="输入或粘贴要翻译的文字，回车翻译" aria-label="要翻译的文字" @keydown="keydown"></textarea>
+      <textarea ref="field" v-model="draft" rows="2" placeholder="输入或粘贴要翻译的文字，回车翻译" aria-label="要翻译的文字" @keydown="keydown"></textarea>
       <button type="submit" class="tp-send" :disabled="!draft.trim()" aria-label="开始翻译" data-tip="翻译（回车）"><AppIcon name="arrow-up" :size="16" /></button>
     </form>
   </aside>
@@ -178,7 +177,7 @@ defineExpose({ focus })
 .tp-targets{display:flex;gap:2px;padding:2px;border-radius:var(--r-control);background:color-mix(in srgb,var(--surface-ink) 6%,transparent)}
 .tp-targets button{height:24px;padding:0 8px;border:0;border-radius:calc(var(--r-control) - 2px);background:none;box-shadow:none;font-size:11.5px;color:var(--secondary);white-space:nowrap}
 .tp-targets button.on{background:var(--surface);color:var(--surface-ink);box-shadow:0 1px 2px rgb(0 0 0 / .12)}
-.tp-ai{padding:0 12px 6px}
+.tp-ai{padding:4px 12px 0}
 .tp-auto{display:inline-flex;align-items:center;gap:6px;margin-left:auto;height:24px;padding:0 8px 0 6px;border:0;border-radius:999px;background:transparent;color:var(--secondary);font:inherit;font-size:12px;white-space:nowrap;cursor:pointer}
 .tp-auto i{position:relative;width:24px;height:14px;border-radius:999px;background:var(--fill-1);transition:background var(--dur-2) var(--ease-out)}
 .tp-auto i::after{content:'';position:absolute;left:2px;top:2px;width:10px;height:10px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgb(0 0 0 / .3);transition:translate var(--dur-2) var(--spring-snappy)}
@@ -231,8 +230,8 @@ defineExpose({ focus })
 .tp-keys input{min-width:0;height:30px;padding:0 8px;border-radius:8px;border:.5px solid var(--line-soft);background:var(--surface);color:inherit;font:inherit;font-size:12.5px}
 .tp-keys button{height:30px;padding:0 12px;border-radius:8px;border:0;background:var(--surface-ink);color:var(--surface);box-shadow:none;font-size:12.5px}
 .tp-keys button:disabled{opacity:.4}
-.tp-composer{position:relative;flex-shrink:0;margin:8px 12px 12px;border-radius:14px;border:.5px solid var(--line-soft);background:color-mix(in srgb,var(--surface) 80%,transparent)}
-.tp-composer textarea{display:block;width:100%;min-height:64px;max-height:180px;padding:10px 44px 10px 12px;border:0;background:none;resize:none;color:inherit;font:inherit;font-size:13.5px;line-height:1.55;outline:none}
+.tp-composer{position:relative;flex-shrink:0;margin:6px 12px 10px;border-radius:14px;border:.5px solid var(--line-soft);background:color-mix(in srgb,var(--surface) 80%,transparent)}
+.tp-composer textarea{display:block;width:100%;min-height:44px;max-height:180px;padding:10px 44px 10px 12px;border:0;background:none;resize:none;color:inherit;font:inherit;font-size:13.5px;line-height:1.55;outline:none}
 .tp-send{position:absolute;right:8px;bottom:8px;display:grid;place-items:center;width:30px;height:30px;padding:0;border:0;border-radius:50%;background:var(--surface-ink);color:var(--surface);box-shadow:none}
 .tp-send:disabled{opacity:.3}
 @media(prefers-reduced-motion:reduce){.tp-card,.tp-dot{animation:none}}
