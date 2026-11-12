@@ -3955,7 +3955,8 @@ kbd {
 }
 .translate-column > .translate-pane { min-width: var(--translate-width, 340px); }
 /* 右缘的拖拽条：拖动改变翻译栏宽度，双击恢复默认。 */
-.translate-resizer { position: absolute; top: 40px; bottom: 40px; right: -9px; z-index: 7; width: 12px; cursor: col-resize; touch-action: none; }
+/* 整条右缘都能抓，压在翻译栏和阅读区之上，不会被哪一边盖住。 */
+.translate-resizer { position: absolute; top: 0; bottom: 0; right: -6px; z-index: 40; width: 12px; cursor: col-resize; touch-action: none; }
 .translate-resizer::after { content: ''; position: absolute; top: 50%; left: 4px; width: 4px; height: 44px; margin-top: -22px; border-radius: 999px; background: color-mix(in srgb, var(--control-ink) 35%, transparent); opacity: 0; transition: opacity var(--dur-2) var(--ease-out); }
 .translate-resizer:hover::after, .resizing-panels .translate-resizer::after { opacity: 1; }
 .translate-pane-enter-active,
