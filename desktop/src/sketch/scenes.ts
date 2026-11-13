@@ -48,22 +48,60 @@ function dotAt(env: Env, at: Vec, radius: number, alpha: number, color: string) 
 }
 
 /** 球棍模型：球按远近排序、用纸色填实，近的挡住远的。kind：0 空心、1 铅笔淡填、2 红笔淡填、3 红笔深填；bonds 是 (a, b, 样式) 三元组，样式 0 实线、1 虚线、2 红线。 */
-type Model = { points: Vec[]; radius: number[]; kind: number[]; bonds: number[] }
+type Model = { points: Vec[]; radius: number[]; kind: number[]; bonds: number[]; shaded?: boolean }
+// 有明暗的小球：左上一点高光、右下一圈暗部，按颜色各画一张小图，用的时候缩放贴上去。
+const sprites = new Map<string, HTMLCanvasElement[]>()
+function shadedBalls(env: Env) {
+  const key = `${env.paper}|${env.ink}|${env.red}`
+  let set = sprites.get(key)
+  if (set) return set
+  const probe = document.createElement('canvas').getContext('2d', { willReadFrequently: true })!
+  const rgb = (color: string) => { probe.clearRect(0, 0, 1, 1); probe.fillStyle = color; probe.fillRect(0, 0, 1, 1); const d = probe.getImageData(0, 0, 1, 1).data; return `${d[0]},${d[1]},${d[2]}` }
+  const ink = rgb(env.ink), SIZE = 64
+  set = [0, 1, 2, 3].map(kind => {
+    const canvas = document.createElement('canvas'); canvas.width = canvas.height = SIZE
+    const c = canvas.getContext('2d')!, r = SIZE / 2
+    c.beginPath(); c.arc(r, r, r - 1, 0, TAU); c.clip()
+    c.fillStyle = env.paper; c.fillRect(0, 0, SIZE, SIZE)
+    if (kind) { c.globalAlpha = kind === 1 ? .3 : kind === 2 ? .38 : .72; c.fillStyle = kind === 1 ? env.ink : env.red; c.fillRect(0, 0, SIZE, SIZE); c.globalAlpha = 1 }
+    const shade = c.createRadialGradient(r * .7, r * .66, r * .25, r, r, r)
+    shade.addColorStop(0, `rgba(${ink},0)`); shade.addColorStop(.62, `rgba(${ink},.06)`); shade.addColorStop(1, `rgba(${ink},.5)`)
+    c.fillStyle = shade; c.fillRect(0, 0, SIZE, SIZE)
+    const light = c.createRadialGradient(r * .62, r * .56, 0, r * .62, r * .56, r * .55)
+    light.addColorStop(0, 'rgba(255,255,255,.75)'); light.addColorStop(1, 'rgba(255,255,255,0)')
+    c.fillStyle = light; c.fillRect(0, 0, SIZE, SIZE)
+    return canvas
+  })
+  sprites.set(key, set)
+  return set
+}
+/** 球棍模型：球按远近排序、用纸色填实，近的挡住远的。kind：0 空心、1 铅笔淡填、2 红笔淡填、3 红笔深填；bonds 是 (a, b, 样式) 三元组，样式 0 实线、1 虚线、2 红线、3 粗而淡的带子。shaded：球带明暗，远处的褪进纸里，近处的线更粗更深。 */
 function ballsAndSticks(env: Env, model: Model, place: (p: Vec) => Vec, hot?: Set<number>) {
   const c = env.context, n = model.points.length, m = model.bonds.length / 3
   const sx = new Float32Array(n), sy = new Float32Array(n), depth = new Float32Array(n + m), pr = new Float32Array(n)
+  let low = Infinity, high = -Infinity
   for (let i = 0; i < n; i++) {
     const q = place(model.points[i]!), [x, y, d] = env.project(q[0], q[1], q[2])
     sx[i] = x; sy[i] = y; depth[i] = d; pr[i] = model.radius[i]! * env.size * env.camera / (env.camera + 1 - 2 * d)
+    if (d < low) low = d
+    if (d > high) high = d
   }
   for (let j = 0; j < m; j++) depth[n + j] = (depth[model.bonds[j * 3]!]! + depth[model.bonds[j * 3 + 1]!]!) / 2 - 1e-4
   const order = Array.from({ length: n + m }, (_, k) => k).sort((a, b) => depth[a]! - depth[b]!)
+  const balls = model.shaded ? shadedBalls(env) : undefined
   for (const id of order) {
-    const near = clamp(depth[id]!, 0, 1)
+    // shaded：远近按模型自己的前后拉满；否则按画面的绝对深度。
+    const near = model.shaded ? clamp((depth[id]! - low) / (high - low || 1), 0, 1) : clamp(depth[id]!, 0, 1)
     if (id < n) {
-      c.beginPath(); c.arc(sx[id]!, sy[id]!, pr[id]!, 0, TAU)
+      const r = pr[id]!, kind = model.kind[id]!
+      c.beginPath(); c.arc(sx[id]!, sy[id]!, r, 0, TAU)
+      if (balls) {
+        c.globalAlpha = env.fade; c.drawImage(balls[kind]!, sx[id]! - r, sy[id]! - r, r * 2, r * 2)
+        c.globalAlpha = .78 * (1 - near) ** 1.4 * env.fade; c.fillStyle = env.paper; c.fill()
+        c.globalAlpha = (.08 + .62 * near * near) * env.fade; c.strokeStyle = env.ink; c.lineWidth = .6 + .7 * near; c.stroke()
+        continue
+      }
       c.globalAlpha = env.fade; c.fillStyle = env.paper; c.fill()
-      const kind = model.kind[id]!
       if (kind) { c.globalAlpha = (kind === 1 ? .2 : kind === 2 ? .3 : .6) * (.5 + .5 * near) * env.fade; c.fillStyle = kind === 1 ? env.ink : env.red; c.fill() }
       c.globalAlpha = (.14 + .4 * near) * env.fade; c.strokeStyle = env.ink; c.lineWidth = 1; c.stroke()
     } else {
@@ -73,7 +111,11 @@ function ballsAndSticks(env: Env, model: Model, place: (p: Vec) => Vec, hot?: Se
       const ux = dx / length, uy = dy / length
       c.beginPath(); c.moveTo(sx[a]! + ux * pr[a]!, sy[a]! + uy * pr[a]!); c.lineTo(sx[b]! - ux * pr[b]!, sy[b]! - uy * pr[b]!)
       c.setLineDash(style === 1 ? [3, 3] : [])
-      c.globalAlpha = (style === 2 ? .7 : .12 + .4 * near) * env.fade; c.strokeStyle = style === 2 ? env.red : env.ink; c.lineWidth = style === 2 ? 1.8 : 1.3; c.stroke()
+      c.strokeStyle = style === 2 ? env.red : env.ink
+      if (style === 3) { c.globalAlpha = (.04 + .1 * near) * env.fade; c.lineWidth = (pr[a]! + pr[b]!) * 1.1 }
+      else if (balls) { c.globalAlpha = (style === 2 ? .35 + .5 * near : .06 + .6 * near * near) * env.fade; c.lineWidth = (style === 2 ? 1.4 : style === 1 ? .8 : 1) + 1.3 * near }
+      else { c.globalAlpha = (style === 2 ? .7 : .12 + .4 * near) * env.fade; c.lineWidth = style === 2 ? 1.8 : 1.3 }
+      c.stroke()
     }
   }
   c.setLineDash([])
@@ -99,11 +141,11 @@ const PARTNER: Record<string, string> = { A: 'T', T: 'A', G: 'C', C: 'G' }
 // 糖–磷酸骨架（柱坐标：半径 Å、相对 C1′ 的角度 °、高度 Å）：C1′ C2′ C3′ C4′ O4′ C5′ O5′ P OP1 OP2 O3′。
 const BACKBONE: [string, number, number, number][] = [['C', 5.9, 0, 0], ['C', 7.1, 5, .6], ['C', 8, -3, .5], ['C', 7.7, -12, .9], ['O', 6.3, -13, .4], ['C', 8.4, -20, .3], ['O', 8.9, -24, -.6], ['P', 8.91, -30, -1.19], ['O', 10.2, -33, -1], ['O', 9, -36, -2.3], ['O', 8.6, 1, 1.4]]
 const BACKBONE_BONDS: [number, number][] = [[0, 1], [1, 2], [2, 3], [3, 4], [4, 0], [3, 5], [5, 6], [6, 7], [7, 8], [7, 9], [2, 10]]
-const ELEMENT: Record<string, [number, number]> = { C: [.4, 0], N: [.38, 1], O: [.38, 2], P: [.58, 3] } // 半径 Å、填色
+const ELEMENT: Record<string, [number, number]> = { C: [.36, 0], N: [.35, 1], O: [.35, 2], P: [.6, 3] } // 半径 Å、填色
 
 function dna(): Painter {
-  const PAIRS = 12, RISE = 3.38, TWIST = 36 * Math.PI / 180, SCALE = 1.95 / (PAIRS * RISE), LEAN = .3
-  const model: Model = { points: [], radius: [], kind: [], bonds: [] }
+  const PAIRS = 11, RISE = 3.38, TWIST = 36 * Math.PI / 180, SCALE = 1.9 / (PAIRS * RISE), LEAN = .34, PITCH = .4
+  const model: Model = { points: [], radius: [], kind: [], bonds: [], shaded: true }
   const sequence = Array.from({ length: PAIRS }, () => 'ATGC'[Math.floor(Math.random() * 4)]!)
   const hydrogen: number[][] = [], middles: Vec[] = [], phosphate: number[][] = [[], []], oxygen3: number[][] = [[], []]
   const push = (element: string, x: number, y: number, z: number) => { const [radius, kind] = ELEMENT[element]!; model.points.push([x, y, z]); model.radius.push(radius * SCALE); model.kind.push(kind); return model.points.length - 1 }
@@ -126,18 +168,19 @@ function dna(): Painter {
     hydrogen.push(list); middles.push([0, 0, k * RISE])
   })
   // 相邻核苷酸：O3′ 接下一个的磷（第一条链向上，第二条链向下）。
-  for (let k = 0; k + 1 < PAIRS; k++) { model.bonds.push(oxygen3[0]![k]!, phosphate[0]![k + 1]!, 0); model.bonds.push(oxygen3[1]![k + 1]!, phosphate[1]![k]!, 0) }
-  const cl = Math.cos(LEAN), sl = Math.sin(LEAN), half = (PAIRS - 1) * RISE / 2
+  // 另沿两条链的磷原子各画一条粗而淡的带子，一眼看得出两股怎么绕。
+  for (let k = 0; k + 1 < PAIRS; k++) { model.bonds.push(oxygen3[0]![k]!, phosphate[0]![k + 1]!, 0); model.bonds.push(oxygen3[1]![k + 1]!, phosphate[1]![k]!, 0); for (const strand of [0, 1]) model.bonds.push(phosphate[strand]![k]!, phosphate[strand]![k + 1]!, 3) }
+  const cl = Math.cos(LEAN), sl = Math.sin(LEAN), cp = Math.cos(PITCH), sp = Math.sin(PITCH), half = (PAIRS - 1) * RISE / 2
   return env => {
     const spin = env.t / 24000 * TAU, cs = Math.cos(spin), ss = Math.sin(spin)
-    const place = (p: Vec): Vec => { const x = (p[0] * cs - p[1] * ss) * SCALE, z = (p[0] * ss + p[1] * cs) * SCALE, y = (p[2] - half) * SCALE; return [x * cl - y * sl, x * sl + y * cl, z] }
+    const place = (p: Vec): Vec => { const x = (p[0] * cs - p[1] * ss) * SCALE, z = (p[0] * ss + p[1] * cs) * SCALE, y = (p[2] - half) * SCALE, y1 = x * sl + y * cl; return [x * cl - y * sl, y1 * cp - z * sp + .14, y1 * sp + z * cp] } // 先自转，再侧倾，再朝镜头俯过来
     const reading = Math.floor(env.t / 1800) % PAIRS
     ballsAndSticks(env, model, place, new Set(hydrogen[reading]))
     const letter = sequence[reading]!, strong = letter === 'G' || letter === 'C'
     label(env, `${letter} ${strong ? '≡' : '='} ${PARTNER[letter]}`, place([13, 0, middles[reading]![2]]), .55, env.red, 10, 5)
     label(env, "5′", place([-2.5, 9.5, -3]), .45, env.red, -6, 16); label(env, "3′", place([-2.5, -9.5, -3]), .45, env.red, -6, 16)
     label(env, "3′", place([-2.5 * Math.cos((PAIRS - 1) * TWIST) - 9.5 * Math.sin((PAIRS - 1) * TWIST), -2.5 * Math.sin((PAIRS - 1) * TWIST) + 9.5 * Math.cos((PAIRS - 1) * TWIST), half * 2 + 3]), .45, env.red, 0, -8)
-    corner(env, ['B-DNA · 10.5 bp / turn · 3.4 Å rise', '○ C   ◍ N   ● O / P'], .84)
+    corner(env, ['B-DNA · 10.5 bp / turn · 3.4 Å rise', 'C white · N grey · O red · P large red'], .84)
   }
 }
 
@@ -572,24 +615,39 @@ function racks(): Painter {
         c.globalAlpha = .13 * clear ** 1.3 * env.fade; c.stroke(body)
         continue
       }
-      const detail = new Path2D(), back = z + DEEP, shift = hash(row) * WIDE
+      const detail = new Path2D(), fine = new Path2D(), back = z + DEEP, shift = hash(row) * WIDE
       for (let i = Math.floor(-half / WIDE); i * WIDE < half; i++) {
         const x0 = i * WIDE + shift + .02, x1 = x0 + WIDE - .04, y0 = height(x0 + WIDE / 2, world), y1 = y0 + TALL
         const a = sx(x0, z), b = sx(x1, z), low = sy(y0, z), high = sy(y1, z)
         body.rect(a, high, b - a, low - high)
         const far = sy(y1, back)
         body.moveTo(a, high); body.lineTo(sx(x0, back), far); body.lineTo(sx(x1, back), far); body.lineTo(b, high); body.closePath()
-        if (z < 34) {
-          // 柜门：一格格的计算托盘，中间一段是交换机；起伏到高处时柜顶亮灯。
-          const inset = (b - a) * .1
-          for (let k = 1; k < 7; k++) { if (k === 4) continue; const y = high + (low - high) * k / 7; detail.moveTo(a + inset, y); detail.lineTo(b - inset, y) }
-          detail.moveTo(a + inset, high + (low - high) * .05); detail.lineTo(a + inset, low - (low - high) * .05)
+        // GB300 机柜的速写，越近画得越细：门框 → 中间的交换机段和上下两组计算托盘 → 电源框的小格、两侧的冷却液分水管、托盘把手、柜顶的出风口。
+        const wide = b - a, tall = low - high, lod = wide > 34 ? 3 : wide > 19 ? 2 : wide > 11 ? 1 : 0
+        if (lod) {
+          const l = a + wide * .09, r = b - wide * .09, at = (f: number) => high + tall * f
+          const across = (path: Path2D, f: number, from = l, to = r) => { path.moveTo(from, at(f)); path.lineTo(to, at(f)) }
+          detail.rect(l, at(.025), r - l, tall * .95)
+          across(detail, .455); across(detail, .565)
+          if (lod > 1) {
+            across(detail, .1); across(detail, .9)
+            for (const f of [.17, .24, .31, .38, .64, .71, .78, .85]) across(lod > 2 ? fine : detail, f, l + wide * .08, r - wide * .08)
+            const t0 = sy(y1, z + DEEP * .25), t1 = sy(y1, z + DEEP * .8), mid = (x0 + x1) / 2
+            detail.moveTo(sx(mid - .25, z + DEEP * .25), t0); detail.lineTo(sx(mid + .25, z + DEEP * .25), t0); detail.lineTo(sx(mid + .25, z + DEEP * .8), t1); detail.lineTo(sx(mid - .25, z + DEEP * .8), t1); detail.closePath()
+          }
+          if (lod > 2) {
+            for (const x of [l + wide * .07, r - wide * .07]) { fine.moveTo(x, at(.1)); fine.lineTo(x, at(.9)) }
+            for (let k = 1; k < 6; k++) { const x = l + (r - l) * k / 6; fine.moveTo(x, at(.025)); fine.lineTo(x, at(.1)); fine.moveTo(x, at(.9)); fine.lineTo(x, at(.975)) }
+            for (let k = 1; k < 9; k++) { const x = l + (r - l) * k / 9; fine.moveTo(x, at(.49)); fine.lineTo(x, at(.53)) }
+            for (const f of [.17, .24, .31, .38, .64, .71, .78, .85]) for (const x of [l + wide * .12, r - wide * .12]) { fine.moveTo(x, at(f - .02)); fine.lineTo(x, at(f + .02)) }
+          }
         }
         if (y0 > .55) { const r = clamp(60 / z, .8, 2.6); lamps.moveTo((a + b) / 2 + r, high + (low - high) * .5); lamps.arc((a + b) / 2, high + (low - high) * .5, r, 0, TAU) }
       }
       c.globalAlpha = env.fade; c.fillStyle = env.paper; c.fill(body)
       c.globalAlpha = (.07 + .2 * clear) * env.fade; c.lineWidth = 1; c.stroke(body)
-      c.globalAlpha = (.04 + .1 * clear) * env.fade; c.lineWidth = .8; c.stroke(detail)
+      c.globalAlpha = (.06 + .16 * clear) * env.fade; c.lineWidth = .8; c.stroke(detail)
+      c.globalAlpha = (.04 + .1 * clear) * env.fade; c.lineWidth = .7; c.stroke(fine)
     }
     c.fillStyle = env.red; c.globalAlpha = .5 * env.fade; c.fill(lamps)
     c.globalAlpha = .42 * env.fade; c.fillStyle = env.ink; c.font = `18px ${env.hand}`
@@ -598,7 +656,7 @@ function racks(): Painter {
 }
 
 export const SKETCHES: Sketch[] = [
-  { id: 'dna', name: 'DNA 双螺旋', tilt: .2, zoom: .54, create: dna, facts: [
+  { id: 'dna', name: 'DNA 双螺旋', tilt: .1, zoom: .46, camera: 2.5, create: dna, facts: [
     'B-DNA: a right-handed double helix, about 10.5 base pairs per turn, 3.4 Å rise per base pair.',
     'Chargaff: [A] = [T] and [G] = [C].',
     'A pairs with T through two hydrogen bonds; G pairs with C through three.',
