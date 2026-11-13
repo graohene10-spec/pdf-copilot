@@ -12,7 +12,6 @@ const props = defineProps<{ card: ExplainCardState }>()
 const emit = defineEmits<{ close: [] }>()
 const box = ref<HTMLElement>()
 const place = ref({ left: props.card.x, top: props.card.y })
-const hidden = ref(false)
 const dragging = ref(false)
 // 从翻译卡片变过来：先显示译文，挂上去之后换成解释。
 const showFrom = ref(Boolean(props.card.from))
@@ -32,29 +31,39 @@ function remember() {
   const rect = props.card.anchor?.getBoundingClientRect()
   if (rect?.width) relative = { x: (place.value.left - rect.left) / rect.width, y: (place.value.top - rect.top) / rect.height }
 }
-let frame = 0
-function follow() {
-  frame = 0
-  if (!following.value) return
-  const anchor = props.card.anchor!, rect = anchor.getBoundingClientRect(), pane = anchor.closest('.reader-pane')?.getBoundingClientRect()
-  if (!dragging.value && anchor.isConnected && rect.width) {
-    const left = rect.left + relative.x * rect.width, top = rect.top + relative.y * rect.height
-    if (Math.abs(left - place.value.left) > .25 || Math.abs(top - place.value.top) > .25) place.value = { left, top }
-    // 那一页滚出阅读区，卡片也跟着出去，不盖在别的栏目上。
-    const out = !pane || top < pane.top - 4 || top > pane.bottom - 24 || left < pane.left - 40 || left > pane.right - 40
-    if (out !== hidden.value) hidden.value = out
-  } else if (!anchor.isConnected && !hidden.value) hidden.value = true
-  frame = requestAnimationFrame(follow)
+// 跟着书页走时，卡片就放进书页的滚动层里（和页面同一层）：滚动、缩放由浏览器带着走，完全跟手，
+// 也会被工具栏、别的栏目正常遮住。位置按那一页的比例换算，页面尺寸变了（缩放、重排）再算一次。
+const host = computed(() => following.value ? props.card.anchor!.closest<HTMLElement>('.pdf-scroll') : null)
+const inPage = ref({ left: 0, top: 0 })
+function locate() {
+  const anchor = props.card.anchor, layer = host.value
+  if (!anchor?.isConnected || !layer) return
+  const slot = anchor.getBoundingClientRect(), base = layer.getBoundingClientRect()
+  if (!slot.width) return
+  inPage.value = { left: slot.left - base.left - layer.clientLeft + layer.scrollLeft + relative.x * slot.width, top: slot.top - base.top - layer.clientTop + layer.scrollTop + relative.y * slot.height }
 }
-watch(following, value => { if (value) { remember(); if (!frame) frame = requestAnimationFrame(follow) } else { cancelAnimationFrame(frame); frame = 0; hidden.value = false } })
+let observer: ResizeObserver | undefined
+watch(host, (layer, previous) => {
+  observer?.disconnect(); observer = undefined
+  if (layer) {
+    remember(); locate()
+    observer = new ResizeObserver(() => { if (!dragging.value) locate() })
+    observer.observe(props.card.anchor!); if (props.card.anchor!.parentElement) observer.observe(props.card.anchor!.parentElement)
+  } else if (previous && box.value) {
+    // 回到屏幕上：停在眼下看到的位置。
+    const rect = box.value.getBoundingClientRect(); place.value = { left: rect.left, top: rect.top }
+  }
+}, { flush: 'sync' })
+const position = computed(() => host.value ? { position: 'absolute' as const, left: `${inPage.value.left}px`, top: `${inPage.value.top}px` } : { left: `${place.value.left}px`, top: `${place.value.top}px` })
 function togglePin() { props.card.pinned = !props.card.pinned }
 function toggleFollow() { props.card.follow = props.card.follow === 'page' ? 'screen' : 'page' }
 function startDrag(event: PointerEvent) {
   if (event.button !== 0 || (event.target as HTMLElement).closest('button')) return
-  const handle = event.currentTarget as HTMLElement, dx = event.clientX - place.value.left, dy = event.clientY - place.value.top
+  const handle = event.currentTarget as HTMLElement, origin = box.value!.getBoundingClientRect(), dx = event.clientX - origin.left, dy = event.clientY - origin.top
+  place.value = { left: origin.left, top: origin.top }
   handle.setPointerCapture(event.pointerId); dragging.value = true; event.preventDefault()
-  const move = (next: PointerEvent) => { place.value = { left: Math.min(innerWidth - 40, Math.max(8 - (box.value?.offsetWidth || 0) + 40, next.clientX - dx)), top: Math.min(innerHeight - 30, Math.max(4, next.clientY - dy)) } }
-  const end = () => { handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', end); handle.removeEventListener('pointercancel', end); dragging.value = false; remember() }
+  const move = (next: PointerEvent) => { const before = place.value; place.value = { left: Math.min(innerWidth - 40, Math.max(8 - (box.value?.offsetWidth || 0) + 40, next.clientX - dx)), top: Math.min(innerHeight - 30, Math.max(4, next.clientY - dy)) }; if (host.value) inPage.value = { left: inPage.value.left + place.value.left - before.left, top: inPage.value.top + place.value.top - before.top } }
+  const end = () => { handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', end); handle.removeEventListener('pointercancel', end); dragging.value = false; if (host.value) { const rect = box.value!.getBoundingClientRect(); place.value = { left: rect.left, top: rect.top } } remember(); locate() }
   handle.addEventListener('pointermove', move); handle.addEventListener('pointerup', end); handle.addEventListener('pointercancel', end)
 }
 // 中键是「解释」：不当作点了外面。
@@ -64,13 +73,13 @@ onMounted(() => {
   settle(); document.addEventListener('pointerdown', outside, true); document.addEventListener('wheel', outside, { capture: true, passive: true }); document.addEventListener('keydown', key)
   if (showFrom.value) void nextTick(() => requestAnimationFrame(() => { showFrom.value = false }))
 })
-onBeforeUnmount(() => { cancelAnimationFrame(frame); document.removeEventListener('pointerdown', outside, true); document.removeEventListener('wheel', outside, true); document.removeEventListener('keydown', key) })
+onBeforeUnmount(() => { observer?.disconnect(); document.removeEventListener('pointerdown', outside, true); document.removeEventListener('wheel', outside, true); document.removeEventListener('keydown', key) })
 watch(() => [props.card.item.text, props.card.item.status, props.card.item.reasoning, showFrom.value], () => { void nextTick(settle) })
 </script>
 
 <template>
-  <Teleport to="body">
-  <div ref="box" class="selection-translation explain-card" :class="{ pinned: card.pinned, dragging, hidden, morph: Boolean(card.from) }" role="status" aria-live="polite" :style="{ left: `${place.left}px`, top: `${place.top}px` }">
+  <Teleport :to="host || 'body'">
+  <div ref="box" class="selection-translation explain-card" :class="{ pinned: card.pinned, dragging, 'in-page': Boolean(host), morph: Boolean(card.from) }" role="status" aria-live="polite" :style="position" @pointerdown.stop @mousedown.stop @click.stop @dblclick.stop @contextmenu.stop>
     <Transition name="st-swap" mode="out-in" @after-enter="settle">
       <div v-if="showFrom" key="from" class="st-text" v-html="renderMarkdown(card.from || '')"></div>
       <div v-else key="explain" class="st-explain">
@@ -89,7 +98,7 @@ watch(() => [props.card.item.text, props.card.item.status, props.card.item.reaso
 <style>
 .explain-card{min-width:220px}
 .explain-card.morph{animation:none}
-.explain-card.hidden{visibility:hidden}
+.explain-card.in-page{z-index:40;animation:none}
 .explain-card.dragging{transition:none;cursor:grabbing;user-select:none}
 .ec-head{display:flex;align-items:center;gap:4px;margin:-3px -5px 4px 0;cursor:grab;touch-action:none}
 .ec-head .st-term{flex:1;min-width:0;margin:0!important}
