@@ -22,6 +22,8 @@ const DIAGRAM_LANGUAGES = new Set(['mermaid', 'flowchart', 'sequence', 'mmd'])
 markdown.renderer.rules.fence = (tokens, index) => {
   const token = tokens[index]
   const language = (token.info || '').trim().split(/\s+/)[0].toLowerCase()
+  // Intelligent UI：```ui 里是一段 JSON，由 intelligent-ui.ts 画成可操作的界面。
+  if (language === 'ui' || language === 'iui') return `<div class="iui" data-ui="${escape(token.content)}"></div>\n`
   if (DIAGRAM_LANGUAGES.has(language)) {
     return `<figure class="answer-diagram" data-diagram="${escape(token.content)}"><pre class="answer-code"><code>${escape(token.content)}</code></pre></figure>\n`
   }

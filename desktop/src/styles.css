@@ -13,6 +13,7 @@
 @import './styles/backdrops.css';
 @import './styles/crystal.css';
 @import './styles/motion.css';
+@import './styles/intelligent-ui.css';
 
 :root {
   font-family: var(--font);

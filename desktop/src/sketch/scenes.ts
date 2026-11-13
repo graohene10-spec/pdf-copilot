@@ -608,7 +608,7 @@ function blend(base: string, over: string, amount: number) {
   return made
 }
 function racks(): Painter {
-  const WIDE = .6, DEEP = 1.2, PITCH = 2.9, TALL = 2.25, EYE = 5.6, SPEED = .09, EVERY = 78000, LIFE = 64
+  const WIDE = .6, DEEP = 1.2, PITCH = 2.9, TALL = 2.25, EYE = 5.6, SPEED = .09, EVERY = 56000, LIFE = 60
   // 一个机柜的正面，照着 GB300 画：黑色的框，顶上一小块圆角的窗（交换机与线缆），下面一大块圆角的窗——里面是一层层计算托盘，上半截右侧垂着一束束线缆；窗与窗之间、最底下是深色的电源框。
   // 按宽度分档各画一张（16、32、64…像素宽），细节随大小多起来：先是框和两块窗，再是托盘线，最大才有线缆、把手、电源小格。
   const fronts = new Map<string, HTMLCanvasElement>()
@@ -658,15 +658,15 @@ function racks(): Painter {
       // 一次只来一个波，歇一会儿再来下一个；振幅从零慢慢起来、慢慢平息，波长长、走得慢——云卷云舒，不是惊涛骇浪。
       const waves = [0, 1].map(k => latest - k).filter(k => k >= 0).map(k => {
         const born = k * EVERY / 1000, age = seconds - born, angle = hash(k * 3.7 + 5) * TAU
-        return { kind: Math.floor(hash(k * 5.1 + .3) * 3), age, gain: smooth(age / 9) * smooth((LIFE - age) / 12), x: (hash(k * 2.3 + 1) - .5) * 36, z: born * SPEED + 14 + hash(k * 2.3 + 2) * 50, nx: Math.sin(angle), nz: Math.cos(angle), centre: born * SPEED + 45 }
+        return { kind: Math.floor(hash(k * 5.1 + .3) * 3), age, gain: smooth(age / 7) * smooth((LIFE - age) / 10), x: (hash(k * 2.3 + 1) - .5) * 36, z: born * SPEED + 14 + hash(k * 2.3 + 2) * 50, nx: Math.sin(angle), nz: Math.cos(angle), centre: born * SPEED + 45 }
       }).filter(wave => wave.gain > .001)
       const ring = (x: number, z: number, age: number) => { const d = Math.hypot(x, z) - 1.7 * age, q = d / 9; return q > -3 && q < 3 ? Math.cos(.5 * d) * Math.exp(-q * q) : 0 }
       const height = (x: number, z: number) => {
         let y = .04 * Math.sin(.09 * x + .05 * z + .13 * seconds)
         for (const wave of waves) {
-          if (wave.kind === 0) y += .3 * wave.gain * ring(x - wave.x, z - wave.z, wave.age)
-          else if (wave.kind === 1) { const d = x * wave.nx + (z - wave.centre) * wave.nz + 80 - 2.9 * wave.age, q = d / 14; if (q > -3 && q < 3) y += .26 * wave.gain * Math.cos(.4 * d) * Math.exp(-q * q) }
-          else y += .22 * wave.gain * (ring(x - wave.x - 7, z - wave.z, wave.age) + ring(x - wave.x + 7, z - wave.z, wave.age))
+          if (wave.kind === 0) y += .42 * wave.gain * ring(x - wave.x, z - wave.z, wave.age)
+          else if (wave.kind === 1) { const d = x * wave.nx + (z - wave.centre) * wave.nz + 80 - 2.9 * wave.age, q = d / 14; if (q > -3 && q < 3) y += .37 * wave.gain * Math.cos(.4 * d) * Math.exp(-q * q) }
+          else y += .31 * wave.gain * (ring(x - wave.x - 7, z - wave.z, wave.age) + ring(x - wave.x + 7, z - wave.z, wave.age))
         }
         return y
       }
@@ -675,24 +675,26 @@ function racks(): Painter {
         const world = row * PITCH, z = world - camera, half = z * (w / 2) / focal + WIDE
         // 远近之间不留接缝：线的深浅只看这一排在屏幕上占多高。排密到两个像素以下就只留一部分排——按排号里 2 的幂次分层，
         // 留下的总是同一批，走近时其余的排从透明慢慢显出来，不会一排排地跳。
-        const pixels = focal * WIDE / z, spacing = focal * EYE * PITCH / (z * z), want = 2 / spacing
+        const pixels = focal * WIDE / z, spacing = focal * EYE * PITCH / (z * z), want = 3 / spacing
         let weight = smooth((FAR - z) / (FAR * .15))
         if (want > 1) weight *= clamp(2 - want / (row & -row || 1024), 0, 1)
         if (weight < .02) continue
-        const line = .25 * clamp(Math.max(spacing, 2) / 7, .16, 1) * weight * fade, solid = fade * weight ** .6, shift = hash(row) * WIDE, back = z + DEEP
+        const line = .25 * clamp(Math.max(spacing, 3) / 8, .16, 1) * weight * fade, solid = fade * weight ** .6, shift = hash(row) * WIDE, back = z + DEEP
         if (pixels <= 16) {
           // 中景、远景：一排机柜连成一道墙，轮廓沿着柜顶的后沿走，前沿另描一条线。机柜还分得清时是一个个方头，再远就连成起伏的一线。
-          const blocky = pixels > 6, step = blocky ? WIDE : Math.max(WIDE * 3, z * .03), from = Math.floor((-half - shift) / step) * step + shift, body = new Path2D(), edges = new Path2D(), wall = new Path2D()
+          const blocky = pixels > 6, sides = new Path2D(), step = blocky ? WIDE : Math.max(WIDE * 3, z * .03), from = Math.floor((-half - shift) / step) * step + shift, body = new Path2D(), edges = new Path2D(), wall = new Path2D()
           body.moveTo(sx(from, back), sy(0, z)); wall.moveTo(sx(from, z), sy(0, z))
           for (let x = from, first = true; x <= half + step; x += step, first = false) {
             const lift = height(x + step / 2, world) + TALL, y = sy(lift, z), behind = sy(lift, back)
-            if (blocky) { body.lineTo(sx(x, back), behind); body.lineTo(sx(x + step, back), behind); edges.moveTo(sx(x, back), behind); edges.lineTo(sx(x, z), y); edges.lineTo(sx(x + step, z), y); wall.lineTo(sx(x, z), y); wall.lineTo(sx(x + step, z), y) }
+            if (blocky) { body.lineTo(sx(x, back), behind); body.lineTo(sx(x + step, back), behind); sides.moveTo(sx(x, back), behind); sides.lineTo(sx(x, z), y); edges.moveTo(sx(x, z), y); edges.lineTo(sx(x + step, z), y); wall.lineTo(sx(x, z), y); wall.lineTo(sx(x + step, z), y) }
             else { body.lineTo(sx(x, back), behind); if (first) edges.moveTo(sx(x, z), y); else edges.lineTo(sx(x, z), y); wall.lineTo(sx(x, z), y) }
           }
           body.lineTo(sx(half + step, back), sy(0, z)); body.closePath(); wall.lineTo(sx(half + step, z), sy(0, z)); wall.closePath()
           c.globalAlpha = solid; c.fillStyle = env.paper; c.fill(body)
           c.globalAlpha = .09 * solid; c.fillStyle = env.ink; c.fill(wall) // 正面比柜顶深一点，和近处机柜的深色框接得上
           c.globalAlpha = line; c.lineWidth = 1; c.stroke(body); c.stroke(edges)
+          // 柜顶的斜边、正面的竖缝离远了就淡掉：挤在一两个像素里只会搅出摩尔纹。
+          if (blocky) { c.globalAlpha = line * smooth((pixels - 8) / 8); c.stroke(sides) }
           continue
         }
         // 近处：一个个机柜各有三个面——朝着画面中间的那块侧板、柜顶、正面（一张预先画好的小图）。
@@ -700,7 +702,7 @@ function racks(): Painter {
         // 后画的盖住先画的，不会有哪个柜顶从别的机柜里穿出来。
         const sprite = front(pixels), first = Math.floor((-half - shift) / WIDE), last = Math.ceil((half - shift) / WIDE), centre = Math.floor(-shift / WIDE)
         const rack = (i: number) => {
-          const x0 = i * WIDE + shift + .015, x1 = x0 + WIDE - .03, y0 = height(x0 + WIDE / 2, world), y1 = y0 + TALL
+          const x0 = i * WIDE + shift, x1 = x0 + WIDE, y0 = height(x0 + WIDE / 2, world), y1 = y0 + TALL
           const a = sx(x0, z), b = sx(x1, z), high = sy(y1, z), bottom = sy(y0, z), behind = sy(y1, back), a2 = sx(x0, back), b2 = sx(x1, back)
           if (x1 < 0 || x0 > 0) {
             const near = x1 < 0 ? b : a, deep = x1 < 0 ? b2 : a2
@@ -709,7 +711,7 @@ function racks(): Painter {
           }
           c.beginPath(); c.moveTo(a, high); c.lineTo(a2, behind); c.lineTo(b2, behind); c.lineTo(b, high); c.closePath()
           c.fillStyle = env.paper; c.fill(); c.stroke()
-          c.drawImage(sprite, a, high, b - a, bottom - high)
+          c.drawImage(sprite, a - .5, high, b - a + 1, bottom - high) // 两边各多盖半个像素，相邻机柜之间不漏缝
         }
         // 颜色先和纸色调好、不透明地画，免得每个面都切换透明度。
         c.globalAlpha = solid; c.lineWidth = 1; c.strokeStyle = stroke

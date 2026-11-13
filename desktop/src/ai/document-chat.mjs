@@ -26,7 +26,7 @@ export async function streamDocumentChat(options, document, seed) {
   const vision = getModel(options.provider, options.model)?.vision !== false;
   const tools = toolsForVision(vision && remaining.images > 0);
   const messages = withSeed(boundedHistory(options.messages), seed);
-  const common = { ...options, messages, extraInstructions: DOCUMENT_INSTRUCTIONS + '\n' + (document.instructions || '') };
+  const common = { ...options, messages, extraInstructions: DOCUMENT_INSTRUCTIONS + '\n' + (document.instructions || '') + (options.extraInstructions ? '\n' + options.extraInstructions : '') };
   if (remaining.calls <= 0) return streamChat(common);
   if (options.provider === 'codex') {
     const pdfLimits = { calls: remaining.calls, images: remaining.images, characters: limits.characters };

@@ -5,6 +5,7 @@ import { getProvider, getNativeModels, getNativeStatus } from '../ai/providers.m
 import { nativeModelInventory, registerNativeModelInventory } from '../ai/native-models'
 import { addExcerpt, removeExcerpt, removeMessage, compressConversation, sideConversation, chatState, sendChat, stopChat, configureRequests, taskSummary, conversations, activeConversationId, selectConversation, newConversation, deleteConversation, loadConversations, conversationTokens, contextWindow, branchConversation, resendQuestion, watchConversation, allConversations, pinMessage, MAX_ATTACHMENTS, type Message, type ChatState } from '../ai/workspace'
 import { renderMarkdown, renderDiagrams } from '../ai/render'
+import { mountIntelligentUi } from '../ai/intelligent-ui'
 import { nudgeGlassMotion } from '../ui/glass-motion'
 import { vMarquee } from '../ui/marquee'
 import { loadAiSettings, saveModelChoice, supportsFast } from '../ai/settings.mjs'
@@ -330,6 +331,8 @@ function renderAnswer(element: HTMLElement, message: Message) {
     }
   }
   if (message.finishedAt) void renderDiagrams(element, dark.value, uiStyle.value)
+  // 回答里的 ```ui 块画成可操作的界面；表单的按钮把填好的内容当作下一个问题发出去。
+  mountIntelligentUi(element, { streaming: !message.finishedAt, onAction: text => { if (!busy.value) void send(text) } })
 }
 // Streaming answers re-render at most every 90ms; markdown and KaTeX stay cheap.
 function scheduleRender(element: HTMLElement, message: Message) {
@@ -595,6 +598,11 @@ function keydown(event: KeyboardEvent) {
 }
 // ---- 输入框附图：Ctrl+V 粘贴、拖进输入框，或点「添加图片」；随问题一起发出，发出后清空 ----
 const attachments = ref<string[]>([])
+// 双击问题里的图片放大看；点一下或按 Esc 收起。
+const zoomed = ref('')
+function zoomKey(event: KeyboardEvent) { if (event.key === 'Escape' && zoomed.value) { event.stopPropagation(); zoomed.value = '' } }
+watch(zoomed, value => { if (value) window.addEventListener('keydown', zoomKey, true); else window.removeEventListener('keydown', zoomKey, true) })
+onBeforeUnmount(() => window.removeEventListener('keydown', zoomKey, true))
 const attachInput = ref<HTMLInputElement>()
 const imageFiles = (files?: FileList | null) => [...(files || [])].filter(file => file.type.startsWith('image/'))
 async function imageToDataUrl(file: Blob) {
@@ -833,7 +841,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
               <div class="user-question">{{ message.content }}</div>
               <div v-if="message.ask?.text || message.images?.length || message.ask?.includeDocument || message.excerpts?.length" class="sent-context" aria-label="随问题发送的上下文">
                 <span v-for="item in message.excerpts || []" :key="item.id" class="sent-quote sent-excerpt" :data-tip="`${excerptLabel(item.from)}：${item.text.slice(0, 300)}`"><AppIcon :name="item.from === 'self' ? 'pin' : 'branch'" :size="10" />{{ item.text.slice(0, 40) }}{{ item.text.length > 40 ? '…' : '' }}</span>
-                <img v-for="(image, index) in (message.images || []).slice(0, 5)" :key="index" :src="image" alt="随问题发送的图片" />
+                <img v-for="(image, index) in (message.images || []).slice(0, 5)" :key="index" :src="image" alt="随问题发送的图片" data-tip="双击放大" @dblclick="zoomed = image" />
                 <span v-if="message.ask?.text" class="sent-quote" :title="message.ask.text">“{{ message.ask.text.slice(0, 60) }}{{ message.ask.text.length > 60 ? '…' : '' }}”</span>
                 <span v-if="message.ask?.includeDocument" class="sent-doc"><AppIcon name="book" :size="11" />{{ document.kind === 'pdf' ? `文档 · 第 ${message.ask.page || 1} 页` : '文档' }}</span>
               </div>
@@ -861,7 +869,9 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
               <button v-if="!side || isLastAnswer(message)" class="meta-button" :disabled="busy && isLastAnswer(message)" aria-label="重新生成" :data-tip="isLastAnswer(message) ? '重新生成' : '在新分支中重新生成'" @click="regenerate(message)"><AppIcon name="retry" :size="13" /></button>
               <button v-if="!side" class="meta-button" aria-label="从这里分支" data-tip="从这里开一个分支对话" @click="branchFrom(message)"><AppIcon name="branch" :size="13" /></button>
               <span v-if="message.stopped" class="meta-flag">已停止</span>
+
               <span v-else-if="message.failed" class="meta-flag error">未完成</span>
+              <span v-if="message.startedAt && message.finishedAt" class="meta-time">{{ elapsed(message) }}</span>
             </div>
           </template>
         </article>
@@ -912,7 +922,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
           </span>
         </TransitionGroup>
         <div v-if="attachments.length" class="ai-attachments" aria-label="附上的图片">
-          <span v-for="(image, index) in attachments" :key="image.slice(-48) + index" class="attachment"><img :src="image" alt="附上的图片" /><button type="button" class="chip-remove" :aria-label="`移除第 ${index + 1} 张图片`" data-tip="移除这张图片" @click="removeAttachment(index)"><AppIcon name="close" :size="11" /></button></span>
+          <span v-for="(image, index) in attachments" :key="image.slice(-48) + index" class="attachment"><img :src="image" alt="附上的图片" @dblclick="zoomed = image" /><button type="button" class="chip-remove" :aria-label="`移除第 ${index + 1} 张图片`" data-tip="移除这张图片" @click="removeAttachment(index)"><AppIcon name="close" :size="11" /></button></span>
         </div>
         <div class="prompt-box">
           <textarea ref="input" v-model="prompt" @paste="pasteImages" :style="{ height: `${composerHeight}px` }" :placeholder="prediction ? '' : placeholder" aria-label="向 AI 提问" :aria-describedby="prediction ? `prediction-${state.id}` : undefined" @keydown="keydown" />
@@ -954,6 +964,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
       </div>
     </Transition></Teleport>
   </aside>
+  <Teleport to="body"><div v-if="zoomed" class="image-zoom" role="dialog" aria-label="放大的图片" @click="zoomed = ''"><img :src="zoomed" alt="放大的图片" /></div></Teleport>
 </template>
 
 <style scoped>
@@ -1199,6 +1210,12 @@ button:disabled{opacity:.4;cursor:default}
 .ai-message:hover .answer-meta,.answer-meta:focus-within{opacity:1}
 .meta-button{display:grid;place-items:center;width:28px;height:28px;padding:0;border:1px solid transparent;border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--muted)}
 .meta-button:hover:not(:disabled){background:var(--frost);border-color:var(--hairline);color:var(--ink)}
+.meta-time{margin-left:6px;font-variant-numeric:tabular-nums;opacity:0;transition:opacity var(--dur-2) var(--ease-out)}
+.answer-meta:hover .meta-time,.answer-meta:focus-within .meta-time{opacity:1}
+.image-zoom{position:fixed;inset:0;z-index:900;display:grid;place-items:center;padding:28px;background:rgb(0 0 0 / .55);cursor:zoom-out;animation:zoom-in var(--dur-2) var(--ease-out) both}
+.image-zoom img{max-width:100%;max-height:100%;border-radius:var(--r-md);background:#fff;box-shadow:var(--shadow-3)}
+.sent-context img,.attachment img{cursor:zoom-in}
+@keyframes zoom-in{from{opacity:0}}
 .meta-flag{margin-left:4px;padding:1px 7px;border-radius:var(--r-xs);background:var(--frost);font-weight:600}
 .meta-flag.error{background:color-mix(in srgb,var(--danger) 14%,transparent);color:var(--danger)}
 .ai-status{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
