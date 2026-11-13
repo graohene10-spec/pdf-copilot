@@ -287,6 +287,12 @@ const live = (message: Message) => Boolean(busy.value && message === messages.va
 function seconds(ms: number) { return ms < 60000 ? `${Math.max(0, Math.floor(ms / 1000))}s` : `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s` }
 function count(value?: number) { return !value ? '0' : value < 1000 ? String(value) : `${(value / 1000).toFixed(value < 10000 ? 1 : 0)}k` }
 function elapsed(message: Message) { return seconds((message.finishedAt || now.value) - (message.startedAt || now.value)) }
+// 回答的时刻：当天只显示几点几分，隔天起带上日期，跨年带上年份。
+function clock(message: Message) {
+  const at = new Date(message.finishedAt || message.startedAt || 0), today = new Date(now.value), time = `${at.getHours()}:${String(at.getMinutes()).padStart(2, '0')}`
+  if (at.toDateString() === today.toDateString()) return time
+  return `${at.getFullYear() === today.getFullYear() ? '' : `${at.getFullYear()}年`}${at.getMonth() + 1}月${at.getDate()}日 ${time}`
+}
 function thinkingTime(message: Message) { return seconds((message.firstTokenAt || message.finishedAt || now.value) - (message.startedAt || now.value)) }
 function lastThought(message: Message) {
   const lines = (message.reasoning || '').trim().split(/\n+/).filter(Boolean)
@@ -871,7 +877,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
               <span v-if="message.stopped" class="meta-flag">已停止</span>
 
               <span v-else-if="message.failed" class="meta-flag error">未完成</span>
-              <span v-if="message.startedAt && message.finishedAt" class="meta-time">{{ elapsed(message) }}</span>
+              <span v-if="message.startedAt && message.finishedAt" class="meta-time">{{ clock(message) }}</span>
             </div>
           </template>
         </article>

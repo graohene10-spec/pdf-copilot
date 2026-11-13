@@ -4,10 +4,8 @@ import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import 'katex/dist/katex.min.css'
 import { renderMarkdown } from '../ai/render'
 import type { Translation } from '../ai/translate'
-import type { Explain } from '../ai/explain'
-import ExplainBody from './ExplainBody.vue'
 
-const props = defineProps<{ item?: Translation; explain?: Explain; x: number; y: number }>()
+const props = defineProps<{ item: Translation; x: number; y: number }>()
 const emit = defineEmits<{ close: [] }>()
 const box = ref<HTMLElement>()
 const place = ref({ left: props.x, top: props.y })
@@ -26,18 +24,15 @@ function outside(event: Event) { if ((event as PointerEvent).button === 1) retur
 function key(event: KeyboardEvent) { if (event.key === 'Escape') emit('close') }
 onMounted(() => { settle(); document.addEventListener('pointerdown', outside, true); document.addEventListener('wheel', outside, { capture: true, passive: true }); document.addEventListener('keydown', key) })
 onBeforeUnmount(() => { document.removeEventListener('pointerdown', outside, true); document.removeEventListener('wheel', outside, true); document.removeEventListener('keydown', key) })
-watch(() => [props.item?.result, props.item?.status, props.explain?.id, props.explain?.text, props.explain?.status, props.explain?.reasoning, props.x, props.y], () => { void nextTick(settle) })
+watch(() => [props.item.result, props.item.status, props.x, props.y], () => { void nextTick(settle) })
 </script>
 
 <template>
   <Teleport to="body">
   <div ref="box" class="selection-translation" role="status" aria-live="polite" :style="{ left: `${place.left}px`, top: `${place.top}px` }">
-    <Transition name="st-swap" mode="out-in" @after-leave="settle" @after-enter="settle">
-    <div v-if="explain" :key="explain.id" class="st-explain"><p class="st-term">{{ explain.term.length > 48 ? explain.term.slice(0, 48) + '…' : explain.term }}</p><ExplainBody :item="explain" /></div>
-    <div v-else-if="item?.result" key="text" class="st-text" v-html="renderMarkdown(item.result)"></div>
-    <p v-else-if="item?.status === 'error'" key="error" class="st-error">{{ item.error || '翻译失败' }}</p>
-    <p v-else key="wait" class="st-wait"><i></i><i></i><i></i></p>
-    </Transition>
+    <div v-if="item.result" class="st-text" v-html="renderMarkdown(item.result)"></div>
+    <p v-else-if="item.status === 'error'" class="st-error">{{ item.error || '翻译失败' }}</p>
+    <p v-else class="st-wait"><i></i><i></i><i></i></p>
   </div>
   </Teleport>
 </template>
@@ -51,9 +46,9 @@ watch(() => [props.item?.result, props.item?.status, props.explain?.id, props.ex
 .st-error{color:var(--danger)}
 .st-term{margin-bottom:4px!important;color:var(--muted);font-size:.82em;font-weight:600;white-space:nowrap!important;overflow:hidden;text-overflow:ellipsis}
 .st-explain{min-width:180px}
-.st-swap-enter-active,.st-swap-leave-active{transition:opacity .14s var(--ease-out),filter .14s var(--ease-out),translate .14s var(--ease-out)}
-.st-swap-enter-from{opacity:0;filter:blur(4px);translate:0 4px}
-.st-swap-leave-to{opacity:0;filter:blur(4px);translate:0 -4px}
+.st-swap-enter-active,.st-swap-leave-active{transition:opacity .14s var(--ease-out),translate .14s var(--ease-out)}
+.st-swap-enter-from{opacity:0;translate:0 4px}
+.st-swap-leave-to{opacity:0;translate:0 -4px}
 .st-wait{display:flex;gap:5px;padding:5px 2px}
 .st-wait i{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.3;animation:st-dot 1s var(--ease-out) infinite}
 .st-wait i:nth-child(2){animation-delay:.15s}
