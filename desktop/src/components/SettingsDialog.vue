@@ -620,7 +620,7 @@ button{color:var(--control-ink)}
 .scene-list-head button{margin-left:auto;height:24px;padding:0 9px;border:1px solid var(--line);border-radius:var(--r-full);background:transparent;box-shadow:none;font-size:11.5px;color:var(--surface-muted)}
 .scene-group{display:flex;flex-direction:column;gap:1px;min-width:0}
 .scene-group-label{margin:2px 0 3px;padding-bottom:3px;border-bottom:1px solid var(--line);font-size:11.5px;color:var(--surface-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.scene-item{display:flex;align-items:center;gap:8px;min-width:0;height:28px;padding:0 6px;border:0;border-radius:7px;background:transparent;box-shadow:none;font-size:13px;color:var(--surface-muted);text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.scene-item{display:flex;align-items:center;justify-content:flex-start!important;gap:8px;min-width:0;height:28px;padding:0 6px;border:0;border-radius:7px;background:transparent;box-shadow:none;font-size:13px;color:var(--surface-muted);text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .scene-item:hover:not(:disabled),.scene-item:focus-visible{background:color-mix(in srgb,var(--surface-ink) 7%,transparent);color:var(--surface-ink)}
 .scene-item i{flex:none;position:relative;width:14px;height:14px;border:1.2px solid var(--surface-muted);border-radius:4px}
 .scene-item[aria-pressed='true']{color:var(--surface-ink)}
