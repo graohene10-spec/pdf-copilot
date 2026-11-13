@@ -1,6 +1,8 @@
 <script setup lang="ts">
 // 翻译模式的浮窗：选中文字后译文出现在鼠标旁，外框随界面风格变化（草稿主题是一张贴着胶带的纸片）。
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import 'katex/dist/katex.min.css'
+import { renderMarkdown } from '../ai/render'
 import type { Translation } from '../ai/translate'
 
 const props = defineProps<{ item: Translation; x: number; y: number }>()
@@ -27,7 +29,7 @@ watch(() => [props.item.result, props.item.status, props.x, props.y], () => { vo
 <template>
   <Teleport to="body">
   <div ref="box" class="selection-translation" role="status" aria-live="polite" :style="{ left: `${place.left}px`, top: `${place.top}px` }">
-    <p v-if="item.result" class="st-text">{{ item.result }}</p>
+    <div v-if="item.result" class="st-text" v-html="renderMarkdown(item.result)"></div>
     <p v-else-if="item.status === 'error'" class="st-error">{{ item.error || '翻译失败' }}</p>
     <p v-else class="st-wait"><i></i><i></i><i></i></p>
   </div>
@@ -37,6 +39,9 @@ watch(() => [props.item.result, props.item.status, props.x, props.y], () => { vo
 <style>
 .selection-translation{position:fixed;z-index:420;max-width:min(380px,calc(100vw - 16px));max-height:min(46vh,360px);overflow:auto;padding:10px 13px;border:1px solid var(--glass-outline);border-radius:var(--r-md);background-color:var(--popup-glass);background-image:var(--popup-sheen);-webkit-backdrop-filter:blur(var(--popup-blur)) saturate(var(--glass-sat));backdrop-filter:blur(var(--popup-blur)) saturate(var(--glass-sat));box-shadow:var(--shadow-3),var(--glass-edge);color:var(--ink);font-size:14px;line-height:1.6;animation:st-in var(--dur-2) var(--spring-snappy) both;transform-origin:0 0}
 .selection-translation p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
+.st-text p+p,.st-text ul,.st-text ol{margin-top:.45em}
+.st-text ul,.st-text ol{margin-bottom:0;padding-left:1.3em}
+.st-text .katex-display{margin:.4em 0;overflow-x:auto;overflow-y:hidden}
 .st-error{color:var(--danger)}
 .st-wait{display:flex;gap:5px;padding:5px 2px}
 .st-wait i{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.3;animation:st-dot 1s var(--ease-out) infinite}

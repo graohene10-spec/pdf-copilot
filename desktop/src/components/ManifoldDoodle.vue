@@ -611,7 +611,7 @@ function tick(now: number) {
   frame = 0
   if (document.hidden) return
   // 帧率跟着一帧的耗时走：很轻（平均不到 4 ms）就每秒 60 帧，动得顺；一般每秒 30 帧；实在太重（超过 16 ms）才降到 20 帧，不拖累界面。
-  const interval = cost < (smoothRun ? 4.5 : 3.5) ? 1000 / 60 : cost > 16 ? 1000 / 20 : FRAME
+  const interval = cost < (smoothRun ? 10 : 7) ? 1000 / 60 : cost > 16 ? 1000 / 20 : FRAME
   smoothRun = interval < 20
   if (now - last >= interval - 2) { last = now; const began = performance.now(); draw(now); cost += (performance.now() - began - cost) * .1 }
   if (!reduced.matches) frame = requestAnimationFrame(tick)
