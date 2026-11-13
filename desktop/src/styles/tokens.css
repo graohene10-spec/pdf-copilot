@@ -190,8 +190,8 @@
   --ease-pane: cubic-bezier(.34, .86, .24, 1);
 
   /* 弹簧：阻尼振子的阶跃响应采样为 linear()，零依赖的物理动效。 */
-  --dur-spring: 380ms;
-  --dur-bounce: 480ms;
+  --dur-spring: 320ms;
+  --dur-bounce: 400ms;
   --dur-press: 280ms;
   --dur-smooth: 410ms;
   /* 侧面板：阅读区在面板动画结束后重排 PDF，用更短的同形弹簧，避免等待。 */

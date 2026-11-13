@@ -671,13 +671,21 @@ function racks(): Painter {
         return y
       }
       c.strokeStyle = env.ink; c.lineJoin = 'round'
+      {
+        // 远景：从天际线到「排距约 6 像素」的地方铺一层均匀的淡铅笔色，代替挤成一片的线。
+        const zFull = Math.sqrt(focal * EYE * PITCH / 6), bottom = sy(TALL - 1, zFull)
+        const haze = c.createLinearGradient(0, horizon, 0, bottom); haze.addColorStop(0, blend(env.paper, env.ink, .03)); haze.addColorStop(1, blend(env.paper, env.ink, .075))
+        c.globalAlpha = fade; c.fillStyle = haze; c.fillRect(left, horizon, w, Math.max(0, bottom - horizon))
+      }
       for (let row = Math.floor((camera + FAR) / PITCH); row * PITCH - camera > nearest; row--) {
         const world = row * PITCH, z = world - camera, half = z * (w / 2) / focal + WIDE
         // 远近之间不留接缝：线的深浅只看这一排在屏幕上占多高。排密到两个像素以下就只留一部分排——按排号里 2 的幂次分层，
         // 留下的总是同一批，走近时其余的排从透明慢慢显出来，不会一排排地跳。
         const pixels = focal * WIDE / z, spacing = focal * EYE * PITCH / (z * z), want = 3 / spacing
-        let weight = smooth((FAR - z) / (FAR * .15))
-        if (want > 1) weight *= clamp(2 - want / (row & -row || 1024), 0, 1)
+        // 排与排挤到三四个像素以内就不再一排排画：细线落在半个像素上，镜头一动整片都在闪。那一带由下面铺好的一层平涂接手，
+        // 这里的排随间距变小慢慢淡进那层颜色里。
+        const weight = smooth((spacing - 2.6) / 3.4)
+        void want
         if (weight < .02) continue
         const line = .25 * clamp(Math.max(spacing, 3) / 8, .16, 1) * weight * fade, solid = fade * weight ** .6, shift = hash(row) * WIDE, back = z + DEEP
         if (pixels <= 16) {

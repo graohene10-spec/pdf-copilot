@@ -20,6 +20,9 @@ export type Translation = { id: string; source: string; result: string; target: 
   /** 译文取自刚才翻过的同一段文字，没有再请求一次。 */
   cached?: boolean }
 
+/** 带上选区截图时附在提示词后面的话。 */
+export const IMAGE_NOTE = '\n\n附图是这段原文在页面上的截图。上面的文字来自 PDF 的文字层，公式和符号可能识别错了：凡是和图不一致的地方以图为准，公式按图写成 LaTeX（$...$）。'
+
 const STORAGE_KEY = 'kaizhi.translate.v1'
 const KEEP = 40
 function load(): { items: Translation[]; target: TranslateTarget; engine: TranslateEngine; auto: boolean } {
@@ -59,7 +62,7 @@ const controllers = new Map<string, AbortController>()
 function aiVia() { const settings: any = translationSettings(loadAiSettings()); return [settings.provider, settings.baseUrl || '', settings.model || '', settings.effort || ''].join('|') }
 /** fresh：不用上次的译文，重新请求（「重新翻译」按钮）。 */
 /** quiet：不打开翻译栏（翻译模式的浮窗用）；onItem：拿到这次翻译的卡片，译文会流式写进去。 */
-export async function translate(text: string, target = translator.target, fresh = false, options: { quiet?: boolean; onItem?: (item: Translation) => void } = {}): Promise<void> {
+export async function translate(text: string, target = translator.target, fresh = false, options: { quiet?: boolean; onItem?: (item: Translation) => void; /** 选区的截图：公式以图为准（只有 AI 翻译用得上）。 */ image?: string } = {}): Promise<void> {
   const source = tidySource(text).slice(0, 8000)
   if (!source) return
   if (!options.quiet) translator.open = true
@@ -78,7 +81,9 @@ export async function translate(text: string, target = translator.target, fresh 
   try {
     if (engine === 'ai') {
       const { complete } = await import('./complete')
-      await complete({ kind: 'translate', fast: true, signal: controller.signal, messages: [{ role: 'user', content: translationPrompt(source, item.target) }], onDelta: (_delta, all) => { item.result = all } })
+      const ask = (image?: string) => complete({ kind: 'translate', fast: true, signal: controller.signal, messages: [{ role: 'user', content: translationPrompt(source, item.target) + (image ? IMAGE_NOTE : ''), ...(image ? { images: [image] } : {}) }], onDelta: (_delta, all) => { item.result = all } })
+      // 模型看不了图就退回只用文字。
+      try { await ask(options.image) } catch (cause) { if (!options.image || controller.signal.aborted) throw cause; item.result = ''; await ask() }
     } else {
       const { machineTranslate } = await import('./machine-translate')
       const run = async (which: Exclude<TranslateEngine, 'ai'>) => machineTranslate(which, source, item.target, controller.signal, await credential(which), all => { item.result = all })

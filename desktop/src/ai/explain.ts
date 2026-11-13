@@ -2,13 +2,15 @@
  * 快速解释：选中一个词或一句话，按鼠标中键（或右键「解释」），用专门配的 AI 就地解释。
  * AI 只拿到解释的要求、选中的文字和它周围的一小段上下文。PDF 里弹一张卡片；Markdown 里直接插在那一段下面，可以留在笔记里。
  */
-import { createApp, reactive, shallowRef, type App } from 'vue'
+import { createApp, reactive, shallowReactive, type App } from 'vue'
+import { looksMathy, selectionImage } from '../reader/selection-image'
+import { IMAGE_NOTE } from './translate'
 import { complete } from './complete'
 import ExplainNote from '../components/ExplainNote.vue'
 
 export type ExplainMode = 'plain' | 'deeper' | 'example' | 'simpler'
-export type Explain = { id: string; term: string; context: string; mode: ExplainMode; text: string; reasoning: string; status: 'running' | 'done' | 'error'; error: string; startedAt: number; ms: number }
-export type ExplainTarget = { term: string; context: string; block?: HTMLElement }
+export type Explain = { id: string; term: string; context: string; mode: ExplainMode; text: string; reasoning: string; status: 'running' | 'done' | 'error'; error: string; startedAt: number; ms: number; /** 选区的截图（PDF 里的公式以图为准）。 */ image?: string }
+export type ExplainTarget = { term: string; context: string; block?: HTMLElement; image?: string; /** PDF：选区所在的那一页，图钉钉住后卡片跟着它走。 */ anchor?: HTMLElement }
 
 const MODES: Record<ExplainMode, string> = {
   plain: '先用一句话说清它是什么，再用两三句讲它在这段上下文里的意思和作用。不超过 150 字。',
@@ -28,15 +30,17 @@ function run(item: Explain, previous = '') {
   const controller = new AbortController()
   controllers.set(item.id, controller)
   Object.assign(item, { text: '', reasoning: '', status: 'running', error: '', startedAt: Date.now(), ms: 0 })
-  void complete({ kind: 'explain', messages: [{ role: 'user', content: explainPrompt(item.term, item.context, item.mode, previous) }], signal: controller.signal,
+  const ask = (image?: string) => complete({ kind: 'explain', messages: [{ role: 'user', content: explainPrompt(item.term, item.context, item.mode, previous) + (image ? IMAGE_NOTE : ''), ...(image ? { images: [image] } : {}) }], signal: controller.signal,
     onDelta: (_delta, all) => { if (controllers.get(item.id) === controller) item.text = all },
     onReasoning: delta => { if (controllers.get(item.id) === controller) item.reasoning += delta } })
+  // 模型看不了图就退回只用文字。
+  void ask(item.image).catch(cause => { if (!item.image || controller.signal.aborted) throw cause; if (controllers.get(item.id) === controller) { item.text = ''; item.reasoning = '' } return ask() })
     .then(text => { if (controllers.get(item.id) !== controller) return; item.text = text.trim(); item.status = item.text ? 'done' : 'error'; if (!item.text) item.error = '没有得到解释' })
     .catch(cause => { if (controllers.get(item.id) !== controller || controller.signal.aborted) return; item.status = 'error'; item.error = cause?.message || String(cause) })
     .finally(() => { if (controllers.get(item.id) === controller) { controllers.delete(item.id); item.ms = Date.now() - item.startedAt } })
 }
-export function startExplain(term: string, context: string, mode: ExplainMode = 'plain'): Explain {
-  const item = reactive<Explain>({ id: crypto.randomUUID(), term, context, mode, text: '', reasoning: '', status: 'running', error: '', startedAt: Date.now(), ms: 0 })
+export function startExplain(term: string, context: string, mode: ExplainMode = 'plain', image?: string): Explain {
+  const item = reactive<Explain>({ id: crypto.randomUUID(), term, context, mode, image, text: '', reasoning: '', status: 'running', error: '', startedAt: Date.now(), ms: 0 })
   run(item)
   return item
 }
@@ -67,13 +71,17 @@ export function explainTarget(): ExplainTarget | undefined {
       return { term, context: around(nearby, term), block }
     }
   }
-  const holder = element.closest('.textLayer, .page') || element
-  return { term, context: around(holder.textContent || term, term) }
+  const slot = element.closest<HTMLElement>('.page-slot')
+  const context = around((slot || element).textContent || term, term)
+  return { term, context, anchor: slot || undefined, image: slot && looksMathy(term + context) ? selectionImage(40, 60) : undefined }
 }
 
 // ---- PDF：鼠标旁的卡片 ----
-export const explainCard = shallowRef<{ item: Explain; x: number; y: number }>()
-export function closeExplainCard() { if (explainCard.value) { stopExplain(explainCard.value.item); explainCard.value = undefined } }
+/** 没钉住的卡片点别处就消失，同时最多一张；钉住的留着，可以有好几张。follow：钉住后跟着书页走，还是停在屏幕上。 */
+export type ExplainCardState = { id: string; item: Explain; x: number; y: number; pinned: boolean; follow: 'page' | 'screen'; anchor?: HTMLElement; /** 从翻译卡片变过来时，先显示的译文。 */ from?: string }
+export const explainCards = shallowReactive<ExplainCardState[]>([])
+export function closeCard(card: ExplainCardState) { stopExplain(card.item); const at = explainCards.indexOf(card); if (at >= 0) explainCards.splice(at, 1) }
+export function closeLooseCards() { for (const card of [...explainCards]) if (!card.pinned) closeCard(card) }
 
 // ---- Markdown：插在段落下面的释义；留下的记在本机，下次打开还在 ----
 const NOTES_KEY = 'kaizhi.explain.notes.v1'
@@ -116,9 +124,9 @@ export function restoreNotes(paper: HTMLElement, doc: string) {
   }
 }
 
-export function runExplain(target: ExplainTarget, x: number, y: number) {
-  const item = startExplain(target.term, target.context)
+export function runExplain(target: ExplainTarget, x: number, y: number, from?: string) {
+  const item = startExplain(target.term, target.context, 'plain', target.image)
   if (target.block?.isConnected) { insertNote(target.block, item, false); return }
-  if (explainCard.value) stopExplain(explainCard.value.item)
-  explainCard.value = { item, x, y }
+  closeLooseCards()
+  explainCards.push(reactive({ id: item.id, item, x, y, pinned: false, follow: 'page', anchor: target.anchor, from }) as ExplainCardState)
 }

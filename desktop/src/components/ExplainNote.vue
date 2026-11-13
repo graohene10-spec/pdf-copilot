@@ -32,24 +32,28 @@ function discard() { dropNote(props.doc, props.item.id); leaving.value = true; s
 <style>
 /* 释义卡片跟着界面风格走：液态玻璃是一块磨砂卡片，暖色极简是带陶土色竖线的象牙白纸，铅笔草稿是一张贴着胶带的便签。 */
 .explain-host{display:block}
-.explain-note{position:relative;margin:.8em 0 1.3em;padding:.8em 1.05em .7em;border:1px solid var(--glass-outline);border-radius:var(--r-md);background-color:var(--popup-glass);background-image:var(--popup-sheen);-webkit-backdrop-filter:blur(var(--popup-blur)) saturate(var(--glass-sat));backdrop-filter:blur(var(--popup-blur)) saturate(var(--glass-sat));box-shadow:0 10px 26px -16px rgb(0 0 0 / .4),var(--glass-edge);color:var(--ink);font-size:.92em;line-height:1.65;user-select:text;animation:en-in .28s var(--spring-snappy,var(--ease-out)) both;transform-origin:0 0}
-.explain-note.leaving{opacity:0;scale:.98;translate:0 -4px;transition:opacity .15s,translate .15s,scale .15s}
+.explain-note{position:relative;margin:.9em 0 1.4em;padding:.85em 1.1em .8em;border:1px solid var(--glass-outline);border-radius:var(--r-lg,16px);background-color:var(--popup-glass);background-image:radial-gradient(90% 120% at 0 0,color-mix(in srgb,var(--accent) 12%,transparent),transparent 55%),var(--popup-sheen);-webkit-backdrop-filter:blur(var(--popup-blur)) saturate(var(--glass-sat));backdrop-filter:blur(var(--popup-blur)) saturate(var(--glass-sat));box-shadow:0 14px 30px -20px rgb(0 0 0 / .45),var(--glass-edge);color:var(--ink);font-size:.92em;line-height:1.65;user-select:text;animation:en-in .26s var(--ease-out) both;transform-origin:0 0}
+.explain-note.leaving{opacity:0;translate:0 -4px;transition:opacity .15s,translate .15s}
 .explain-note p{margin:0}
-.en-head{display:flex;align-items:center;gap:.6em;margin-bottom:.4em!important;font-size:.82em}
-.en-head span{flex:none;padding:.05em .65em;border-radius:999px;background:color-mix(in srgb,var(--accent) 15%,transparent);color:var(--accent);font-weight:650;letter-spacing:.08em}
-.en-head b{color:var(--muted);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.en-actions{display:flex;flex-wrap:wrap;align-items:center;gap:.4em;margin-top:.7em!important;font-size:.8em}
-.en-actions button{min-height:0;padding:.18em .8em;border:1px solid var(--glass-outline);border-radius:999px;background:color-mix(in srgb,var(--ink) 5%,transparent)!important;box-shadow:none!important;color:var(--muted);font:inherit;line-height:1.5;cursor:pointer;transition:color .15s,background-color .15s,border-color .15s}
-.en-actions button:hover:not(:disabled){border-color:color-mix(in srgb,var(--accent) 45%,transparent);background:color-mix(in srgb,var(--accent) 12%,transparent)!important;color:var(--accent)}
-.en-actions button.on{border-color:transparent;background:var(--accent)!important;color:var(--on-accent,#fff)}
+.en-head{display:flex;align-items:center;gap:.55em;margin-bottom:.35em!important;padding-right:1.8em}
+.en-head span{flex:none;padding:.1em .7em;border-radius:999px;background:linear-gradient(135deg,var(--accent),color-mix(in srgb,var(--accent) 62%,#fff));color:#fff;font-size:.72em;font-weight:650;letter-spacing:.1em;line-height:1.6}
+.en-head b{color:var(--ink);font-size:.98em;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 选项收在一条分段的玻璃胶囊里；关闭是右上角的一个小叉。 */
+.en-actions{display:inline-flex;align-items:center;gap:1px;width:fit-content;max-width:100%;margin-top:.8em!important;padding:2px;border-radius:999px;background:color-mix(in srgb,var(--ink) 6%,transparent);box-shadow:inset 0 0 0 1px var(--glass-outline);font-size:.8em}
+.en-actions button{min-height:0;padding:.2em .95em;border:0;border-radius:999px;background:none!important;box-shadow:none!important;color:var(--muted);font:inherit;line-height:1.55;cursor:pointer;transition:color .15s,background-color .15s,box-shadow .15s}
+.en-actions button:hover:not(:disabled){background:color-mix(in srgb,var(--surface,#fff) 78%,transparent)!important;box-shadow:0 1px 3px rgb(0 0 0 / .14)!important;color:var(--ink)}
+.en-actions button.on{color:var(--accent);font-weight:600}
+.en-actions button.on::before{content:'✓ '}
 .en-actions button:disabled{opacity:.45;cursor:default}
-.en-actions .en-close{margin-left:auto}
+.en-actions .en-close{position:absolute;top:.6em;right:.65em;width:22px;height:22px;padding:0;border-radius:50%;font-size:0;opacity:.5}
+.en-actions .en-close::before{content:'✕';font-size:11px;line-height:22px}
+.en-actions .en-close:hover{opacity:1}
 /* 暖色极简：象牙白，细线，陶土色竖线，衬线字；选项是一行用间隔号分开的文字。 */
 :root[data-style='warm'] .explain-note{padding:.75em 1.1em .65em 1.2em;border:.5px solid var(--warm-rule,rgb(31 30 29 / .18));border-left:2px solid var(--accent);border-radius:6px;background:var(--surface);-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:0 8px 22px -16px rgb(31 30 29 / .35);font-family:var(--font-reading)}
 :root[data-style='warm'] .en-head span{padding:0;border-radius:0;background:none;font-style:italic;font-weight:500;letter-spacing:.14em}
 :root[data-style='warm'] .en-head span::after{content:'—';margin-left:.6em;opacity:.5}
 :root[data-style='warm'] .en-head{gap:0}
-:root[data-style='warm'] .en-actions{gap:0;padding-top:.5em;border-top:.5px solid var(--warm-rule,rgb(31 30 29 / .14))}
+:root[data-style='warm'] .en-actions{display:flex;width:auto;gap:0;border-radius:0;background:none;box-shadow:none;padding-top:.5em;border-top:.5px solid var(--warm-rule,rgb(31 30 29 / .14))}
 :root[data-style='warm'] .en-actions button{padding:0;border:0;border-radius:0;background:none!important;text-underline-offset:3px}
 :root[data-style='warm'] .en-actions button:not(:first-child):not(.en-close)::before{content:'·';display:inline-block;margin:0 .7em;color:var(--muted);opacity:.6;text-decoration:none}
 :root[data-style='warm'] .en-actions button:hover:not(:disabled){background:none!important;color:var(--accent);text-decoration:underline}
@@ -59,9 +63,18 @@ function discard() { dropNote(props.doc, props.item.id); leaving.value = true; s
 :root[data-style='sketch'] .explain-note::before{content:'';position:absolute;left:38px;top:-9px;width:70px;height:18px;background:var(--tape,rgb(170 200 225 / .7));rotate:-2.5deg;clip-path:polygon(3% 10%,97% 0,100% 90%,0 100%)}
 :root[data-style='sketch'] .en-head span{padding:0 .6em;border:1.5px solid var(--pencil,#2b2a27);border-radius:55% 45% 52% 48% / 48% 56% 44% 52%;background:none;color:var(--pencil,#2b2a27);letter-spacing:.05em;rotate:-2deg}
 :root[data-style='sketch'] .en-head b{color:var(--pencil-soft,rgb(46 45 42 / .6))}
-:root[data-style='sketch'] .en-actions{gap:.2em 1.1em;font-size:.88em}
+:root[data-style='sketch'] .en-actions{display:flex;flex-wrap:wrap;width:auto;padding:0;border-radius:0;background:none;box-shadow:none;gap:.2em 1.1em;font-size:.88em}
 :root[data-style='sketch'] .en-actions button{padding:0;border:0;border-radius:0;background:none!important;color:var(--pencil,#2b2a27);text-decoration:underline wavy var(--pencil-soft,rgb(46 45 42 / .45));text-underline-offset:4px}
 :root[data-style='sketch'] .en-actions button:hover:not(:disabled),:root[data-style='sketch'] .en-actions button.on{background:none!important;color:var(--red-pencil,#c0392b);text-decoration-color:currentColor}
-@keyframes en-in{from{opacity:0;scale:.97;translate:0 -6px}}
+:root:is([data-style='warm'],[data-style='sketch']) .en-head{padding-right:0}
+:root:is([data-style='warm'],[data-style='sketch']) .en-actions .en-close{position:static;width:auto;height:auto;margin-left:auto;border-radius:0;font-size:inherit;opacity:1}
+:root:is([data-style='warm'],[data-style='sketch']) .en-actions .en-close::before{content:none}
+:root:is([data-style='warm'],[data-style='sketch']) .en-actions button.on::before{content:none}
+:root:is([data-style='warm'],[data-style='sketch']) .en-actions button:hover:not(:disabled){box-shadow:none!important}
+:root[data-style='warm'] .en-head span,:root[data-style='sketch'] .en-head span{font-size:1em;line-height:inherit}
+:root[data-style='warm'] .en-head span{background:none;color:var(--accent)}
+:root:is([data-style='warm'],[data-style='sketch']) .en-head{font-size:.82em}
+:root:is([data-style='warm'],[data-style='sketch']) .en-head b{font-size:1em;font-weight:600;color:var(--muted)}
+@keyframes en-in{from{opacity:0;translate:0 -6px}}
 @media(prefers-reduced-motion:reduce){.explain-note{animation:none}}
 </style>

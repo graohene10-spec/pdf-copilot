@@ -39,7 +39,7 @@ export function warmTranslation() {
   })()
 }
 
-export type CompleteOptions = { kind: UsageKind; messages: { role: 'user' | 'assistant' | 'system'; content: string }[]; fast?: boolean; signal: AbortSignal; onDelta?: (text: string, all: string) => void; onReasoning?: (text: string) => void }
+export type CompleteOptions = { kind: UsageKind; messages: { role: 'user' | 'assistant' | 'system'; content: string; images?: string[] }[]; fast?: boolean; signal: AbortSignal; onDelta?: (text: string, all: string) => void; onReasoning?: (text: string) => void }
 
 export async function complete(options: CompleteOptions): Promise<string> {
   // 翻译有自己的一套（可与阅读助手共用服务商），其余沿用阅读助手的设置。
