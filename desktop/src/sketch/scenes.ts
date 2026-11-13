@@ -594,8 +594,21 @@ function tree(): Painter {
 }
 
 // ---- GB300：液冷机柜一排排铺满下半个桌面，一直排到天际线。近处画出机柜的样子——上下的电源框、两组计算托盘、中间的交换机段、柜顶的冷却液软管；越远越简，连续地过渡到只剩轮廓。偶尔落下一滴水，起伏一圈圈传开 ----
+/** 两种颜色按比例调成一个不透明的颜色（结果记下来，不用每帧算）。 */
+const blends = new Map<string, string>()
+function blend(base: string, over: string, amount: number) {
+  const key = `${base}|${over}|${amount}`
+  let made = blends.get(key)
+  if (!made) {
+    const probe = document.createElement('canvas').getContext('2d', { willReadFrequently: true })!
+    probe.fillStyle = base; probe.fillRect(0, 0, 1, 1); probe.globalAlpha = amount; probe.fillStyle = over; probe.fillRect(0, 0, 1, 1)
+    const data = probe.getImageData(0, 0, 1, 1).data
+    blends.set(key, made = `rgb(${data[0]},${data[1]},${data[2]})`)
+  }
+  return made
+}
 function racks(): Painter {
-  const WIDE = .6, DEEP = 1.2, PITCH = 2.9, TALL = 2.25, EYE = 5.6, SPEED = .09, EVERY = 14000, LIFE = 40
+  const WIDE = .6, DEEP = 1.2, PITCH = 2.9, TALL = 2.25, EYE = 5.6, SPEED = .09, EVERY = 78000, LIFE = 64
   // 一个机柜的正面，照着 GB300 画：黑色的框，顶上一小块圆角的窗（交换机与线缆），下面一大块圆角的窗——里面是一层层计算托盘，上半截右侧垂着一束束线缆；窗与窗之间、最底下是深色的电源框。
   // 按宽度分档各画一张（16、32、64…像素宽），细节随大小多起来：先是框和两块窗，再是托盘线，最大才有线缆、把手、电源小格。
   const fronts = new Map<string, HTMLCanvasElement>()
@@ -637,21 +650,23 @@ function racks(): Painter {
     const horizon = top + h * .5, middle = left + w / 2, focal = w * .85
     const sx = (x: number, z: number) => middle + focal * x / z, sy = (y: number, z: number) => horizon + focal * (EYE - y) / z
     // 最前面的一排一直画到整个机柜滑出画面下沿为止，不会凭空消失；最远画到离天际线 5 个像素。
+    const shade = blend(env.paper, env.ink, .16), stroke = blend(env.paper, env.ink, .25)
     const nearest = Math.max(2.2, focal * (EYE - TALL - .9) / (h * .5)), FAR = focal * EYE / 5, c = env.context, fade = env.fade
     {
       const seconds = env.t / 1000, camera = seconds * SPEED, latest = Math.floor(env.t / EVERY)
       // 波：每隔一阵在随机的地方来一个，形状随机——一滴水的圆环、从画面外推进来的平面波、两滴水的干涉。振幅从零慢慢起来，最后慢慢平息。
-      const waves = [0, 1, 2, 3].map(k => latest - k).filter(k => k >= 0).map(k => {
+      // 一次只来一个波，歇一会儿再来下一个；振幅从零慢慢起来、慢慢平息，波长长、走得慢——云卷云舒，不是惊涛骇浪。
+      const waves = [0, 1].map(k => latest - k).filter(k => k >= 0).map(k => {
         const born = k * EVERY / 1000, age = seconds - born, angle = hash(k * 3.7 + 5) * TAU
-        return { kind: Math.floor(hash(k * 5.1 + .3) * 3), age, gain: smooth(age / 5) * smooth((LIFE - age) / 8), x: (hash(k * 2.3 + 1) - .5) * 36, z: born * SPEED + 14 + hash(k * 2.3 + 2) * 50, nx: Math.sin(angle), nz: Math.cos(angle), centre: born * SPEED + 45 }
+        return { kind: Math.floor(hash(k * 5.1 + .3) * 3), age, gain: smooth(age / 9) * smooth((LIFE - age) / 12), x: (hash(k * 2.3 + 1) - .5) * 36, z: born * SPEED + 14 + hash(k * 2.3 + 2) * 50, nx: Math.sin(angle), nz: Math.cos(angle), centre: born * SPEED + 45 }
       }).filter(wave => wave.gain > .001)
-      const ring = (x: number, z: number, age: number) => { const d = Math.hypot(x, z) - 2.6 * age, q = d / 6; return q > -3 && q < 3 ? Math.cos(.8 * d) * Math.exp(-q * q) : 0 }
+      const ring = (x: number, z: number, age: number) => { const d = Math.hypot(x, z) - 1.7 * age, q = d / 9; return q > -3 && q < 3 ? Math.cos(.5 * d) * Math.exp(-q * q) : 0 }
       const height = (x: number, z: number) => {
-        let y = .05 * Math.sin(.09 * x + .05 * z + .2 * seconds)
+        let y = .04 * Math.sin(.09 * x + .05 * z + .13 * seconds)
         for (const wave of waves) {
-          if (wave.kind === 0) y += .55 * wave.gain * ring(x - wave.x, z - wave.z, wave.age)
-          else if (wave.kind === 1) { const d = x * wave.nx + (z - wave.centre) * wave.nz + 80 - 4.5 * wave.age, q = d / 10; if (q > -3 && q < 3) y += .45 * wave.gain * Math.cos(.6 * d) * Math.exp(-q * q) }
-          else y += .4 * wave.gain * (ring(x - wave.x - 6, z - wave.z, wave.age) + ring(x - wave.x + 6, z - wave.z, wave.age))
+          if (wave.kind === 0) y += .3 * wave.gain * ring(x - wave.x, z - wave.z, wave.age)
+          else if (wave.kind === 1) { const d = x * wave.nx + (z - wave.centre) * wave.nz + 80 - 2.9 * wave.age, q = d / 14; if (q > -3 && q < 3) y += .26 * wave.gain * Math.cos(.4 * d) * Math.exp(-q * q) }
+          else y += .22 * wave.gain * (ring(x - wave.x - 7, z - wave.z, wave.age) + ring(x - wave.x + 7, z - wave.z, wave.age))
         }
         return y
       }
@@ -681,23 +696,26 @@ function racks(): Painter {
           continue
         }
         // 近处：一个个机柜各有三个面——朝着画面中间的那块侧板、柜顶、正面（一张预先画好的小图）。
-        // 一排里先画所有侧板，再画所有柜顶，最后贴正面：侧板被旁边机柜挡住的部分就盖掉了，不穿帮。
-        const sprite = front(pixels), sides = new Path2D(), tops = new Path2D(), faces: number[] = []
-        for (let i = Math.floor((-half - shift) / WIDE); i * WIDE + shift < half; i++) {
+        // 一排里靠中间的机柜总在外侧机柜的前面（视线从中间斜着看出去），所以严格从两头往中间一个个画完整，
+        // 后画的盖住先画的，不会有哪个柜顶从别的机柜里穿出来。
+        const sprite = front(pixels), first = Math.floor((-half - shift) / WIDE), last = Math.ceil((half - shift) / WIDE), centre = Math.floor(-shift / WIDE)
+        const rack = (i: number) => {
           const x0 = i * WIDE + shift + .015, x1 = x0 + WIDE - .03, y0 = height(x0 + WIDE / 2, world), y1 = y0 + TALL
           const a = sx(x0, z), b = sx(x1, z), high = sy(y1, z), bottom = sy(y0, z), behind = sy(y1, back), a2 = sx(x0, back), b2 = sx(x1, back)
-          if (x1 < 0 || x0 > 0) { const near = x1 < 0 ? b : a, deep = x1 < 0 ? b2 : a2; sides.moveTo(near, high); sides.lineTo(deep, behind); sides.lineTo(deep, sy(y0, back)); sides.lineTo(near, bottom); sides.closePath() }
-          tops.moveTo(a, high); tops.lineTo(a2, behind); tops.lineTo(b2, behind); tops.lineTo(b, high); tops.closePath()
-          faces.push(a, high, b - a, bottom - high)
+          if (x1 < 0 || x0 > 0) {
+            const near = x1 < 0 ? b : a, deep = x1 < 0 ? b2 : a2
+            c.beginPath(); c.moveTo(near, high); c.lineTo(deep, behind); c.lineTo(deep, sy(y0, back)); c.lineTo(near, bottom); c.closePath()
+            c.fillStyle = shade; c.fill(); c.stroke()
+          }
+          c.beginPath(); c.moveTo(a, high); c.lineTo(a2, behind); c.lineTo(b2, behind); c.lineTo(b, high); c.closePath()
+          c.fillStyle = env.paper; c.fill(); c.stroke()
+          c.drawImage(sprite, a, high, b - a, bottom - high)
         }
-        c.lineWidth = 1
-        c.globalAlpha = solid; c.fillStyle = env.paper; c.fill(sides)
-        c.globalAlpha = .16 * solid; c.fillStyle = env.ink; c.fill(sides)
-        c.globalAlpha = line; c.stroke(sides)
-        c.globalAlpha = solid; c.fillStyle = env.paper; c.fill(tops)
-        c.globalAlpha = line; c.stroke(tops)
-        c.globalAlpha = solid
-        for (let k = 0; k < faces.length; k += 4) c.drawImage(sprite, faces[k]!, faces[k + 1]!, faces[k + 2]!, faces[k + 3]!)
+        // 颜色先和纸色调好、不透明地画，免得每个面都切换透明度。
+        c.globalAlpha = solid; c.lineWidth = 1; c.strokeStyle = stroke
+        for (let i = first; i < centre; i++) rack(i)
+        for (let i = last; i >= centre; i--) rack(i)
+        c.strokeStyle = env.ink
       }
     }
     c.strokeStyle = env.ink; c.lineWidth = 1; c.globalAlpha = .1 * env.fade
