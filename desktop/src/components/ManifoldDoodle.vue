@@ -36,7 +36,7 @@ let sketch: Sketch | undefined
 let painter: Painter | undefined
 let baseTilt = .42
 let jitter: Float32Array | undefined
-let frame = 0, last = 0, start = 0, drawnAt = 0, width = 0, height = 0, ratio = 1, fullWidth = 0, fullHeight = 0, offsetX = 0, offsetY = 0, pageLeft = 0, pageTop = 0
+let cost = 0, frame = 0, last = 0, start = 0, drawnAt = 0, width = 0, height = 0, ratio = 1, fullWidth = 0, fullHeight = 0, offsetX = 0, offsetY = 0, pageLeft = 0, pageTop = 0
 let switchTimer: ReturnType<typeof setTimeout> | undefined
 let noteTimer: ReturnType<typeof setTimeout> | undefined
 let noteKey = 0, slotIndex = 0
@@ -607,7 +607,9 @@ function drawVisual(context: CanvasRenderingContext2D, item: Drawing, now: numbe
 function tick(now: number) {
   frame = 0
   if (document.hidden) return
-  if (now - last >= FRAME - 2) { last = now; draw(now) }
+  // 画一帧花得久（大窗口、机器慢）就自动降帧：平均超过 6 ms 降到每秒 20 帧，超过 12 ms 降到 15 帧，不拖累界面。
+  const interval = cost > 12 ? 1000 / 15 : cost > 6 ? 1000 / 20 : FRAME
+  if (now - last >= interval - 2) { last = now; const began = performance.now(); draw(now); cost += (performance.now() - began - cost) * .1 }
   if (!reduced.matches) frame = requestAnimationFrame(tick)
 }
 function run() { if (!frame && !document.hidden) frame = requestAnimationFrame(tick) }
