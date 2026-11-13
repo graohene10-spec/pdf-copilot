@@ -8,7 +8,9 @@ import { manifoldById, nextManifold, buildMesh, THEOREMS, type Mesh, type Note a
 import { networkById, ML_FACTS, type Graph } from '../sketch/networks'
 import { sketchById, type Painter, type Sketch } from '../sketch/scenes'
 
-const props = defineProps<{ shapes: string[] }>()
+// preview：设置里悬停时的缩略图——只画一个画面，铺满自己的小框，不写旁注、不轮换。
+const props = defineProps<{ shapes: string[]; preview?: boolean }>()
+const backing = ref('')
 
 const canvas = ref<HTMLCanvasElement>()
 const current = ref<string>()
@@ -34,13 +36,13 @@ let sketch: Sketch | undefined
 let painter: Painter | undefined
 let baseTilt = .42
 let jitter: Float32Array | undefined
-let frame = 0, last = 0, start = 0, drawnAt = 0, width = 0, height = 0, ratio = 1
+let frame = 0, last = 0, start = 0, drawnAt = 0, width = 0, height = 0, ratio = 1, fullWidth = 0, fullHeight = 0, offsetX = 0, offsetY = 0
 let switchTimer: ReturnType<typeof setTimeout> | undefined
 let noteTimer: ReturnType<typeof setTimeout> | undefined
 let noteKey = 0, slotIndex = 0
 let bag: Knowledge[] = []
 const recent: string[] = []
-let ink = '#2e2d2a', red = '#c8553d', hand = "Caveat, 'Long Cang', cursive"
+let ink = '#2e2d2a', red = '#c8553d', paper = '#efe9db', hand = "Caveat, 'Long Cang', cursive"
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)')
 const timers = new Set<ReturnType<typeof setTimeout>>()
 
@@ -87,7 +89,7 @@ function choose(id: string | undefined) {
 
 function scheduleSwitch() {
   clearTimeout(switchTimer)
-  if (props.shapes.length < 2 || reduced.matches) return
+  if (props.shapes.length < 2 || reduced.matches || props.preview) return
   // 4–8 分钟随机换一个画面。
   switchTimer = setTimeout(() => choose(nextManifold(props.shapes, current.value)), 240000 + Math.random() * 240000)
 }
@@ -97,15 +99,19 @@ function resize() {
   if (!element) return
   const box = element.getBoundingClientRect()
   ratio = 1 // 铅笔线本来就软，背景按 1 倍分辨率画，大画布也省
-  width = box.width; height = box.height
-  element.width = Math.max(1, Math.round(width * ratio))
-  element.height = Math.max(1, Math.round(height * ratio))
+  // 画布铺满整块桌面；常规画面仍画在留了边的那一块里（左 6%、上 4%、右 2%），铺满的画面（机柜的海）用整块。
+  fullWidth = box.width; fullHeight = box.height
+  offsetX = props.preview ? 0 : fullWidth * .06; offsetY = props.preview ? 0 : fullHeight * .04; width = fullWidth - offsetX - (props.preview ? 0 : fullWidth * .02); height = fullHeight - offsetY
+  element.width = Math.max(1, Math.round(fullWidth * ratio))
+  element.height = Math.max(1, Math.round(fullHeight * ratio))
 }
 
 function readInk() {
   const style = getComputedStyle(document.documentElement)
   ink = style.getPropertyValue('--pencil').trim() || '#2e2d2a'
   red = style.getPropertyValue('--red-pencil').trim() || '#c8553d'
+  paper = style.getPropertyValue('--doodle-paper').trim() || style.getPropertyValue('--desk').trim() || style.getPropertyValue('--canvas').trim() || '#efe9db'
+  backing.value = paper
   // 草稿用手写体；暖色极简用衬线斜体（--doodle-font）。
   hand = style.getPropertyValue('--doodle-font').trim() || "Caveat, 'Long Cang', cursive"
 }
@@ -127,7 +133,7 @@ function draw(now: number) {
   const tilt = baseTilt + Math.sin(angle * .5) * .05
   const ca = Math.cos(angle), sa = Math.sin(angle), ct = Math.cos(tilt), st = Math.sin(tilt)
   // 神经网络比流形稀疏，画得更大一些占住画面；透视也放缓，转到近处时不至于冲出画布。
-  const size = Math.min(width * .62, height) * (sketch?.zoom ?? (graph ? .64 : .46)), cx = width * .56, cy = height * .52, camera = sketch?.camera ?? (graph ? 5 : 3.4)
+  const size = Math.min(width * (props.preview ? .8 : .62), height) * (sketch?.zoom ?? (graph ? .64 : .46)), cx = width * (props.preview ? .5 : .56), cy = height * .52, camera = sketch?.camera ?? (graph ? 5 : 3.4)
   // 把模型坐标投到画布：绕竖轴自转，再向前倾一点，看得到上面。
   const project: Project = (x, y, z) => {
     const x1 = x * ca + z * sa, z1 = -x * sa + z * ca
@@ -135,16 +141,16 @@ function draw(now: number) {
     const perspective = camera / (camera + z2)
     return [cx + x1 * size * perspective, cy - y2 * size * perspective, (1 - z2) / 2]
   }
-  context.setTransform(ratio, 0, 0, ratio, 0, 0)
-  context.clearRect(0, 0, width, height)
+  context.setTransform(ratio, 0, 0, ratio, offsetX * ratio, offsetY * ratio)
+  context.clearRect(-offsetX, -offsetY, fullWidth, fullHeight)
   context.lineCap = 'round'
   context.lineJoin = 'round'
   context.strokeStyle = ink
   // 换画面时线一条条画出来。
-  const reveal = reduced.matches ? 1 : Math.min(1, (now - drawnAt) / DRAW_IN)
+  const reveal = reduced.matches || props.preview ? 1 : Math.min(1, (now - drawnAt) / DRAW_IN)
   if (mesh) drawMesh(context, mesh, project, reveal)
   else if (graph && training) drawNetwork(context, graph, training, project, reveal, now)
-  else if (painter) painter({ context, project, t: reduced.matches ? 20000 : now - drawnAt, fade: reveal, ink, red, hand, width, height })
+  else if (painter) painter({ context, project, t: reduced.matches ? 20000 : Math.max(0, now - drawnAt), fade: reveal, ink, red, paper, hand, width, height, size, camera, full: { x: -offsetX, y: -offsetY, w: fullWidth, h: fullHeight } })
   if (mesh && drawing && reveal >= 1) drawVisual(context, drawing, now, project)
   context.globalAlpha = 1
 }
@@ -322,7 +328,7 @@ function drawNetwork(context: CanvasRenderingContext2D, net: Graph, state: Train
 
 // 左下角的损失曲线：随训练下降、带一点噪声；标上迭代次数。
 function drawLoss(context: CanvasRenderingContext2D, state: Training) {
-  if (state.losses.length < 2) return
+  if (state.losses.length < 2 || props.preview) return
   const w = Math.min(220, width * .26), h = 80, x0 = width * .06, y0 = height * .84
   context.save()
   context.globalAlpha = .3; context.lineWidth = 1; context.strokeStyle = ink
@@ -675,7 +681,7 @@ onMounted(() => {
   themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-style'] })
   document.addEventListener('visibilitychange', visibility)
   run()
-  noteTimer = setTimeout(nextNote, 2500)
+  if (!props.preview) noteTimer = setTimeout(nextNote, 2500)
 })
 onBeforeUnmount(() => {
   halt(); clearTimeout(switchTimer); clearTimeout(noteTimer)
@@ -686,7 +692,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="manifold-doodle" aria-hidden="true">
+  <div class="manifold-doodle" :class="{ preview }" :style="preview ? { background: backing } : undefined" aria-hidden="true">
     <canvas ref="canvas" class="manifold-canvas" />
     <p v-for="note in notes" :key="note.key" class="manifold-note" :class="[`slot-${note.slot}`, { drawn: note.drawn, leaving: note.leaving }]">{{ note.text }}</p>
   </div>
@@ -696,7 +702,7 @@ onBeforeUnmount(() => {
 /* 画在桌面的格子纸上：在所有纸片后面，不接收鼠标。 */
 .manifold-doodle{position:absolute;inset:0 0 0 250px;z-index:-1;pointer-events:none;color:var(--pencil);font-family:'Caveat','Long Cang',cursive;animation:manifold-in 2.4s var(--ease-out) both}
 /* 画面是背景的主体：几乎占满文档库右侧的整块桌面，被卡片、面板挡住一部分也无妨。 */
-.manifold-canvas{position:absolute;inset:4% 2% 0 6%;width:92%;height:96%}
+.manifold-canvas{position:absolute;inset:0;width:100%;height:100%}
 /* 知识缓缓浮现、缓缓淡去：只动透明度和一点点位移。 */
 .manifold-note{position:absolute;max-width:min(20vw,270px);margin:0;font-size:17px;line-height:1.4;color:var(--surface-muted);opacity:.55;animation:manifold-note-in 3s var(--ease-soft) backwards;transition:opacity 3s var(--ease-soft),translate 3s var(--ease-soft)}
 /* 画在流形上的那一条用红笔写，前面一道红色短线，和画上去的示意对得上。 */
@@ -709,6 +715,8 @@ onBeforeUnmount(() => {
 .slot-2{right:1.5%;top:75%;rotate:1deg;text-align:right}
 .slot-3{left:30%;top:87%;rotate:-1.5deg}
 .slot-4{left:58%;top:88%;rotate:1deg}
+/* 设置里的缩略图：就地铺满小框。 */
+.manifold-doodle.preview{position:relative;inset:auto;z-index:0;width:100%;height:100%;animation:none}
 @keyframes manifold-in{from{opacity:0}to{opacity:1}}
 @keyframes manifold-note-in{from{opacity:0;translate:0 8px}to{opacity:.55;translate:0 0}}
 @media (prefers-reduced-motion:reduce){.manifold-doodle,.manifold-note{animation:none}}

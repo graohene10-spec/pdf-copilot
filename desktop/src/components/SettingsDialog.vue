@@ -2,6 +2,7 @@
 import { computed, ref, watch, onMounted, onBeforeUnmount, nextTick, defineAsyncComponent } from 'vue'
 import AppIcon from './AppIcon.vue'
 import AssistantMark from './AssistantMark.vue'
+import ManifoldDoodle from './ManifoldDoodle.vue'
 import { SCENES } from '../sketch/manifolds'
 import { greetingFor } from '../ai/greeting'
 import { importFontFiles, forgetFontFile, registerCustomFonts } from '../ui/custom-fonts'
@@ -157,6 +158,15 @@ onMounted(() => { installed.value = Object.fromEntries([...UI_FONTS, ...READING_
 const uiFontChoices = computed(() => fontChoices(UI_FONTS, draft.value.appearance.customFonts))
 const readingFontChoices = computed(() => fontChoices(READING_FONTS, draft.value.appearance.customFonts))
 const uiFontStack = computed(() => uiFontChoices.value.find(item => item.id === draft.value.appearance.uiFont)?.stack)
+// 背景画面的列表：按种类分三栏；鼠标停在哪一项上，旁边浮出它的缩略图（活的）。
+const SCENE_GROUPS = [{ label: '流形', kind: 'manifold' }, { label: '神经网络', kind: 'network' }, { label: '数学 · 物理 · 生物 · 计算机', kind: 'sketch' }].map(group => ({ ...group, items: SCENES.filter(item => item.kind === group.kind) }))
+const scenePeek = ref<{ id: string; name: string; left: number; top: number }>()
+function peekScene(item: { id: string; name: string }, event: Event) {
+  const box = (event.currentTarget as HTMLElement).getBoundingClientRect(), width = 280, height = 190
+  const left = box.right + 12 + width > window.innerWidth ? box.left - width - 12 : box.right + 12
+  scenePeek.value = { id: item.id, name: item.name, left: Math.max(8, left), top: Math.max(8, Math.min(window.innerHeight - height - 8, box.top + box.height / 2 - height / 2)) }
+}
+function setAllScenes(on: boolean) { draft.value.appearance.manifold.shapes = on ? SCENES.map(item => item.id) : [SCENES[0]!.id] }
 // 轮换的流形与网络至少留一种。
 function toggleManifold(id: string) {
   const shapes = draft.value.appearance.manifold.shapes
@@ -344,7 +354,14 @@ function dialogKeydown(event: KeyboardEvent) {
             <template v-if="draft.appearance.style === 'sketch' || draft.appearance.style === 'warm'">
               <label class="setting-check"><input v-model="draft.appearance.manifold.show" type="checkbox" :disabled="saving" aria-label="格子纸上显示旋转的流形" /><span>背景动画</span></label>
               <label class="setting-check"><input v-model="draft.appearance.manifold.reader" type="checkbox" :disabled="saving || !draft.appearance.manifold.show" aria-label="阅读时也显示流形" /><span>阅读时也显示</span></label>
-              <div class="manifold-picks" role="group" aria-label="轮换的流形"><span class="manifold-picks-label">轮换</span><button v-for="item in SCENES" :key="item.id" type="button" :aria-pressed="draft.appearance.manifold.shapes.includes(item.id)" :disabled="saving || !draft.appearance.manifold.show" @click="toggleManifold(item.id)">{{ item.name }}</button></div>
+              <div class="scene-list" :class="{ off: !draft.appearance.manifold.show }" role="group" aria-label="轮换的流形" @mouseleave="scenePeek = undefined">
+                <div class="scene-list-head"><span>轮换的画面</span><small>{{ draft.appearance.manifold.shapes.length }} / {{ SCENES.length }}</small><button type="button" :disabled="saving || !draft.appearance.manifold.show" @click="setAllScenes(draft.appearance.manifold.shapes.length < SCENES.length)">{{ draft.appearance.manifold.shapes.length < SCENES.length ? '全选' : '只留一个' }}</button></div>
+                <div v-for="group in SCENE_GROUPS" :key="group.kind" class="scene-group">
+                  <span class="scene-group-label">{{ group.label }}</span>
+                  <button v-for="item in group.items" :key="item.id" type="button" class="scene-item" :aria-pressed="draft.appearance.manifold.shapes.includes(item.id)" :disabled="saving || !draft.appearance.manifold.show" @click="toggleManifold(item.id)" @mouseenter="peekScene(item, $event)" @focus="peekScene(item, $event)" @blur="scenePeek = undefined"><i aria-hidden="true"></i>{{ item.name }}</button>
+                </div>
+              </div>
+              <Teleport to="body"><Transition name="scene-peek"><figure v-if="scenePeek" :key="scenePeek.id" class="scene-peek" :style="{ left: `${scenePeek.left}px`, top: `${scenePeek.top}px` }"><ManifoldDoodle preview :shapes="[scenePeek.id]" /><figcaption>{{ scenePeek.name }}</figcaption></figure></Transition></Teleport>
             </template>
             </div>
             <template v-if="isGlassStyle(draft.appearance.style)">
@@ -596,11 +613,19 @@ button{color:var(--control-ink)}
 .style-card[aria-checked='true'] .swatch-check{opacity:1;scale:1}
 .style-card:focus-visible{outline:none}
 .style-card:focus-visible .style-art{outline:2px solid var(--accent);outline-offset:3px}
-.manifold-picks{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:4px 0 6px}
-.manifold-picks-label{margin-right:4px;font-size:12.5px;color:var(--surface-muted)}
-.manifold-picks button{display:inline-flex;align-items:baseline;gap:5px;height:30px;padding:0 11px;border:1px solid var(--line);border-radius:var(--r-full);background:transparent;box-shadow:none;font-size:12.5px;color:var(--surface-secondary)}
-.manifold-picks button small{font-size:11px;color:var(--surface-muted)}
-.manifold-picks button[aria-pressed='true']{background:var(--sticky,var(--accent-soft));border-color:var(--surface-ink);color:var(--surface-ink)}
+.scene-list{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px 14px;margin:6px 0 8px;padding:10px 12px 12px;border:1px solid var(--line);border-radius:var(--r-md,12px);transition:opacity var(--dur-2) var(--ease-out)}
+.scene-list.off{opacity:.5}
+.scene-list-head{grid-column:1/-1;display:flex;align-items:baseline;gap:8px;margin-bottom:4px;font-size:13px;color:var(--surface-ink)}
+.scene-list-head small{font-size:11.5px;color:var(--surface-muted);font-variant-numeric:tabular-nums}
+.scene-list-head button{margin-left:auto;height:24px;padding:0 9px;border:1px solid var(--line);border-radius:var(--r-full);background:transparent;box-shadow:none;font-size:11.5px;color:var(--surface-muted)}
+.scene-group{display:flex;flex-direction:column;gap:1px;min-width:0}
+.scene-group-label{margin:2px 0 3px;padding-bottom:3px;border-bottom:1px solid var(--line);font-size:11.5px;color:var(--surface-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.scene-item{display:flex;align-items:center;gap:8px;min-width:0;height:28px;padding:0 6px;border:0;border-radius:7px;background:transparent;box-shadow:none;font-size:13px;color:var(--surface-muted);text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.scene-item:hover:not(:disabled),.scene-item:focus-visible{background:color-mix(in srgb,var(--surface-ink) 7%,transparent);color:var(--surface-ink)}
+.scene-item i{flex:none;position:relative;width:14px;height:14px;border:1.2px solid var(--surface-muted);border-radius:4px}
+.scene-item[aria-pressed='true']{color:var(--surface-ink)}
+.scene-item[aria-pressed='true'] i{border-color:var(--surface-ink);background:var(--surface-ink)}
+.scene-item[aria-pressed='true'] i::after{content:'';position:absolute;left:3.6px;top:.8px;width:3.6px;height:7.4px;border:solid var(--surface);border-width:0 1.6px 1.6px 0;rotate:42deg}
 .answer-font-preview{margin:2px 0 4px;padding:10px 12px;border-radius:var(--r-sm);background:var(--fill-4);font-size:17px;line-height:1.6;color:var(--surface-ink)}
 :root[data-theme='dark'] .swatch-bar{background:rgb(255 255 255 / .14)}
 .background-heading{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:14px}
@@ -677,4 +702,9 @@ button{color:var(--control-ink)}
 .settings-footer .settings-save:hover:not(:disabled){background-color:var(--accent-glass-hover);border-color:transparent;color:var(--accent-on)}
 @media(max-width:670px){.settings-backdrop{padding:12px}.settings-tabs{flex-basis:112px;padding:10px 0 10px 8px}.settings-tabs button{padding:9px 10px;gap:6px}.settings-content{padding:12px 14px 22px}.shortcut-row{flex-wrap:wrap}.shortcut-row>label{flex-basis:100%;margin-bottom:3px}.shortcut-row input{flex:1;max-width:200px}.setting-row select,.number-control{width:130px}.settings-dialog{max-height:94vh}.transparency-control{grid-template-columns:minmax(80px,1fr) 36px;width:175px}.transparency-row{gap:9px}.background-heading>span{flex-basis:100%}.backdrop-grid{grid-template-columns:repeat(3,1fr)}}
 @media(prefers-reduced-transparency:reduce),(prefers-contrast:more){.settings-content{-webkit-mask-image:none;mask-image:none}}
+/* 悬停的缩略图：浮在设置窗口之上，不接收鼠标。 */
+.scene-peek{position:fixed;z-index:9999;width:280px;height:190px;margin:0;border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:0 14px 36px -12px rgb(0 0 0 / .35);pointer-events:none}
+.scene-peek figcaption{position:absolute;left:10px;bottom:7px;font-size:11.5px;color:var(--surface-muted)}
+.scene-peek-enter-active{transition:opacity var(--dur-2) var(--ease-out),scale var(--dur-2) var(--ease-out)}
+.scene-peek-enter-from{opacity:0;scale:.96}
 </style>
