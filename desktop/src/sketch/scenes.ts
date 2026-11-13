@@ -627,7 +627,7 @@ function racks(): Painter {
       }
       // 细节按机柜在屏幕上的宽度连续地淡入：先是分段，再是托盘线，最近才有把手、网孔、端口。
       const pixels = focal * WIDE / z, some = smooth((pixels - 7) / 9), more = smooth((pixels - 18) / 16), most = smooth((pixels - 40) / 30)
-      const low = new Path2D(), mid = new Path2D(), fine = new Path2D(), back = z + DEEP
+      const low = new Path2D(), mid = new Path2D(), fine = new Path2D(), dark = new Path2D(), gold = new Path2D(), back = z + DEEP
       for (let i = Math.floor((-half - shift) / WIDE); i * WIDE + shift < half; i++) {
         const gap = (((i + row * 4) % POD) + POD) % POD
         if (gap === POD - 1) continue // 每八个机柜留一条过道
@@ -640,41 +640,36 @@ function racks(): Painter {
         if (side === side) {
           const edge = sx(side, z), behind = sx(side, back), floorBack = sy(y0, back)
           body.moveTo(edge, high); body.lineTo(behind, far); body.lineTo(behind, floorBack); body.lineTo(edge, bottom); body.closePath()
-          if (some > 0) for (const f of [.3, .5, .7]) { low.moveTo(edge + (behind - edge) * f, high + (far - high) * f); low.lineTo(edge + (behind - edge) * f, bottom + (floorBack - bottom) * f) }
+          if (some > 0) { dark.moveTo(edge, high); dark.lineTo(behind, far); dark.lineTo(behind, floorBack); dark.lineTo(edge, bottom); dark.closePath() }
         }
         if (some > 0) {
-          const wide = b - a, tall = bottom - high, l = a + wide * .07, r = b - wide * .07, at = (f: number) => high + tall * f
+          // 照着 GB300 机柜画：黑色的框，顶上一小块圆角的金色窗（交换机与线缆），下面一大块圆角的金色窗——里面是一层层计算托盘，上半截右侧垂着一束束线缆；窗与窗之间、最底下是深色的电源框。
+          const wide = b - a, tall = bottom - high, l = a + wide * .1, r = b - wide * .1, at = (f: number) => high + tall * f, round = Math.min(wide * .09, tall * .03)
           const across = (path: Path2D, f: number, from = l, to = r) => { path.moveTo(from, at(f)); path.lineTo(to, at(f)) }
-          // 立柱，和五段的分界：电源框 / 十个计算托盘 / 九个交换机托盘 / 八个计算托盘 / 电源框。
-          for (const x of [l, r]) { low.moveTo(x, at(.02)); low.lineTo(x, at(.95)) }
-          for (const f of [.02, .11, .41, .59, .83, .92, .95]) across(low, f)
+          dark.rect(a, high, l - a, tall); dark.rect(r, high, b - r, tall); dark.rect(l, high, r - l, tall * .105); dark.rect(l, at(.21), r - l, tall * .1); dark.rect(l, at(.87), r - l, tall * .13)
+          low.rect(l, at(.02), r - l, tall * .95)
+          for (const [from, to] of [[.115, .2], [.32, .86]] as const) { gold.roundRect(l + wide * .02, at(from), r - l - wide * .04, tall * (to - from), round); low.roundRect(l + wide * .02, at(from), r - l - wide * .04, tall * (to - from), round) }
           if (more > 0) {
-            for (let k = 1; k < 10; k++) across(k % 2 ? fine : mid, .11 + .03 * k)
-            for (let k = 1; k < 8; k++) across(k % 2 ? fine : mid, .59 + .03 * k)
-            for (let k = 1; k < 9; k++) across(k % 3 ? fine : mid, .41 + .02 * k)
-            across(mid, .05); across(mid, .08); across(mid, .86); across(mid, .89)
-            // 柜顶：出风口，和两根往上走的冷却液软管。
-            const vent = (fx: number, fz: number): [number, number] => [sx(x0 + (x1 - x0) * fx, z + DEEP * fz), sy(y1, z + DEEP * fz)]
-            const [v0, v1, v2, v3] = [vent(.2, .2), vent(.8, .2), vent(.8, .6), vent(.2, .6)]
-            mid.moveTo(v0[0], v0[1]); mid.lineTo(v1[0], v1[1]); mid.lineTo(v2[0], v2[1]); mid.lineTo(v3[0], v3[1]); mid.closePath()
-            for (const fx of [.3, .7]) { const [hx, hy] = vent(fx, .85), up = sy(y1 + .55, z + DEEP * .85); mid.moveTo(hx, hy); mid.lineTo(hx, up); mid.quadraticCurveTo(hx, up - tall * .03, hx + wide * .12 * (fx < .5 ? -1 : 1), up - tall * .03) }
+            const il = l + wide * .05, ir = r - wide * .05
+            for (let k = 1; k < 20; k++) across(k % 2 ? fine : mid, .32 + .027 * k, il, ir)
+            across(mid, .065); across(mid, .26); across(mid, .158, il, ir); across(mid, .915)
           }
           if (most > 0) {
-            // 电源模块的小格、托盘两头的把手、托盘正面的一排网孔、交换机的端口、底座的脚。
-            for (let k = 1; k < 6; k++) { const x = l + (r - l) * k / 6; fine.moveTo(x, at(.02)); fine.lineTo(x, at(.11)); fine.moveTo(x, at(.83)); fine.lineTo(x, at(.92)) }
-            const trays = [...Array.from({ length: 10 }, (_, k) => .125 + .03 * k), ...Array.from({ length: 8 }, (_, k) => .605 + .03 * k)]
-            for (const f of trays) {
-              for (const x of [l + wide * .05, r - wide * .05]) fine.rect(x - wide * .012, at(f - .007), wide * .024, tall * .014)
-              for (let k = 0; k < 7; k++) { const x = l + wide * (.2 + .075 * k); fine.moveTo(x, at(f)); fine.lineTo(x + wide * .035, at(f)) }
-            }
-            for (let k = 0; k < 9; k++) for (let j = 1; j < 12; j++) { const x = l + (r - l) * j / 12; fine.moveTo(x, at(.414 + .02 * k)); fine.lineTo(x, at(.426 + .02 * k)) }
-            for (const x of [l + wide * .06, r - wide * .16]) fine.rect(x, at(.965), wide * .1, tall * .025)
-            fine.rect(a + wide * .42, at(.004), wide * .16, tall * .012)
+            const il = l + wide * .05, ir = r - wide * .05
+            // 上半截托盘右侧垂下来的线缆、顶上小窗里的线缆。
+            for (let k = 0; k < 10; k++) { const y = at(.325 + .027 * k), x = il + (ir - il) * .6; fine.moveTo(x, y); fine.quadraticCurveTo(x + (ir - il) * .16, y + tall * .03, ir - (ir - il) * .04, y + tall * .008) }
+            for (let k = 0; k < 3; k++) { const y = at(.135 + .02 * k); fine.moveTo(il + (ir - il) * .12, y); fine.bezierCurveTo(il + (ir - il) * .4, y + tall * .02, il + (ir - il) * .6, y - tall * .012, ir - (ir - il) * .1, y + tall * .008) }
+            // 电源框的小格、底下的竖栅、托盘左端的把手、底座的脚。
+            for (const f of [.035, .075, .225, .27]) for (let k = 0; k < 6; k++) fine.rect(l + (r - l) * (.08 + .15 * k), at(f), (r - l) * .09, tall * .02)
+            for (let k = 1; k < 10; k++) { const x = l + (r - l) * k / 10; fine.moveTo(x, at(.885)); fine.lineTo(x, at(.955)) }
+            for (let k = 0; k < 20; k++) fine.rect(il + (ir - il) * .03, at(.325 + .027 * k), (ir - il) * .07, tall * .012)
+            for (const x of [a + wide * .04, b - wide * .16]) fine.rect(x, at(.975), wide * .12, tall * .025)
           }
         }
         if (y0 > .3) { const r = clamp(pixels * .05, .8, 3); lamps.moveTo((a + b) / 2 + r, high + (bottom - high) * .5); lamps.arc((a + b) / 2, high + (bottom - high) * .5, r, 0, TAU) }
       }
       c.globalAlpha = env.fade; c.fillStyle = env.paper; c.fill(body)
+      if (some > 0) { c.globalAlpha = (.04 + .08 * clear) * some * env.fade; c.fillStyle = env.ink; c.fill(dark); c.globalAlpha = (.05 + .15 * clear) * some * env.fade; c.fillStyle = env.red; c.fill(gold) }
       c.globalAlpha = line * env.fade; c.lineWidth = 1; c.stroke(body)
       if (some > 0) { c.globalAlpha = line * some * env.fade; c.lineWidth = .9; c.stroke(low) }
       if (more > 0) { c.globalAlpha = line * .85 * more * env.fade; c.lineWidth = .8; c.stroke(mid) }
