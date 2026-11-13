@@ -1,4 +1,5 @@
 import { NETWORKS } from './networks.ts'
+import { SKETCHES } from './scenes.ts'
 // 铅笔草稿背景上旋转的流形：几种较复杂的曲面 / 纤维化的参数化，画成线框；
 // 旁边随机浮现的微分几何定理与定义，其中一部分直接画在流形上（切平面、法向量、坐标卡……）。
 // 网格只算一次（单位球内居中），每帧只做旋转与投影。
@@ -183,10 +184,13 @@ export const MANIFOLDS: Manifold[] = [
 export function manifoldById(id: string) { return MANIFOLDS.find(item => item.id === id) }
 
 /** 背景里轮换的全部画面：流形与神经网络（设置里可以挑选）。 */
-export const SCENES: { id: string; name: string; kind: 'manifold' | 'network' }[] = [
+export const SCENES: { id: string; name: string; kind: 'manifold' | 'network' | 'sketch' }[] = [
   ...MANIFOLDS.map(item => ({ id: item.id, name: item.name, kind: 'manifold' as const })),
   ...NETWORKS.map(item => ({ id: item.id, name: item.name, kind: 'network' as const })),
+  ...SKETCHES.map(item => ({ id: item.id, name: item.name, kind: 'sketch' as const })),
 ]
+/** 0.10.14 及以前的全部画面：存的正好是这一整套时，升级后自动带上新加的画面。 */
+export const LEGACY_SCENE_IDS = [...MANIFOLDS, ...NETWORKS].map(item => item.id)
 export const MANIFOLD_IDS = SCENES.map(item => item.id)
 
 /** Next scene to show: a different one from the list when there is a choice. */

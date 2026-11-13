@@ -1,11 +1,12 @@
 <script setup lang="ts">
-// 铅笔草稿的格子纸上，一个铅笔画的流形或神经网络慢慢自转（四分钟一圈），旁边缓缓浮现英文的定理、定义。
+// 铅笔草稿的格子纸上，一个铅笔画的流形、神经网络或别的画面（DNA、洛伦兹吸引子、凯莱图……见 sketch/scenes.ts）慢慢自转（四分钟一圈），旁边缓缓浮现英文的定理、定义。
 // 流形上的一部分知识直接画在曲面上（切平面、坐标基、法向量、度量圆、坐标卡、Stokes 边界、积分曲线、测地线、指数映射、平行移动、密切圆、主方向）；
 // 神经网络则演示训练：前向传播的信号一层层走过去，反向传播的梯度（红笔）一层层走回来，权重随之变化，歇 5 秒再来下一轮；角落里画损失曲线。
 // 每隔 4–8 分钟随机换一个画面，换的时候像重新画一遍。每秒 30 帧，窗口不可见时停下。
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { manifoldById, nextManifold, buildMesh, THEOREMS, type Mesh, type Note as Knowledge, type Visual, type Vec } from '../sketch/manifolds'
 import { networkById, ML_FACTS, type Graph } from '../sketch/networks'
+import { sketchById, type Painter, type Sketch } from '../sketch/scenes'
 
 const props = defineProps<{ shapes: string[] }>()
 
@@ -29,6 +30,8 @@ const CURVE_VISUALS: Visual[] = ['field', 'curve']
 
 let mesh: Mesh | undefined
 let graph: Graph | undefined
+let sketch: Sketch | undefined
+let painter: Painter | undefined
 let baseTilt = .42
 let jitter: Float32Array | undefined
 let frame = 0, last = 0, start = 0, drawnAt = 0, width = 0, height = 0, ratio = 1
@@ -65,14 +68,16 @@ function later(callback: () => void, delay: number) {
 
 function choose(id: string | undefined) {
   if (!id) return
-  const manifold = manifoldById(id), network = networkById(id)
-  if (!manifold && !network) return
+  const manifold = manifoldById(id), network = networkById(id), other = sketchById(id)
+  if (!manifold && !network && !other) return
   current.value = id
   mesh = manifold ? buildMesh(manifold) : undefined
   graph = network ? network.build() : undefined
   training = graph ? newTraining(graph) : undefined
-  baseTilt = manifold?.tilt ?? (network ? .32 : .42)
-  jitter = seeded(mesh ? mesh.points.length / 3 : graph!.nodes.length / 3)
+  sketch = other
+  painter = other?.create()
+  baseTilt = other?.tilt ?? manifold?.tilt ?? (network ? .32 : .42)
+  jitter = seeded(mesh ? mesh.points.length / 3 : graph ? graph.nodes.length / 3 : 1)
   drawnAt = performance.now()
   bag = []
   if (drawing) drawing.fading = drawnAt
@@ -117,12 +122,12 @@ type Project = (x: number, y: number, z: number) => [number, number, number]
 
 function draw(now: number) {
   const element = canvas.value, context = element?.getContext('2d')
-  if (!element || !context || !jitter || (!mesh && !graph)) return
+  if (!element || !context || !jitter || (!mesh && !graph && !painter)) return
   const angle = reduced.matches ? .6 : ((now - start) / PERIOD) * Math.PI * 2
   const tilt = baseTilt + Math.sin(angle * .5) * .05
   const ca = Math.cos(angle), sa = Math.sin(angle), ct = Math.cos(tilt), st = Math.sin(tilt)
   // 神经网络比流形稀疏，画得更大一些占住画面；透视也放缓，转到近处时不至于冲出画布。
-  const size = Math.min(width * .62, height) * (graph ? .64 : .46), cx = width * .56, cy = height * .52, camera = graph ? 5 : 3.4
+  const size = Math.min(width * .62, height) * (sketch?.zoom ?? (graph ? .64 : .46)), cx = width * .56, cy = height * .52, camera = sketch?.camera ?? (graph ? 5 : 3.4)
   // 把模型坐标投到画布：绕竖轴自转，再向前倾一点，看得到上面。
   const project: Project = (x, y, z) => {
     const x1 = x * ca + z * sa, z1 = -x * sa + z * ca
@@ -139,6 +144,7 @@ function draw(now: number) {
   const reveal = reduced.matches ? 1 : Math.min(1, (now - drawnAt) / DRAW_IN)
   if (mesh) drawMesh(context, mesh, project, reveal)
   else if (graph && training) drawNetwork(context, graph, training, project, reveal, now)
+  else if (painter) painter({ context, project, t: reduced.matches ? 20000 : now - drawnAt, fade: reveal, ink, red, hand, width, height })
   if (mesh && drawing && reveal >= 1) drawVisual(context, drawing, now, project)
   context.globalAlpha = 1
 }
@@ -605,14 +611,15 @@ function pickKnowledge(): Knowledge | undefined {
   if (!bag.length) {
     const id = current.value || ''
     const manifold = manifoldById(id), network = networkById(id)
-    if (network) bag = [...ML_FACTS, ...network.facts].map(text => ({ text }))
+    if (sketch) bag = sketch.facts.map(text => ({ text }))
+    else if (network) bag = [...ML_FACTS, ...network.facts].map(text => ({ text }))
     else {
       const allowed = mesh?.curves.length ? CURVE_VISUALS : SURFACE_VISUALS
       bag = [...THEOREMS.filter(item => !item.visual || allowed.includes(item.visual)), ...(manifold?.facts || []).map(text => ({ text }))]
     }
     // 最近写过的先不放进来，免得老是看到同一条（候选太少时才放回去）。
     const fresh = bag.filter(item => !recent.includes(item.text))
-    if (fresh.length >= 6) bag = fresh
+    if (fresh.length >= (sketch ? 4 : 6)) bag = fresh
     bag.sort(() => Math.random() - .5)
   }
   const item = bag.pop()
