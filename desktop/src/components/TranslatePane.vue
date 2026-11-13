@@ -114,7 +114,7 @@ defineExpose({ focus })
 <template>
   <aside class="ai-pane translate-pane" role="complementary" aria-label="翻译" @pointerenter="keepWarm" @focusin="keepWarm">
     <header class="tp-header" data-tip="拖动可换到另一侧" @pointerdown="grab">
-      <span class="tp-title"><AppIcon name="translate" :size="17" />翻译</span>
+      <span class="tp-title"><AppIcon name="translate" :size="17" /><span>翻译</span></span>
       <div class="tp-targets" role="radiogroup" aria-label="译成">
         <button v-for="item in TARGETS" :key="item.value" type="button" role="radio" :aria-checked="translator.target === item.value" :class="{ on: translator.target === item.value }" @click="translator.target = item.value">{{ item.label }}</button>
       </div>
@@ -166,20 +166,21 @@ defineExpose({ focus })
       <button type="submit" :disabled="savingKey || !canSave">保存</button>
     </form>
     <form class="tp-composer" @submit.prevent="submit">
-      <textarea ref="field" v-model="draft" rows="2" placeholder="输入或粘贴要翻译的文字，回车翻译" aria-label="要翻译的文字" @keydown="keydown"></textarea>
+      <textarea ref="field" v-model="draft" rows="1" placeholder="输入文字，回车翻译" aria-label="要翻译的文字" @keydown="keydown"></textarea>
       <button type="submit" class="tp-send" :disabled="!draft.trim()" aria-label="开始翻译" data-tip="翻译（回车）"><AppIcon name="arrow-up" :size="16" /></button>
     </form>
   </aside>
 </template>
 
 <style scoped>
-.translate-pane{display:flex;flex-direction:column;width:100%;height:100%;min-width:0;background-color:var(--glass-3);background-image:var(--glass-sheen);-webkit-backdrop-filter:var(--glass-filter-3);backdrop-filter:var(--glass-filter-3);border:1px solid var(--glass-outline);border-radius:var(--r-xl);box-shadow:var(--shadow-pane),var(--glass-edge);color:var(--ink);overflow:hidden;font-family:var(--font-ui)}
-.tp-header{cursor:grab;touch-action:none;-webkit-user-select:none;user-select:none;display:flex;align-items:center;gap:6px;height:52px;padding:0 10px 0 16px;border-bottom:.5px solid var(--hairline,var(--line-soft));flex-shrink:0}
-.tp-title{display:inline-flex;align-items:center;gap:7px;font-weight:650;font-size:14px;margin-right:auto;white-space:nowrap}
-.tp-targets{display:flex;gap:2px;padding:2px;border-radius:var(--r-control);background:color-mix(in srgb,var(--surface-ink) 6%,transparent)}
-.tp-targets button{height:24px;padding:0 8px;border:0;border-radius:calc(var(--r-control) - 2px);background:none;box-shadow:none;font-size:11.5px;color:var(--secondary);white-space:nowrap}
+.translate-pane{container:tp / inline-size;display:flex;flex-direction:column;width:100%;height:100%;min-width:0;background-color:var(--glass-3);background-image:var(--glass-sheen);-webkit-backdrop-filter:var(--glass-filter-3);backdrop-filter:var(--glass-filter-3);border:1px solid var(--glass-outline);border-radius:var(--r-xl);box-shadow:var(--shadow-pane),var(--glass-edge);color:var(--ink);overflow:hidden;font-family:var(--font-ui)}
+.tp-header{cursor:grab;touch-action:none;-webkit-user-select:none;user-select:none;display:flex;align-items:center;gap:6px;height:44px;padding:0 8px 0 14px;border-bottom:.5px solid var(--hairline,var(--line-soft));flex-shrink:0}
+.tp-title{display:inline-flex;align-items:center;gap:7px;flex:none;font-weight:650;font-size:14px;margin-right:auto;white-space:nowrap}
+.tp-targets{display:flex;min-width:0;overflow-x:auto;scrollbar-width:none;gap:2px;padding:2px;border-radius:var(--r-control);background:color-mix(in srgb,var(--surface-ink) 6%,transparent)}
+.tp-targets::-webkit-scrollbar{display:none}
+.tp-targets button{flex:none;height:24px;padding:0 8px;border:0;border-radius:calc(var(--r-control) - 2px);background:none;box-shadow:none;font-size:11.5px;color:var(--secondary);white-space:nowrap}
 .tp-targets button.on{background:var(--surface);color:var(--surface-ink);box-shadow:0 1px 2px rgb(0 0 0 / .12)}
-.tp-ai{padding:4px 12px 0}
+.tp-ai{padding:4px 8px 0}
 .tp-auto{display:inline-flex;align-items:center;gap:6px;margin-left:auto;height:24px;padding:0 8px 0 6px;border:0;border-radius:999px;background:transparent;color:var(--secondary);font:inherit;font-size:12px;white-space:nowrap;cursor:pointer}
 .tp-auto i{position:relative;width:24px;height:14px;border-radius:999px;background:var(--fill-1);transition:background var(--dur-2) var(--ease-out)}
 .tp-auto i::after{content:'';position:absolute;left:2px;top:2px;width:10px;height:10px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgb(0 0 0 / .3);transition:translate var(--dur-2) var(--spring-snappy)}
@@ -199,20 +200,20 @@ defineExpose({ focus })
 .tp-ai-chip span{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .tp-ai-chip:hover{color:var(--ink)}
 .tp-ai-fast{color:var(--accent)}
-.tp-icon{display:grid;place-items:center;width:28px;height:28px;padding:0;border:0;border-radius:8px;background:none;box-shadow:none;color:var(--secondary)}
+.tp-icon{display:grid;place-items:center;flex:none;width:28px;height:28px;padding:0;border:0;border-radius:8px;background:none;box-shadow:none;color:var(--secondary)}
 .tp-icon:hover:not(:disabled){background:color-mix(in srgb,var(--surface-ink) 8%,transparent);color:var(--ink)}
 .tp-icon:disabled{opacity:.4}
-.tp-list{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:14px 14px 6px;will-change:transform}
+.tp-list{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:8px 8px 2px;will-change:transform}
 .tp-empty{display:grid;justify-items:center;gap:8px;margin-top:22vh;padding:0 18px;text-align:center;color:var(--secondary);font-size:13px;line-height:1.6}
 .tp-empty p{margin:0}
 .tp-muted{color:var(--muted)}
 .tp-empty kbd{padding:1px 5px;border-radius:5px;background:color-mix(in srgb,var(--surface-ink) 8%,transparent);font-size:11px}
-.tp-card{position:relative;margin-bottom:12px;padding:11px 13px 8px;border-radius:12px;background:color-mix(in srgb,var(--surface) 72%,transparent);border:.5px solid var(--line-soft);animation:tp-in var(--dur-3) var(--spring-snappy) backwards}
+.tp-card{position:relative;margin-bottom:8px;padding:8px 11px 9px;border-radius:12px;background:color-mix(in srgb,var(--surface) 72%,transparent);border:.5px solid var(--line-soft);animation:tp-in var(--dur-3) var(--spring-snappy) backwards}
 @keyframes tp-in{from{opacity:0;translate:0 10px;scale:.98}}
-.tp-source{margin:0;color:var(--secondary);font-size:12.5px;line-height:1.55;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap}
-.tp-arrow{display:flex;align-items:center;gap:8px;margin:7px 0 5px;color:var(--muted);font-size:10.5px;letter-spacing:.04em}
+.tp-source{margin:0;color:var(--secondary);font-size:12.5px;line-height:1.55;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap}
+.tp-arrow{display:flex;align-items:center;gap:8px;margin:5px 0 3px;color:var(--muted);font-size:10.5px;letter-spacing:.04em}
 .tp-arrow::before,.tp-arrow::after{content:'';flex:1;height:.5px;background:var(--line-soft)}
-.tp-result{font-family:var(--font-answer,var(--font-reading));font-size:14.5px;line-height:1.7;overflow-wrap:anywhere}
+.tp-result{font-family:var(--font-answer,var(--font-reading));font-size:14.5px;line-height:1.6;overflow-wrap:anywhere}
 .tp-result :deep(p){margin:0 0 .6em}
 .tp-result :deep(>:last-child){margin-bottom:0}
 .tp-pending{display:flex;gap:5px;margin:6px 0 2px}
@@ -220,10 +221,11 @@ defineExpose({ focus })
 .tp-dot:nth-child(2){animation-delay:.15s}.tp-dot:nth-child(3){animation-delay:.3s}
 @keyframes tp-blink{0%,100%{opacity:.25}50%{opacity:1}}
 .tp-error{margin:4px 0 0;color:var(--danger);font-size:12px}
-.tp-actions{display:flex;justify-content:flex-end;gap:2px;margin-top:4px;opacity:.55;transition:opacity var(--dur-1) var(--ease-soft)}
-.tp-card:hover .tp-actions,.tp-card:focus-within .tp-actions{opacity:1}
+/* 操作按钮不占一行：浮在卡片右下角，指到卡片上才出现。 */
+.tp-actions{position:absolute;right:5px;bottom:4px;display:flex;gap:1px;padding:1px;border-radius:9px;background:var(--surface);box-shadow:0 0 0 .5px var(--line-soft),0 2px 8px rgb(0 0 0 / .1);opacity:0;pointer-events:none;transition:opacity var(--dur-1) var(--ease-soft)}
+.tp-card:hover .tp-actions,.tp-card:focus-within .tp-actions,.tp-card.running .tp-actions{opacity:1;pointer-events:auto}
 .tp-actions .tp-icon{width:26px;height:24px}
-.tp-engine{display:flex;align-items:center;gap:8px;flex-shrink:0;margin:6px 12px 0;color:var(--muted);font-size:11.5px}
+.tp-engine{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;flex-shrink:0;margin:4px 8px 0;color:var(--muted);font-size:11.5px}
 .tp-link{margin-left:auto;padding:0;border:0;background:none;box-shadow:none;color:var(--secondary);font-size:11.5px;text-decoration:underline;text-underline-offset:2px}
 .tp-keys{display:grid;grid-template-columns:1fr 1fr auto;gap:6px;flex-shrink:0;margin:8px 12px 0;padding:10px;border-radius:12px;background:color-mix(in srgb,var(--surface) 70%,transparent);border:.5px solid var(--line-soft)}
 .tp-keys.single{grid-template-columns:1fr auto}
@@ -232,9 +234,11 @@ defineExpose({ focus })
 .tp-keys input{min-width:0;height:30px;padding:0 8px;border-radius:8px;border:.5px solid var(--line-soft);background:var(--surface);color:inherit;font:inherit;font-size:12.5px}
 .tp-keys button{height:30px;padding:0 12px;border-radius:8px;border:0;background:var(--surface-ink);color:var(--surface);box-shadow:none;font-size:12.5px}
 .tp-keys button:disabled{opacity:.4}
-.tp-composer{position:relative;flex-shrink:0;margin:6px 12px 10px;border-radius:14px;border:.5px solid var(--line-soft);background:color-mix(in srgb,var(--surface) 80%,transparent)}
-.tp-composer textarea{display:block;width:100%;min-height:44px;max-height:180px;padding:10px 44px 10px 12px;border:0;background:none;resize:none;color:inherit;font:inherit;font-size:13.5px;line-height:1.55;outline:none}
-.tp-send{position:absolute;right:8px;bottom:8px;display:grid;place-items:center;width:30px;height:30px;padding:0;border:0;border-radius:50%;background:var(--surface-ink);color:var(--surface);box-shadow:none}
+.tp-composer{position:relative;flex-shrink:0;margin:5px 8px 8px;border-radius:14px;border:.5px solid var(--line-soft);background:color-mix(in srgb,var(--surface) 80%,transparent)}
+.tp-composer textarea{display:block;width:100%;min-height:38px;max-height:180px;field-sizing:content;padding:8px 42px 8px 12px;border:0;background:none;resize:none;color:inherit;font:inherit;font-size:13.5px;line-height:1.55;outline:none}
+.tp-send{position:absolute;right:5px;bottom:5px;display:grid;place-items:center;width:28px;height:28px;padding:0;border:0;border-radius:50%;background:var(--surface-ink);color:var(--surface);box-shadow:none}
 .tp-send:disabled{opacity:.3}
+/* 栏窄的时候：标题只留图标，按钮收紧；再窄语言可以横向滑动，右边的清空、关闭始终在。 */
+@container tp (max-width:360px){.tp-title span{display:none}.tp-targets button{padding:0 6px}.tp-header{padding-left:10px}}
 @media(prefers-reduced-motion:reduce){.tp-card,.tp-dot{animation:none}}
 </style>

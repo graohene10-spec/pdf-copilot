@@ -1,4 +1,4 @@
-import { MANIFOLD_IDS } from '../sketch/manifolds.ts'
+import { MANIFOLD_IDS, LEGACY_SCENE_IDS } from '../sketch/manifolds.ts'
 import { normalizeBackground, backgroundErrors, type BackgroundImage } from './background.ts'
 import { defaultQuickPrompts, normalizeQuickPrompts, quickPromptErrors, defaultCaptureQuestions, normalizeCaptureQuestions, captureQuestionErrors, type QuickPrompt, type QuickPrompts } from './quick-prompts.ts'
 
@@ -217,7 +217,8 @@ export function normalizePreferences(value: unknown, legacyTheme?: string | null
   defaults.appearance.style = UI_STYLES.some(item => item.id === appearance.style) ? appearance.style : 'glass'
   const manifold = record(appearance.manifold)
   const shapes = Array.isArray(manifold.shapes) ? [...new Set(manifold.shapes.filter((id: unknown) => typeof id === 'string' && (MANIFOLD_IDS as string[]).includes(id)))] as string[] : MANIFOLD_IDS
-  defaults.appearance.manifold = { show: manifold.show !== false, reader: manifold.reader === true, shapes: shapes.length ? shapes : [...MANIFOLD_IDS] }
+  const everyOld = shapes.length === LEGACY_SCENE_IDS.length && LEGACY_SCENE_IDS.every(id => shapes.includes(id))
+  defaults.appearance.manifold = { show: manifold.show !== false, reader: manifold.reader === true, shapes: shapes.length && !everyOld ? shapes : [...MANIFOLD_IDS] }
   defaults.appearance.sketchAnswerFont = SKETCH_ANSWER_FONTS.some(item => item.id === appearance.sketchAnswerFont) ? appearance.sketchAnswerFont : 'mashanzheng'
   defaults.appearance.libraryView = ['grid', 'list'].includes(appearance.libraryView) ? appearance.libraryView : defaults.appearance.libraryView
   const legacyGlass = typeof appearance.glass === 'string' && Object.hasOwn(LEGACY_GLASS, appearance.glass) ? LEGACY_GLASS[appearance.glass] : defaults.appearance.glassTransparency

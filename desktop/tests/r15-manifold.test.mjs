@@ -44,7 +44,13 @@ test('manifold preferences: shown in the library, hidden while reading, all shap
 test('neural networks build finite graphs and rotate with the manifolds; every note is in English', async () => {
   const { NETWORKS, ML_FACTS } = await import('../src/sketch/networks.ts')
   const { SCENES } = await import('../src/sketch/manifolds.ts')
-  assert.deepEqual(SCENES.map(item => item.id), [...MANIFOLDS.map(item => item.id), ...NETWORKS.map(item => item.id)])
+  const { SKETCHES } = await import('../src/sketch/scenes.ts')
+  assert.deepEqual(SCENES.map(item => item.id), [...MANIFOLDS.map(item => item.id), ...NETWORKS.map(item => item.id), ...SKETCHES.map(item => item.id)])
+  assert.deepEqual(SKETCHES.map(item => item.id), ['dna', 'lorenz', 'cayley', 'higgs', 'dijkstra', 'life', 'tree', 'racks'])
+  for (const item of SKETCHES) { assert.ok(item.facts.length >= 8, item.id); for (const fact of item.facts) assert.ok(!/[\u4e00-\u9fff]/.test(fact) && !/GB300/i.test(fact), fact) }
+  // 存着旧的一整套画面：升级后带上新画面；自己挑过的不动。
+  const { LEGACY_SCENE_IDS } = await import('../src/sketch/manifolds.ts')
+  assert.deepEqual(normalizePreferences({ appearance: { manifold: { shapes: LEGACY_SCENE_IDS } } }).appearance.manifold.shapes, MANIFOLD_IDS)
   assert.deepEqual(MANIFOLD_IDS, SCENES.map(item => item.id))
   for (const network of NETWORKS) {
     const graph = network.build()
