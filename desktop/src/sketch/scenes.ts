@@ -145,7 +145,7 @@ const ELEMENT: Record<string, [number, number]> = { C: [.36, 0], N: [.35, 1], O:
 
 function dna(): Painter {
   // 一条没有尽头的螺旋：画面里是其中二十来对碱基，整条链沿轴缓缓滑过去（看上去就是在慢慢地转），两头褪进纸里。
-  const PAIRS = 22, RISE = 3.38, TWIST = 36 * Math.PI / 180, SCALE = .05, LEAN = .42, PITCH = .32, PER_PAIR = 9000
+  const PAIRS = 20, RISE = 3.38, TWIST = 36 * Math.PI / 180, SCALE = .05, LEAN = .42, PITCH = .32, PER_PAIR = 9000
   const letterAt = (index: number) => 'ATGC'[Math.floor(hash(index * 1.7 + 3) * 4)]!
   let model: Model = { points: [], radius: [], kind: [], bonds: [], shaded: true }, hydrogen: number[][] = [], first = NaN
   const build = (start: number) => {
@@ -595,82 +595,113 @@ function tree(): Painter {
 
 // ---- GB300：液冷机柜一排排铺满下半个桌面，一直排到天际线。近处画出机柜的样子——上下的电源框、两组计算托盘、中间的交换机段、柜顶的冷却液软管；越远越简，连续地过渡到只剩轮廓。偶尔落下一滴水，起伏一圈圈传开 ----
 function racks(): Painter {
-  const WIDE = .6, DEEP = 1.2, PITCH = 2.9, TALL = 2.25, EYE = 5.6, SPEED = .09, EVERY = 17000
-  return env => {
-    const c = env.context, { x: left, y: top, w, h } = env.full
-    const horizon = top + h * .5, middle = left + w / 2, focal = w * .85
-    const seconds = env.t / 1000, camera = seconds * SPEED, latest = Math.floor(env.t / EVERY)
-    const drops = [0, 1].map(k => latest - k).filter(k => k >= 0).map(k => ({ x: (hash(k * 2.3 + 1) - .5) * 30, z: k * EVERY / 1000 * SPEED + 16 + hash(k * 2.3 + 2) * 40, age: seconds - k * EVERY / 1000 }))
-    const height = (x: number, z: number) => {
-      let y = .07 * Math.sin(.09 * x + .05 * z + .2 * seconds)
-      for (const drop of drops) { const d = Math.hypot(x - drop.x, z - drop.z) - 2.6 * drop.age; y += .55 * Math.cos(.8 * d) * Math.exp(-((d / 6) ** 2) - drop.age / 11) }
-      return y
+  const WIDE = .6, DEEP = 1.2, PITCH = 2.9, TALL = 2.25, EYE = 5.6, SPEED = .09, EVERY = 17000, LIVE = 20, REFRESH = 4
+  // 中景和远景一帧里几乎不动，画在一张离屏的图上，每 REFRESH 帧才重画一次；每帧只重画最近的几排。
+  let layer: HTMLCanvasElement | undefined, layerKey = '', frames = 0, boundary = 0
+  // 一个机柜的正面，照着 GB300 画：黑色的框，顶上一小块圆角的窗（交换机与线缆），下面一大块圆角的窗——里面是一层层计算托盘，上半截右侧垂着一束束线缆；窗与窗之间、最底下是深色的电源框。
+  // 按宽度分档各画一张（16、32、64…像素宽），细节随大小多起来：先是框和两块窗，再是托盘线，最大才有线缆、把手、电源小格。
+  const fronts = new Map<string, HTMLCanvasElement>()
+  const drawFront = (paper: string, ink: string, size: number) => {
+    const canvas = document.createElement('canvas'), wide = size, tall = Math.round(size * TALL / (WIDE - .03))
+    canvas.width = wide; canvas.height = tall
+    const c = canvas.getContext('2d')!, pixels = size * .75, some = smooth((pixels - 10) / 8), more = smooth((pixels - 20) / 16), most = smooth((pixels - 40) / 30)
+    const low = new Path2D(), mid = new Path2D(), fine = new Path2D(), dark = new Path2D()
+    const a = 0, b = wide, l = wide * .1, r = wide * .9, at = (f: number) => tall * f, round = Math.min(wide * .09, tall * .03)
+    const across = (path: Path2D, f: number, from = l, to = r) => { path.moveTo(from, at(f)); path.lineTo(to, at(f)) }
+    dark.rect(a, 0, l - a, tall); dark.rect(r, 0, b - r, tall); dark.rect(l, 0, r - l, tall * .105); dark.rect(l, at(.21), r - l, tall * .1); dark.rect(l, at(.87), r - l, tall * .13)
+    low.rect(l, at(.02), r - l, tall * .95)
+    for (const [from, to] of [[.115, .2], [.32, .86]] as const) low.roundRect(l + wide * .02, at(from), r - l - wide * .04, tall * (to - from), round)
+    const il = l + wide * .05, ir = r - wide * .05
+    for (let k = 1; k < 20; k++) across(k % 2 ? fine : mid, .32 + .027 * k, il, ir)
+    across(mid, .065); across(mid, .26); across(mid, .158, il, ir); across(mid, .915)
+    if (most > 0) {
+      // 上半截托盘右侧垂下来的线缆、顶上小窗里的线缆；电源框的小格、底下的竖栅、托盘左端的把手、底座的脚。
+      for (let k = 0; k < 10; k++) { const y = at(.325 + .027 * k), x = il + (ir - il) * .6; fine.moveTo(x, y); fine.quadraticCurveTo(x + (ir - il) * .16, y + tall * .03, ir - (ir - il) * .04, y + tall * .008) }
+      for (let k = 0; k < 3; k++) { const y = at(.135 + .02 * k); fine.moveTo(il + (ir - il) * .12, y); fine.bezierCurveTo(il + (ir - il) * .4, y + tall * .02, il + (ir - il) * .6, y - tall * .012, ir - (ir - il) * .1, y + tall * .008) }
+      for (const f of [.035, .075, .225, .27]) for (let k = 0; k < 6; k++) fine.rect(l + (r - l) * (.08 + .15 * k), at(f), (r - l) * .09, tall * .02)
+      for (let k = 1; k < 10; k++) { const x = l + (r - l) * k / 10; fine.moveTo(x, at(.885)); fine.lineTo(x, at(.955)) }
+      for (let k = 0; k < 20; k++) fine.rect(il + (ir - il) * .03, at(.325 + .027 * k), (ir - il) * .07, tall * .012)
+      for (const x of [a + wide * .04, b - wide * .16]) fine.rect(x, at(.975), wide * .12, tall * .025)
     }
+    const line = .25, thick = size > 64 ? 1.4 : 1
+    c.fillStyle = paper; c.fillRect(0, 0, wide, tall)
+    c.globalAlpha = .13 * some; c.fillStyle = ink; c.fill(dark)
+    c.strokeStyle = ink
+    c.globalAlpha = line; c.lineWidth = thick; c.strokeRect(.5, .5, wide - 1, tall - 1)
+    c.globalAlpha = line * some; c.lineWidth = thick * .9; c.stroke(low)
+    c.globalAlpha = line * .85 * more; c.lineWidth = thick * .8; c.stroke(mid)
+    c.globalAlpha = line * .7 * Math.max(most, more * .5); c.lineWidth = thick * .7; c.stroke(fine)
+    return canvas
+  }
+  return env => {
+    const { x: left, y: top, w, h } = env.full
+    const front = (pixels: number) => { const size = 2 ** clamp(Math.ceil(Math.log2(pixels)), 4, 8), id = `${env.paper}|${env.ink}|${size}`; let made = fronts.get(id); if (!made) fronts.set(id, made = drawFront(env.paper, env.ink, size)); return made }
+    const horizon = top + h * .5, middle = left + w / 2, focal = w * .85
     const sx = (x: number, z: number) => middle + focal * x / z, sy = (y: number, z: number) => horizon + focal * (EYE - y) / z
+    const nearest = Math.max(4.5, focal * EYE / (h * .5) * .8), FAR = focal * EYE / 5 // 再远，一排离天际线不到 5 个像素
+    /** 画从远到近的若干排：far 为真画 edge 之外（更远）的各排，否则画 edge 以内（更近）的各排。 */
+    const paint = (c: CanvasRenderingContext2D, time: number, fade: number, far: boolean, edge: number) => {
+      const seconds = time / 1000, camera = seconds * SPEED, latest = Math.floor(time / EVERY)
+      const drops = [0, 1].map(k => latest - k).filter(k => k >= 0).map(k => ({ x: (hash(k * 2.3 + 1) - .5) * 30, z: k * EVERY / 1000 * SPEED + 16 + hash(k * 2.3 + 2) * 40, age: seconds - k * EVERY / 1000 }))
+      const height = (x: number, z: number) => {
+        let y = .07 * Math.sin(.09 * x + .05 * z + .2 * seconds)
+        for (const drop of drops) { const d = Math.hypot(x - drop.x, z - drop.z) - 2.6 * drop.age, q = d / 6; if (q > -3 && q < 3) y += .55 * Math.cos(.8 * d) * Math.exp(-q * q - drop.age / 11) }
+        return y
+      }
+      c.strokeStyle = env.ink; c.lineJoin = 'round'
+      for (let row = far ? Math.floor((camera + FAR) / PITCH) : edge; row * PITCH - camera > nearest && (!far || row > edge); row--) {
+        const world = row * PITCH, z = world - camera, half = z * (w / 2) / focal + WIDE
+        // 远近之间不留接缝：线的深浅只看这一排在屏幕上占多高——排得越密越淡，密到两个像素以下就隔几排画一排。
+        const pixels = focal * WIDE / z, spacing = focal * EYE * PITCH / (z * z), stride = spacing < 2 ? Math.ceil(2 / spacing) : 1
+        if (row % stride) continue
+        const line = .25 * clamp(spacing * stride / 7, .16, 1), body = new Path2D(), shift = hash(row) * WIDE
+        if (pixels <= 16) {
+          // 中景、远景：一排机柜连成一道墙，轮廓沿着柜顶的后沿走，前沿另描一条线。机柜还分得清时是一个个方头，再远就连成起伏的一线。
+          const blocky = pixels > 6, step = blocky ? WIDE : Math.max(WIDE * 3, z * .03), from = Math.floor((-half - shift) / step) * step + shift, back = z + DEEP, front = new Path2D()
+          body.moveTo(sx(from, back), sy(0, z))
+          for (let x = from, first = true; x <= half + step; x += step, first = false) {
+            const lift = height(x + step / 2, world) + TALL, y = sy(lift, z), far = sy(lift, back)
+            if (blocky) { body.lineTo(sx(x, back), far); body.lineTo(sx(x + step, back), far); front.moveTo(sx(x, back), far); front.lineTo(sx(x, z), y); front.lineTo(sx(x + step, z), y) }
+            else { body.lineTo(sx(x, back), far); if (first) front.moveTo(sx(x, z), y); else front.lineTo(sx(x, z), y) }
+          }
+          body.lineTo(sx(half + step, back), sy(0, z)); body.closePath()
+          c.globalAlpha = fade; c.fillStyle = env.paper; c.fill(body)
+          c.globalAlpha = line * fade; c.lineWidth = 1; c.stroke(body); c.stroke(front)
+          continue
+        }
+        // 近处：每个机柜的正面是一张预先画好的小图（按大小分几档，越大细节越多），这里只贴图；柜顶现画。
+        const back = z + DEEP, sprite = front(pixels)
+        const faces: number[] = []
+        for (let i = Math.floor((-half - shift) / WIDE); i * WIDE + shift < half; i++) {
+          const x0 = i * WIDE + shift + .015, x1 = x0 + WIDE - .03, y0 = height(x0 + WIDE / 2, world), y1 = y0 + TALL
+          const a = sx(x0, z), b = sx(x1, z), high = sy(y1, z), far = sy(y1, back)
+          body.moveTo(a, high); body.lineTo(sx(x0, back), far); body.lineTo(sx(x1, back), far); body.lineTo(b, high); body.closePath()
+          faces.push(a, high, b - a, sy(y0, z) - high)
+        }
+        c.globalAlpha = fade; c.fillStyle = env.paper; c.fill(body)
+        c.globalAlpha = line * fade; c.lineWidth = 1; c.stroke(body)
+        c.globalAlpha = fade
+        for (let k = 0; k < faces.length; k += 4) c.drawImage(sprite, faces[k]!, faces[k + 1]!, faces[k + 2]!, faces[k + 3]!)
+      }
+    }
+    const key = `${w}|${h}|${env.paper}|${env.ink}`, c = env.context, origin = Math.floor(horizon) - 2
+    if (!layer || key !== layerKey || frames % REFRESH === 0) {
+      layer ??= document.createElement('canvas')
+      const wide = Math.max(1, Math.ceil(w)), tall = Math.max(1, Math.ceil(top + h - origin))
+      if (layer.width !== wide || layer.height !== tall) { layer.width = wide; layer.height = tall }
+      layerKey = key
+      const lc = layer.getContext('2d')!
+      lc.setTransform(1, 0, 0, 1, 0, 0); lc.clearRect(0, 0, wide, tall); lc.setTransform(1, 0, 0, 1, -left, -origin)
+      // 画成半个刷新间隔之后的样子，前后各差不到两帧，和每帧重画的近景接得上。
+      const ahead = env.t + REFRESH * 16
+      boundary = Math.floor((ahead / 1000 * SPEED + focal * WIDE / LIVE) / PITCH)
+      paint(lc, ahead, 1, true, boundary)
+    }
+    frames++
+    c.globalAlpha = env.fade; c.drawImage(layer, left, origin)
     c.strokeStyle = env.ink; c.lineWidth = 1; c.globalAlpha = .1 * env.fade
     c.beginPath(); c.moveTo(left, horizon); c.lineTo(left + w, horizon); c.stroke()
-    const nearest = Math.max(4.5, focal * EYE / (h * .5) * .8)
-    const FAR = focal * EYE / 5 // 再远，一排离天际线不到 5 个像素
-    for (let row = Math.floor((camera + FAR) / PITCH); row * PITCH - camera > nearest; row--) {
-      const world = row * PITCH, z = world - camera, half = z * (w / 2) / focal + WIDE
-      // 远近之间不留接缝：线的深浅只看这一排在屏幕上占多高——排得越密越淡，密到不足一个多像素就隔几排画一排。
-      const pixels = focal * WIDE / z, spacing = focal * EYE * PITCH / (z * z), stride = spacing < 1.6 ? Math.ceil(1.6 / spacing) : 1
-      if (row % stride) continue
-      const line = .25 * clamp(spacing * stride / 7, .16, 1), body = new Path2D(), shift = hash(row) * WIDE
-      if (pixels <= 13) {
-        // 中景、远景：一排机柜的正面连成一道墙，柜顶另描后沿；机柜还分得清时是一个个方头，再远就连成起伏的一线。
-        const blocky = pixels > 4.5, step = blocky ? WIDE : Math.max(WIDE * 2, z * .02), from = Math.floor((-half - shift) / step) * step + shift, back = z + DEEP, tops = new Path2D()
-        body.moveTo(sx(from, z), sy(0, z))
-        for (let x = from, first = true; x <= half + step; x += step, first = false) {
-          const top = height(x + step / 2, world) + TALL, y = sy(top, z), far = sy(top, back)
-          if (blocky) { body.lineTo(sx(x, z), y); body.lineTo(sx(x + step, z), y); tops.moveTo(sx(x, z), y); tops.lineTo(sx(x, back), far); tops.lineTo(sx(x + step, back), far); tops.lineTo(sx(x + step, z), y) }
-          else { body.lineTo(sx(x, z), y); if (first) tops.moveTo(sx(x, back), far); else tops.lineTo(sx(x, back), far) }
-        }
-        body.lineTo(sx(half + step, z), sy(0, z)); body.closePath()
-        c.globalAlpha = env.fade; c.fillStyle = env.paper; c.fill(tops); c.fill(body)
-        c.globalAlpha = line * env.fade; c.lineWidth = 1; c.stroke(tops); c.stroke(body)
-        continue
-      }
-      // 细节按机柜在屏幕上的宽度连续地淡入：先是分段，再是托盘线，最近才有把手、网孔、端口。
-      const some = smooth((pixels - 13) / 8), more = smooth((pixels - 22) / 16), most = smooth((pixels - 42) / 30)
-      const low = new Path2D(), mid = new Path2D(), fine = new Path2D(), dark = new Path2D(), back = z + DEEP
-      for (let i = Math.floor((-half - shift) / WIDE); i * WIDE + shift < half; i++) {
-        const x0 = i * WIDE + shift + .015, x1 = x0 + WIDE - .03, y0 = height(x0 + WIDE / 2, world), y1 = y0 + TALL
-        const a = sx(x0, z), b = sx(x1, z), bottom = sy(y0, z), high = sy(y1, z), far = sy(y1, back)
-        body.rect(a, high, b - a, bottom - high)
-        body.moveTo(a, high); body.lineTo(sx(x0, back), far); body.lineTo(sx(x1, back), far); body.lineTo(b, high); body.closePath()
-        if (some > 0) {
-          // 照着 GB300 机柜画：黑色的框，顶上一小块圆角的金色窗（交换机与线缆），下面一大块圆角的金色窗——里面是一层层计算托盘，上半截右侧垂着一束束线缆；窗与窗之间、最底下是深色的电源框。
-          const wide = b - a, tall = bottom - high, l = a + wide * .1, r = b - wide * .1, at = (f: number) => high + tall * f, round = Math.min(wide * .09, tall * .03)
-          const across = (path: Path2D, f: number, from = l, to = r) => { path.moveTo(from, at(f)); path.lineTo(to, at(f)) }
-          dark.rect(a, high, l - a, tall); dark.rect(r, high, b - r, tall); dark.rect(l, high, r - l, tall * .105); dark.rect(l, at(.21), r - l, tall * .1); dark.rect(l, at(.87), r - l, tall * .13)
-          low.rect(l, at(.02), r - l, tall * .95)
-          for (const [from, to] of [[.115, .2], [.32, .86]] as const) { low.roundRect(l + wide * .02, at(from), r - l - wide * .04, tall * (to - from), round) }
-          if (more > 0) {
-            const il = l + wide * .05, ir = r - wide * .05
-            for (let k = 1; k < 20; k++) across(k % 2 ? fine : mid, .32 + .027 * k, il, ir)
-            across(mid, .065); across(mid, .26); across(mid, .158, il, ir); across(mid, .915)
-          }
-          if (most > 0) {
-            const il = l + wide * .05, ir = r - wide * .05
-            // 上半截托盘右侧垂下来的线缆、顶上小窗里的线缆。
-            for (let k = 0; k < 10; k++) { const y = at(.325 + .027 * k), x = il + (ir - il) * .6; fine.moveTo(x, y); fine.quadraticCurveTo(x + (ir - il) * .16, y + tall * .03, ir - (ir - il) * .04, y + tall * .008) }
-            for (let k = 0; k < 3; k++) { const y = at(.135 + .02 * k); fine.moveTo(il + (ir - il) * .12, y); fine.bezierCurveTo(il + (ir - il) * .4, y + tall * .02, il + (ir - il) * .6, y - tall * .012, ir - (ir - il) * .1, y + tall * .008) }
-            // 电源框的小格、底下的竖栅、托盘左端的把手、底座的脚。
-            for (const f of [.035, .075, .225, .27]) for (let k = 0; k < 6; k++) fine.rect(l + (r - l) * (.08 + .15 * k), at(f), (r - l) * .09, tall * .02)
-            for (let k = 1; k < 10; k++) { const x = l + (r - l) * k / 10; fine.moveTo(x, at(.885)); fine.lineTo(x, at(.955)) }
-            for (let k = 0; k < 20; k++) fine.rect(il + (ir - il) * .03, at(.325 + .027 * k), (ir - il) * .07, tall * .012)
-            for (const x of [a + wide * .04, b - wide * .16]) fine.rect(x, at(.975), wide * .12, tall * .025)
-          }
-        }
-      }
-      c.globalAlpha = env.fade; c.fillStyle = env.paper; c.fill(body)
-      if (some > 0) { c.globalAlpha = .13 * some * env.fade; c.fillStyle = env.ink; c.fill(dark) }
-      c.globalAlpha = line * env.fade; c.lineWidth = 1; c.stroke(body)
-      if (some > 0) { c.globalAlpha = line * some * env.fade; c.lineWidth = .9; c.stroke(low) }
-      if (more > 0) { c.globalAlpha = line * .85 * more * env.fade; c.lineWidth = .8; c.stroke(mid) }
-      if (more > 0) { c.globalAlpha = line * .7 * Math.max(most, more * .5) * env.fade; c.lineWidth = .7; c.stroke(fine) }
-    }
+    paint(c, env.t, env.fade, false, boundary)
     c.globalAlpha = .4 * env.fade; c.fillStyle = env.ink; c.font = `18px ${env.hand}`
     c.fillText('∂²φ/∂t² = c² ∇²φ', left + w * .06, horizon - 16)
   }
