@@ -528,3 +528,17 @@
 @media (prefers-reduced-motion: reduce) {
   .marquee-run .marquee-text { animation: none; overflow: hidden; text-overflow: ellipsis; width: auto; max-width: 100%; }
 }
+
+/* ---- 侧栏 / 助手栏收放期间 ------------------------------------------------ */
+/* 面板的宽度每一帧都在变，阅读区跟着让位：这时所有玻璃都停掉背景模糊（每一帧重算整片模糊最贵），
+   面板内部不参与命中测试，动画落定后恢复。 */
+:root[data-pane-motion] *,
+:root[data-pane-motion] *::before,
+:root[data-pane-motion] *::after {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+:root[data-pane-motion] :is(.app-sidebar, .ai-panel, .reader-pane) {
+  pointer-events: none;
+}
