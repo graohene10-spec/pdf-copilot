@@ -8,7 +8,7 @@ export const DOCUMENT_LIMIT_FIELDS = Object.freeze([
   { key: 'searchPages', label: '搜索扫描页数 / 每次', min: 10, max: 500, default: 120 },
   { key: 'searchMilliseconds', label: '搜索时间 / 每次（秒）', min: 1000, max: 30000, default: 10000, scale: 1000 },
 ].map(field => Object.freeze(field)));
-export const DOCUMENT_LIMITS = Object.freeze({ ...Object.fromEntries(DOCUMENT_LIMIT_FIELDS.map(field => [field.key, field.default])), seedCharacters: 4000, pageBatch: 3 });
+export const DOCUMENT_LIMITS = Object.freeze({ ...Object.fromEntries(DOCUMENT_LIMIT_FIELDS.map(field => [field.key, field.default])), seedCharacters: 8000, pageBatch: 3 });
 export const MODEL_STATE_CHARACTERS = 16 * 1024 * 1024;
 export function normalizeDocumentLimits(value) {
   const clean = { ...DOCUMENT_LIMITS };

@@ -37,7 +37,7 @@ async function openPort() {
 
 // 小助手（以及它背后的 codex app-server）冷启动要好几秒：用完的连接留着复用，空闲 20 分钟才关。
 // 小助手一次只跑一段对话，所以并发的请求各拿一条连接。
-const IDLE_MS = 20 * 60000, MAX_IDLE = 2;
+const IDLE_MS = 20 * 60000, MAX_IDLE = 3;
 const idle = [];
 async function acquire() {
   while (idle.length) {
@@ -62,6 +62,13 @@ export function warmNative() {
   if (!globalThis.__TAURI_INTERNALS__ || idle.length) return warming || Promise.resolve();
   warming ||= nativeRequest('status').catch(() => {}).finally(() => { warming = undefined; });
   return warming;
+}
+
+/** 一条连接被对话占用后，池子里要是空了，就在后台再备一条热的：
+ *  预判问题、翻译和正式提问各占一条连接，不让谁临时等小助手冷启动。 */
+function spare() {
+  if (idle.length || warming) return;
+  setTimeout(() => { if (!idle.length) void warmNative(); }, 300);
 }
 
 export async function nativeRequest(type, signal) {
@@ -90,6 +97,7 @@ export const getNativeStatus = signal => nativeRequest('status', signal);
 export async function streamNative({ model, effort, fast = false, messages, signal, onDelta, onReasoning, pdfTools = false, pdfVision = false, pdfLimits, onTool, extraInstructions = '' }) {
   signal?.throwIfAborted();
   const port = await acquire();
+  spare();
   return new Promise((resolve, reject) => {
     const id = crypto.randomUUID();
     let settled = false, received = false, toolQueue = Promise.resolve();

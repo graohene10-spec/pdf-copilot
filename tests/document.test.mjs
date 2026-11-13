@@ -163,7 +163,7 @@ test('resource defaults migrate to five images and invalid stored values cannot 
   assert.equal(DOCUMENT_LIMITS.images, 5); assert.equal(normalizeDocumentLimits().images, 5);
   const limits = normalizeDocumentLimits({ images: 10000, pages: -5, characters: Infinity, calls: '999', rounds: NaN, searchPages: 501, searchMilliseconds: 900000, seedCharacters: 999999, path: 'secret' });
   assert.equal(limits.images, 10); assert.equal(limits.pages, 1); assert.equal(limits.characters, 24000); assert.equal(limits.calls, 12);
-  assert.equal(limits.rounds, 3); assert.equal(limits.searchPages, 500); assert.equal(limits.searchMilliseconds, 30000); assert.equal(limits.seedCharacters, 4000); assert.equal(limits.path, undefined);
+  assert.equal(limits.rounds, 3); assert.equal(limits.searchPages, 500); assert.equal(limits.searchMilliseconds, 30000); assert.equal(limits.seedCharacters, 8000); assert.equal(limits.path, undefined);
 });
 
 test('five default page images succeed; the sixth is rejected without rendering', async () => {

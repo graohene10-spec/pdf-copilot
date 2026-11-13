@@ -759,7 +759,7 @@ watch(() => [predictable.value, state.value.id, props.document.id, props.context
   predictTimer = setTimeout(() => {
     const request = new AbortController(); predicting = request
     predictQuestion(context, request.signal).then(question => { if (predicting === request && !request.signal.aborted && preferences.value.assistant.predictQuestions && !prompt.value && !busy.value) prediction.value = question || '' }).catch(() => { if (predicting === request && !request.signal.aborted) prediction.value = '' }).finally(() => { if (predicting === request) predicting = undefined })
-  }, 1200)
+  }, settings.value.provider === 'codex' ? 2600 : 1200) // Codex 每次预判都是一整轮对话：多等一会儿，翻页时不白跑
 }, { immediate: true })
 onMounted(() => {
   void loadConversations(props.document.id).then(() => { conversationId.value = ownConversation(props.document.id, props.conversationId) })
