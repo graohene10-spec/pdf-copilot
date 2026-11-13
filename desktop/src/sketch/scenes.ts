@@ -608,7 +608,7 @@ function blend(base: string, over: string, amount: number) {
   return made
 }
 function racks(): Painter {
-  const WIDE = .6, DEEP = 1.2, PITCH = 2.9, TALL = 2.25, EYE = 3.25, SPEED = .09, EVERY = 56000, LIFE = 60
+  const WIDE = .6, DEEP = 1.2, PITCH = 2.9, TALL = 2.25, EYE = 5.6, SPEED = .09, EVERY = 56000, LIFE = 60
   // 一个机柜的正面，照着 GB300 画：黑色的框，顶上一小块圆角的窗（交换机与线缆），下面一大块圆角的窗——里面是一层层计算托盘，上半截右侧垂着一束束线缆；窗与窗之间、最底下是深色的电源框。
   // 按宽度分档各画一张（16、32、64…像素宽），细节随大小多起来：先是框和两块窗，再是托盘线，最大才有线缆、把手、电源小格。
   const fronts = new Map<string, HTMLCanvasElement>()
@@ -647,11 +647,11 @@ function racks(): Painter {
   return env => {
     const { x: left, y: top, w, h } = env.full
     const front = (pixels: number) => { const size = 2 ** clamp(Math.ceil(Math.log2(pixels)), 4, 8), id = `${env.paper}|${env.ink}|${size}`; let made = fronts.get(id); if (!made) fronts.set(id, made = drawFront(env.paper, env.ink, size)); return made }
-    const horizon = top + h * .56, middle = left + w / 2, focal = w * .85
+    const horizon = top + h * .5, middle = left + w / 2, focal = w * .85
     const sx = (x: number, z: number) => middle + focal * x / z, sy = (y: number, z: number) => horizon + focal * (EYE - y) / z
     // 最前面的一排一直画到整个机柜滑出画面下沿为止，不会凭空消失；最远画到离天际线 5 个像素。
     const shade = blend(env.paper, env.ink, .16), stroke = blend(env.paper, env.ink, .25)
-    const nearest = Math.max(2.2, focal * (EYE - TALL - .9) / (h * .44)), FAR = focal * (EYE - TALL) / 1.5, c = env.context, fade = env.fade
+    const nearest = Math.max(2.2, focal * (EYE - TALL - .9) / (h * .5)), FAR = focal * (EYE - TALL) / 1.5, c = env.context, fade = env.fade
     {
       const seconds = env.t / 1000, camera = seconds * SPEED, latest = Math.floor(env.t / EVERY)
       // 波：每隔一阵在随机的地方来一个，形状随机——一滴水的圆环、从画面外推进来的平面波、两滴水的干涉。振幅从零慢慢起来，最后慢慢平息。
@@ -673,7 +673,7 @@ function racks(): Painter {
       c.strokeStyle = env.ink; c.lineJoin = 'round'
       {
         // 远景：从天际线到「排距约 6 像素」的地方铺一层均匀的淡铅笔色，代替挤成一片的线。
-        const zFull = Math.sqrt(focal * (EYE - TALL) * PITCH / 2.6), bottom = sy(TALL - .6, zFull)
+        const zFull = Math.sqrt(focal * (EYE - TALL) * PITCH / .3), bottom = sy(TALL - .6, zFull)
         const haze = c.createLinearGradient(0, horizon, 0, bottom); haze.addColorStop(0, blend(env.paper, env.ink, .05)); haze.addColorStop(1, blend(env.paper, env.ink, .06))
         c.globalAlpha = fade; c.fillStyle = haze; c.fillRect(left, horizon, w, Math.max(0, bottom - horizon))
       }
@@ -685,7 +685,7 @@ function racks(): Painter {
         // 排与排挤到三四个像素以内就不再一排排画：细线落在半个像素上，镜头一动整片都在闪。那一带由下面铺好的一层平涂接手，
         // 这里的排随间距变小慢慢淡进那层颜色里。
         // 再远一些只留一部分排（按排号里 2 的幂次分层，留下的总是同一批），线画粗一点、淡一点，粗略地一直铺到天际线附近。
-        let weight = smooth((spacing - .7) / 1.4)
+        let weight = smooth((spacing - .05) / .3)
         if (want > 1) weight *= clamp(2 - want / (row & -row || 1024), 0, 1)
         if (weight < .02) continue
         const coarse = want > 1, line = (coarse ? .1 : .25 * clamp(spacing / 8, .4, 1)) * weight * fade, solid = fade * weight ** .6, shift = hash(row) * WIDE, back = z + DEEP
