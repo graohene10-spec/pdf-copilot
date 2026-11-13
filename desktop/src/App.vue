@@ -1375,6 +1375,8 @@ const resizeGeneration = new WeakMap<Element, number>()
 function paneResizeStart(element: Element, entering: boolean) {
   resizeGeneration.set(element, (resizeGeneration.get(element) || 0) + 1)
   resizingPanels.set(element, entering)
+  // 收放期间整个窗口的玻璃先不做背景模糊（见 motion.css）：面板每一帧都在变宽，模糊跟着重算是掉帧的主要来源。
+  document.documentElement.dataset.paneMotion = ''
   if (pdfOnScreen() && !window.matchMedia('(max-width: 720px)').matches) for (const instance of visibleReaders()) instance.holdPanelResize?.(true, entering)
   // 关闭时面板留在原位做完收拢动画，阅读区在动画结束后才一次性展开，PDF 只重新适配一次。
   if (entering) restoreLeavingPanel(element)
@@ -1392,6 +1394,7 @@ function paneResizeEnd(element: Element, cancelled = false) {
   if (resizingPanels.get(element) && !cancelled) fitAfterPanelResize = true
   resizingPanels.delete(element)
   if (!resizingPanels.size) {
+    delete document.documentElement.dataset.paneMotion
     if (pdfOnScreen()) {
       const targets = visibleReaders().filter(instance => instance.holdPanelResize)
       for (const target of targets) target.holdPanelResize(false, fitAfterPanelResize)
