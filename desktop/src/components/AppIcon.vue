@@ -10,6 +10,7 @@ const paths: Record<string, string> = {
   clock: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z M12 7v5l3 2',
   star: 'm12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9z',
   tag: 'M3 4h8l10 10-7 7L3 10z M7 7h.01',
+  folder: 'M3 6h6l2 2.5h10V19H3z',
   file: 'M14 3H5v18h14V8z M14 3v5h5 M8 13h8 M8 17h6',
   markdown: 'M3 5h18v14H3z M6 15V9l3 3 3-3v6 M15 12l2 3 2-3 M17 9v6',
   sparkle: 'm12 3 2.3 6.7L21 12l-6.7 2.3L12 21l-2.3-6.7L3 12l6.7-2.3z M20 3v4 M18 5h4',

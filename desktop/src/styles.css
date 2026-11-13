@@ -567,6 +567,84 @@ kbd {
   flex-shrink: 0;
 }
 
+/* 分组：侧栏里的一栏，样子跟标签一致；标题右边是新建按钮，新建 / 改名时原地出现一个输入框。 */
+.tag-heading .group-add {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  min-height: 0;
+  margin-top: 14px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: none;
+  box-shadow: none;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color var(--dur-1) var(--ease-out), background-color var(--dur-1) var(--ease-out);
+}
+
+.tag-heading .group-add svg {
+  margin-top: 0;
+  color: inherit;
+}
+
+.tag-heading .group-add:hover {
+  background: var(--frost);
+  color: var(--ink);
+}
+
+.group-nav {
+  max-height: 32vh;
+  flex-shrink: 0;
+}
+
+.group-nav button > svg {
+  flex-shrink: 0;
+  color: var(--accent-muted, var(--muted));
+}
+
+.group-edit {
+  margin: 0;
+  padding: 1px 4px;
+}
+
+.group-edit input {
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: var(--r-control);
+  background: var(--frost);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+:root[data-style='warm'] .group-edit input {
+  border: .5px solid var(--accent);
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: none;
+}
+
+:root[data-style='sketch'] .group-edit input {
+  border: 0;
+  border-bottom: 1.5px dashed var(--pencil, #2b2a27);
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  font-family: var(--font-answer, var(--font));
+  font-size: 15px;
+}
+
+:root[data-style='sketch'] .group-nav button > svg {
+  color: var(--pencil, #2b2a27);
+}
+
 .tag-empty {
   color: var(--muted);
   font-size: 11px;

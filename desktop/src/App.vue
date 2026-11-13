@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, shallowRef, computed, watch, onMounted, onBeforeUnmount, nextTick, defineAsyncComponent, toRaw, triggerRef } from 'vue'
 import { library, isDesktop, importDroppedDocuments } from './sdk'
+import { groups, members, groupFilter, currentGroup, loadGroups, createGroup, renameGroup, removeGroup, assignGroup } from './library/groups'
 import type { Doc } from './sdk/types'
 import AppIcon from './components/AppIcon.vue'
 import FileTabs from './components/FileTabs.vue'
@@ -246,6 +247,7 @@ const visibleDocuments = computed(() => {
   if (category.value === 'starred') list = list.filter(doc => doc.starred)
   if (category.value === 'recent') list = list.filter(doc => doc.lastOpenedAt)
   if (tagFilter.value) list = list.filter(doc => doc.tags.includes(tagFilter.value))
+  if (groupFilter.value) list = list.filter(doc => members.value[doc.id] === groupFilter.value)
   return arranged(list)
 })
 const canArrange = computed(() => !query.value && category.value !== 'recent' && librarySort.value.key === 'default' && visibleDocuments.value.length > 1)
@@ -323,7 +325,7 @@ const reorderLibrary = useReorder({
 })
 watch(visibleDocuments, docs => { if (!picked.value.size) return; const ids = new Set(docs.map(doc => doc.id)); if ([...picked.value].some(id => !ids.has(id))) picked.value = new Set([...picked.value].filter(id => ids.has(id))) })
 watch(active, value => { if (value) { clearPicked(); batchTag.value = null } })
-const currentTitle = computed(() => tagFilter.value || (category.value === 'starred' ? '我的收藏' : category.value === 'recent' ? '最近阅读' : '文档库'))
+const currentTitle = computed(() => currentGroup.value?.name || tagFilter.value || (category.value === 'starred' ? '我的收藏' : category.value === 'recent' ? '最近阅读' : '文档库'))
 const totalPages = computed(() => documents.value.filter(doc => doc.kind === 'pdf' && doc.lastOpenedAt).reduce((sum, doc) => sum + (doc.pageCount || 0), 0))
 
 function notify(message: string) { toast.value = message; clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.value = '', 4800) }
@@ -358,8 +360,36 @@ async function refresh() {
   finally { loading.value = false }
 }
 function searchDocuments() { clearTimeout(queryTimer); queryTimer = setTimeout(refresh, 180) }
-function chooseCategory(value: string) { category.value = value; tagFilter.value = ''; closeReader() }
-function chooseTag(value: string) { tagFilter.value = value; category.value = 'all'; closeReader() }
+function chooseCategory(value: string) { category.value = value; tagFilter.value = ''; groupFilter.value = ''; closeReader() }
+function chooseTag(value: string) { tagFilter.value = value; groupFilter.value = ''; category.value = 'all'; closeReader() }
+// ---- 分组：侧栏里新建、改名、删除；书通过右键菜单或多选后的「分组」放进去 ----
+function chooseGroup(id: string) { groupFilter.value = id; tagFilter.value = ''; category.value = 'all'; closeReader() }
+/** 正在输入名字的分组：'new' 是新建，其余是改名的那一个。 */
+const groupEditing = ref('')
+const groupName = ref('')
+/** 新建分组后要放进去的书。 */
+let groupPending: string[] = []
+function editGroup(id: string, name = '', pending: string[] = []) { groupEditing.value = id; groupName.value = name; groupPending = pending; if (id === 'new' && !sidebarOpen.value) sidebarOpen.value = true }
+async function commitGroup() {
+  const id = groupEditing.value, name = groupName.value.trim(), pending = groupPending
+  if (!id) return
+  groupEditing.value = ''; groupPending = []
+  if (!name) return
+  try {
+    if (id === 'new') { const group = await createGroup(name); if (group && pending.length) { await assignGroup(pending, group.id); notify(`已把 ${pending.length} 份文档放进「${group.name}」。`) } }
+    else await renameGroup(id, name)
+  } catch (error) { notify(reason(error)) }
+}
+function groupCount(id: string) { return documents.value.filter(doc => members.value[doc.id] === id).length }
+function moveToGroup(ids: string[], group: string) { void assignGroup(ids, group).then(() => { const name = groups.value.find(item => item.id === group)?.name; notify(name ? `已把 ${ids.length} 份文档放进「${name}」。` : `已把 ${ids.length} 份文档移出分组。`) }).catch(error => notify(reason(error))) }
+function groupMenuItems(ids: string[]) {
+  const single = ids.length === 1 ? members.value[ids[0]] : undefined, items: any[] = []
+  groups.value.forEach((group, index) => items.push({ label: `放进「${group.name}」`, icon: 'folder', hint: single === group.id ? '当前' : undefined, disabled: single === group.id, separator: index === 0, action: () => moveToGroup(ids, group.id) }))
+  items.push({ label: '新建分组…', icon: 'plus', separator: !groups.value.length, action: () => editGroup('new', '', ids) })
+  if (ids.some(id => members.value[id])) items.push({ label: '移出分组', icon: 'close', action: () => moveToGroup(ids, '') })
+  return items
+}
+function groupPickedMenu(event: MouseEvent) { const box = (event.currentTarget as HTMLElement).getBoundingClientRect(); contextMenu.value = { x: box.left, y: box.top - 8, items: groupMenuItems(pickedDocs.value.map(doc => doc.id)).map((item, index) => ({ ...item, separator: index ? item.separator : false })) } }
 // ---- 机翻：左侧的翻译栏 ----------------------------------------------------
 const translatePane = ref<{ focus: () => void }>()
 // 翻译栏宽度可拖：记在本机；开合或拖完后让 PDF 重新适应宽度，书紧贴着翻译栏铺满，不留空白。
@@ -996,6 +1026,11 @@ function appContextMenu(event: MouseEvent) {
     if (active.value && target.closest('.reader-pane')) items.push({ label: '问阅读助手', icon: 'sparkle', action: () => openAssistant(true) })
     if (active.value && target.closest('.reader-pane')) { const pane = target.closest<HTMLElement>('[data-pane-id]')?.dataset.paneId; items.push({ label: '在这里加书签', icon: 'star', hint: shortcut('bookmark'), action: () => addBookmarkHere(pane || active.value?.id) }) }
     if (active.value && target.closest('.reader-pane')) items.push(...captureMenuItems(target))
+  } else if (target.closest('[data-group-id]')) {
+    const id = target.closest<HTMLElement>('[data-group-id]')!.dataset.groupId!, group = groups.value.find(item => item.id === id)
+    if (!group) return
+    items.push({ label: '重命名', icon: 'edit', action: () => editGroup(id, group.name) })
+    items.push({ label: '删除分组', icon: 'trash', danger: true, hint: '书留在文档库', action: () => { void removeGroup(id).catch(error => notify(reason(error))) } })
   } else if (!active.value && target.closest('.document-card')) {
     const card = target.closest<HTMLElement>('.document-card')!
     const doc = visibleDocuments.value.find(item => item.id === card.dataset.reorderId)
@@ -1003,6 +1038,7 @@ function appContextMenu(event: MouseEvent) {
     const cover = covers.get(sourceId(doc.id))?.kind ?? 'icon'
     items.push({ label: '打开', icon: 'book', action: () => { void openDocument(doc) } })
     items.push({ label: doc.starred ? '取消收藏' : '收藏', icon: 'star', action: () => { void toggleStar(doc) } })
+    items.push(...groupMenuItems(picked.value.has(doc.id) && picked.value.size > 1 ? pickedDocs.value.map(item => item.id) : [doc.id]))
     // 显示封面：首页预览、自己的图片或默认图标；当前用的那一种标「当前」。
     items.push({ label: '封面：首页预览', icon: 'doc', hint: cover === 'page' ? '当前' : undefined, separator: true, action: () => { void changeCover(doc, 'page') } })
     items.push({ label: '封面：选择图片…', icon: 'image', hint: cover === 'image' ? '当前' : undefined, action: () => { void changeCover(doc, 'image') } })
@@ -1608,6 +1644,7 @@ onMounted(async () => {
   // 打开应用时先只看到流形底板，文档库收着；点「文档库」再展开。
   if (!active.value && manifoldVisible.value) libraryShown.value = false
   await loadLibraryOrder()
+  await loadGroups()
   void loadCovers()
   await refresh()
 })
@@ -1623,9 +1660,18 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
       <button class="brand" @click="chooseCategory('all')" aria-label="返回文档库"><span class="brand-symbol"><svg width="26" height="26" viewBox="200 130 624 700" aria-hidden="true"><path d="M220 418c118-52 214-44 278 22v372c-66-56-162-66-278-24z" fill="#fff" /><path d="M804 418c-118-52-214-44-278 22v372c66-56 162-66 278-24z" fill="#fff" fill-opacity=".62" /><path d="M512 150c11 92 41 122 133 133-92 11-122 41-133 133-11-92-41-122-133-133 92-11 122-41 133-133z" fill="#fff" /></svg></span><span>开智</span></button>
       <button class="import-button" data-tip="加入 PDF / Markdown 文档" :data-tip-key="tipKey('import')" @click="importDocuments" :disabled="importing" aria-label="加入文档"><AppIcon name="plus" :size="18" />{{ importing ? '正在导入…' : '加入文档' }}<kbd v-if="preferences.shortcuts.import">{{ shortcut('import') }}</kbd></button>
       <nav v-liquid-selection="{ radius: 'var(--r-control)' }" class="workspace-nav" aria-label="文档分类">
-        <button :class="{ selected: category === 'all' && !tagFilter }" @click="chooseCategory('all')"><AppIcon name="library" :size="18" />全部文档<span>{{ documents.length }}</span></button>
+        <button :class="{ selected: category === 'all' && !tagFilter && !groupFilter }" @click="chooseCategory('all')"><AppIcon name="library" :size="18" />全部文档<span>{{ documents.length }}</span></button>
         <button :class="{ selected: category === 'recent' }" @click="chooseCategory('recent')"><AppIcon name="clock" :size="18" />最近阅读</button>
         <button :class="{ selected: category === 'starred' }" @click="chooseCategory('starred')"><AppIcon name="star" :size="18" />我的收藏<span>{{ starredCount }}</span></button>
+      </nav>
+      <div class="tag-heading group-heading"><p class="sidebar-label">分组</p><button type="button" class="group-add" aria-label="新建分组" data-tip="新建分组" @click="editGroup('new')"><AppIcon name="plus" :size="14" /></button></div>
+      <nav v-liquid-selection="{ radius: 'var(--r-control)' }" class="tag-nav group-nav" aria-label="文档分组">
+        <template v-for="group in groups" :key="group.id">
+          <form v-if="groupEditing === group.id" class="group-edit" @submit.prevent="commitGroup"><input v-model="groupName" maxlength="40" aria-label="分组名称" @vue:mounted="({ el }: any) => { el.focus(); el.select() }" @blur="commitGroup" @keydown.esc.stop="groupEditing = ''" /></form>
+          <button v-else :class="{ selected: groupFilter === group.id }" :data-group-id="group.id" @click="chooseGroup(group.id)" @dblclick="editGroup(group.id, group.name)"><AppIcon name="folder" :size="16" />{{ group.name }}<span>{{ groupCount(group.id) }}</span></button>
+        </template>
+        <form v-if="groupEditing === 'new'" class="group-edit" @submit.prevent="commitGroup"><input v-model="groupName" maxlength="40" placeholder="分组名称，回车确定" aria-label="新分组的名称" @vue:mounted="({ el }: any) => el.focus()" @blur="commitGroup" @keydown.esc.stop="groupEditing = ''" /></form>
+        <p v-else-if="!groups.length" class="tag-empty">点 + 新建，右键文档放进分组。</p>
       </nav>
       <div class="tag-heading"><p class="sidebar-label">标签</p><AppIcon name="tag" :size="14" /></div>
       <nav v-liquid-selection="{ radius: 'var(--r-control)' }" class="tag-nav" aria-label="文档标签"><button v-for="tag in tags" :key="tag" :class="{ selected: tagFilter === tag }" @click="chooseTag(tag)"><span class="tag-dot"></span>{{ tag }}<span>{{ documents.filter(doc => doc.tags.includes(tag)).length }}</span></button><p v-if="!tags.length" class="tag-empty">可在文档详情中添加标签。</p></nav>
@@ -1668,7 +1714,7 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
         <div class="library-summary"><div><AppIcon name="book" :size="15" /><strong>{{ documents.length }}</strong><span>份文档</span></div><span class="summary-divider"></span><div><AppIcon name="star" :size="15" /><strong>{{ starredCount }}</strong><span>份收藏</span></div><span class="summary-divider"></span><div><AppIcon name="file" :size="15" /><strong>{{ totalPages }}</strong><span>页已打开文档</span></div><span v-if="!isDesktop" class="summary-note">浏览器预览</span></div>
         <div v-if="query || category === 'recent'" class="library-list-heading"><span>{{ query ? `搜索「${query}」` : '按最近阅读排列' }}</span></div>
         <div v-if="loading" class="library-empty"><span class="spinner"></span><p>正在读取文档库…</p></div>
-        <div v-else-if="!visibleDocuments.length" class="library-empty"><div class="empty-art"><AppIcon name="book" :size="42" /></div><h2>{{ query ? '没有匹配的文档' : category === 'starred' ? '暂无收藏' : tagFilter ? '此标签下暂无文档' : '暂无文档' }}</h2><p>{{ query ? '可搜索标题、标签和已读取的文档内容。' : '点击“加入文档”添加 PDF 或 Markdown，可一次选择多个文件。' }}</p><button v-if="query" @click="query = ''; refresh()">查看全部文档</button><small>导入不会移动或修改原文件</small></div>
+        <div v-else-if="!visibleDocuments.length" class="library-empty"><div class="empty-art"><AppIcon name="book" :size="42" /></div><h2>{{ query ? '没有匹配的文档' : category === 'starred' ? '暂无收藏' : groupFilter ? '这个分组还是空的' : tagFilter ? '此标签下暂无文档' : '暂无文档' }}</h2><p>{{ query ? '可搜索标题、标签和已读取的文档内容。' : '点击“加入文档”添加 PDF 或 Markdown，可一次选择多个文件。' }}</p><button v-if="query" @click="query = ''; refresh()">查看全部文档</button><small>导入不会移动或修改原文件</small></div>
         <div v-else ref="collection" class="document-collection" :class="[display, { arrangeable: canArrange }]" :aria-description="canArrange ? '拖动卡片或按 Alt+方向键调整位置' : undefined">
           <article v-for="doc in visibleDocuments" :key="doc.id" class="document-card" :class="[doc.kind, { 'reorder-lifted': reorderLibrary.dragging.value === doc.id, picked: picked.has(doc.id) }]" :data-reorder-id="doc.id" tabindex="0" role="button" :aria-label="`打开 ${doc.name}`" :aria-selected="picked.size ? picked.has(doc.id) : undefined" @click="cardClick($event, doc)" @keydown.enter="openDocument(doc)" @keydown="reorderLibrary.keydown($event, doc.id)" @pointerdown="reorderLibrary.pointerdown($event, doc.id)">
             <div class="document-cover" :class="{ 'has-image': covers.has(sourceId(doc.id)) }"><img v-if="covers.has(sourceId(doc.id))" class="cover-image" :class="covers.get(sourceId(doc.id))!.kind" :src="covers.get(sourceId(doc.id))!.image" alt="" draggable="false" /><template v-else><div class="cover-lines"><i></i><i></i><i></i><i></i></div><div class="document-type-icon"><AppIcon :name="doc.kind === 'pdf' ? 'file' : 'markdown'" :size="display === 'list' ? 23 : 30" /></div></template><button class="card-star" :class="{ 'is-starred': doc.starred }" @click.stop="toggleStar(doc)" :data-tip="doc.starred ? '取消收藏' : '收藏文档'" :aria-label="doc.starred ? '取消收藏' : '收藏文档'"><AppIcon name="star" :size="17" /></button></div>
@@ -1685,6 +1731,7 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
             <button @click="starPicked"><AppIcon name="star" :size="15" />{{ pickedDocs.some(doc => !doc.starred) ? '收藏' : '取消收藏' }}</button>
             <form v-if="batchTag !== null" class="batch-tag" @submit.prevent="tagPicked"><input v-model="batchTag" placeholder="标签名，回车添加" maxlength="40" aria-label="批量添加的标签" @vue:mounted="({ el }: any) => el.focus()" @blur="tagPicked" /></form>
             <button v-else @click="batchTag = ''"><AppIcon name="tag" :size="15" />加标签</button>
+            <button @click="groupPickedMenu"><AppIcon name="folder" :size="15" />分组</button>
             <button class="batch-danger" @click="removePicked" data-tip-key="Delete"><AppIcon name="trash" :size="15" />移除</button>
             <span class="batch-divider" aria-hidden="true"></span>
             <button class="icon-button" @click="pickAll" data-tip="全选" data-tip-key="Ctrl + A" aria-label="全选"><AppIcon name="check" :size="15" /></button>
