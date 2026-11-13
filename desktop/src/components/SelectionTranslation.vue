@@ -4,8 +4,10 @@ import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import 'katex/dist/katex.min.css'
 import { renderMarkdown } from '../ai/render'
 import type { Translation } from '../ai/translate'
+import type { Explain } from '../ai/explain'
+import ExplainBody from './ExplainBody.vue'
 
-const props = defineProps<{ item: Translation; x: number; y: number }>()
+const props = defineProps<{ item?: Translation; explain?: Explain; x: number; y: number }>()
 const emit = defineEmits<{ close: [] }>()
 const box = ref<HTMLElement>()
 const place = ref({ left: props.x, top: props.y })
@@ -19,19 +21,23 @@ function settle() {
   if (top + height > innerHeight - 8) top = Math.max(8, props.y - gap - height)
   place.value = { left, top }
 }
-function outside(event: Event) { if (!box.value?.contains(event.target as Node)) emit('close') }
+// 中键是「解释」：不当作点了外面，卡片留着换内容。
+function outside(event: Event) { if ((event as PointerEvent).button === 1) return; if (!box.value?.contains(event.target as Node)) emit('close') }
 function key(event: KeyboardEvent) { if (event.key === 'Escape') emit('close') }
 onMounted(() => { settle(); document.addEventListener('pointerdown', outside, true); document.addEventListener('wheel', outside, { capture: true, passive: true }); document.addEventListener('keydown', key) })
 onBeforeUnmount(() => { document.removeEventListener('pointerdown', outside, true); document.removeEventListener('wheel', outside, true); document.removeEventListener('keydown', key) })
-watch(() => [props.item.result, props.item.status, props.x, props.y], () => { void nextTick(settle) })
+watch(() => [props.item?.result, props.item?.status, props.explain?.id, props.explain?.text, props.explain?.status, props.explain?.reasoning, props.x, props.y], () => { void nextTick(settle) })
 </script>
 
 <template>
   <Teleport to="body">
   <div ref="box" class="selection-translation" role="status" aria-live="polite" :style="{ left: `${place.left}px`, top: `${place.top}px` }">
-    <div v-if="item.result" class="st-text" v-html="renderMarkdown(item.result)"></div>
-    <p v-else-if="item.status === 'error'" class="st-error">{{ item.error || '翻译失败' }}</p>
-    <p v-else class="st-wait"><i></i><i></i><i></i></p>
+    <Transition name="st-swap" mode="out-in" @after-leave="settle" @after-enter="settle">
+    <div v-if="explain" :key="explain.id" class="st-explain"><p class="st-term">{{ explain.term.length > 48 ? explain.term.slice(0, 48) + '…' : explain.term }}</p><ExplainBody :item="explain" /></div>
+    <div v-else-if="item?.result" key="text" class="st-text" v-html="renderMarkdown(item.result)"></div>
+    <p v-else-if="item?.status === 'error'" key="error" class="st-error">{{ item.error || '翻译失败' }}</p>
+    <p v-else key="wait" class="st-wait"><i></i><i></i><i></i></p>
+    </Transition>
   </div>
   </Teleport>
 </template>
@@ -43,6 +49,11 @@ watch(() => [props.item.result, props.item.status, props.x, props.y], () => { vo
 .st-text ul,.st-text ol{margin-bottom:0;padding-left:1.3em}
 .st-text .katex-display{margin:.4em 0;overflow-x:auto;overflow-y:hidden}
 .st-error{color:var(--danger)}
+.st-term{margin-bottom:4px!important;color:var(--muted);font-size:.82em;font-weight:600;white-space:nowrap!important;overflow:hidden;text-overflow:ellipsis}
+.st-explain{min-width:180px}
+.st-swap-enter-active,.st-swap-leave-active{transition:opacity .14s var(--ease-out),filter .14s var(--ease-out),translate .14s var(--ease-out)}
+.st-swap-enter-from{opacity:0;filter:blur(4px);translate:0 4px}
+.st-swap-leave-to{opacity:0;filter:blur(4px);translate:0 -4px}
 .st-wait{display:flex;gap:5px;padding:5px 2px}
 .st-wait i{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.3;animation:st-dot 1s var(--ease-out) infinite}
 .st-wait i:nth-child(2){animation-delay:.15s}
@@ -54,6 +65,6 @@ watch(() => [props.item.result, props.item.status, props.x, props.y], () => { vo
 /* 铅笔草稿：一张撕下来的便签纸，顶上贴着胶带，微微歪着，手写字。 */
 :root[data-style='sketch'] .selection-translation{overflow:visible;padding:16px 14px 11px;border:0;border-radius:2px;background:color-mix(in srgb,var(--paper,#fdfaf0) 72%,#f3d260);-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:1px 2px 0 rgb(60 50 30 / .1),5px 9px 18px -8px rgb(60 50 30 / .5);color:var(--pencil,#2b2a27);font-family:var(--font-answer,var(--font));font-size:15.5px;rotate:-1.2deg;clip-path:none}
 :root[data-style='sketch'] .selection-translation::before{content:'';position:absolute;left:50%;top:-8px;width:64px;height:17px;margin-left:-32px;background:var(--tape,rgb(170 200 225 / .7));rotate:2deg;clip-path:polygon(3% 10%,97% 0,100% 90%,0 100%)}
-:root[data-style='sketch'] .selection-translation .st-text{max-height:min(44vh,330px);overflow:auto}
+:root[data-style='sketch'] .selection-translation .st-text,:root[data-style='sketch'] .selection-translation .st-explain{max-height:min(44vh,330px);overflow:auto}
 @media(prefers-reduced-motion:reduce){.selection-translation,.st-wait i{animation:none}}
 </style>

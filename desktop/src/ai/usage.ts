@@ -4,9 +4,9 @@
  */
 import { reactive } from 'vue'
 
-export type UsageKind = 'chat' | 'side' | 'btw' | 'compress' | 'translate' | 'predict'
+export type UsageKind = 'chat' | 'side' | 'btw' | 'compress' | 'translate' | 'predict' | 'explain'
 export type UsageEntry = { kind: UsageKind; provider: string; model: string; input: number; output: number; reasoning: number; estimated: boolean; ms: number; at: number }
-export const USAGE_KINDS: Record<UsageKind, string> = { chat: '主对话', side: '侧边对话', btw: '/btw 顺便问', compress: '/compress 压缩', translate: '翻译', predict: '问题预判' }
+export const USAGE_KINDS: Record<UsageKind, string> = { chat: '主对话', side: '侧边对话', btw: '/btw 顺便问', compress: '/compress 压缩', translate: '翻译', predict: '问题预判', explain: '快速解释' }
 
 const DAILY_KEY = 'kaizhi.usage.daily.v1'
 const KEEP_DAYS = 14

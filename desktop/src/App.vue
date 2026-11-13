@@ -20,6 +20,7 @@ import { vLiquidSelection } from './ui/liquid-selection'
 import { useReorder } from './ui/reorder'
 import { useRubberBand } from './ui/rubber-band'
 import { translator, translate, type Translation } from './ai/translate'
+import { explainCard, closeExplainCard, explainTarget, runExplain } from './ai/explain'
 import SelectionTranslation from './components/SelectionTranslation.vue'
 import { startAutoCheck, stopAutoCheck } from './ui/updater'
 import { registerCustomFonts } from './ui/custom-fonts'
@@ -694,10 +695,20 @@ function autoTranslate(event: MouseEvent) {
     if (!text || text.length > 3000) { hoverSource = ''; return }
     if (text === hoverSource && hoverTranslation.value) return
     hoverSource = text
-    void translate(text, translator.target, false, { quiet: true, onItem: item => { hoverTranslation.value = { item, x, y } } })
+    void translate(text, translator.target, false, { quiet: true, onItem: item => { closeExplainCard(); hoverTranslation.value = { item, x, y } } })
   }, 0)
 }
 function closeHoverTranslation() { hoverTranslation.value = undefined; hoverSource = '' }
+// 快速解释：选中文字后按鼠标中键。按下时拦住浏览器的中键滚动，松开时解释。
+function middleDown(event: MouseEvent) { if (event.button === 1 && (event.target as HTMLElement | null)?.closest?.('.reader-pane') && window.getSelection()?.toString().trim()) event.preventDefault() }
+function middleClick(event: MouseEvent) {
+  if (event.button !== 1) return
+  const target = explainTarget()
+  if (!target) return
+  event.preventDefault()
+  runExplain(target, event.clientX, event.clientY)
+}
+const openAiSettings = () => openSettings('ai')
 watch(() => translator.auto, value => { if (!value) closeHoverTranslation() })
 // 右键拖动截图：按文档单独开启（给没有文字层的扫描版 PDF 用），记在本机。
 const RIGHT_CAPTURE_KEY = 'kaizhi.rightCapture.v1'
@@ -974,6 +985,8 @@ function appContextMenu(event: MouseEvent) {
   } else if (text.trim()) {
     items.push({ label: '复制', icon: 'copy', hint: 'Ctrl+C', action: () => { void navigator.clipboard.writeText(text).catch(() => document.execCommand('copy')) } })
     items.push({ label: '机翻', icon: 'translate', hint: shortcut('translate'), action: () => { void translate(text) } })
+    const explainAt = target.closest('.reader-pane') ? explainTarget() : undefined
+    if (explainAt) items.push({ label: '解释', icon: 'book', hint: '鼠标中键', action: () => runExplain(explainAt, event.clientX, event.clientY) })
     if (active.value && target.closest('.reader-pane')) items.push({ label: '问阅读助手', icon: 'sparkle', action: () => openAssistant(true) })
     if (active.value && target.closest('.reader-pane')) { const pane = target.closest<HTMLElement>('[data-pane-id]')?.dataset.paneId; items.push({ label: '在这里加书签', icon: 'star', hint: shortcut('bookmark'), action: () => addBookmarkHere(pane || active.value?.id) }) }
     if (active.value && target.closest('.reader-pane')) items.push(...captureMenuItems(target))
@@ -1566,6 +1579,9 @@ onMounted(async () => {
   document.addEventListener('keydown', keydown)
   document.addEventListener('contextmenu', appContextMenu)
   document.addEventListener('mouseup', autoTranslate)
+  document.addEventListener('mousedown', middleDown)
+  document.addEventListener('auxclick', middleClick)
+  window.addEventListener('kaizhi:open-ai-settings', openAiSettings)
   document.addEventListener('wheel', wheel, { capture: true, passive: false })
   document.addEventListener('dragenter', dragEnter)
   document.addEventListener('dragover', dragOver)
@@ -1586,7 +1602,7 @@ onMounted(async () => {
   void loadCovers()
   await refresh()
 })
-onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); stopAutoCheck(); clearTimeout(enteringTimer); disposed = true; ++openEpoch; dismissCaptureQuick(); stopDropListening?.(); clearWheelZoom(); readerInstances.clear(); glassContrast?.dispose(); document.removeEventListener('keydown', keydown); document.removeEventListener('contextmenu', appContextMenu); document.removeEventListener('wheel', wheel, true); document.removeEventListener('dragenter', dragEnter); document.removeEventListener('dragover', dragOver); document.removeEventListener('dragleave', dragLeave); document.removeEventListener('drop', fileDrop); document.removeEventListener('selectionchange', selectionChanged); document.removeEventListener('scroll', dismissSelectionAction, true); document.removeEventListener('scroll', captureViewportChanged, true); window.removeEventListener('resize', dismissSelectionAction); window.removeEventListener('resize', captureViewportChanged); closeAllChats(); forgetAllPasswords(); systemTheme.removeEventListener('change', applyTheme); flushProgress(); for (const timer of indexTimers.values()) clearTimeout(timer); clearTimeout(queryTimer); clearTimeout(toastTimer) })
+onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); document.removeEventListener('mousedown', middleDown); document.removeEventListener('auxclick', middleClick); window.removeEventListener('kaizhi:open-ai-settings', openAiSettings); closeExplainCard(); stopAutoCheck(); clearTimeout(enteringTimer); disposed = true; ++openEpoch; dismissCaptureQuick(); stopDropListening?.(); clearWheelZoom(); readerInstances.clear(); glassContrast?.dispose(); document.removeEventListener('keydown', keydown); document.removeEventListener('contextmenu', appContextMenu); document.removeEventListener('wheel', wheel, true); document.removeEventListener('dragenter', dragEnter); document.removeEventListener('dragover', dragOver); document.removeEventListener('dragleave', dragLeave); document.removeEventListener('drop', fileDrop); document.removeEventListener('selectionchange', selectionChanged); document.removeEventListener('scroll', dismissSelectionAction, true); document.removeEventListener('scroll', captureViewportChanged, true); window.removeEventListener('resize', dismissSelectionAction); window.removeEventListener('resize', captureViewportChanged); closeAllChats(); forgetAllPasswords(); systemTheme.removeEventListener('change', applyTheme); flushProgress(); for (const timer of indexTimers.values()) clearTimeout(timer); clearTimeout(queryTimer); clearTimeout(toastTimer) })
 </script>
 
 <template>
@@ -1704,7 +1720,7 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
     <ContextMenu v-if="contextMenu" :x="contextMenu.x" :y="contextMenu.y" :items="contextMenu.items" @close="contextMenu = undefined" />
     <div v-if="tabDrop" class="tab-drop-zone" :style="{ left: `${tabDrop.left}px`, top: `${tabDrop.top}px`, width: `${tabDrop.width}px`, height: `${tabDrop.height}px` }"><span>{{ tabDrop.side === 'left' ? '放在左侧' : '放在右侧' }}</span></div>
     <SplitPicker v-if="splitPicker && active" :anchor="splitPicker" :candidates="splitCandidates" :full="paneIds.length >= MAX_PANES" :limit="MAX_PANES" @pick="openBeside" @close="splitPicker = undefined" />
-    <SelectionTranslation v-if="hoverTranslation" :key="hoverTranslation.item.id" :item="hoverTranslation.item" :x="hoverTranslation.x" :y="hoverTranslation.y" @close="closeHoverTranslation" />
+    <SelectionTranslation v-if="hoverTranslation || explainCard" :key="hoverTranslation?.item.id || 'explain'" :item="hoverTranslation?.item" :explain="explainCard?.item" :x="(hoverTranslation || explainCard)!.x" :y="(hoverTranslation || explainCard)!.y" @close="closeHoverTranslation(); closeExplainCard()" />
     <Transition name="capture-focus"><CaptureQuickPrompt v-if="captureQuick && !settingsOpen" :frame="captureQuick.frame" :prompts="preferences.assistant.captureQuestions" :busy="captureQuickBusy" :status="captureQuickStatus" @ask="askCaptureQuick" @continue="continueCaptureQuick" @cancel="dismissCaptureQuick()" /></Transition>
     <div v-if="draggingFiles" class="file-drop-overlay" aria-live="polite"><div class="file-drop-target"><AppIcon name="plus" :size="32" /><strong>加入文档库</strong><span>松开以加入 PDF / Markdown 文档</span></div></div>
     <UpdateCard v-if="!settingsOpen" />
