@@ -49,6 +49,17 @@ export function translationSettings(main = loadAiSettings()) {
   const connection = own.share ? { provider: main.provider, baseUrl: main.baseUrl, protocol: main.protocol } : { provider: own.provider, baseUrl: own.baseUrl, protocol: own.protocol };
   return { ...main, ...connection, model: own.model, effort: own.effort, fast: Boolean(own.fast) && supportsFast(connection.provider), translation: own };
 }
+/**
+ * 快速解释用的 AI：服务商可以跟阅读助手一样（assistant）、跟翻译一样（translation），或者自己单独一家（own）；
+ * 模型、思考强度、Fast 始终自己选。
+ */
+export const EXPLAIN_DEFAULTS = Object.freeze({ share: 'assistant', provider: 'deepseek', baseUrl: 'https://api.deepseek.com', protocol: 'chat', model: '', effort: '', fast: false });
+export function explainSettings(main = loadAiSettings()) {
+  const own = { ...EXPLAIN_DEFAULTS, ...(main.explain || {}) };
+  const from = own.share === 'own' ? own : own.share === 'translation' ? translationSettings(main) : main;
+  const connection = { provider: from.provider, baseUrl: from.baseUrl, protocol: from.protocol };
+  return { ...main, ...connection, model: own.model, effort: own.effort, fast: Boolean(own.fast) && supportsFast(connection.provider), explain: own };
+}
 /** 翻译窗口里改模型 / 强度 / Fast：只动 translation 这一块。 */
 export function saveTranslationChoice(patch) {
   let stored = {};

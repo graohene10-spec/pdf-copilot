@@ -2,7 +2,7 @@
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { PROVIDERS, PROTOCOLS, getProvider, getNativeModels, getNativeStatus } from '../ai/providers.mjs'
 import { nativeModelInventory, registerNativeModelInventory } from '../ai/native-models'
-import { loadAiSettings, loadApiKey, saveAiSettings, saveCredential, supportsFast, TRANSLATION_DEFAULTS } from '../ai/settings.mjs'
+import { loadAiSettings, loadApiKey, saveAiSettings, saveCredential, supportsFast, TRANSLATION_DEFAULTS, EXPLAIN_DEFAULTS } from '../ai/settings.mjs'
 import { concreteChoice } from '../ai/translate-model'
 import { DOCUMENT_LIMIT_FIELDS } from '../../../extension/common/document-limits.mjs'
 import { apiOrigin } from '../../../extension/common/settings.js'
@@ -12,6 +12,7 @@ withDefaults(defineProps<{ embedded?: boolean }>(), { embedded: false })
 const emit = defineEmits<{ saved: [value: any]; close: [] }>()
 const settings = ref<any>(loadAiSettings())
 settings.value.translation = { ...TRANSLATION_DEFAULTS, ...(settings.value.translation || {}) }
+settings.value.explain = { ...EXPLAIN_DEFAULTS, ...(settings.value.explain || {}) }
 const key = ref('')
 const status = ref('')
 const error = ref(false)
@@ -94,6 +95,27 @@ watch([trModels, () => tr.value.model, () => tr.value.share], () => {
   const choice = concreteChoice(list, tr.value.model, tr.value.effort, trProvider.value?.defaultModel, trProvider.value?.id !== 'codex')
   if (choice.model !== tr.value.model || choice.effort !== tr.value.effort) Object.assign(tr.value, choice)
 }, { immediate: true })
+// ---- 快速解释用的 AI：服务商跟阅读助手、跟翻译，或单独一家；模型 / 强度 / Fast 自己选。 ----
+const ex = computed<any>(() => settings.value.explain)
+const exProvider = computed<any>(() => getProvider(ex.value.share === 'own' ? ex.value.provider : ex.value.share === 'translation' ? trProvider.value?.id : settings.value.provider))
+const exModels = computed<any[]>(() => exProvider.value?.id === 'codex' ? nativeModels.value : exProvider.value?.models || [])
+const exEfforts = computed<string[]>(() => (exModels.value.find(item => item.id === ex.value.model)?.efforts || ['none', 'low', 'medium', 'high']).filter(Boolean))
+const exNeedsKey = computed(() => ex.value.share === 'own' && ex.value.provider !== 'codex' && ex.value.provider !== settings.value.provider && !(trNeedsKey.value && ex.value.provider === tr.value.provider))
+const exKey = ref('')
+let exKeyEpoch = 0
+watch(() => ex.value.provider, async (value, previous) => {
+  if (previous && value !== previous) { const next: any = getProvider(value); ex.value.baseUrl = next?.baseUrl || ''; ex.value.protocol = 'chat' }
+  const epoch = ++exKeyEpoch; exKey.value = ''
+  if (value === 'codex' && !nativeModels.value.length && (globalThis as any).__TAURI_INTERNALS__) void refreshNative()
+  try { const result = await loadApiKey(value); if (epoch === exKeyEpoch) exKey.value = result } catch { /* 读不到就留空 */ }
+}, { immediate: true })
+watch(() => exProvider.value?.id, (value, previous) => { if (previous && value !== previous) { ex.value.model = ''; ex.value.effort = '' } })
+watch([exModels, () => ex.value.model], () => {
+  const list = exModels.value.filter(item => item.id)
+  if (!list.length) return
+  const choice = concreteChoice(list, ex.value.model, ex.value.effort, exProvider.value?.defaultModel, exProvider.value?.id !== 'codex')
+  if (choice.model !== ex.value.model || choice.effort !== ex.value.effort) Object.assign(ex.value, choice)
+}, { immediate: true })
 async function save() {
   saving.value = true; status.value = ''; error.value = false
   try {
@@ -108,6 +130,7 @@ async function save() {
     }
     settings.value.requestLimits = normalizeRequestLimits(settings.value.requestLimits)
     if (trNeedsKey.value) { apiOrigin(tr.value.baseUrl); await saveCredential(tr.value.provider, trKey.value) }
+    if (exNeedsKey.value) { apiOrigin(ex.value.baseUrl); await saveCredential(ex.value.provider, exKey.value) }
     await saveAiSettings(settings.value, key.value)
     edited.value = false
     const saved = { ...settings.value }
@@ -150,6 +173,19 @@ defineExpose({ save, hasChanges: () => edited.value })
       <datalist id="tr-model-list"><option v-for="item in trModels" :key="item.id" :value="item.id">{{ item.name }}</option></datalist>
       <label>思考强度<select v-model="tr.effort" aria-label="翻译思考强度"><option v-for="item in trEfforts" :key="item" :value="item">{{ ({ none:'不思考',low:'低',medium:'中',high:'高',xhigh:'很高',max:'最高',minimal:'极低',ultra:'极高' } as any)[item] || item }}</option></select></label>
       <label v-if="supportsFast(trProvider?.id)" class="check"><input v-model="tr.fast" type="checkbox" /> Fast</label>
+    </details>
+    <details class="limit-settings"><summary>快速解释用的 AI</summary>
+      <label>服务商<select v-model="ex.share" aria-label="快速解释的服务商来源"><option value="assistant">与阅读助手共用</option><option value="translation">与翻译共用</option><option value="own">单独设置</option></select></label>
+      <template v-if="ex.share === 'own'">
+        <label>服务商<select v-model="ex.provider" aria-label="快速解释服务商"><option v-for="item in PROVIDERS" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
+        <label v-if="exProvider?.custom">接口协议<select v-model="ex.protocol" aria-label="快速解释接口协议"><option v-for="item in PROTOCOLS" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
+        <label v-if="ex.provider !== 'codex'">API 地址<input v-model="ex.baseUrl" aria-label="快速解释 API 地址" type="url" /></label>
+        <label v-if="exNeedsKey">API Key<input v-model="exKey" aria-label="快速解释 API Key" type="password" autocomplete="off" placeholder="加密保存在本机" /></label>
+      </template>
+      <label>模型<select v-if="exProvider?.id === 'codex'" v-model="ex.model" aria-label="快速解释模型"><option v-for="item in exModels.filter(item => item.id)" :key="item.id" :value="item.id">{{ item.name || item.id }}</option></select><input v-else v-model="ex.model" aria-label="快速解释模型" list="ex-model-list" placeholder="模型名称" /></label>
+      <datalist id="ex-model-list"><option v-for="item in exModels" :key="item.id" :value="item.id">{{ item.name }}</option></datalist>
+      <label>思考强度<select v-model="ex.effort" aria-label="快速解释思考强度"><option v-for="item in exEfforts" :key="item" :value="item">{{ ({ none:'不思考',low:'低',medium:'中',high:'高',xhigh:'很高',max:'最高',minimal:'极低',ultra:'极高' } as any)[item] || item }}</option></select></label>
+      <label v-if="supportsFast(exProvider?.id)" class="check"><input v-model="ex.fast" type="checkbox" /> Fast</label>
     </details>
     <details class="limit-settings"><summary>每题阅读预算</summary><label v-for="field in DOCUMENT_LIMIT_FIELDS" :key="field.key">{{ field.label }}<input v-model.number="settings.documentLimits[field.key]" type="number" :min="field.min" :max="field.max" :step="field.step || 1" /></label></details>
     <details class="limit-settings"><summary>多文件提问</summary><label v-for="field in requestFields" :key="field.key">{{ field.label }}<input v-model.number="settings.requestLimits[field.key]" type="number" :min="field.min" :max="field.max" :aria-label="field.label" /></label><p class="settings-note">切换标签或收起助手后继续回答；关闭文件标签会停止该文件的提问。</p></details>

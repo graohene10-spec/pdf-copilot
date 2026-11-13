@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { restoreNotes } from '../ai/explain'
 import { ref, watch, onMounted, onActivated, onDeactivated, onBeforeUnmount, nextTick } from 'vue'
 import MarkdownIt from 'markdown-it'
 import 'katex/dist/katex.min.css'
@@ -315,6 +316,7 @@ async function renderDocument() {
   if (active && scroll.value) scroll.value.scrollTop = Math.max(0, scroll.value.scrollHeight - scroll.value.clientHeight) * targetProgress
   cachedProgress = targetProgress
   rendered = true
+  if (body.value) restoreNotes(body.value, props.documentId)
   if (searchQuery.value.trim()) runSearch(true, false)
   progress()
 }
