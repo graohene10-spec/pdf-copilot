@@ -3,7 +3,7 @@ import type { Vec } from './manifolds.ts'
 
 export type Project = (x: number, y: number, z: number) => [number, number, number]
 /** size：模型里 1 个单位在画布中心是多少像素；full：整块桌面（画面的常规区域之外也能画）。 */
-export type Env = { context: CanvasRenderingContext2D; project: Project; t: number; fade: number; ink: string; red: string; paper: string; hand: string; width: number; height: number; size: number; camera: number; full: { x: number; y: number; w: number; h: number } }
+export type Env = { context: CanvasRenderingContext2D; project: Project; t: number; fade: number; ink: string; red: string; paper: string; hand: string; width: number; height: number; size: number; camera: number; full: { x: number; y: number; w: number; h: number }; grid: { size: number; x: number; y: number } }
 export type Painter = (env: Env) => void
 export type Sketch = { id: string; name: string; tilt: number; zoom?: number; camera?: number; facts: string[]; create: () => Painter }
 
@@ -47,42 +47,40 @@ function dotAt(env: Env, at: Vec, radius: number, alpha: number, color: string) 
   env.context.beginPath(); env.context.arc(x, y, radius, 0, TAU); env.context.fill()
 }
 
-/** 球棍模型：球按远近排序、用纸色填实，近的挡住远的。kind：0 空心、1 铅笔淡填、2 红笔淡填、3 红笔深填；bonds 是 (a, b, 样式) 三元组，样式 0 实线、1 虚线、2 红线。 */
 type Model = { points: Vec[]; radius: number[]; kind: number[]; bonds: number[]; shaded?: boolean }
-// 有明暗的小球：左上一点高光、右下一圈暗部，按颜色各画一张小图，用的时候缩放贴上去。
+// 手画的小球：只用纸色、铅笔、红笔三种平涂，不打高光；右下角划几道铅笔斜线当阴影。按颜色各画一张小图，用的时候缩放贴上去。
 const sprites = new Map<string, HTMLCanvasElement[]>()
 function shadedBalls(env: Env) {
   const key = `${env.paper}|${env.ink}|${env.red}`
   let set = sprites.get(key)
   if (set) return set
-  const probe = document.createElement('canvas').getContext('2d', { willReadFrequently: true })!
-  const rgb = (color: string) => { probe.clearRect(0, 0, 1, 1); probe.fillStyle = color; probe.fillRect(0, 0, 1, 1); const d = probe.getImageData(0, 0, 1, 1).data; return `${d[0]},${d[1]},${d[2]}` }
-  const ink = rgb(env.ink), SIZE = 64
+  const SIZE = 72
   set = [0, 1, 2, 3].map(kind => {
     const canvas = document.createElement('canvas'); canvas.width = canvas.height = SIZE
     const c = canvas.getContext('2d')!, r = SIZE / 2
     c.beginPath(); c.arc(r, r, r - 1, 0, TAU); c.clip()
     c.fillStyle = env.paper; c.fillRect(0, 0, SIZE, SIZE)
-    if (kind) { c.globalAlpha = kind === 1 ? .3 : kind === 2 ? .38 : .72; c.fillStyle = kind === 1 ? env.ink : env.red; c.fillRect(0, 0, SIZE, SIZE); c.globalAlpha = 1 }
-    const shade = c.createRadialGradient(r * .7, r * .66, r * .25, r, r, r)
-    shade.addColorStop(0, `rgba(${ink},0)`); shade.addColorStop(.62, `rgba(${ink},.06)`); shade.addColorStop(1, `rgba(${ink},.5)`)
-    c.fillStyle = shade; c.fillRect(0, 0, SIZE, SIZE)
-    const light = c.createRadialGradient(r * .62, r * .56, 0, r * .62, r * .56, r * .55)
-    light.addColorStop(0, 'rgba(255,255,255,.75)'); light.addColorStop(1, 'rgba(255,255,255,0)')
-    c.fillStyle = light; c.fillRect(0, 0, SIZE, SIZE)
+    if (kind) { c.globalAlpha = kind === 1 ? .72 : .8; c.fillStyle = kind === 1 ? env.ink : env.red; c.fillRect(0, 0, SIZE, SIZE); c.globalAlpha = 1 }
+    // 阴影：只留右下的一弯月牙，在里面划斜线。
+    const moon = new Path2D(); moon.rect(0, 0, SIZE, SIZE); moon.arc(r * .7, r * .7, r * .98, 0, TAU)
+    c.clip(moon, 'evenodd')
+    c.strokeStyle = env.ink; c.globalAlpha = kind === 1 ? 0 : .6; c.lineWidth = 2.6; c.lineCap = 'round'
+    for (let k = -SIZE; k < SIZE * 2; k += 9) { c.beginPath(); c.moveTo(k, SIZE); c.lineTo(k + SIZE, 0); c.stroke() }
     return canvas
   })
   sprites.set(key, set)
   return set
 }
 /** 球棍模型：球按远近排序、用纸色填实，近的挡住远的。kind：0 空心、1 铅笔淡填、2 红笔淡填、3 红笔深填；bonds 是 (a, b, 样式) 三元组，样式 0 实线、1 虚线、2 红线、3 粗而淡的带子。shaded：球带明暗，远处的褪进纸里，近处的线更粗更深。 */
-function ballsAndSticks(env: Env, model: Model, place: (p: Vec) => Vec, hot?: Set<number>) {
+function ballsAndSticks(env: Env, model: Model, place: (p: Vec) => Vec, hot?: Set<number>, veil?: (p: Vec) => number) {
   const c = env.context, n = model.points.length, m = model.bonds.length / 3
   const sx = new Float32Array(n), sy = new Float32Array(n), depth = new Float32Array(n + m), pr = new Float32Array(n)
+  const seen = new Float32Array(n).fill(1)
   let low = Infinity, high = -Infinity
   for (let i = 0; i < n; i++) {
     const q = place(model.points[i]!), [x, y, d] = env.project(q[0], q[1], q[2])
     sx[i] = x; sy[i] = y; depth[i] = d; pr[i] = model.radius[i]! * env.size * env.camera / (env.camera + 1 - 2 * d)
+    if (veil) seen[i] = veil(model.points[i]!)
     if (d < low) low = d
     if (d > high) high = d
   }
@@ -93,12 +91,13 @@ function ballsAndSticks(env: Env, model: Model, place: (p: Vec) => Vec, hot?: Se
     // shaded：远近按模型自己的前后拉满；否则按画面的绝对深度。
     const near = model.shaded ? clamp((depth[id]! - low) / (high - low || 1), 0, 1) : clamp(depth[id]!, 0, 1)
     if (id < n) {
-      const r = pr[id]!, kind = model.kind[id]!
+      const r = pr[id]!, kind = model.kind[id]!, show = seen[id]! * env.fade
+      if (show < .02) continue
       c.beginPath(); c.arc(sx[id]!, sy[id]!, r, 0, TAU)
       if (balls) {
-        c.globalAlpha = env.fade; c.drawImage(balls[kind]!, sx[id]! - r, sy[id]! - r, r * 2, r * 2)
-        c.globalAlpha = .78 * (1 - near) ** 1.4 * env.fade; c.fillStyle = env.paper; c.fill()
-        c.globalAlpha = (.08 + .62 * near * near) * env.fade; c.strokeStyle = env.ink; c.lineWidth = .6 + .7 * near; c.stroke()
+        c.globalAlpha = show; c.drawImage(balls[kind]!, sx[id]! - r, sy[id]! - r, r * 2, r * 2)
+        c.globalAlpha = .8 * (1 - near) ** 1.3 * show; c.fillStyle = env.paper; c.fill()
+        c.globalAlpha = (.1 + .45 * near) * show; c.strokeStyle = env.ink; c.lineWidth = .6 + .7 * near; c.stroke()
         continue
       }
       c.globalAlpha = env.fade; c.fillStyle = env.paper; c.fill()
@@ -107,20 +106,21 @@ function ballsAndSticks(env: Env, model: Model, place: (p: Vec) => Vec, hot?: Se
     } else {
       const j = id - n, a = model.bonds[j * 3]!, b = model.bonds[j * 3 + 1]!, style = hot?.has(j) ? 2 : model.bonds[j * 3 + 2]!
       const dx = sx[b]! - sx[a]!, dy = sy[b]! - sy[a]!, length = Math.hypot(dx, dy)
-      if (length <= pr[a]! + pr[b]!) continue
+      const show = Math.min(seen[a]!, seen[b]!) * env.fade
+      if (length <= pr[a]! + pr[b]! || show < .02) continue
       const ux = dx / length, uy = dy / length
       c.beginPath(); c.moveTo(sx[a]! + ux * pr[a]!, sy[a]! + uy * pr[a]!); c.lineTo(sx[b]! - ux * pr[b]!, sy[b]! - uy * pr[b]!)
       c.setLineDash(style === 1 ? [3, 3] : [])
       c.strokeStyle = style === 2 ? env.red : env.ink
-      if (style === 3) { c.globalAlpha = (.04 + .1 * near) * env.fade; c.lineWidth = (pr[a]! + pr[b]!) * 1.1 }
-      else if (balls) { c.globalAlpha = (style === 2 ? .35 + .5 * near : .06 + .6 * near * near) * env.fade; c.lineWidth = (style === 2 ? 1.4 : style === 1 ? .8 : 1) + 1.3 * near }
+      if (style === 3) { c.globalAlpha = (.03 + .08 * near) * show; c.lineWidth = (pr[a]! + pr[b]!) * 1.1 }
+      else if (balls) { c.globalAlpha = (style === 2 ? .3 + .4 * near : .05 + .45 * near * near) * show; c.lineWidth = (style === 2 ? 1.4 : style === 1 ? .8 : 1) + 1.3 * near }
       else { c.globalAlpha = (style === 2 ? .7 : .12 + .4 * near) * env.fade; c.lineWidth = style === 2 ? 1.8 : 1.3 }
       c.stroke()
     }
   }
   c.setLineDash([])
 }
-function corner(env: Env, lines: string[], y = .8) {
+function corner(env: Env, lines: string[], y = .74) {
   if (env.width < 420) return
   env.context.globalAlpha = .42 * env.fade; env.context.fillStyle = env.ink; env.context.font = `18px ${env.hand}`
   lines.forEach((line, k) => env.context.fillText(line, env.width * .05, env.height * y + k * 24))
@@ -144,49 +144,53 @@ const BACKBONE_BONDS: [number, number][] = [[0, 1], [1, 2], [2, 3], [3, 4], [4, 
 const ELEMENT: Record<string, [number, number]> = { C: [.36, 0], N: [.35, 1], O: [.35, 2], P: [.6, 3] } // 半径 Å、填色
 
 function dna(): Painter {
-  const PAIRS = 11, RISE = 3.38, TWIST = 36 * Math.PI / 180, SCALE = 1.9 / (PAIRS * RISE), LEAN = .34, PITCH = .4
-  const model: Model = { points: [], radius: [], kind: [], bonds: [], shaded: true }
-  const sequence = Array.from({ length: PAIRS }, () => 'ATGC'[Math.floor(Math.random() * 4)]!)
-  const hydrogen: number[][] = [], middles: Vec[] = [], phosphate: number[][] = [[], []], oxygen3: number[][] = [[], []]
-  const push = (element: string, x: number, y: number, z: number) => { const [radius, kind] = ELEMENT[element]!; model.points.push([x, y, z]); model.radius.push(radius * SCALE); model.kind.push(kind); return model.points.length - 1 }
-  sequence.forEach((letter, k) => {
-    const turn = k * TWIST, ct = Math.cos(turn), st = Math.sin(turn), base: number[][] = []
-    for (let strand = 0; strand < 2; strand++) {
-      const flip = strand ? -1 : 1
-      // 第二条链是第一条绕碱基对的二重轴转 180°：(x, y, z) → (x, −y, −z)。
-      const put = (element: string, x: number, y: number, z: number) => push(element, x * ct - y * flip * st, x * st + y * flip * ct, z * flip + k * RISE)
-      const sugar = BACKBONE.map(([element, r, degrees, z]) => { const a = (114.9 + degrees) * Math.PI / 180; return put(element, r * Math.cos(a), r * Math.sin(a), z) })
-      for (const [a, b] of BACKBONE_BONDS) model.bonds.push(sugar[a]!, sugar[b]!, 0)
-      const residue = BASE[strand ? PARTNER[letter]! : letter]!
-      const atoms = residue.atoms.map(([element, x, y]) => put(element, x, y, 0))
-      for (const [a, b] of residue.bonds) model.bonds.push(atoms[a]!, atoms[b]!, 0)
-      model.bonds.push(sugar[0]!, atoms[0]!, 0)
-      base.push(atoms); phosphate[strand]!.push(sugar[7]!); oxygen3[strand]!.push(sugar[10]!)
+  // 一条没有尽头的螺旋：画面里是其中二十来对碱基，整条链沿轴缓缓滑过去（看上去就是在慢慢地转），两头褪进纸里。
+  const PAIRS = 22, RISE = 3.38, TWIST = 36 * Math.PI / 180, SCALE = .05, LEAN = .42, PITCH = .32, PER_PAIR = 9000
+  const letterAt = (index: number) => 'ATGC'[Math.floor(hash(index * 1.7 + 3) * 4)]!
+  let model: Model = { points: [], radius: [], kind: [], bonds: [], shaded: true }, hydrogen: number[][] = [], first = NaN
+  const build = (start: number) => {
+    first = start; hydrogen = []
+    model = { points: [], radius: [], kind: [], bonds: [], shaded: true }
+    const phosphate: number[][] = [[], []], oxygen3: number[][] = [[], []]
+    const push = (element: string, x: number, y: number, z: number) => { const [radius, kind] = ELEMENT[element]!; model.points.push([x, y, z]); model.radius.push(radius * SCALE); model.kind.push(kind); return model.points.length - 1 }
+    for (let k = 0; k < PAIRS; k++) {
+      const letter = letterAt(start + k), turn = (start + k) * TWIST, ct = Math.cos(turn), st = Math.sin(turn), height = (k - PAIRS / 2) * RISE, base: number[][] = []
+      for (let strand = 0; strand < 2; strand++) {
+        const flip = strand ? -1 : 1
+        // 第二条链是第一条绕碱基对的二重轴转 180°：(x, y, z) → (x, −y, −z)。
+        const put = (element: string, x: number, y: number, z: number) => push(element, x * ct - y * flip * st, x * st + y * flip * ct, z * flip + height)
+        const sugar = BACKBONE.map(([element, r, degrees, z]) => { const a = (114.9 + degrees) * Math.PI / 180; return put(element, r * Math.cos(a), r * Math.sin(a), z) })
+        for (const [a, b] of BACKBONE_BONDS) model.bonds.push(sugar[a]!, sugar[b]!, 0)
+        const residue = BASE[strand ? PARTNER[letter]! : letter]!
+        const atoms = residue.atoms.map(([element, x, y]) => put(element, x, y, 0))
+        for (const [a, b] of residue.bonds) model.bonds.push(atoms[a]!, atoms[b]!, 0)
+        model.bonds.push(sugar[0]!, atoms[0]!, 0)
+        base.push(atoms); phosphate[strand]!.push(sugar[7]!); oxygen3[strand]!.push(sugar[10]!)
+      }
+      const purineFirst = letter === 'A' || letter === 'G', list: number[] = []
+      for (const [p, q] of HBONDS[purineFirst ? letter : PARTNER[letter]!]!) { list.push(model.bonds.length / 3); model.bonds.push(base[purineFirst ? 0 : 1]![p]!, base[purineFirst ? 1 : 0]![q]!, 1) }
+      hydrogen.push(list)
     }
-    const purineFirst = letter === 'A' || letter === 'G', list: number[] = []
-    for (const [p, q] of HBONDS[purineFirst ? letter : PARTNER[letter]!]!) { list.push(model.bonds.length / 3); model.bonds.push(base[purineFirst ? 0 : 1]![p]!, base[purineFirst ? 1 : 0]![q]!, 1) }
-    hydrogen.push(list); middles.push([0, 0, k * RISE])
-  })
-  // 相邻核苷酸：O3′ 接下一个的磷（第一条链向上，第二条链向下）。
-  // 另沿两条链的磷原子各画一条粗而淡的带子，一眼看得出两股怎么绕。
-  for (let k = 0; k + 1 < PAIRS; k++) { model.bonds.push(oxygen3[0]![k]!, phosphate[0]![k + 1]!, 0); model.bonds.push(oxygen3[1]![k + 1]!, phosphate[1]![k]!, 0); for (const strand of [0, 1]) model.bonds.push(phosphate[strand]![k]!, phosphate[strand]![k + 1]!, 3) }
-  const cl = Math.cos(LEAN), sl = Math.sin(LEAN), cp = Math.cos(PITCH), sp = Math.sin(PITCH), half = (PAIRS - 1) * RISE / 2
+    // 相邻核苷酸：O3′ 接下一个的磷（第一条链向上，第二条链向下）；另沿两条链的磷原子各画一条粗而淡的带子。
+    for (let k = 0; k + 1 < PAIRS; k++) { model.bonds.push(oxygen3[0]![k]!, phosphate[0]![k + 1]!, 0); model.bonds.push(oxygen3[1]![k + 1]!, phosphate[1]![k]!, 0); for (const strand of [0, 1]) model.bonds.push(phosphate[strand]![k]!, phosphate[strand]![k + 1]!, 3) }
+  }
+  const cl = Math.cos(LEAN), sl = Math.sin(LEAN), cp = Math.cos(PITCH), sp = Math.sin(PITCH), reach = PAIRS / 2 * RISE
   return env => {
-    const spin = env.t / 24000 * TAU, cs = Math.cos(spin), ss = Math.sin(spin)
-    const place = (p: Vec): Vec => { const x = (p[0] * cs - p[1] * ss) * SCALE, z = (p[0] * ss + p[1] * cs) * SCALE, y = (p[2] - half) * SCALE, y1 = x * sl + y * cl; return [x * cl - y * sl, y1 * cp - z * sp + .14, y1 * sp + z * cp] } // 先自转，再侧倾，再朝镜头俯过来
-    const reading = Math.floor(env.t / 1800) % PAIRS
-    ballsAndSticks(env, model, place, new Set(hydrogen[reading]))
-    const letter = sequence[reading]!, strong = letter === 'G' || letter === 'C'
-    label(env, `${letter} ${strong ? '≡' : '='} ${PARTNER[letter]}`, place([13, 0, middles[reading]![2]]), .55, env.red, 10, 5)
-    label(env, "5′", place([-2.5, 9.5, -3]), .45, env.red, -6, 16); label(env, "3′", place([-2.5, -9.5, -3]), .45, env.red, -6, 16)
-    label(env, "3′", place([-2.5 * Math.cos((PAIRS - 1) * TWIST) - 9.5 * Math.sin((PAIRS - 1) * TWIST), -2.5 * Math.sin((PAIRS - 1) * TWIST) + 9.5 * Math.cos((PAIRS - 1) * TWIST), half * 2 + 3]), .45, env.red, 0, -8)
-    corner(env, ['B-DNA · 10.5 bp / turn · 3.4 Å rise', 'C white · N grey · O red · P large red'], .84)
+    const passed = env.t / PER_PAIR, start = Math.floor(passed), slide = (passed - start) * RISE
+    if (start !== first) build(start)
+    // 先沿轴滑动，再侧倾，再朝镜头俯过来。
+    const place = (p: Vec): Vec => { const x = p[0] * SCALE, z = p[1] * SCALE, y = (p[2] - slide + RISE / 2) * SCALE, y1 = x * sl + y * cl; return [x * cl - y * sl, y1 * cp - z * sp + .05, y1 * sp + z * cp] }
+    const veil = (p: Vec) => smooth((reach - Math.abs(p[2] - slide + RISE / 2)) / (reach * .3))
+    const middle = PAIRS / 2, letter = letterAt(start + middle)
+    ballsAndSticks(env, model, place, new Set(hydrogen[middle]), veil)
+    label(env, `${letter} ${letter === 'G' || letter === 'C' ? '≡' : '='} ${PARTNER[letter]}`, place([14, 0, 0]), .5, env.red, 10, 5)
+    corner(env, ['B-DNA · 10.5 bp / turn · 3.4 Å rise', 'C paper · N pencil · O, P red'])
   }
 }
 
 // ---- 洛伦兹吸引子：两条起点只差千分之一的轨道、一团起初挤在一起的点（慢慢抹满整个吸引子）、坐标轴与不动点、左下角 x(t) ----
 function lorenz(): Painter {
-  const TRAIL = 2400, CLOUD = 260, RESET = 45000
+  const TRAIL = 2400, CLOUD = 160, RESET = 120000
   const flow = (p: Vec, h: number): Vec => [p[0] + 10 * (p[1] - p[0]) * h, p[1] + (p[0] * (28 - p[2]) - p[1]) * h, p[2] + (p[0] * p[1] - 8 / 3 * p[2]) * h]
   const view = (p: Vec): Vec => [p[0] / 25, (p[2] - 25) / 25, p[1] / 25]
   const orbits = [{ p: [1, 1, 20] as Vec, trail: [] as Vec[], xs: [] as number[] }, { p: [1.001, 1, 20] as Vec, trail: [] as Vec[], xs: [] as number[] }]
@@ -205,7 +209,7 @@ function lorenz(): Painter {
   scatter()
   const fixed = Math.sqrt(8 / 3 * 27)
   return env => {
-    const c = env.context, target = Math.floor(env.t / 16)
+    const c = env.context, target = Math.floor(env.t / 48)
     if (target - done > 40) done = target - 40
     while (done < target) { advance(); done++ }
     if (env.t - cloudBorn > RESET) { cloudBorn = env.t; scatter() }
@@ -233,7 +237,7 @@ function lorenz(): Painter {
     })
     const specks = new Path2D()
     for (const p of cloud) { const q = view(p), [x, y] = env.project(q[0], q[1], q[2]); specks.rect(x - 1.1, y - 1.1, 2.2, 2.2) }
-    c.fillStyle = env.red; c.globalAlpha = .42 * env.fade; c.fill(specks)
+    c.fillStyle = env.red; c.globalAlpha = .3 * env.fade; c.fill(specks)
     for (const sign of [1, -1]) { const at = view([sign * fixed, sign * fixed, 27]); dotAt(env, at, 2.2, .45, env.ink); label(env, sign > 0 ? 'C₊' : 'C₋', at, .42) }
     label(env, 'x₀', orbits[0]!.trail.at(-1)!, .45); label(env, 'x₀ + ε', orbits[1]!.trail.at(-1)!, .5, env.red, 6, 15)
     // 左下角：两条轨道的 x(t)。先是一条线，然后分开。
@@ -289,7 +293,7 @@ function cayley(): Painter {
   centres.forEach((p, i) => centres.forEach((q, j) => { if (j > i && Math.hypot(...sub(p, q)) < .56) inner.push([i, j]) }))
   const walk = [0], word: string[] = []
   return env => {
-    const c = env.context, STEP = 900, steps = Math.floor(env.t / STEP)
+    const c = env.context, STEP = 2800, steps = Math.floor(env.t / STEP)
     while (walk.length - 1 < steps) {
       const here = walk.at(-1)!, useFlip = word.at(-1) !== 'a' && Math.random() < .45
       walk.push(useFlip ? flip[here]! : next[here]!); word.push(useFlip ? 'a' : 'b')
@@ -325,62 +329,70 @@ function cayley(): Painter {
     dotAt(env, head, 4, .8, env.red)
     label(env, cycles(element[now]!), head, .6, env.red, 9, -7)
     label(env, 'e', points[0]!, .5, env.ink, 7, -6)
-    corner(env, [`g = … ${word.slice(-10).join(' ')}  =  ${cycles(element[now]!)}`, `a = ${cycles(a)},  b = ${cycles(b)}`, 'a² = b⁵ = (ab)³ = e,   |A₅| = 60'], .78)
+    corner(env, [`g = … ${word.slice(-10).join(' ')}  =  ${cycles(element[now]!)}`, `a = ${cycles(a)},  b = ${cycles(b)}`, 'a² = b⁵ = (ab)³ = e,   |A₅| = 60'])
   }
 }
 
 // ---- 墨西哥帽势：一群小球从帽顶各自滚向谷底的不同方向（对称性自发破缺），先径向振荡（希格斯模），再沿谷绕圈（戈德斯通模）；地面上是等势线和小球的影子 ----
 function higgs(): Painter {
-  const HEIGHT = .6, WIDE = .72, CYCLE = 30000, BALLS = 7, FLOOR = -.62, RIM = 1.42
-  const surface = (r: number, a: number, lift = 0): Vec => [r * Math.cos(a) * WIDE, HEIGHT * (r * r - 1) ** 2 - .32 + lift, r * Math.sin(a) * WIDE]
+  const HEIGHT = .62, WIDE = .78, CYCLE = 40, BALLS = 3, FLOOR = -.5, RINGS = 13, SPOKES = 40, RIM = 1.3, SLOW = .4
+  const surface = (r: number, a: number, lift = 0): Vec => [r * Math.cos(a) * WIDE, HEIGHT * (r * r - 1) ** 2 - .3 + lift, r * Math.sin(a) * WIDE]
   const state = (seconds: number, start: number): [number, number] => {
-    const u = seconds - 1.6
+    const u = seconds - 2
     if (u <= 0) return [.03, start]
-    return [1 - Math.exp(-u / .8) * Math.cos(2.5 * u), start + .5 * (u - 3 * (1 - Math.exp(-u / 3)))]
+    return [1 - Math.exp(-u / .9) * Math.cos(2.3 * u), start + .45 * (u - 3 * (1 - Math.exp(-u / 3)))]
   }
   return env => {
     const c = env.context
-    // 地面：等势线（投影）、谷底的圆、两条轴。
+    // 地面：两条轴、谷底那一圈的投影。
     const floor = new Layers(env.project), ground = (r: number, a: number): Vec => [r * Math.cos(a) * WIDE, FLOOR, r * Math.sin(a) * WIDE]
-    for (const r of [.35, .6, .8, 1.2, RIM]) for (let s = 0; s < 72; s += 2) floor.line(ground(r, s / 72 * TAU), ground(r, (s + 1) / 72 * TAU))
-    floor.line(ground(1.75, Math.PI), ground(1.75, 0)); floor.line(ground(1.75, -Math.PI / 2), ground(1.75, Math.PI / 2)); floor.line([0, FLOOR, 0], [0, .52, 0])
-    floor.stroke(env, .07, .05, 1)
+    floor.line(ground(1.7, Math.PI), ground(1.7, 0)); floor.line(ground(1.7, -Math.PI / 2), ground(1.7, Math.PI / 2))
+    floor.stroke(env, .08, .05, 1)
     const circle = new Layers(env.project)
-    for (let s = 0; s < 72; s++) circle.line(ground(1, s / 72 * TAU), ground(1, (s + 1) / 72 * TAU))
-    circle.stroke(env, .1, .07, 1, env.red)
-    label(env, 'Re φ', ground(1.75, 0), .4); label(env, 'Im φ', ground(1.75, Math.PI / 2), .4); label(env, 'V', [0, .52, 0], .4)
-    const mesh = new Layers(env.project)
-    for (let k = 1; k <= 14; k++) { const r = k / 14 * RIM; for (let s = 0; s < 48; s++) mesh.line(surface(r, s / 48 * TAU), surface(r, (s + 1) / 48 * TAU)) }
-    for (let s = 0; s < 24; s++) for (let k = 0; k < 16; k++) mesh.line(surface(k / 16 * RIM, s / 24 * TAU), surface((k + 1) / 16 * RIM, s / 24 * TAU))
-    mesh.stroke(env, .04, .05, .9)
-    const valley = new Layers(env.project)
-    for (let s = 0; s < 72; s += 2) valley.line(surface(1, s / 72 * TAU, .004), surface(1, (s + 1) / 72 * TAU, .004))
-    valley.stroke(env, .16, .1, 1.3, env.red)
-    for (let k = 0; k < BALLS; k++) {
-      const local = env.t + k * CYCLE / BALLS, seconds = (local % CYCLE) / 1000, start = hash(Math.floor(local / CYCLE) * 7 + k) * TAU
-      const leaving = clamp((CYCLE / 1000 - seconds) / 1.5, 0, 1) * clamp(seconds / .6, 0, 1)
-      c.strokeStyle = env.red; c.lineWidth = 1.5
-      for (let j = 0; j < 36; j++) {
-        const [r0, a0] = state(seconds - (j + 1) * .09, start), [r1, a1] = state(seconds - j * .09, start)
+    for (let s = 0; s < 72; s += 2) circle.line(ground(1, s / 72 * TAU), ground(1, (s + 1) / 72 * TAU))
+    circle.stroke(env, .08, .05, 1, env.red)
+    label(env, 'Re φ', ground(1.7, 0), .4); label(env, 'Im φ', ground(1.7, Math.PI / 2), .4)
+    // 曲面：一格格的小面片，从远到近画，每片用纸色填实——近处的帽檐挡住后面的线，立体才看得清。小球按远近夹在面片之间。
+    const grid: [number, number, number][][] = []
+    for (let k = 0; k <= RINGS; k++) { const ring: [number, number, number][] = []; for (let s = 0; s < SPOKES; s++) ring.push(env.project(...surface(k / RINGS * RIM, s / SPOKES * TAU))); grid.push(ring) }
+    const valley = Math.round(RINGS / RIM)
+    const faces: { depth: number; k: number; s: number }[] = []
+    for (let k = 0; k < RINGS; k++) for (let s = 0; s < SPOKES; s++) faces.push({ depth: (grid[k]![s]![2] + grid[k + 1]![(s + 1) % SPOKES]![2]) / 2, k, s })
+    const balls = Array.from({ length: BALLS }, (_, index) => {
+      const local = env.t / 1000 * SLOW + index * CYCLE / BALLS, seconds = local % CYCLE, start = hash(Math.floor(local / CYCLE) * 7 + index) * TAU
+      const [r, a] = state(seconds, start), at = surface(r, a, .035)
+      return { seconds, start, at, depth: env.project(...at)[2] + .012, show: clamp((CYCLE - seconds) / 2, 0, 1) * clamp(seconds / 1, 0, 1) }
+    })
+    const drawBall = (ball: typeof balls[number]) => {
+      c.strokeStyle = env.red; c.lineWidth = 1.6
+      for (let j = 0; j < 30; j++) {
+        const [r0, a0] = state(ball.seconds - (j + 1) * .12, ball.start), [r1, a1] = state(ball.seconds - j * .12, ball.start)
         const p = env.project(...surface(r0, a0, .03)), q = env.project(...surface(r1, a1, .03))
-        c.globalAlpha = .38 * (1 - j / 36) * leaving * env.fade
+        c.globalAlpha = .4 * (1 - j / 30) * ball.show * env.fade
         c.beginPath(); c.moveTo(p[0], p[1]); c.lineTo(q[0], q[1]); c.stroke()
       }
-      const [r, a] = state(seconds, start), at = surface(r, a, .03)
-      const [x, y] = env.project(...at)
-      c.beginPath(); c.arc(x, y, 5, 0, TAU); c.globalAlpha = leaving * env.fade; c.fillStyle = env.paper; c.fill(); c.globalAlpha = .6 * leaving * env.fade; c.fillStyle = env.red; c.fill()
-      dotAt(env, ground(r, a), 2, .3 * leaving, env.ink)
-      const drop = new Layers(env.project); drop.line(at, ground(r, a)); c.setLineDash([2, 4]); drop.stroke(env, .1 * leaving, .04 * leaving, 1); c.setLineDash([])
+      const [x, y] = env.project(...ball.at)
+      c.beginPath(); c.arc(x, y, 5.5, 0, TAU); c.globalAlpha = ball.show * env.fade; c.fillStyle = env.paper; c.fill(); c.globalAlpha = .7 * ball.show * env.fade; c.fillStyle = env.red; c.fill()
     }
-    label(env, 'V(φ) = λ(|φ|² − v²)²', surface(RIM, 3.6), .45, env.ink, -150, -10)
-    label(env, '|φ| = v', ground(1, 2.4), .45, env.red, -52, 16)
-    corner(env, ['radial oscillation: Higgs mode,  m² = V″(v)', 'motion along the valley: Goldstone mode,  m = 0'], .86)
+    const order = [...faces.map(face => ({ ...face, ball: -1 })), ...balls.map((ball, index) => ({ depth: ball.depth, k: 0, s: 0, ball: index }))].sort((a, b) => a.depth - b.depth)
+    c.lineWidth = 1
+    for (const item of order) {
+      if (item.ball >= 0) { drawBall(balls[item.ball]!); c.lineWidth = 1; continue }
+      const a = grid[item.k]![item.s]!, b = grid[item.k + 1]![item.s]!, d = grid[item.k + 1]![(item.s + 1) % SPOKES]!, e = grid[item.k]![(item.s + 1) % SPOKES]!
+      c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.lineTo(d[0], d[1]); c.lineTo(e[0], e[1]); c.closePath()
+      c.globalAlpha = .93 * env.fade; c.fillStyle = env.paper; c.fill()
+      c.globalAlpha = (.05 + .2 * clamp(item.depth, 0, 1)) * env.fade; c.strokeStyle = env.ink; c.stroke()
+      if (item.k + 1 === valley) { c.beginPath(); c.moveTo(b[0], b[1]); c.lineTo(d[0], d[1]); c.globalAlpha = (.2 + .35 * clamp(item.depth, 0, 1)) * env.fade; c.strokeStyle = env.red; c.lineWidth = 1.4; c.stroke(); c.lineWidth = 1 }
+    }
+    label(env, 'V(φ) = λ(|φ|² − v²)²', surface(RIM, 3.5), .45, env.ink, -160, -12)
+    label(env, '|φ| = v', ground(1, 2.4), .42, env.red, -52, 16)
+    corner(env, ['radial: Higgs mode', 'along the valley: Goldstone mode'])
   }
 }
 
 // ---- Dijkstra：每个顶点一确定最短距离，就升到与距离成正比的高度——最短路径树像一座山慢慢长出来；到 t 后沿树描出最短路径 ----
 function dijkstra(): Painter {
-  const COLS = 13, ROWS = 8, TICK = 110, HOLD = 6500, RISE = .22, FLOOR = -.3
+  const COLS = 13, ROWS = 8, TICK = 480, HOLD = 10000, RISE = .22, FLOOR = .1
   type Run = { order: number[]; when: Int16Array; distance: Float32Array; previous: Int16Array; path: number[]; queue: string[]; source: number; target: number; started: number }
   let nodes: [number, number][] = [], edges: [number, number][] = [], near: number[][] = [], run: Run | undefined, runs = 0
   const build = (seed: number) => {
@@ -420,7 +432,7 @@ function dijkstra(): Painter {
     if (!run || env.t - run.started > run.order.length * TICK + HOLD) begin(env.t)
     const state = run!, clock = (env.t - state.started) / TICK, count = Math.min(state.order.length, Math.floor(clock) + 1), finished = count >= state.order.length
     const sinking = clamp((state.order.length * TICK + HOLD - (env.t - state.started)) / 800, 0, 1)
-    const lift = (i: number) => state.when[i]! < 0 || state.when[i]! >= count ? 0 : state.distance[i]! * RISE * smooth((clock - state.when[i]!) / 7) * smooth(sinking)
+    const lift = (i: number) => state.when[i]! < 0 || state.when[i]! >= count ? 0 : state.distance[i]! * RISE * smooth((clock - state.when[i]!) / 2.5) * smooth(sinking)
     const ground = (i: number): Vec => [nodes[i]![0], FLOOR, nodes[i]![1]], raised = (i: number): Vec => [nodes[i]![0], FLOOR + lift(i), nodes[i]![1]]
     const all = new Layers(env.project), drops = new Layers(env.project), tree = new Layers(env.project)
     for (const [a, b] of edges) all.line(ground(a), ground(b))
@@ -433,7 +445,7 @@ function dijkstra(): Painter {
     nodes.forEach((_, i) => { if ((state.when[i]! < 0 || state.when[i]! >= count) && state.previous[i]! >= 0 && state.when[state.previous[i]!]! < count && state.when[state.previous[i]!]! >= 0) frontier.line(raised(state.previous[i]!), ground(i)) })
     if (!finished) { c.setLineDash([3, 4]); frontier.stroke(env, .1, .05, 1, env.red); c.setLineDash([]) }
     if (finished && state.path.length > 1) {
-      const reversed = [...state.path].reverse(), shown = clamp((env.t - state.started - state.order.length * TICK) / 1200, 0, 1) * (reversed.length - 1)
+      const reversed = [...state.path].reverse(), shown = clamp((env.t - state.started - state.order.length * TICK) / 3000, 0, 1) * (reversed.length - 1)
       c.strokeStyle = env.red; c.lineWidth = 2.8; c.globalAlpha = .6 * env.fade
       c.beginPath()
       reversed.forEach((i, k) => {
@@ -450,20 +462,20 @@ function dijkstra(): Painter {
     c.fillStyle = env.red; c.globalAlpha = .5 * env.fade; c.fill(closed)
     if (!finished) { const [x, y] = env.project(...raised(state.order[count - 1]!)); c.strokeStyle = env.red; c.globalAlpha = .55 * env.fade; c.beginPath(); c.arc(x, y, 8, 0, TAU); c.stroke() }
     label(env, 's', raised(state.source), .55, env.red, -16, -6); label(env, 't', finished ? ground(state.target) : raised(state.target), .55, env.red, 9, 14)
-    corner(env, [finished ? `settled ${state.order.length} of ${nodes.length} vertices` : `Q = { ${state.queue[Math.min(count, state.queue.length - 1)]} }`, 'height = d(s, v)'], .86)
+    corner(env, [finished ? `settled ${state.order.length} of ${nodes.length} vertices` : `Q = { ${state.queue[Math.min(count, state.queue.length - 1)]} }`, 'height = d(s, v)'])
   }
 }
 
-// ---- 康威生命游戏：一门高斯帕滑翔机枪加一片随机汤；往下叠着前几代（时空图），刚出生的细胞用红笔 ----
+// ---- 康威生命游戏：直接拿桌面的格子纸当格点，一格一个细胞；一门高斯帕滑翔机枪加一片随机初始图样，刚出生的细胞用红笔，刚死的留一点淡影 ----
 const GUN = ['........................O', '......................O.O', '............OO......OO............OO', '...........O...O....OO............OO', 'OO........O.....O...OO', 'OO........O...O.OO....O.O', '..........O.....O.......O', '...........O...O', '............OO']
 function life(): Painter {
-  const W = 72, H = 46, TICK = 200, CELL = 2.6 / W, LAYERS = 6, GAP = .06
-  let cells = new Uint8Array(W * H), history: Uint8Array[] = [], generation = 0, seeded = 0, calm = 0, population = 0
+  const TICK = 1100
+  let W = 0, H = 0, cells = new Uint8Array(0), before = new Uint8Array(0), generation = 0, seeded = 0, calm = 0, population = 0, done = 0
   const seed = () => {
-    cells = new Uint8Array(W * H)
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (x > W * .55 && y > H * .3 && Math.random() < .34) cells[y * W + x] = 1
-    GUN.forEach((row, y) => [...row].forEach((ch, x) => { if (ch === 'O') cells[(y + 3) * W + x + 3] = 1 }))
-    seeded = generation; calm = 0; history = []
+    cells = new Uint8Array(W * H); before = new Uint8Array(W * H)
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (x > W * .5 && Math.random() < .3) cells[y * W + x] = 1
+    if (W > 44 && H > 16) GUN.forEach((row, y) => [...row].forEach((ch, x) => { if (ch === 'O') cells[(y + 5) * W + x + 4] = 1 }))
+    seeded = generation; calm = 0
   }
   const step = () => {
     const out = new Uint8Array(W * H)
@@ -475,188 +487,207 @@ function life(): Painter {
       out[y * W + x] = on; alive += on
     }
     calm = Math.abs(alive - population) <= 1 ? calm + 1 : 0
-    history.unshift(cells); if (history.length > LAYERS) history.pop()
-    cells = out; population = alive; generation++
-    if (alive < 14 || calm > 60 || generation - seeded > 900) seed()
+    before = cells; cells = out; population = alive; generation++
+    if (alive < 14 || calm > 40 || generation - seeded > 600) seed()
   }
-  seed()
-  for (let k = 0; k < 12; k++) step()
-  let done = 0
   return env => {
-    const c = env.context, target = Math.floor(env.t / TICK)
-    if (target - done > 3) done = target - 3
+    const c = env.context, size = env.grid.size, { x: left, y: top, w, h } = env.full
+    const x0 = env.grid.x - Math.ceil((env.grid.x - left) / size) * size, y0 = env.grid.y - Math.ceil((env.grid.y - top) / size) * size
+    const columns = Math.ceil((left + w - x0) / size), rows = Math.ceil((top + h - y0) / size)
+    if (columns !== W || rows !== H) { W = columns; H = rows; seed(); for (let k = 0; k < 8; k++) step(); done = Math.floor(env.t / TICK) }
+    const target = Math.floor(env.t / TICK)
+    if (target - done > 2) done = target - 2
     while (done < target) { step(); done++ }
-    const quad = (path: Path2D, x: number, y: number, level: number, inset: number) => {
-      const at = (dx: number, dy: number) => env.project((x + dx - W / 2) * CELL, .18 - level * GAP, (y + dy - H / 2) * CELL)
-      const a = at(inset, inset), b = at(1 - inset, inset), d = at(1 - inset, 1 - inset), e = at(inset, 1 - inset)
-      path.moveTo(a[0], a[1]); path.lineTo(b[0], b[1]); path.lineTo(d[0], d[1]); path.lineTo(e[0], e[1]); path.closePath()
+    const old = new Path2D(), born = new Path2D(), ghost = new Path2D()
+    for (let i = 0; i < cells.length; i++) {
+      if (!cells[i] && !before[i]) continue
+      (cells[i] ? before[i] ? old : born : ghost).rect(x0 + (i % W) * size + 2, y0 + Math.floor(i / W) * size + 2, size - 3, size - 3)
     }
-    // 从最老的一层画到最新的一层。
-    for (let level = history.length; level >= 1; level--) {
-      const layer = history[level - 1]!, path = new Path2D()
-      for (let i = 0; i < layer.length; i++) if (layer[i]) quad(path, i % W, Math.floor(i / W), level, .3)
-      c.fillStyle = env.ink; c.globalAlpha = .13 * (1 - level / (LAYERS + 1)) * env.fade; c.fill(path)
-    }
-    const old = new Path2D(), born = new Path2D(), before = history[0]
-    for (let i = 0; i < cells.length; i++) if (cells[i]) quad(before && !before[i] ? born : old, i % W, Math.floor(i / W), 0, .1)
-    c.fillStyle = env.paper; c.globalAlpha = env.fade; c.fill(old); c.fill(born)
-    c.fillStyle = env.ink; c.globalAlpha = .34 * env.fade; c.fill(old)
-    c.fillStyle = env.red; c.globalAlpha = .5 * env.fade; c.fill(born)
-    c.strokeStyle = env.ink; c.globalAlpha = .16 * env.fade; c.lineWidth = 1; c.setLineDash([5, 4])
-    for (const level of [0, LAYERS]) {
-      c.beginPath()
-      ;[[0, 0], [W, 0], [W, H], [0, H]].forEach(([x, y], k) => { const p = env.project((x! - W / 2) * CELL, .18 - level * GAP, (y! - H / 2) * CELL); if (k) c.lineTo(p[0], p[1]); else c.moveTo(p[0], p[1]) })
-      c.closePath(); c.stroke()
-    }
-    c.setLineDash([])
-    label(env, 'glider gun', [(12 - W / 2) * CELL, .18, (2 - H / 2) * CELL], .42, env.red, 0, -10)
-    label(env, 't', [(-W / 2) * CELL, .18 - LAYERS * GAP, (H / 2) * CELL], .4, env.ink, -16, 10)
-    corner(env, [`generation ${generation - seeded} · population ${population}`, 'B3 / S23 on a torus'], .86)
+    c.fillStyle = env.ink; c.globalAlpha = .045 * env.fade; c.fill(ghost)
+    c.globalAlpha = .17 * env.fade; c.fill(old)
+    c.fillStyle = env.red; c.globalAlpha = .26 * env.fade; c.fill(born)
+    corner(env, [`generation ${generation - seeded} · population ${population}`, 'B3 / S23'])
   }
 }
 
-// ---- 分形二叉树：无限放大。树 T = 树干 ∪ S₀(T) ∪ S₁(T)；镜头沿着 S₀ 的不动点一直钻进去，每钻一级画面和上一级一模一样 ----
-type Matrix = [number, number, number, number, number, number, number, number, number] // 按列存
-const apply = (m: Matrix, v: Vec): Vec => [m[0] * v[0] + m[3] * v[1] + m[6] * v[2], m[1] * v[0] + m[4] * v[1] + m[7] * v[2], m[2] * v[0] + m[5] * v[1] + m[8] * v[2]]
-const product = (a: Matrix, b: Matrix): Matrix => { const c0 = apply(a, [b[0], b[1], b[2]]), c1 = apply(a, [b[3], b[4], b[5]]), c2 = apply(a, [b[6], b[7], b[8]]); return [...c0, ...c1, ...c2] }
-const scaled = (m: Matrix, s: number) => m.map(value => value * s) as Matrix
-const transpose = (m: Matrix): Matrix => [m[0], m[3], m[6], m[1], m[4], m[7], m[2], m[5], m[8]]
-function inverse(m: Matrix): Matrix {
-  const [a, d, g, b, e, h, c, f, i] = m, A = e * i - f * h, B = f * g - d * i, C = d * h - e * g, det = a * A + b * B + c * C
-  return [A / det, B / det, C / det, (c * h - b * i) / det, (a * i - c * g) / det, (b * g - a * h) / det, (b * f - c * e) / det, (c * d - a * f) / det, (a * e - b * d) / det]
-}
-/** 绕单位轴 axis 转 angle 的旋转矩阵。 */
-function rotation(axis: Vec, angle: number): Matrix {
-  const [x, y, z] = axis, c = Math.cos(angle), s = Math.sin(angle), t = 1 - c
-  return [t * x * x + c, t * x * y + s * z, t * x * z - s * y, t * x * y - s * z, t * y * y + c, t * y * z + s * x, t * x * z + s * y, t * y * z - s * x, t * z * z + c]
-}
+// ---- 红黑树：一个个键插进来，先是红的；破坏了「红结点没有红孩子」就重新着色，或者把一小段子树左旋 / 右旋——只有那一段在动 ----
+type RedBlack = { id: number; key: number; red: boolean; left: RedBlack | null; right: RedBlack | null; parent: RedBlack | null }
+type Shot = { nodes: Map<number, { x: number; y: number; red: boolean; key: number; parent: number }>; note: string; focus: number }
 function tree(): Painter {
-  const RATIO = .62, LEVEL = 8000, TOP = 12, BACK = 4, TIP: Vec = [0, 1, 0]
+  const STEP = 4200, MOVE = 1800, FULL = 26
+  let root: RedBlack | null = null, ids = 0, shots: Shot[] = [], index = 0, since = 0
+  const shoot = (note: string, focus: RedBlack | null) => {
+    const nodes: Shot['nodes'] = new Map(), order: RedBlack[] = []
+    const walk = (node: RedBlack | null, depth: number) => { if (!node) return; walk(node.left, depth + 1); order.push(node); nodes.set(node.id, { x: order.length - 1, y: depth, red: node.red, key: node.key, parent: node.parent?.id ?? -1 }); walk(node.right, depth + 1) }
+    walk(root, 0)
+    for (const spot of nodes.values()) spot.x -= (order.length - 1) / 2
+    shots.push({ nodes, note, focus: focus?.id ?? -1 })
+  }
+  const rotate = (x: RedBlack, left: boolean) => {
+    const y = (left ? x.right : x.left)!, inner = left ? y.left : y.right
+    if (left) x.right = inner; else x.left = inner
+    if (inner) inner.parent = x
+    y.parent = x.parent
+    if (!x.parent) root = y; else if (x.parent.left === x) x.parent.left = y; else x.parent.right = y
+    if (left) y.left = x; else y.right = x
+    x.parent = y
+    shoot(`rotate ${left ? 'left' : 'right'} at ${x.key}`, y)
+  }
+  const insert = (key: number) => {
+    let parent: RedBlack | null = null, at = root
+    while (at) { parent = at; at = key < at.key ? at.left : at.right }
+    let z: RedBlack = { id: ids++, key, red: true, left: null, right: null, parent }
+    if (!parent) root = z; else if (key < parent.key) parent.left = z; else parent.right = z
+    shoot(`insert ${key}`, z)
+    while (z.parent?.red && z.parent.parent) {
+      const p: RedBlack = z.parent, g: RedBlack = p.parent!, leftSide = g.left === p, uncle = leftSide ? g.right : g.left
+      if (uncle?.red) { p.red = false; uncle.red = false; g.red = true; z = g; shoot('red uncle: recolour', g); continue }
+      if (z === (leftSide ? p.right : p.left)) { z = p; rotate(z, leftSide) }
+      z.parent!.red = false; g.red = true
+      rotate(g, !leftSide)
+    }
+    if (root!.red) { root!.red = false; shoot('root → black', root) }
+  }
+  const more = () => {
+    const keys = new Set<number>(); const collect = (node: RedBlack | null) => { if (node) { keys.add(node.key); collect(node.left); collect(node.right) } }
+    collect(root)
+    if (keys.size >= FULL) { root = null; shots.push({ nodes: new Map(), note: '', focus: -1 }); return }
+    let key = 0
+    do key = 1 + Math.floor(Math.random() * 98); while (keys.has(key))
+    insert(key)
+  }
+  shots.push({ nodes: new Map(), note: '', focus: -1 })
+  for (let k = 0; k < 7; k++) more()
+  index = shots.length - 1
   return env => {
     const c = env.context
-    const spread = .62 + .1 * Math.sin(env.t / 23000), twist = Math.PI / 2 + .35 * Math.sin(env.t / 31000)
-    const ca = Math.cos(spread), sa = Math.sin(spread), ct = Math.cos(twist), st = Math.sin(twist)
-    // 子枝的坐标架：y 是枝的方向，x 是参考方向。
-    const child = (sign: number): Matrix => {
-      const side: Vec = [ct, 0, -st], direction: Vec = [side[0] * sa * sign, ca, side[2] * sa * sign], reference: Vec = [-st, 0, -ct]
-      return [...reference, ...direction, ...cross(reference, direction)] as Matrix
+    while (env.t - since > STEP) { since += STEP; if (env.t - since > STEP * 3) since = env.t; index++; if (index >= shots.length) more(); if (shots.length > 40) { shots.splice(0, 20); index -= 20 } }
+    const now = shots[index]!, was = shots[index - 1] ?? now, move = smooth((env.t - since) / MOVE)
+    const count = Math.max(now.nodes.size, was.nodes.size, 8), dx = Math.min(44, env.width * .78 / count), dy = Math.min(66, env.height * .11), ox = env.width * .55, oy = env.height * .2
+    const radius = clamp(dx * .34, 3, 12)
+    const spot = (id: number): { x: number; y: number; red: boolean; key: number; show: number } | undefined => {
+      const b = now.nodes.get(id), a = was.nodes.get(id)
+      if (!a && !b) return undefined
+      const from = a ?? { ...b!, y: b!.y - .8 }, to = b ?? a!
+      return { x: ox + (from.x + (to.x - from.x) * move) * dx, y: oy + (from.y + (to.y - from.y) * move) * dy, red: move < .5 ? from.red : to.red, key: to.key, show: !a ? move : !b ? 1 - move : 1 }
     }
-    const turn = [child(1), child(-1)], maps = turn.map(m => scaled(m, RATIO))
-    // S₀(p) = TIP + M p 的不动点 c = (I − M)⁻¹ TIP；镜头绕着 S₀ 的转轴、对着 c 做 S₀ 的分数次逆变换。
-    const m0 = maps[0]!, lessM: Matrix = [1 - m0[0], -m0[1], -m0[2], -m0[3], 1 - m0[4], -m0[5], -m0[6], -m0[7], 1 - m0[8]]
-    const centre = apply(inverse(lessM), TIP), r0 = turn[0]!
-    const angle = Math.acos(clamp((r0[0] + r0[4] + r0[8] - 1) / 2, -1, 1)), sine = 2 * Math.sin(angle) || 1
-    const axis: Vec = [(r0[5] - r0[7]) / sine, (r0[6] - r0[2]) / sine, (r0[1] - r0[3]) / sine]
-    const s = (env.t / LEVEL) % 1, zoom = 1.5 * RATIO ** -s, HOME: Vec = [.05, .3, 0]
-    const view = scaled(rotation(axis, -s * angle), zoom)
-    const paths = Array.from({ length: TOP + BACK + 2 }, () => new Path2D())
-    const limit = 1.6 / env.size
-    let drawn = 0
-    const grow = (origin: Vec, frame: Matrix, depth: number) => {
-      const length = zoom * RATIO ** depth
-      if (depth > TOP || length < limit || drawn > 5200) return
-      // 整棵子树都在以 origin 为心、约 2.7 倍枝长的球里：离画面太远就不画。
-      if (Math.hypot(origin[0], origin[1] - .1, origin[2]) - 2.7 * length > 2.5) return
-      const tip = add(origin, apply(frame, TIP)), p = env.project(...origin), q = env.project(...tip), path = paths[depth + BACK]!
-      path.moveTo(p[0], p[1]); path.lineTo(q[0], q[1]); drawn++
-      grow(tip, product(frame, maps[0]!), depth + 1); grow(tip, product(frame, maps[1]!), depth + 1)
+    const ids = new Set([...now.nodes.keys(), ...was.nodes.keys()])
+    c.lineWidth = 1.1; c.strokeStyle = env.ink
+    for (const id of ids) {
+      const parent = (move < .5 ? was.nodes.get(id) ?? now.nodes.get(id) : now.nodes.get(id) ?? was.nodes.get(id))!.parent, a = spot(id), b = parent >= 0 ? spot(parent) : undefined
+      if (!a || !b) continue
+      c.globalAlpha = .3 * Math.min(a.show, b.show) * env.fade
+      c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke()
     }
-    // 这一级的树，再往外补几级祖先：祖先的树干和它的另一半（S₁ 那一支）。
-    let origin = add(HOME, apply(view, mul(centre, -1))), frame = view
-    grow(origin, frame, 0)
-    const back = scaled(transpose(r0), 1 / RATIO)
-    for (let n = 1; n <= BACK; n++) {
-      frame = product(frame, back); origin = sub(origin, apply(frame, TIP))
-      const tip = add(origin, apply(frame, TIP)), p = env.project(...origin), q = env.project(...tip), path = paths[BACK - n]!
-      path.moveTo(p[0], p[1]); path.lineTo(q[0], q[1])
-      grow(tip, product(frame, maps[1]!), 1 - n)
+    c.textAlign = 'center'; c.textBaseline = 'middle'; c.font = `${Math.round(radius * 1.15)}px ${env.hand}`
+    for (const id of ids) {
+      const node = spot(id)!
+      c.beginPath(); c.arc(node.x, node.y, radius, 0, TAU)
+      c.globalAlpha = node.show * env.fade; c.fillStyle = env.paper; c.fill()
+      c.globalAlpha = (node.red ? .62 : .58) * node.show * env.fade; c.fillStyle = node.red ? env.red : env.ink; c.fill()
+      if (radius > 7) { c.globalAlpha = .95 * node.show * env.fade; c.fillStyle = env.paper; c.fillText(String(node.key), node.x, node.y + 1) }
+      if (id === now.focus && move < 1) { c.beginPath(); c.arc(node.x, node.y, radius + 5, 0, TAU); c.globalAlpha = .5 * (1 - move) * env.fade; c.strokeStyle = env.red; c.lineWidth = 1.4; c.stroke(); c.strokeStyle = env.ink; c.lineWidth = 1.1 }
     }
-    c.strokeStyle = env.ink
-    paths.forEach((path, index) => {
-      const level = index - BACK - s // 连续的级数：每钻一级，所有枝都退一级
-      c.globalAlpha = .34 * smooth((level + 4) / 3) * (1 - smooth((level - TOP + 2.5) / 2.5)) * env.fade
-      c.lineWidth = clamp(2.4 * RATIO ** level, .55, 4.5)
-      c.stroke(path)
-    })
-    dotAt(env, HOME, 2.4, .5, env.red)
-    label(env, 'p* = S₀(p*)', HOME, .5, env.red, 8, -8)
-    corner(env, ['T = trunk ∪ S₀(T) ∪ S₁(T)', `zoom × ${(1 / RATIO).toFixed(2)}ⁿ,  n = ${Math.floor(env.t / LEVEL)}`], .86)
+    c.textAlign = 'start'; c.textBaseline = 'alphabetic'
+    corner(env, [now.note, `red-black tree · n = ${now.nodes.size}`])
   }
 }
 
-// ---- 机柜的海：机柜一排排铺满下半个桌面，一直排到天际线；水滴落下，起伏一圈圈传开，远处还有缓缓的涌浪。镜头慢慢向前飞 ----
+// ---- GB300：液冷机柜一排排铺满下半个桌面，一直排到天际线。近处画出机柜的样子——上下的电源框、两组计算托盘、中间的交换机段、柜顶的冷却液软管；越远越简，连续地过渡到只剩轮廓。偶尔落下一滴水，起伏一圈圈传开 ----
 function racks(): Painter {
-  const WIDE = .8, DEEP = 1.2, PITCH = 3.6, TALL = 2.2, EYE = 7.5, SPEED = .55, SINGLE = 50, FAR = 480, EVERY = 3600
+  const WIDE = .6, DEEP = 1.1, PITCH = 3.6, TALL = 2.25, EYE = 5.6, SPEED = .09, SINGLE = 60, BLOCKS = 115, FAR = 340, EVERY = 17000, POD = 9
   return env => {
     const c = env.context, { x: left, y: top, w, h } = env.full
     const horizon = top + h * .5, middle = left + w / 2, focal = w * .85
     const seconds = env.t / 1000, camera = seconds * SPEED, latest = Math.floor(env.t / EVERY)
-    const drops = [0, 1, 2, 3, 4].map(k => latest - k).filter(k => k >= 0).map(k => ({ x: (hash(k * 2.3 + 1) - .5) * 70, z: k * EVERY / 1000 * SPEED + 26 + hash(k * 2.3 + 2) * 75, age: seconds - k * EVERY / 1000 }))
+    const drops = [0, 1].map(k => latest - k).filter(k => k >= 0).map(k => ({ x: (hash(k * 2.3 + 1) - .5) * 30, z: k * EVERY / 1000 * SPEED + 16 + hash(k * 2.3 + 2) * 40, age: seconds - k * EVERY / 1000 }))
     const height = (x: number, z: number) => {
-      let y = .32 * Math.sin(.1 * x + .06 * z + .5 * seconds) + .3 * Math.sin(.045 * z - .08 * x - .37 * seconds)
-      for (const drop of drops) { const d = Math.hypot(x - drop.x, z - drop.z) - 8.5 * drop.age; y += 1.25 * Math.cos(.85 * d) * Math.exp(-((d / 7) ** 2) - drop.age / 8) }
+      let y = .07 * Math.sin(.09 * x + .05 * z + .2 * seconds)
+      for (const drop of drops) { const d = Math.hypot(x - drop.x, z - drop.z) - 2.6 * drop.age; y += .55 * Math.cos(.8 * d) * Math.exp(-((d / 6) ** 2) - drop.age / 11) }
       return y
     }
     const sx = (x: number, z: number) => middle + focal * x / z, sy = (y: number, z: number) => horizon + focal * (EYE - y) / z
-    c.strokeStyle = env.ink; c.lineWidth = 1; c.globalAlpha = .12 * env.fade
+    c.strokeStyle = env.ink; c.lineWidth = 1; c.globalAlpha = .1 * env.fade
     c.beginPath(); c.moveTo(left, horizon); c.lineTo(left + w, horizon); c.stroke()
-    const nearest = Math.max(5, focal * EYE / (h * .5) * .72)
+    const nearest = Math.max(4.5, focal * EYE / (h * .5) * .8)
     const lamps = new Path2D()
     for (let row = Math.floor((camera + FAR) / PITCH); row * PITCH - camera > nearest; row--) {
       const world = row * PITCH, z = world - camera, half = z * (w / 2) / focal + WIDE
-      const clear = clamp(1 - z / FAR, 0, 1), body = new Path2D()
+      const clear = clamp(1 - z / FAR, 0, 1), line = .03 + .24 * clear ** 3, body = new Path2D(), shift = hash(row) * WIDE
       if (z > SINGLE) {
-        // 远处：一排机柜连成一道起伏的墙。
-        const step = Math.max(WIDE, z * .03), from = Math.floor(-half / step) * step
+        if ((z > 280 && row % 3) || (z > BLOCKS && row % 2)) continue // 越远排得越密：隔排画，免得天际线糊成一条黑带
+        // 中景：还是一个个方头的机柜轮廓；再远才连成平滑起伏的一线。
+        const blocky = z < BLOCKS, step = blocky ? WIDE : Math.max(WIDE, z * .04), from = Math.floor(-half / step) * step + (blocky ? shift : 0)
         body.moveTo(sx(from, z), sy(0, z))
-        for (let x = from; x <= half + step; x += step) body.lineTo(sx(x, z), sy(height(x, world) + TALL, z))
+        for (let x = from; x <= half + step; x += step) { const y = sy(height(x + step / 2, world) + TALL, z); if (blocky) { body.lineTo(sx(x, z), y); body.lineTo(sx(x + step, z), y) } else body.lineTo(sx(x, z), y) }
         body.lineTo(sx(half + step, z), sy(0, z)); body.closePath()
         c.globalAlpha = env.fade; c.fillStyle = env.paper; c.fill(body)
-        c.globalAlpha = .13 * clear ** 1.3 * env.fade; c.stroke(body)
+        c.globalAlpha = line * env.fade; c.lineWidth = 1; c.stroke(body)
         continue
       }
-      const detail = new Path2D(), fine = new Path2D(), back = z + DEEP, shift = hash(row) * WIDE
-      for (let i = Math.floor(-half / WIDE); i * WIDE < half; i++) {
-        const x0 = i * WIDE + shift + .02, x1 = x0 + WIDE - .04, y0 = height(x0 + WIDE / 2, world), y1 = y0 + TALL
-        const a = sx(x0, z), b = sx(x1, z), low = sy(y0, z), high = sy(y1, z)
-        body.rect(a, high, b - a, low - high)
-        const far = sy(y1, back)
+      // 细节按机柜在屏幕上的宽度连续地淡入：先是分段，再是托盘线，最近才有把手、网孔、端口。
+      const pixels = focal * WIDE / z, some = smooth((pixels - 7) / 9), more = smooth((pixels - 18) / 16), most = smooth((pixels - 40) / 30)
+      const low = new Path2D(), mid = new Path2D(), fine = new Path2D(), back = z + DEEP
+      for (let i = Math.floor((-half - shift) / WIDE); i * WIDE + shift < half; i++) {
+        const gap = (((i + row * 4) % POD) + POD) % POD
+        if (gap === POD - 1) continue // 每八个机柜留一条过道
+        const x0 = i * WIDE + shift + .015, x1 = x0 + WIDE - .03, y0 = height(x0 + WIDE / 2, world), y1 = y0 + TALL
+        const a = sx(x0, z), b = sx(x1, z), bottom = sy(y0, z), high = sy(y1, z), far = sy(y1, back)
+        body.rect(a, high, b - a, bottom - high)
         body.moveTo(a, high); body.lineTo(sx(x0, back), far); body.lineTo(sx(x1, back), far); body.lineTo(b, high); body.closePath()
-        // GB300 机柜的速写，越近画得越细：门框 → 中间的交换机段和上下两组计算托盘 → 电源框的小格、两侧的冷却液分水管、托盘把手、柜顶的出风口。
-        const wide = b - a, tall = low - high, lod = wide > 34 ? 3 : wide > 19 ? 2 : wide > 11 ? 1 : 0
-        if (lod) {
-          const l = a + wide * .09, r = b - wide * .09, at = (f: number) => high + tall * f
+        // 过道旁边露出来的侧板。
+        const side = gap === 0 && x0 > 0 ? x0 : gap === POD - 2 && x1 < 0 ? x1 : NaN
+        if (side === side) {
+          const edge = sx(side, z), behind = sx(side, back), floorBack = sy(y0, back)
+          body.moveTo(edge, high); body.lineTo(behind, far); body.lineTo(behind, floorBack); body.lineTo(edge, bottom); body.closePath()
+          if (some > 0) for (const f of [.3, .5, .7]) { low.moveTo(edge + (behind - edge) * f, high + (far - high) * f); low.lineTo(edge + (behind - edge) * f, bottom + (floorBack - bottom) * f) }
+        }
+        if (some > 0) {
+          const wide = b - a, tall = bottom - high, l = a + wide * .07, r = b - wide * .07, at = (f: number) => high + tall * f
           const across = (path: Path2D, f: number, from = l, to = r) => { path.moveTo(from, at(f)); path.lineTo(to, at(f)) }
-          detail.rect(l, at(.025), r - l, tall * .95)
-          across(detail, .455); across(detail, .565)
-          if (lod > 1) {
-            across(detail, .1); across(detail, .9)
-            for (const f of [.17, .24, .31, .38, .64, .71, .78, .85]) across(lod > 2 ? fine : detail, f, l + wide * .08, r - wide * .08)
-            const t0 = sy(y1, z + DEEP * .25), t1 = sy(y1, z + DEEP * .8), mid = (x0 + x1) / 2
-            detail.moveTo(sx(mid - .25, z + DEEP * .25), t0); detail.lineTo(sx(mid + .25, z + DEEP * .25), t0); detail.lineTo(sx(mid + .25, z + DEEP * .8), t1); detail.lineTo(sx(mid - .25, z + DEEP * .8), t1); detail.closePath()
+          // 立柱，和五段的分界：电源框 / 十个计算托盘 / 九个交换机托盘 / 八个计算托盘 / 电源框。
+          for (const x of [l, r]) { low.moveTo(x, at(.02)); low.lineTo(x, at(.95)) }
+          for (const f of [.02, .11, .41, .59, .83, .92, .95]) across(low, f)
+          if (more > 0) {
+            for (let k = 1; k < 10; k++) across(k % 2 ? fine : mid, .11 + .03 * k)
+            for (let k = 1; k < 8; k++) across(k % 2 ? fine : mid, .59 + .03 * k)
+            for (let k = 1; k < 9; k++) across(k % 3 ? fine : mid, .41 + .02 * k)
+            across(mid, .05); across(mid, .08); across(mid, .86); across(mid, .89)
+            // 柜顶：出风口，和两根往上走的冷却液软管。
+            const vent = (fx: number, fz: number): [number, number] => [sx(x0 + (x1 - x0) * fx, z + DEEP * fz), sy(y1, z + DEEP * fz)]
+            const [v0, v1, v2, v3] = [vent(.2, .2), vent(.8, .2), vent(.8, .6), vent(.2, .6)]
+            mid.moveTo(v0[0], v0[1]); mid.lineTo(v1[0], v1[1]); mid.lineTo(v2[0], v2[1]); mid.lineTo(v3[0], v3[1]); mid.closePath()
+            for (const fx of [.3, .7]) { const [hx, hy] = vent(fx, .85), up = sy(y1 + .55, z + DEEP * .85); mid.moveTo(hx, hy); mid.lineTo(hx, up); mid.quadraticCurveTo(hx, up - tall * .03, hx + wide * .12 * (fx < .5 ? -1 : 1), up - tall * .03) }
           }
-          if (lod > 2) {
-            for (const x of [l + wide * .07, r - wide * .07]) { fine.moveTo(x, at(.1)); fine.lineTo(x, at(.9)) }
-            for (let k = 1; k < 6; k++) { const x = l + (r - l) * k / 6; fine.moveTo(x, at(.025)); fine.lineTo(x, at(.1)); fine.moveTo(x, at(.9)); fine.lineTo(x, at(.975)) }
-            for (let k = 1; k < 9; k++) { const x = l + (r - l) * k / 9; fine.moveTo(x, at(.49)); fine.lineTo(x, at(.53)) }
-            for (const f of [.17, .24, .31, .38, .64, .71, .78, .85]) for (const x of [l + wide * .12, r - wide * .12]) { fine.moveTo(x, at(f - .02)); fine.lineTo(x, at(f + .02)) }
+          if (most > 0) {
+            // 电源模块的小格、托盘两头的把手、托盘正面的一排网孔、交换机的端口、底座的脚。
+            for (let k = 1; k < 6; k++) { const x = l + (r - l) * k / 6; fine.moveTo(x, at(.02)); fine.lineTo(x, at(.11)); fine.moveTo(x, at(.83)); fine.lineTo(x, at(.92)) }
+            const trays = [...Array.from({ length: 10 }, (_, k) => .125 + .03 * k), ...Array.from({ length: 8 }, (_, k) => .605 + .03 * k)]
+            for (const f of trays) {
+              for (const x of [l + wide * .05, r - wide * .05]) fine.rect(x - wide * .012, at(f - .007), wide * .024, tall * .014)
+              for (let k = 0; k < 7; k++) { const x = l + wide * (.2 + .075 * k); fine.moveTo(x, at(f)); fine.lineTo(x + wide * .035, at(f)) }
+            }
+            for (let k = 0; k < 9; k++) for (let j = 1; j < 12; j++) { const x = l + (r - l) * j / 12; fine.moveTo(x, at(.414 + .02 * k)); fine.lineTo(x, at(.426 + .02 * k)) }
+            for (const x of [l + wide * .06, r - wide * .16]) fine.rect(x, at(.965), wide * .1, tall * .025)
+            fine.rect(a + wide * .42, at(.004), wide * .16, tall * .012)
           }
         }
-        if (y0 > .55) { const r = clamp(60 / z, .8, 2.6); lamps.moveTo((a + b) / 2 + r, high + (low - high) * .5); lamps.arc((a + b) / 2, high + (low - high) * .5, r, 0, TAU) }
+        if (y0 > .3) { const r = clamp(pixels * .05, .8, 3); lamps.moveTo((a + b) / 2 + r, high + (bottom - high) * .5); lamps.arc((a + b) / 2, high + (bottom - high) * .5, r, 0, TAU) }
       }
       c.globalAlpha = env.fade; c.fillStyle = env.paper; c.fill(body)
-      c.globalAlpha = (.07 + .2 * clear) * env.fade; c.lineWidth = 1; c.stroke(body)
-      c.globalAlpha = (.06 + .16 * clear) * env.fade; c.lineWidth = .8; c.stroke(detail)
-      c.globalAlpha = (.04 + .1 * clear) * env.fade; c.lineWidth = .7; c.stroke(fine)
+      c.globalAlpha = line * env.fade; c.lineWidth = 1; c.stroke(body)
+      if (some > 0) { c.globalAlpha = line * some * env.fade; c.lineWidth = .9; c.stroke(low) }
+      if (more > 0) { c.globalAlpha = line * .85 * more * env.fade; c.lineWidth = .8; c.stroke(mid) }
+      if (more > 0) { c.globalAlpha = line * .7 * Math.max(most, more * .5) * env.fade; c.lineWidth = .7; c.stroke(fine) }
     }
-    c.fillStyle = env.red; c.globalAlpha = .5 * env.fade; c.fill(lamps)
-    c.globalAlpha = .42 * env.fade; c.fillStyle = env.ink; c.font = `18px ${env.hand}`
+    c.fillStyle = env.red; c.globalAlpha = .45 * env.fade; c.fill(lamps)
+    c.globalAlpha = .4 * env.fade; c.fillStyle = env.ink; c.font = `18px ${env.hand}`
     c.fillText('∂²φ/∂t² = c² ∇²φ', left + w * .06, horizon - 16)
   }
 }
 
 export const SKETCHES: Sketch[] = [
-  { id: 'dna', name: 'DNA 双螺旋', tilt: .1, zoom: .46, camera: 2.5, create: dna, facts: [
+  { id: 'dna', name: 'DNA 双螺旋', tilt: .1, zoom: .5, camera: 2.8, create: dna, facts: [
     'B-DNA: a right-handed double helix, about 10.5 base pairs per turn, 3.4 Å rise per base pair.',
     'Chargaff: [A] = [T] and [G] = [C].',
     'A pairs with T through two hydrogen bonds; G pairs with C through three.',
@@ -690,7 +721,7 @@ export const SKETCHES: Sketch[] = [
     'Sylow: if pᵏ divides |G|, then G has a subgroup of order pᵏ.',
     'First isomorphism theorem: G / ker φ ≅ im φ.',
   ] },
-  { id: 'higgs', name: '墨西哥帽势', tilt: .5, zoom: .5, create: higgs, facts: [
+  { id: 'higgs', name: '墨西哥帽势', tilt: -.5, zoom: .5, create: higgs, facts: [
     'V(φ) = λ(|φ|² − v²)²: the Lagrangian has a U(1) symmetry, the vacuum does not.',
     'Spontaneous symmetry breaking: the ground state is less symmetric than the laws.',
     'Goldstone: each broken continuous symmetry gives a massless boson — motion along the valley.',
@@ -701,7 +732,7 @@ export const SKETCHES: Sketch[] = [
     'Noether: every continuous symmetry gives a conserved current, ∂_μ j^μ = 0.',
     'Ginzburg–Landau: the same potential describes a superconductor below T_c.',
   ] },
-  { id: 'dijkstra', name: 'Dijkstra 最短路径', tilt: .72, zoom: .44, camera: 5, create: dijkstra, facts: [
+  { id: 'dijkstra', name: 'Dijkstra 最短路径', tilt: -.72, zoom: .44, camera: 5, create: dijkstra, facts: [
     'Dijkstra: repeatedly settle the unsettled vertex with the smallest tentative distance.',
     'Relaxation: if d(u) + w(u, v) < d(v), set d(v) ← d(u) + w(u, v).',
     'With a binary heap Dijkstra runs in O((V + E) log V); with a Fibonacci heap, O(E + V log V).',
@@ -713,7 +744,7 @@ export const SKETCHES: Sketch[] = [
     'Euler: a connected graph has an Eulerian circuit iff every vertex has even degree.',
     'Max-flow = min-cut (Ford–Fulkerson).',
   ] },
-  { id: 'life', name: '生命游戏', tilt: .8, zoom: .39, camera: 5, create: life, facts: [
+  { id: 'life', name: '生命游戏', tilt: .8, create: life, facts: [
     'Conway’s Life, rule B3/S23: a dead cell with 3 neighbours is born; a live cell with 2 or 3 survives.',
     'The Game of Life is Turing complete.',
     'A glider moves one cell diagonally every four generations.',
@@ -724,19 +755,19 @@ export const SKETCHES: Sketch[] = [
     'Church–Turing thesis: the computable functions are exactly those a Turing machine can compute.',
     'Rice: every non-trivial semantic property of programs is undecidable.',
   ] },
-  { id: 'tree', name: '分形二叉树', tilt: .22, zoom: .5, create: tree, facts: [
-    'A binary tree of depth n has 2ⁿ⁺¹ − 1 nodes.',
-    'Self-similarity: every subtree is a scaled copy of the whole.',
-    'Similarity dimension: D = log N / log(1/r); here N = 2.',
-    'Total branch length: Σ (2r)ᵏ — finite iff r < 1/2.',
-    'A balanced binary search tree: search, insert, delete in O(log n).',
+  { id: 'tree', name: '红黑树', tilt: .2, create: tree, facts: [
+    'Red-black tree: every node is red or black; the root and the NIL leaves are black.',
+    'A red node never has a red child.',
+    'Every path from a node down to a leaf passes the same number of black nodes.',
+    'Height ≤ 2 log₂(n + 1): search, insert and delete are O(log n).',
+    'A rotation is O(1) and preserves the in-order sequence of keys.',
+    'Insertion: colour the new node red, then recolour or rotate — at most two rotations.',
+    'Deletion needs at most three rotations.',
+    'Red-black trees are 2-3-4 trees in disguise (Guibas–Sedgewick, 1978).',
+    'An AVL tree is more strictly balanced; a red-black tree rotates less on update.',
     'Catalan: the number of binary trees with n nodes is Cₙ = (2n)! / ((n + 1)! n!).',
-    'König’s lemma: an infinite, finitely branching tree has an infinite path.',
-    'The boundary of the infinite binary tree is a Cantor set.',
-    'Master theorem: T(n) = 2T(n/2) + O(n) ⇒ T(n) = O(n log n).',
-    'A heap is a complete binary tree stored in an array: children of i are 2i + 1 and 2i + 2.',
   ] },
-  { id: 'racks', name: '机柜的海', tilt: .7, create: racks, facts: [
+  { id: 'racks', name: 'GB300', tilt: .7, create: racks, facts: [
     'A field is a degree of freedom at every point; a lattice makes that literal.',
     'Wave equation: ∂²φ/∂t² = c² ∇²φ.',
     'Lattice dispersion: ω(k) = 2√(K/m) |sin(ka/2)|.',

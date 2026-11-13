@@ -36,7 +36,7 @@ let sketch: Sketch | undefined
 let painter: Painter | undefined
 let baseTilt = .42
 let jitter: Float32Array | undefined
-let frame = 0, last = 0, start = 0, drawnAt = 0, width = 0, height = 0, ratio = 1, fullWidth = 0, fullHeight = 0, offsetX = 0, offsetY = 0
+let frame = 0, last = 0, start = 0, drawnAt = 0, width = 0, height = 0, ratio = 1, fullWidth = 0, fullHeight = 0, offsetX = 0, offsetY = 0, pageLeft = 0, pageTop = 0
 let switchTimer: ReturnType<typeof setTimeout> | undefined
 let noteTimer: ReturnType<typeof setTimeout> | undefined
 let noteKey = 0, slotIndex = 0
@@ -101,6 +101,7 @@ function resize() {
   ratio = 1 // 铅笔线本来就软，背景按 1 倍分辨率画，大画布也省
   // 画布铺满整块桌面；常规画面仍画在留了边的那一块里（左 6%、上 4%、右 2%），铺满的画面（机柜的海）用整块。
   fullWidth = box.width; fullHeight = box.height
+  pageLeft = box.left; pageTop = box.top
   offsetX = props.preview ? 0 : fullWidth * .06; offsetY = props.preview ? 0 : fullHeight * .04; width = fullWidth - offsetX - (props.preview ? 0 : fullWidth * .02); height = fullHeight - offsetY
   element.width = Math.max(1, Math.round(fullWidth * ratio))
   element.height = Math.max(1, Math.round(fullHeight * ratio))
@@ -150,7 +151,7 @@ function draw(now: number) {
   const reveal = reduced.matches || props.preview ? 1 : Math.min(1, (now - drawnAt) / DRAW_IN)
   if (mesh) drawMesh(context, mesh, project, reveal)
   else if (graph && training) drawNetwork(context, graph, training, project, reveal, now)
-  else if (painter) painter({ context, project, t: reduced.matches ? 20000 : Math.max(0, now - drawnAt), fade: reveal, ink, red, paper, hand, width, height, size, camera, full: { x: -offsetX, y: -offsetY, w: fullWidth, h: fullHeight } })
+  else if (painter) painter({ context, project, t: reduced.matches ? 20000 : Math.max(0, now - drawnAt), fade: reveal, ink, red, paper, hand, width, height, size, camera, full: { x: -offsetX, y: -offsetY, w: fullWidth, h: fullHeight }, grid: props.preview ? { size: 8, x: 0, y: 0 } : { size: 24, x: -pageLeft - offsetX, y: -pageTop - offsetY } })
   if (mesh && drawing && reveal >= 1) drawVisual(context, drawing, now, project)
   context.globalAlpha = 1
 }
