@@ -595,7 +595,7 @@ function tree(): Painter {
 
 // ---- GB300：液冷机柜一排排铺满下半个桌面，一直排到天际线。近处画出机柜的样子——上下的电源框、两组计算托盘、中间的交换机段、柜顶的冷却液软管；越远越简，连续地过渡到只剩轮廓。偶尔落下一滴水，起伏一圈圈传开 ----
 function racks(): Painter {
-  const WIDE = .6, DEEP = 1.1, PITCH = 3.6, TALL = 2.25, EYE = 5.6, SPEED = .09, SINGLE = 60, BLOCKS = 115, FAR = 340, EVERY = 17000, POD = 9
+  const WIDE = .6, DEEP = 1.2, PITCH = 2.9, TALL = 2.25, EYE = 5.6, SPEED = .09, EVERY = 17000
   return env => {
     const c = env.context, { x: left, y: top, w, h } = env.full
     const horizon = top + h * .5, middle = left + w / 2, focal = w * .85
@@ -610,45 +610,42 @@ function racks(): Painter {
     c.strokeStyle = env.ink; c.lineWidth = 1; c.globalAlpha = .1 * env.fade
     c.beginPath(); c.moveTo(left, horizon); c.lineTo(left + w, horizon); c.stroke()
     const nearest = Math.max(4.5, focal * EYE / (h * .5) * .8)
-    const lamps = new Path2D()
+    const FAR = focal * EYE / 5 // 再远，一排离天际线不到 5 个像素
     for (let row = Math.floor((camera + FAR) / PITCH); row * PITCH - camera > nearest; row--) {
       const world = row * PITCH, z = world - camera, half = z * (w / 2) / focal + WIDE
-      const clear = clamp(1 - z / FAR, 0, 1), line = .03 + .24 * clear ** 3, body = new Path2D(), shift = hash(row) * WIDE
-      if (z > SINGLE) {
-        if ((z > 280 && row % 3) || (z > BLOCKS && row % 2)) continue // 越远排得越密：隔排画，免得天际线糊成一条黑带
-        // 中景：还是一个个方头的机柜轮廓；再远才连成平滑起伏的一线。
-        const blocky = z < BLOCKS, step = blocky ? WIDE : Math.max(WIDE, z * .04), from = Math.floor(-half / step) * step + (blocky ? shift : 0)
+      // 远近之间不留接缝：线的深浅只看这一排在屏幕上占多高——排得越密越淡，密到不足一个多像素就隔几排画一排。
+      const pixels = focal * WIDE / z, spacing = focal * EYE * PITCH / (z * z), stride = spacing < 1.6 ? Math.ceil(1.6 / spacing) : 1
+      if (row % stride) continue
+      const line = .25 * clamp(spacing * stride / 7, .16, 1), body = new Path2D(), shift = hash(row) * WIDE
+      if (pixels <= 13) {
+        // 中景、远景：一排机柜的正面连成一道墙，柜顶另描后沿；机柜还分得清时是一个个方头，再远就连成起伏的一线。
+        const blocky = pixels > 4.5, step = blocky ? WIDE : Math.max(WIDE * 2, z * .02), from = Math.floor((-half - shift) / step) * step + shift, back = z + DEEP, tops = new Path2D()
         body.moveTo(sx(from, z), sy(0, z))
-        for (let x = from; x <= half + step; x += step) { const y = sy(height(x + step / 2, world) + TALL, z); if (blocky) { body.lineTo(sx(x, z), y); body.lineTo(sx(x + step, z), y) } else body.lineTo(sx(x, z), y) }
+        for (let x = from, first = true; x <= half + step; x += step, first = false) {
+          const top = height(x + step / 2, world) + TALL, y = sy(top, z), far = sy(top, back)
+          if (blocky) { body.lineTo(sx(x, z), y); body.lineTo(sx(x + step, z), y); tops.moveTo(sx(x, z), y); tops.lineTo(sx(x, back), far); tops.lineTo(sx(x + step, back), far); tops.lineTo(sx(x + step, z), y) }
+          else { body.lineTo(sx(x, z), y); if (first) tops.moveTo(sx(x, back), far); else tops.lineTo(sx(x, back), far) }
+        }
         body.lineTo(sx(half + step, z), sy(0, z)); body.closePath()
-        c.globalAlpha = env.fade; c.fillStyle = env.paper; c.fill(body)
-        c.globalAlpha = line * env.fade; c.lineWidth = 1; c.stroke(body)
+        c.globalAlpha = env.fade; c.fillStyle = env.paper; c.fill(tops); c.fill(body)
+        c.globalAlpha = line * env.fade; c.lineWidth = 1; c.stroke(tops); c.stroke(body)
         continue
       }
       // 细节按机柜在屏幕上的宽度连续地淡入：先是分段，再是托盘线，最近才有把手、网孔、端口。
-      const pixels = focal * WIDE / z, some = smooth((pixels - 7) / 9), more = smooth((pixels - 18) / 16), most = smooth((pixels - 40) / 30)
-      const low = new Path2D(), mid = new Path2D(), fine = new Path2D(), dark = new Path2D(), gold = new Path2D(), back = z + DEEP
+      const some = smooth((pixels - 13) / 8), more = smooth((pixels - 22) / 16), most = smooth((pixels - 42) / 30)
+      const low = new Path2D(), mid = new Path2D(), fine = new Path2D(), dark = new Path2D(), back = z + DEEP
       for (let i = Math.floor((-half - shift) / WIDE); i * WIDE + shift < half; i++) {
-        const gap = (((i + row * 4) % POD) + POD) % POD
-        if (gap === POD - 1) continue // 每八个机柜留一条过道
         const x0 = i * WIDE + shift + .015, x1 = x0 + WIDE - .03, y0 = height(x0 + WIDE / 2, world), y1 = y0 + TALL
         const a = sx(x0, z), b = sx(x1, z), bottom = sy(y0, z), high = sy(y1, z), far = sy(y1, back)
         body.rect(a, high, b - a, bottom - high)
         body.moveTo(a, high); body.lineTo(sx(x0, back), far); body.lineTo(sx(x1, back), far); body.lineTo(b, high); body.closePath()
-        // 过道旁边露出来的侧板。
-        const side = gap === 0 && x0 > 0 ? x0 : gap === POD - 2 && x1 < 0 ? x1 : NaN
-        if (side === side) {
-          const edge = sx(side, z), behind = sx(side, back), floorBack = sy(y0, back)
-          body.moveTo(edge, high); body.lineTo(behind, far); body.lineTo(behind, floorBack); body.lineTo(edge, bottom); body.closePath()
-          if (some > 0) { dark.moveTo(edge, high); dark.lineTo(behind, far); dark.lineTo(behind, floorBack); dark.lineTo(edge, bottom); dark.closePath() }
-        }
         if (some > 0) {
           // 照着 GB300 机柜画：黑色的框，顶上一小块圆角的金色窗（交换机与线缆），下面一大块圆角的金色窗——里面是一层层计算托盘，上半截右侧垂着一束束线缆；窗与窗之间、最底下是深色的电源框。
           const wide = b - a, tall = bottom - high, l = a + wide * .1, r = b - wide * .1, at = (f: number) => high + tall * f, round = Math.min(wide * .09, tall * .03)
           const across = (path: Path2D, f: number, from = l, to = r) => { path.moveTo(from, at(f)); path.lineTo(to, at(f)) }
           dark.rect(a, high, l - a, tall); dark.rect(r, high, b - r, tall); dark.rect(l, high, r - l, tall * .105); dark.rect(l, at(.21), r - l, tall * .1); dark.rect(l, at(.87), r - l, tall * .13)
           low.rect(l, at(.02), r - l, tall * .95)
-          for (const [from, to] of [[.115, .2], [.32, .86]] as const) { gold.roundRect(l + wide * .02, at(from), r - l - wide * .04, tall * (to - from), round); low.roundRect(l + wide * .02, at(from), r - l - wide * .04, tall * (to - from), round) }
+          for (const [from, to] of [[.115, .2], [.32, .86]] as const) { low.roundRect(l + wide * .02, at(from), r - l - wide * .04, tall * (to - from), round) }
           if (more > 0) {
             const il = l + wide * .05, ir = r - wide * .05
             for (let k = 1; k < 20; k++) across(k % 2 ? fine : mid, .32 + .027 * k, il, ir)
@@ -666,16 +663,14 @@ function racks(): Painter {
             for (const x of [a + wide * .04, b - wide * .16]) fine.rect(x, at(.975), wide * .12, tall * .025)
           }
         }
-        if (y0 > .3) { const r = clamp(pixels * .05, .8, 3); lamps.moveTo((a + b) / 2 + r, high + (bottom - high) * .5); lamps.arc((a + b) / 2, high + (bottom - high) * .5, r, 0, TAU) }
       }
       c.globalAlpha = env.fade; c.fillStyle = env.paper; c.fill(body)
-      if (some > 0) { c.globalAlpha = (.04 + .08 * clear) * some * env.fade; c.fillStyle = env.ink; c.fill(dark); c.globalAlpha = (.05 + .15 * clear) * some * env.fade; c.fillStyle = env.red; c.fill(gold) }
+      if (some > 0) { c.globalAlpha = .13 * some * env.fade; c.fillStyle = env.ink; c.fill(dark) }
       c.globalAlpha = line * env.fade; c.lineWidth = 1; c.stroke(body)
       if (some > 0) { c.globalAlpha = line * some * env.fade; c.lineWidth = .9; c.stroke(low) }
       if (more > 0) { c.globalAlpha = line * .85 * more * env.fade; c.lineWidth = .8; c.stroke(mid) }
       if (more > 0) { c.globalAlpha = line * .7 * Math.max(most, more * .5) * env.fade; c.lineWidth = .7; c.stroke(fine) }
     }
-    c.fillStyle = env.red; c.globalAlpha = .45 * env.fade; c.fill(lamps)
     c.globalAlpha = .4 * env.fade; c.fillStyle = env.ink; c.font = `18px ${env.hand}`
     c.fillText('∂²φ/∂t² = c² ∇²φ', left + w * .06, horizon - 16)
   }
