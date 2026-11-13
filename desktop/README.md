@@ -1,8 +1,8 @@
-# 开智 0.10.21
+# 开智 0.10.22
 
 开智是一款 Windows PDF / Markdown 阅读与管理工具，支持并排阅读、同书多开、本机手写标记和 AI 文档问答。界面采用可调节的液态玻璃材质，文档库、阅读进度、设置和对话记录保存在本机。
 
-[下载 0.10.21](https://github.com/graohene10-spec/pdf-copilot/releases/tag/desktop-v0.10.21) · [本版更新](RELEASE_NOTES_0.10.21.md) · [0.7.0 更新](RELEASE_NOTES_0.7.0.md) · [升级指南](docs/UPDATING.md) · [隐私与数据](docs/PRIVACY.md) · [构建与发布](docs/RELEASING.md)
+[下载 0.10.22](https://github.com/graohene10-spec/pdf-copilot/releases/tag/desktop-v0.10.22) · [本版更新](RELEASE_NOTES_0.10.22.md) · [0.7.0 更新](RELEASE_NOTES_0.7.0.md) · [升级指南](docs/UPDATING.md) · [隐私与数据](docs/PRIVACY.md) · [构建与发布](docs/RELEASING.md)
 
 ## 0.7.1 更新
 
@@ -17,9 +17,9 @@
 
 | GitHub 附件 | 用途 |
 | --- | --- |
-| [kaizhi_0.10.21_x64-setup.exe](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.10.21/kaizhi_0.10.21_x64-setup.exe) | Windows x64 安装版 |
-| [kaizhi_0.10.21_x64-portable.zip](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.10.21/kaizhi_0.10.21_x64-portable.zip) | 免安装版；解压后运行 `OpenIntelligence-portable/OpenIntelligence.exe` |
-| [kaizhi_0.10.21_source.zip](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.10.21/kaizhi_0.10.21_source.zip) | 完整源码，供开发者构建 |
+| [kaizhi_0.10.22_x64-setup.exe](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.10.22/kaizhi_0.10.22_x64-setup.exe) | Windows x64 安装版 |
+| [kaizhi_0.10.22_x64-portable.zip](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.10.22/kaizhi_0.10.22_x64-portable.zip) | 免安装版；解压后运行 `OpenIntelligence-portable/OpenIntelligence.exe` |
+| [kaizhi_0.10.22_source.zip](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.10.22/kaizhi_0.10.22_source.zip) | 完整源码，供开发者构建 |
 | manifest.json / SHA256SUMS.txt | 文件清单、源码提交和附件校验值 |
 
 1. 安装程序，或将免安装 ZIP 全部解压，保留 `OpenIntelligence.exe` 旁的 `native-host/` 文件夹。
@@ -168,7 +168,7 @@ npm test
 cargo test --release --locked --manifest-path src-tauri/Cargo.toml
 npm run desktop:build
 npm run package:desktop
-node scripts/release-assets.mjs --tag desktop-v0.10.21
+node scripts/release-assets.mjs --tag desktop-v0.10.22
 ```
 
 本机测试使用 release 配置可复用正式构建缓存；CI 当前使用默认测试配置。工具不在 PATH 时可使用 `scripts/build-windows.ps1`。本机构建产物在 `release/` 中使用中文名称；`release/github/` 中整理为上方表格的英文附件名。程序运行时可加 `package:desktop -- --staging` 先输出至 `artifacts/package-staging/`。

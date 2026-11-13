@@ -2,7 +2,8 @@ import { buildPayload, streamTurn, streamChat, getModel, protocolOf } from './pr
 import { toolsForVision, validateToolCall } from '../../../extension/common/document-tools.mjs';
 
 // 桌面版的文档工具说明：够用就行，不要求逐句引用。
-const DOCUMENT_INSTRUCTIONS = '需要时可以用工具查看当前文档，查到够回答就停。指出文档具体某处时用 [sourceId] 标注，别编页码。';
+// 每调一次工具，模型就要多跑一轮，所以先用随问题带上的「附近内容」。
+const DOCUMENT_INSTRUCTIONS = '下面附带的「当前文档信息与附近内容」够回答就直接回答，不要调用工具；确实需要文档其他部分时再用工具查看，次数越少越好，查到够回答就停。指出文档具体某处时用 [sourceId] 标注，别编页码。';
 import { normalizeDocumentLimits, MODEL_STATE_CHARACTERS } from '../../../extension/common/document-limits.mjs';
 import { streamNativeDocument } from './native.mjs';
 
