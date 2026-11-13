@@ -17,6 +17,7 @@ const current = ref<string>()
 type Note = { key: number; text: string; slot: number; drawn: boolean; leaving: boolean }
 const notes = ref<Note[]>([])
 
+const SIDEBAR = 250 // 左侧栏的宽度
 const PERIOD = 240000 // 一整圈四分钟
 const DRAW_IN = 2600 // 换画面时「画出来」的时长
 const FRAME = 1000 / 30
@@ -36,7 +37,7 @@ let sketch: Sketch | undefined
 let painter: Painter | undefined
 let baseTilt = .42
 let jitter: Float32Array | undefined
-let cost = 0, frame = 0, last = 0, start = 0, drawnAt = 0, width = 0, height = 0, ratio = 1, fullWidth = 0, fullHeight = 0, offsetX = 0, offsetY = 0, pageLeft = 0, pageTop = 0
+let cost = 0, smoothRun = false, frame = 0, last = 0, start = 0, drawnAt = 0, width = 0, height = 0, ratio = 1, fullWidth = 0, fullHeight = 0, offsetX = 0, offsetY = 0, pageLeft = 0, pageTop = 0
 let switchTimer: ReturnType<typeof setTimeout> | undefined
 let noteTimer: ReturnType<typeof setTimeout> | undefined
 let noteKey = 0, slotIndex = 0
@@ -102,7 +103,9 @@ function resize() {
   // 画布铺满整块桌面；常规画面仍画在留了边的那一块里（左 6%、上 4%、右 2%），铺满的画面（机柜的海）用整块。
   fullWidth = box.width; fullHeight = box.height
   pageLeft = box.left; pageTop = box.top
-  offsetX = props.preview ? 0 : fullWidth * .06; offsetY = props.preview ? 0 : fullHeight * .04; width = fullWidth - offsetX - (props.preview ? 0 : fullWidth * .02); height = fullHeight - offsetY
+  // 画布连左侧栏下面也铺着（侧栏是歪的纸片，收起来时那一块也要有画面）；常规画面仍画在侧栏右边那一块里。
+  const side = props.preview ? 0 : SIDEBAR, room = fullWidth - side
+  offsetX = props.preview ? 0 : side + room * .06; offsetY = props.preview ? 0 : fullHeight * .04; width = props.preview ? fullWidth : room * .92; height = fullHeight - offsetY
   element.width = Math.max(1, Math.round(fullWidth * ratio))
   element.height = Math.max(1, Math.round(fullHeight * ratio))
 }
@@ -607,8 +610,9 @@ function drawVisual(context: CanvasRenderingContext2D, item: Drawing, now: numbe
 function tick(now: number) {
   frame = 0
   if (document.hidden) return
-  // 画一帧花得久（大窗口、机器慢）就自动降帧：平均超过 6 ms 降到每秒 20 帧，超过 12 ms 降到 15 帧，不拖累界面。
-  const interval = cost > 12 ? 1000 / 15 : cost > 6 ? 1000 / 20 : FRAME
+  // 帧率跟着一帧的耗时走：很轻（平均不到 4 ms）就每秒 60 帧，动得顺；一般每秒 30 帧；实在太重（超过 16 ms）才降到 20 帧，不拖累界面。
+  const interval = cost < (smoothRun ? 4.5 : 3.5) ? 1000 / 60 : cost > 16 ? 1000 / 20 : FRAME
+  smoothRun = interval < 20
   if (now - last >= interval - 2) { last = now; const began = performance.now(); draw(now); cost += (performance.now() - began - cost) * .1 }
   if (!reduced.matches) frame = requestAnimationFrame(tick)
 }
@@ -697,15 +701,18 @@ onBeforeUnmount(() => {
 <template>
   <div class="manifold-doodle" :class="{ preview }" :style="preview ? { background: backing } : undefined" aria-hidden="true">
     <canvas ref="canvas" class="manifold-canvas" />
-    <p v-for="note in notes" :key="note.key" class="manifold-note" :class="[`slot-${note.slot}`, { drawn: note.drawn, leaving: note.leaving }]">{{ note.text }}</p>
+    <div class="manifold-notes"><p v-for="note in notes" :key="note.key" class="manifold-note" :class="[`slot-${note.slot}`, { drawn: note.drawn, leaving: note.leaving }]">{{ note.text }}</p></div>
   </div>
 </template>
 
 <style scoped>
 /* 画在桌面的格子纸上：在所有纸片后面，不接收鼠标。 */
-.manifold-doodle{position:absolute;inset:0 0 0 250px;z-index:-1;pointer-events:none;color:var(--pencil);font-family:'Caveat','Long Cang',cursive;animation:manifold-in 2.4s var(--ease-out) both}
+.manifold-doodle{position:absolute;inset:0;z-index:-1;pointer-events:none;color:var(--pencil);font-family:'Caveat','Long Cang',cursive;animation:manifold-in 2.4s var(--ease-out) both}
 /* 画面是背景的主体：几乎占满文档库右侧的整块桌面，被卡片、面板挡住一部分也无妨。 */
 .manifold-canvas{position:absolute;inset:0;width:100%;height:100%}
+/* 手写的旁注排在侧栏右边那一块里。 */
+.manifold-notes{position:absolute;inset:0 0 0 250px}
+.manifold-doodle.preview .manifold-notes{display:none}
 /* 知识缓缓浮现、缓缓淡去：只动透明度和一点点位移。 */
 .manifold-note{position:absolute;max-width:min(20vw,270px);margin:0;font-size:17px;line-height:1.4;color:var(--surface-muted);opacity:.55;animation:manifold-note-in 3s var(--ease-soft) backwards;transition:opacity 3s var(--ease-soft),translate 3s var(--ease-soft)}
 /* 画在流形上的那一条用红笔写，前面一道红色短线，和画上去的示意对得上。 */
