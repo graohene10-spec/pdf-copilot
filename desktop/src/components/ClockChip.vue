@@ -15,7 +15,7 @@ function locate() {
   place.value = box && box.width ? { top: Math.round(box.bottom + 8), right: Math.max(8, Math.round(innerWidth - box.right)) } : { top: 12, right: 12 }
 }
 function toggle() { open.value = !open.value }
-watch(open, value => { if (value) { locate(); fields.h = clock.last.h; fields.m = clock.last.m; fields.s = clock.last.s; alarmAt.value = nextHalfHour() } })
+watch(open, value => { if (value) { locate(); sweep.value = (Date.now() % 60000) / 1000; fields.h = clock.last.h; fields.m = clock.last.m; fields.s = clock.last.s; alarmAt.value = nextHalfHour() } })
 watch(() => clock.ringing, ringing => { if (ringing) open.value = true })
 function outside(event: PointerEvent) { if (!open.value || clock.ringing) return; const target = event.target as Node; if (!panel.value?.contains(target) && !chip.value?.contains(target)) open.value = false }
 function key(event: KeyboardEvent) { if (event.key === 'Escape' && open.value && !clock.ringing) { open.value = false; chip.value?.focus() } }
@@ -66,7 +66,10 @@ const ringText = computed(() => {
 })
 function done() { dismissRing(); open.value = false }
 // ---- 表盘：指针指着现在几点；计时中外圈多一道弧，是剩下的时间 ------------------------
-const TICKS = 'M50.0 25.5L50.0 20.5 M65.5 27.2L66.8 25.0 M76.8 38.5L79.0 37.2 M78.5 54.0L83.5 54.0 M76.8 69.5L79.0 70.8 M65.5 80.8L66.8 83.0 M50.0 82.5L50.0 87.5 M34.5 80.8L33.2 83.0 M23.2 69.5L21.0 70.8 M21.5 54.0L16.5 54.0 M23.2 38.5L21.0 37.2 M34.5 27.2L33.2 25.0'
+const QUARTERS = 'M50.00 26.80L50.00 21.40 M77.20 54.00L82.60 54.00 M50.00 81.20L50.00 86.60 M22.80 54.00L17.40 54.00'
+const HOURS = 'M64.90 28.19L66.30 25.77 M75.81 39.10L78.23 37.70 M75.81 68.90L78.23 70.30 M64.90 79.81L66.30 82.23 M35.10 79.81L33.70 82.23 M24.19 68.90L21.77 70.30 M24.19 39.10L21.77 37.70 M35.10 28.19L33.70 25.77'
+// 秒针一分钟扫一圈；打开卡片时按现在的秒数对好位置。
+const sweep = ref(0)
 const hands = computed(() => { const date = new Date(clock.now), minutes = date.getMinutes(); return { hour: (date.getHours() % 12 + minutes / 60) * 30, minute: minutes * 6 } })
 const hero = computed(() => {
   const ringing = clock.ringing
@@ -92,13 +95,15 @@ watch(tab, () => void nextTick(locate))
       <div v-if="open" ref="panel" class="clock-panel" :class="{ ringing: clock.ringing }" role="dialog" aria-label="计时与闹钟" :style="{ top: `${place.top}px`, right: `${place.right}px` }">
         <div class="cp-hero">
           <svg class="cp-face" :class="{ shake: clock.ringing }" viewBox="0 0 100 100" aria-hidden="true">
-            <path class="cp-ears" d="M20 24a15 15 0 0 1 21-13 M80 24a15 15 0 0 0-21-13 M50 12v6 M29 86l-6 9 M71 86l6 9" />
-            <circle class="cp-rim" cx="50" cy="54" r="36" />
-            <path class="cp-ticks" :d="TICKS" />
-            <circle v-if="running && !clock.ringing" class="cp-arc" cx="50" cy="54" r="36" pathLength="1" :stroke-dasharray="`${share} 1`" transform="rotate(-90 50 54)" />
-            <line class="cp-hand" x1="50" y1="54" x2="50" y2="36" :transform="`rotate(${hands.hour} 50 54)`" />
-            <line class="cp-hand long" x1="50" y1="54" x2="50" y2="27" :transform="`rotate(${hands.minute} 50 54)`" />
-            <circle class="cp-hub" cx="50" cy="54" r="2.6" />
+            <!-- 怀表式的表冠和提环 -->
+            <circle class="cp-bow" cx="50" cy="7.6" r="3.5" /><path class="cp-crown" d="M47.4 11.4h5.2v3.4h-5.2z" />
+            <circle class="cp-rim" cx="50" cy="54" r="38" /><circle class="cp-rim inner" cx="50" cy="54" r="35.4" />
+            <path class="cp-ticks" :d="HOURS" /><path class="cp-ticks quarter" :d="QUARTERS" />
+            <circle v-if="running && !clock.ringing" class="cp-arc" cx="50" cy="54" r="38" pathLength="1" :stroke-dasharray="`${share} 1`" transform="rotate(-90 50 54)" />
+            <path class="cp-hand" d="M50 57.5 48.9 44 50 33.5 51.1 44z" :transform="`rotate(${hands.hour} 50 54)`" />
+            <path class="cp-hand" d="M50 58.5 49.15 38 50 23 50.85 38z" :transform="`rotate(${hands.minute} 50 54)`" />
+            <g class="cp-second" :style="{ animationDelay: `-${sweep}s` }"><path d="M50 62.5V22.5" /><circle cx="50" cy="62.5" r="1.3" /></g>
+            <circle class="cp-hub" cx="50" cy="54" r="1.5" />
           </svg>
           <p class="cp-read"><small>{{ hero.small }}</small><b>{{ hero.big }}</b><span>{{ hero.sub }}</span></p>
         </div>
@@ -162,19 +167,24 @@ watch(tab, () => void nextTick(locate))
 .clock-pop-leave-active{transition:opacity var(--dur-1,120ms) var(--ease-soft,ease),scale var(--dur-1,120ms) var(--ease-soft,ease)}
 .clock-pop-enter-from{opacity:0;scale:.94;translate:0 -6px}.clock-pop-leave-to{opacity:0;scale:.97}
 .cp-hero{display:flex;align-items:center;gap:14px}
-.cp-face{flex:none;width:76px;height:76px;overflow:visible;fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round}
-.cp-ears{display:none}
-.cp-rim{stroke-width:1.6;opacity:.3}
-.cp-ticks{stroke-width:1.6;opacity:.45}
-.cp-arc{stroke:var(--accent);stroke-width:4;transition:stroke-dasharray .3s linear}
-.cp-hand{stroke-width:3.2;transition:transform .5s var(--spring-snappy,ease-out)}
-.cp-hand.long{stroke-width:2.2}
-.cp-hub{fill:var(--accent);stroke:none}
-.cp-face.shake{transform-origin:50% 60%;animation:cp-shake .5s linear infinite;color:var(--accent)}
-@keyframes cp-shake{0%,100%{rotate:0deg}25%{rotate:-7deg}75%{rotate:7deg}}
+.cp-face{flex:none;width:84px;height:84px;overflow:visible;fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round}
+.cp-bow{stroke-width:.9}
+.cp-crown{stroke-width:.9;stroke-linejoin:miter}
+.cp-rim{stroke-width:1.1}
+.cp-rim.inner{stroke-width:.45;opacity:.45}
+.cp-ticks{stroke-width:.55;opacity:.7}
+.cp-ticks.quarter{stroke-width:.95;opacity:1}
+.cp-arc{stroke:var(--accent);stroke-width:2;transition:stroke-dasharray .3s linear}
+.cp-hand{fill:currentColor;stroke:none}
+.cp-second{stroke:var(--accent);stroke-width:.55;transform-origin:50px 54px;animation:cp-sweep 60s linear infinite}
+.cp-second circle{fill:var(--accent);stroke:none}
+.cp-hub{fill:var(--popup-glass,#fff);stroke:var(--accent);stroke-width:.8}
+@keyframes cp-sweep{to{transform:rotate(360deg)}}
+.cp-face.shake{transform-origin:50% 8%;animation:cp-shake .9s ease-in-out infinite}
+@keyframes cp-shake{0%,100%{rotate:0deg}25%{rotate:-5deg}75%{rotate:5deg}}
 .cp-read{display:flex;flex-direction:column;min-width:0}
-.cp-read small{color:var(--muted);font-size:11.5px;line-height:1.3}
-.cp-read b{font-size:34px;font-weight:300;line-height:1.08;letter-spacing:-.02em;white-space:nowrap}
+.cp-read small{color:var(--muted);font-size:11px;line-height:1.3;letter-spacing:.14em}
+.cp-read b{font-size:34px;font-weight:250;line-height:1.1;letter-spacing:-.01em;white-space:nowrap}
 .cp-read span{min-height:1.3em;color:var(--muted);font-size:11.5px;line-height:1.3}
 .cp-tabs{display:grid;grid-template-columns:1fr 1fr;gap:2px;margin:13px 0 12px;padding:2px;border-radius:10px;background:color-mix(in srgb,var(--ink) 7%,transparent)}
 .cp-tabs button{gap:5px;padding:4px 0;border:0;border-radius:8px;background:none;box-shadow:none;color:var(--muted);font-size:12.5px}
@@ -211,12 +221,8 @@ watch(tab, () => void nextTick(locate))
 /* ---- 暖色极简：象牙白纸、细线、衬线数字，陶土色只点在要紧处 ---- */
 :root[data-style='warm'] .clock-chip{font-family:var(--font-reading)}
 :root[data-style='warm'] .clock-panel{border:.5px solid var(--warm-rule,rgb(31 30 29 / .18));border-radius:8px;background:var(--surface);-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:0 12px 32px -16px rgb(31 30 29 / .4);font-family:var(--font-reading)}
-:root[data-style='warm'] .cp-rim{stroke-width:1;opacity:.5}
-:root[data-style='warm'] .cp-ticks{stroke-width:1}
-:root[data-style='warm'] .cp-hand{stroke-width:2.4}
-:root[data-style='warm'] .cp-hand.long{stroke-width:1.5}
-:root[data-style='warm'] .cp-arc{stroke-width:2.5}
-:root[data-style='warm'] .cp-read b{font-weight:400}
+:root[data-style='warm'] .cp-read b{font-weight:300}
+:root[data-style='warm'] .cp-hub{fill:var(--surface)}
 :root[data-style='warm'] .cp-read span{font-style:italic}
 :root[data-style='warm'] .cp-tabs{gap:18px;display:flex;padding:0;border-radius:0;background:none;border-bottom:.5px solid var(--warm-rule,rgb(31 30 29 / .14))}
 :root[data-style='warm'] .cp-tabs button{padding:0 0 6px;border-radius:0;margin-bottom:-.5px;border-bottom:1.5px solid transparent}
@@ -230,48 +236,41 @@ watch(tab, () => void nextTick(locate))
 :root[data-style='warm'] .cp-controls button{border:.5px solid var(--warm-rule,rgb(31 30 29 / .25));background:none;box-shadow:none}
 :root[data-style='warm'] .cp-controls button:hover{color:var(--accent);border-color:var(--accent)}
 
-/* ---- 铅笔草稿：一页白纸，铅笔勾的边；上面画着一只小闹钟，数字是手写的，要紧的地方用红铅笔圈出来 ---- */
+/* ---- 铅笔草稿：一页白纸、细铅笔线；钟是细线画的，只有秒针和要紧处用红铅笔 ---- */
 :root[data-style='sketch'] .topbar-actions .icon-button.clock-chip,:root[data-style='sketch'] .topbar-actions .icon-button.clock-chip:hover:not(:disabled){width:auto;padding:0 11px;border-radius:15px 19px 16px 18px / 18px 15px 19px 16px}
 :root[data-style='sketch'] .clock-chip.running{color:var(--red-pencil,#c0392b)}
-:root[data-style='sketch'] .clock-panel{--scribble:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='8' viewBox='0 0 48 8' preserveAspectRatio='none'%3E%3Cpath d='M2 5.4c7-3.2 12 1.6 20-.6s14-2.6 24-.4' fill='none' stroke='%23c8553d' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");width:262px;padding:16px 18px 16px;border:0;border-radius:15px 20px 14px 19px / 18px 13px 20px 14px;background:var(--paper,#fbf8f0);-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:3px 4px 0 rgb(60 50 30 / .16),10px 16px 28px -14px rgb(60 50 30 / .45);color:var(--pencil,#2b2a27);rotate:-.5deg}
-:root[data-style='sketch'] .clock-panel::before{content:'';position:absolute;inset:0;border:1.6px solid var(--pencil,#2b2a27);border-radius:inherit;filter:url(#sk-pencil);opacity:.85;pointer-events:none}
-:root[data-style='sketch'] .cp-face{width:84px;height:84px;filter:url(#sk-pencil)}
-:root[data-style='sketch'] .cp-ears{display:block;stroke-width:2.2}
-:root[data-style='sketch'] .cp-rim{stroke-width:2.2;opacity:1;fill:color-mix(in srgb,var(--sticky,#fff2a8) 55%,transparent)}
-:root[data-style='sketch'] .cp-ticks{stroke-width:1.5;opacity:.7}
-:root[data-style='sketch'] .cp-arc{stroke:var(--red-pencil,#c8553d);stroke-width:4.5;opacity:.9}
-:root[data-style='sketch'] .cp-hub{fill:var(--red-pencil,#c8553d)}
-:root[data-style='sketch'] .cp-face.shake{color:var(--pencil,#2b2a27)}
-:root[data-style='sketch'] .cp-read small,:root[data-style='sketch'] .cp-read span,:root[data-style='sketch'] .cp-fields label{color:var(--pencil-soft,rgb(46 45 42 / .62));font-size:13px}
-:root[data-style='sketch'] .cp-read b{font-family:Caveat,var(--font);font-size:46px;font-weight:700;line-height:.95;letter-spacing:0}
-:root[data-style='sketch'] .cp-tabs{display:flex;gap:18px;margin:12px 0 10px;padding:9px 2px 0;border-radius:0;background:none;border-top:1.5px dashed var(--pencil-soft,rgb(46 45 42 / .35))}
+:root[data-style='sketch'] .clock-panel{--scribble:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='8' viewBox='0 0 48 8' preserveAspectRatio='none'%3E%3Cpath d='M2 5.4c7-3.2 12 1.6 20-.6s14-2.6 24-.4' fill='none' stroke='%23c8553d' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");width:262px;padding:18px 20px 18px;border:1.2px solid var(--pencil,#2b2a27);border-radius:10px 13px 9px 12px / 12px 9px 13px 10px;background:var(--paper,#fbf8f0);-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:2px 3px 0 rgb(60 50 30 / .14),10px 18px 30px -16px rgb(60 50 30 / .4);color:var(--pencil,#2b2a27)}
+:root[data-style='sketch'] .cp-second{stroke:var(--red-pencil,#c8553d)}
+:root[data-style='sketch'] .cp-second circle{fill:var(--red-pencil,#c8553d)}
+:root[data-style='sketch'] .cp-arc{stroke:var(--red-pencil,#c8553d)}
+:root[data-style='sketch'] .cp-hub{fill:var(--paper,#fbf8f0);stroke:var(--red-pencil,#c8553d)}
+:root[data-style='sketch'] .cp-read small,:root[data-style='sketch'] .cp-read span,:root[data-style='sketch'] .cp-fields label{color:var(--pencil-soft,rgb(46 45 42 / .62));font-size:13px;letter-spacing:.04em}
+:root[data-style='sketch'] .cp-read b{font-family:Caveat,var(--font);font-size:44px;font-weight:500;line-height:1;letter-spacing:.01em}
+:root[data-style='sketch'] .cp-tabs{display:flex;gap:18px;margin:14px 0 12px;padding:10px 0 0;border-radius:0;background:none;border-top:1px solid color-mix(in srgb,var(--pencil,#2b2a27) 22%,transparent)}
 :root[data-style='sketch'] .cp-tabs button{padding:0 1px 6px;border:0;border-radius:0;color:var(--pencil-soft,rgb(46 45 42 / .62));font-size:15px;background:none}
-:root[data-style='sketch'] .cp-tabs button.on,:root[data-style='sketch'] .cp-tabs button.on:hover{background:var(--scribble) no-repeat 50% 100% / 100% 7px;box-shadow:none;color:var(--pencil,#2b2a27);font-weight:700}
+:root[data-style='sketch'] .cp-tabs button.on,:root[data-style='sketch'] .cp-tabs button.on:hover{background:var(--scribble) no-repeat 50% 100% / 100% 6px;box-shadow:none;color:var(--pencil,#2b2a27);font-weight:600}
 :root[data-style='sketch'] .cp-tabs i{background:var(--red-pencil,#c8553d);font-family:var(--font-answer,inherit)}
-:root[data-style='sketch'] .cp-fields{gap:0;padding:0 6px}
-:root[data-style='sketch'] .cp-fields label{position:relative;gap:0}
-:root[data-style='sketch'] .cp-fields label + label::before{content:':';position:absolute;left:-4px;top:2px;color:var(--pencil-soft,rgb(46 45 42 / .5));font:700 34px/1 Caveat,var(--font)}
-:root[data-style='sketch'] .cp-fields input{width:54px;height:44px;border:0;border-bottom:1.5px dashed var(--pencil-soft,rgb(46 45 42 / .45));border-radius:0;background:none;box-shadow:none;color:var(--pencil,#2b2a27);font:700 40px/1 Caveat,var(--font)}
+:root[data-style='sketch'] .cp-fields{gap:0;padding:0 8px}
+:root[data-style='sketch'] .cp-fields label{position:relative;gap:1px}
+:root[data-style='sketch'] .cp-fields label + label::before{content:':';position:absolute;left:-3px;top:4px;color:var(--pencil-soft,rgb(46 45 42 / .45));font:500 30px/1 Caveat,var(--font)}
+:root[data-style='sketch'] .cp-fields input{width:52px;height:42px;border:0;border-bottom:1px solid color-mix(in srgb,var(--pencil,#2b2a27) 35%,transparent);border-radius:0;background:none;box-shadow:none;color:var(--pencil,#2b2a27);font:500 36px/1 Caveat,var(--font)}
 :root[data-style='sketch'] .cp-fields input:hover,:root[data-style='sketch'] .cp-alarm-new input:hover{background:none}
-:root[data-style='sketch'] .cp-fields input:focus,:root[data-style='sketch'] .cp-alarm-new input:focus{background:none;box-shadow:none;border-bottom:2px solid var(--red-pencil,#c8553d);color:var(--red-pencil,#c8553d)}
-:root[data-style='sketch'] .cp-presets{gap:6px;margin:12px 0 14px!important}
-:root[data-style='sketch'] .cp-presets button{padding:1px 0;border:1.3px solid var(--pencil-soft,rgb(46 45 42 / .45));border-radius:52% 48% 55% 45% / 60% 50% 50% 40%;background:none;box-shadow:none;color:var(--pencil,#2b2a27);font-size:13px}
-:root[data-style='sketch'] .cp-presets button:nth-child(even){border-radius:46% 54% 44% 56% / 48% 62% 38% 52%}
-:root[data-style='sketch'] .cp-presets button.on{border-color:var(--pencil,#2b2a27);background:var(--sticky,#fff2a8)}
-:root[data-style='sketch'] .cp-presets button:hover:not(.on){border-color:var(--red-pencil,#c8553d);color:var(--red-pencil,#c8553d)}
-:root[data-style='sketch'] .cp-go,:root[data-style='sketch'] .cp-go:hover:not(:disabled){display:flex;width:fit-content;margin:0 auto;padding:3px 30px;border:1.8px solid var(--red-pencil,#c8553d);border-radius:54% 46% 52% 48% / 62% 48% 52% 38%;background:none;background-image:none;box-shadow:none;color:var(--red-pencil,#c8553d);font-size:16px;font-weight:700;filter:url(#sk-pencil-b)}
-:root[data-style='sketch'] .cp-go:hover:not(:disabled){background:color-mix(in srgb,var(--sticky,#fff2a8) 80%,transparent);rotate:-1.5deg}
-:root[data-style='sketch'] .cp-ok{margin-top:12px}
-:root[data-style='sketch'] .cp-controls button{border:1.6px solid var(--pencil,#2b2a27);border-radius:50% 44% 52% 46%;background:none;box-shadow:1.5px 2px 0 rgb(60 50 30 / .16);color:var(--pencil,#2b2a27)}
+:root[data-style='sketch'] .cp-fields input:focus,:root[data-style='sketch'] .cp-alarm-new input:focus{background:none;box-shadow:none;border-bottom-color:var(--red-pencil,#c8553d);color:var(--red-pencil,#c8553d)}
+:root[data-style='sketch'] .cp-presets{gap:6px;margin:13px 0 15px!important}
+:root[data-style='sketch'] .cp-presets button{padding:1px 0;border:1px solid color-mix(in srgb,var(--pencil,#2b2a27) 35%,transparent);border-radius:999px;background:none;box-shadow:none;color:var(--pencil-soft,rgb(46 45 42 / .7));font-size:13px}
+:root[data-style='sketch'] .cp-presets button.on{border-color:var(--pencil,#2b2a27);background-image:repeating-linear-gradient(-35deg,color-mix(in srgb,var(--pencil,#2b2a27) 16%,transparent) 0 1.2px,transparent 1.2px 6px);color:var(--pencil,#2b2a27)}
+:root[data-style='sketch'] .cp-presets button:hover:not(.on){border-color:var(--pencil,#2b2a27);color:var(--pencil,#2b2a27)}
+/* 主操作和应用里别处一样：铅笔涂黑的一块。 */
+:root[data-style='sketch'] .cp-go,:root[data-style='sketch'] .cp-go:hover:not(:disabled){border:1.2px solid var(--pencil,#2b2a27);border-radius:var(--r-control,12px);background:var(--pencil,#2b2a27);background-image:none;box-shadow:2px 3px 0 rgb(46 45 42 / .25);color:var(--paper,#fbf8f0);font-size:15px;font-weight:600;letter-spacing:.2em}
+:root[data-style='sketch'] .cp-go:hover:not(:disabled){box-shadow:3px 4px 0 rgb(46 45 42 / .3)}
+:root[data-style='sketch'] .cp-controls button{border:1.2px solid var(--pencil,#2b2a27);border-radius:50%;background:none;box-shadow:1.5px 2px 0 rgb(60 50 30 / .14);color:var(--pencil,#2b2a27)}
 :root[data-style='sketch'] .cp-controls button:hover{color:var(--red-pencil,#c8553d);border-color:currentColor}
-:root[data-style='sketch'] .cp-alarm-new{align-items:center;gap:12px;padding:0 4px}
-:root[data-style='sketch'] .cp-alarm-new input{height:40px;border:0;border-bottom:1.5px dashed var(--pencil-soft,rgb(46 45 42 / .45));border-radius:0;background:none;box-shadow:none;color:var(--pencil,#2b2a27);font:700 26px/1 Caveat,var(--font)}
-:root[data-style='sketch'] .cp-alarm-new .cp-go,:root[data-style='sketch'] .cp-alarm-new .cp-go:hover:not(:disabled){flex:none;width:36px;height:36px;margin:0;padding:0;border-radius:50% 44% 52% 46%}
+:root[data-style='sketch'] .cp-alarm-new{align-items:center;gap:12px}
+:root[data-style='sketch'] .cp-alarm-new input{height:40px;border:0;border-bottom:1px solid color-mix(in srgb,var(--pencil,#2b2a27) 35%,transparent);border-radius:0;background:none;box-shadow:none;color:var(--pencil,#2b2a27);font:500 26px/1 Caveat,var(--font)}
 :root[data-style='sketch'] .cp-alarm-new input::-webkit-calendar-picker-indicator{display:none}
-:root[data-style='sketch'] .cp-alarms li{font-size:15px}
+:root[data-style='sketch'] .cp-alarm-new .cp-go,:root[data-style='sketch'] .cp-alarm-new .cp-go:hover:not(:disabled){flex:none;width:36px;height:36px;padding:0;border-radius:50%;letter-spacing:0}
 :root[data-style='sketch'] .cp-alarms li:hover{background:none}
-:root[data-style='sketch'] .cp-alarms li:hover b{text-decoration:underline wavy var(--pencil-soft,rgb(46 45 42 / .45));text-underline-offset:4px}
-:root[data-style='sketch'] .cp-alarms b{font-size:16px}
+:root[data-style='sketch'] .cp-alarms b{font-size:16px;font-weight:500}
 :root[data-style='sketch'] .cp-alarms li > svg{color:var(--red-pencil,#c8553d)}
-@media(prefers-reduced-motion:reduce){.clock-chip.ringing,.cc-bell,.cp-face.shake{animation:none}}
+@media(prefers-reduced-motion:reduce){.clock-chip.ringing,.cc-bell,.cp-face.shake{animation:none}.cp-second{display:none}}
 </style>
