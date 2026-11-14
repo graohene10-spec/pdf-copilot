@@ -6,7 +6,7 @@
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { manifoldById, nextManifold, buildMesh, THEOREMS, type Mesh, type Note as Knowledge, type Visual, type Vec } from '../sketch/manifolds'
 import { networkById, ML_FACTS, type Graph } from '../sketch/networks'
-import { sketchById, type Painter, type Sketch } from '../sketch/scenes'
+import { sketchById, type Painter, type Sketch, resetSprites } from '../sketch/scenes'
 
 // preview：设置里悬停时的缩略图——只画一个画面，铺满自己的小框，不写旁注、不轮换。
 const props = defineProps<{ shapes: string[]; preview?: boolean }>()
@@ -687,10 +687,14 @@ onMounted(() => {
   if (canvas.value) resizer.observe(canvas.value)
   themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-style'] })
   document.addEventListener('visibilitychange', visibility)
+  // 显卡上下文丢了又回来（画面会白一下）：预先画好的小图全部重画，画布按当前尺寸重新铺一遍。
+  canvas.value?.addEventListener('contextrestored', restored)
   run()
   if (!props.preview) noteTimer = setTimeout(nextNote, 2500)
 })
+function restored() { resetSprites(); draw(performance.now()) }
 onBeforeUnmount(() => {
+  canvas.value?.removeEventListener('contextrestored', restored)
   halt(); clearTimeout(switchTimer); clearTimeout(noteTimer)
   for (const timer of timers) clearTimeout(timer)
   resizer.disconnect(); themeWatch.disconnect()

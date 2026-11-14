@@ -190,7 +190,8 @@ export const SCENES: { id: string; name: string; kind: 'manifold' | 'network' | 
   ...SKETCHES.map(item => ({ id: item.id, name: item.name, kind: 'sketch' as const })),
 ]
 /** 0.10.14 及以前的全部画面：存的正好是这一整套时，升级后自动带上新加的画面。 */
-export const LEGACY_SCENE_IDS = [...MANIFOLDS, ...NETWORKS].map(item => item.id)
+// 旧版只有流形和最早的五种网络；后来加的网络不算在内（否则认不出「旧版全选」的设置）。
+export const LEGACY_SCENE_IDS = [...MANIFOLDS, ...NETWORKS.filter(item => !['resnet', 'unet', 'gan', 'gnn'].includes(item.id))].map(item => item.id)
 export const MANIFOLD_IDS = SCENES.map(item => item.id)
 
 /** Next scene to show: a different one from the list when there is a choice. */
