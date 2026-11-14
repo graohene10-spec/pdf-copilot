@@ -95,15 +95,27 @@ export function useReorder(options: ReorderOptions) {
   function lift() {
     if (!state || state.moved) return
     clearTimeout(holdTimer)
-    options.prepare?.()
     state.moved = true
-    dragging.value = state.id
-    const root = options.container()
-    root?.classList.add('reorder-active', 'reorder-settled')
-    document.documentElement.classList.add('reordering')
-    state.element.classList.add('reorder-lifted')
-    state.frame = requestAnimationFrame(tick)
-    place()
+    const current = state
+    options.prepare?.()
+    // prepare 可能换了排序方式，列表会整个重画，手里按着的那个节点就作废了：等重画完，按编号重新找到它再抬起来，
+    // 否则抬起的是一个已经不在页面上的旧节点——卡片不跟手，松手时才一下子出现在新位置。
+    void nextTick(() => {
+      if (state !== current) return
+      const root = options.container()
+      const fresh = root && find(root, current.id)
+      if (fresh && fresh !== current.element) {
+        const rect = fresh.getBoundingClientRect()
+        current.grabX = Math.min(Math.max(current.grabX, 0), rect.width); current.grabY = Math.min(Math.max(current.grabY, 0), rect.height)
+        current.element = fresh
+      }
+      dragging.value = current.id
+      root?.classList.add('reorder-active', 'reorder-settled')
+      document.documentElement.classList.add('reordering')
+      current.element.classList.add('reorder-lifted')
+      current.frame = requestAnimationFrame(tick)
+      place()
+    })
   }
 
   function move(event: PointerEvent) {
