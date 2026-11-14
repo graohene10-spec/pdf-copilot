@@ -3,6 +3,7 @@
 // 开始计时后卡片收起，小钟上改成显示剩下的时间；到点了卡片自己弹出来，响几声。
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import AppIcon from './AppIcon.vue'
+import WheelColumn from './WheelColumn.vue'
 import { addAlarm, clock, dismissRing, elapsed, pauseTimer, remaining, removeAlarm, rememberFields, resumeTimer, span, startCountdown, startStopwatch, stopTimer, timeLabel } from '../ui/timer'
 
 const open = ref(false)
@@ -71,7 +72,11 @@ const share = computed(() => clock.mode === 'down' ? (clock.total ? left.value /
 // ---- 闹钟 ----------------------------------------------------------------------
 function nextHalfHour() { const date = new Date(Date.now() + 30 * 60000); date.setMinutes(date.getMinutes() < 30 ? 30 : 60, 0, 0); return { h: date.getHours(), m: date.getMinutes() } }
 const alarm = reactive<Record<string, number>>(nextHalfHour())
-const alarmSpins: Spin[] = [{ key: 'h', label: '时', max: 23, model: alarm }, { key: 'm', label: '分', max: 59, model: alarm }]
+// 三列滚轮：上午 / 下午、时（12、1…11）、分。
+const HALVES = ['上午', '下午'], HOURS12 = ['12', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'], MINUTES = Array.from({ length: 60 }, (_, index) => String(index).padStart(2, '0'))
+const alarmHalf = computed({ get: () => alarm.h! < 12 ? 0 : 1, set: value => { alarm.h = value * 12 + alarm.h! % 12 } })
+const alarmHour = computed({ get: () => alarm.h! % 12, set: value => { alarm.h = alarmHalf.value * 12 + value } })
+const alarmMinute = computed({ get: () => alarm.m!, set: value => { alarm.m = value } })
 function setAlarm() { addAlarm(alarm.h!, alarm.m!) }
 function alarmLabel(at: number) { const day = new Date(at).getDate() !== new Date(clock.now).getDate(); return `${day ? '明天 ' : ''}${timeLabel(at)}` }
 
@@ -155,17 +160,12 @@ watch(tab, () => void nextTick(locate))
           </template>
           <!-- 闹钟 -->
           <template v-else>
-            <div class="cp-alarm-new">
-              <div class="cp-fields two">
-                <div v-for="spin in alarmSpins" :key="spin.key" class="cp-field">
-                  <button type="button" class="cp-step up" tabindex="-1" :aria-label="`${spin.label}加一`" @pointerdown.prevent="hold(spin, 1, $event)"><AppIcon name="down" :size="12" /></button>
-                  <span class="cp-num" tabindex="0" role="spinbutton" :aria-label="spin.label" :aria-valuenow="spin.model[spin.key]" aria-valuemin="0" :aria-valuemax="spin.max" @focus="fresh = true" @keydown="keySpin(spin, $event, setAlarm)" @wheel.prevent="bump(spin, $event.deltaY < 0 ? 1 : -1)">{{ String(spin.model[spin.key]).padStart(2, '0') }}</span>
-                  <button type="button" class="cp-step" tabindex="-1" :aria-label="`${spin.label}减一`" @pointerdown.prevent="hold(spin, -1, $event)"><AppIcon name="down" :size="12" /></button>
-                  <small>{{ spin.label }}</small>
-                </div>
-              </div>
-              <button type="button" class="cp-go" aria-label="定闹钟" data-tip="定闹钟" @click="setAlarm"><AppIcon name="plus" :size="15" /></button>
+            <div class="cp-wheels">
+              <WheelColumn v-model="alarmHalf" :items="HALVES" label="上午或下午" />
+              <WheelColumn v-model="alarmHour" :items="HOURS12" loop label="时" />
+              <WheelColumn v-model="alarmMinute" :items="MINUTES" loop label="分" />
             </div>
+            <button type="button" class="cp-go cp-add" aria-label="定闹钟" data-tip="定闹钟" @click="setAlarm"><AppIcon name="plus" :size="14" />添加</button>
             <TransitionGroup name="cp-alarm" tag="ul" class="cp-alarms">
               <li v-for="alarm in clock.alarms" :key="alarm.id"><AppIcon name="bell" :size="13" /><b>{{ alarmLabel(alarm.at) }}</b><button type="button" aria-label="取消这个闹钟" data-tip="取消" @click="removeAlarm(alarm.id)"><AppIcon name="close" :size="12" /></button></li>
             </TransitionGroup>
@@ -226,7 +226,6 @@ watch(tab, () => void nextTick(locate))
 .cp-tabs button.on,.cp-tabs button.on:hover{background:color-mix(in srgb,var(--surface,#fff) 82%,transparent);box-shadow:0 1px 3px rgb(0 0 0 / .14);color:var(--ink);font-weight:600}
 .cp-tabs i{min-width:15px;padding:0 4px;border-radius:999px;background:var(--accent);color:#fff;font-size:10px;font-style:normal;line-height:15px}
 .cp-fields{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-.cp-fields.two{flex:1;grid-template-columns:repeat(2,1fr)}
 .cp-field{position:relative;display:flex;flex-direction:column;align-items:center;color:var(--muted)}
 .cp-field small{margin-top:1px;font-size:11px}
 .cp-num{display:grid;place-items:center;width:100%;height:44px;border-radius:12px;background:var(--fill-3);color:var(--ink);font-size:25px;font-weight:350;cursor:ns-resize;outline:none!important;user-select:none;-webkit-user-select:none;transition:background-color .15s,box-shadow .15s,color .15s,border-color .15s}
@@ -236,8 +235,6 @@ watch(tab, () => void nextTick(locate))
 .cp-step.up svg{rotate:180deg}
 .clock-panel .cp-step:hover{background:none;color:var(--accent);opacity:1}
 .clock-panel .cp-step:active{scale:.8}
-.cp-alarm-new{display:flex;align-items:center;gap:10px}
-.cp-alarm-new .cp-go{flex:none;width:38px;height:38px;margin-bottom:14px;padding:0}
 .cp-presets{display:flex;gap:4px;margin:10px 0 12px!important}
 .cp-presets button{flex:1;padding:3px 0;border-radius:999px;background:none;box-shadow:none;color:var(--secondary,var(--muted));font-size:11.5px;white-space:nowrap}
 .cp-presets button.on{border-color:color-mix(in srgb,var(--accent) 55%,transparent);color:var(--accent)}
@@ -247,6 +244,11 @@ watch(tab, () => void nextTick(locate))
 .cp-ok{margin-top:14px}
 .cp-controls{display:flex;justify-content:center;gap:12px;padding:2px 0 2px}
 .cp-controls button{width:40px;height:40px;padding:0;border-radius:50%}
+/* 闹钟：三列滚轮，中间一条选中带。 */
+.cp-wheels{position:relative;display:grid;grid-template-columns:1.15fr 1fr 1fr;margin:-6px 0 2px}
+.cp-wheels::before{content:'';position:absolute;left:0;right:0;top:50%;height:32px;translate:0 -50%;border-radius:10px;background:var(--fill-3)}
+.cp-wheels .wheel:first-child .wheel-row{font-size:16px}
+.cp-add{margin-top:8px}
 .cp-alarms{position:relative;display:flex;flex-direction:column;gap:2px;margin:10px 0 0;padding:0;list-style:none}
 .cp-alarms:empty{margin:0}
 .cp-alarms li{display:flex;align-items:center;gap:8px;padding:5px 4px 5px 8px;border-radius:9px;color:var(--secondary,var(--ink))}
@@ -270,6 +272,8 @@ watch(tab, () => void nextTick(locate))
 :root[data-style='warm'] .cp-tabs button.on,:root[data-style='warm'] .cp-tabs button.on:hover{background:none;box-shadow:none;border-bottom-color:var(--accent);color:var(--accent)}
 :root[data-style='warm'] .cp-num{border-bottom:.5px solid var(--warm-rule,rgb(31 30 29 / .3));border-radius:0;background:none}
 :root[data-style='warm'] .cp-num:focus{box-shadow:none;border-bottom-color:var(--accent)}
+:root[data-style='warm'] .cp-wheels::before{border-radius:0;background:none;border-block:.5px solid var(--warm-rule,rgb(31 30 29 / .3))}
+:root[data-style='warm'] .cp-wheels{--wheel-on:var(--accent)}
 :root[data-style='warm'] .cp-presets button{border:0;border-radius:0;font-style:italic}
 :root[data-style='warm'] .cp-presets button:hover{background:none;color:var(--accent)}
 :root[data-style='warm'] .cp-presets button.on{text-decoration:underline;text-underline-offset:3px}
@@ -298,8 +302,10 @@ watch(tab, () => void nextTick(locate))
 :root[data-style='sketch'] .cp-num:focus{background:none;box-shadow:none;border-bottom-color:var(--red-pencil,#c8553d);color:var(--red-pencil,#c8553d)}
 :root[data-style='sketch'] .clock-panel .cp-step{color:var(--pencil-soft,rgb(46 45 42 / .62))}
 :root[data-style='sketch'] .clock-panel .cp-step:hover{color:var(--red-pencil,#c8553d)}
-:root[data-style='sketch'] .cp-alarm-new{gap:14px;padding-right:6px}
-:root[data-style='sketch'] .cp-alarm-new .cp-go,:root[data-style='sketch'] .cp-alarm-new .cp-go:hover:not(:disabled){flex:none;width:36px;height:36px;padding:0;border-radius:50%;letter-spacing:0}
+:root[data-style='sketch'] .cp-wheels{--wheel-on:var(--pencil,#2b2a27);--wheel-off:var(--pencil-soft,rgb(46 45 42 / .62))}
+:root[data-style='sketch'] .cp-wheels::before{left:4px;right:4px;height:34px;border-radius:0;background:none;border-block:1px solid color-mix(in srgb,var(--pencil,#2b2a27) 45%,transparent)}
+:root[data-style='sketch'] .cp-wheels .wheel-row{font:500 28px/1 Caveat,var(--font)}
+:root[data-style='sketch'] .cp-wheels .wheel:first-child .wheel-row{font:inherit;font-size:17px}
 :root[data-style='sketch'] .cp-presets{gap:6px;margin:13px 0 15px!important}
 :root[data-style='sketch'] .cp-presets button{padding:1px 0;border:1px solid color-mix(in srgb,var(--pencil,#2b2a27) 35%,transparent);border-radius:999px;background:none;box-shadow:none;color:var(--pencil-soft,rgb(46 45 42 / .7));font-size:13px}
 :root[data-style='sketch'] .cp-presets button.on{border-color:var(--pencil,#2b2a27);background-image:repeating-linear-gradient(-35deg,color-mix(in srgb,var(--pencil,#2b2a27) 16%,transparent) 0 1.2px,transparent 1.2px 6px);color:var(--pencil,#2b2a27)}
