@@ -2094,6 +2094,25 @@ kbd {
   z-index: 2;
 }
 
+/* 选中文字时垫在文字层里的一块：空隙里的落点落在它身上，选区不会甩到整段（见 reader/text-selection.ts）。 */
+.textLayer .endOfContent {
+  display: block;
+  position: absolute;
+  inset: 100% 0 0;
+  z-index: 0;
+  cursor: default;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.textLayer.selecting .endOfContent {
+  top: 0;
+}
+
+.textLayer > :not(.endOfContent) {
+  z-index: 1;
+}
+
 .textLayer ::selection {
   background: var(--selection);
 }

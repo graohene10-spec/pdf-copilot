@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { installTextSelection } from '../reader/text-selection'
+installTextSelection()
 import { ref, shallowRef, computed, watch, onMounted, onActivated, onDeactivated, onBeforeUnmount, nextTick } from 'vue'
 import * as pdfjs from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url'
