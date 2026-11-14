@@ -3,7 +3,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, defineAsync
 import 'katex/dist/katex.min.css'
 import { getProvider, getNativeModels, getNativeStatus } from '../ai/providers.mjs'
 import { nativeModelInventory, registerNativeModelInventory } from '../ai/native-models'
-import { addExcerpt, removeExcerpt, removeMessage, compressConversation, sideConversation, chatState, sendChat, stopChat, configureRequests, taskSummary, conversations, activeConversationId, selectConversation, newConversation, deleteConversation, loadConversations, conversationTokens, contextWindow, branchConversation, resendQuestion, watchConversation, allConversations, pinMessage, MAX_ATTACHMENTS, type Message, type ChatState } from '../ai/workspace'
+import { adoptTurns, addExcerpt, removeExcerpt, removeMessage, compressConversation, sideConversation, chatState, sendChat, stopChat, configureRequests, taskSummary, conversations, activeConversationId, selectConversation, newConversation, deleteConversation, loadConversations, conversationTokens, contextWindow, branchConversation, resendQuestion, watchConversation, allConversations, pinMessage, MAX_ATTACHMENTS, type Message, type ChatState } from '../ai/workspace'
 import { renderMarkdown, renderDiagrams } from '../ai/render'
 import { mountIntelligentUi } from '../ai/intelligent-ui'
 import { nudgeGlassMotion } from '../ui/glass-motion'
@@ -670,12 +670,55 @@ function pickCommand(item = commandMatches.value[commandIndex.value]) {
 }
 const usageOpen = ref(false)
 const compressing = ref<AbortController | null>(null)
-type Btw = { id: string; startedAt: number; question: string; answer: string; running: boolean; error: string; controller: AbortController }
+type BtwTurn = { id: string; question: string; answer: string; startedAt: number; finishedAt?: number }
+type Btw = { turns: BtwTurn[]; running: boolean; error: string; controller: AbortController }
 const btw = ref<Btw | null>(null)
-function closeBtw() { btw.value?.controller.abort(); btw.value = null }
+const btwLast = computed(() => btw.value?.turns.at(-1))
+const btwDone = computed(() => btw.value?.turns.filter(turn => turn.answer) || [])
+function closeBtw() { btw.value?.controller.abort(); btw.value = null; btwReply.value = false; btwDraft.value = '' }
+// 纸条上接着聊：点「接着聊」出一行输入框，回车发出；之前的问答一起带给模型。
+const btwReply = ref(false), btwDraft = ref(''), btwInput = ref<HTMLInputElement>(), btwBody = ref<HTMLElement>()
+function replyBtw() { btwReply.value = !btwReply.value; if (btwReply.value) void nextTick(() => btwInput.value?.focus()); else focusPrompt() }
+function sendBtwReply() { const text = btwDraft.value.trim(); if (!text || btw.value?.running) return; btwDraft.value = ''; void askBtw(text) }
+// 把纸条上聊的搬走：另起一段主对话、接到当前对话后面，或放进附属对话。
+function adoptBtw(target: 'new' | 'append' | 'side') {
+  const turns = btwDone.value
+  if (!turns.length) return
+  if (target === 'append' && busy.value) { attachNote('请等这一轮回答结束再并入。'); return }
+  const moved = adoptTurns(props.document.id, state.value.id, target, turns.map(turn => ({ question: turn.question, answer: turn.answer, startedAt: turn.startedAt, finishedAt: turn.finishedAt })))
+  closeBtw()
+  if (target === 'new') useConversation(moved.id)
+  else if (target === 'side') openSide()
+  else { follow = true; scheduleScroll(); focusPrompt() }
+}
+async function askBtw(question: string) {
+  if (!btw.value) btw.value = { turns: [], running: false, error: '', controller: new AbortController() }
+  const current = btw.value!
+  if (current.running) current.controller.abort()
+  current.controller = new AbortController(); current.error = ''; current.running = true
+  const controller = current.controller
+  const earlier = current.turns.filter(turn => turn.answer).slice(-6).map(turn => `读者：${turn.question}\n\n助手：${turn.answer.slice(0, 2000)}`).join('\n\n')
+  current.turns = current.turns.filter(turn => turn.answer)
+  current.turns.push({ id: crypto.randomUUID(), question, answer: '', startedAt: Date.now() })
+  const turn = current.turns.at(-1)!
+  void nextTick(() => { if (btwBody.value) btwBody.value.scrollTop = btwBody.value.scrollHeight })
+  const recent = messages.value.filter(message => !message.compressed && message.content).slice(-6).map(message => `${message.summary ? '【摘要】' : message.role === 'user' ? '读者' : '助手'}：${message.content.slice(0, 1500)}`).join('\n\n')
+  try {
+    const { complete } = await import('../ai/complete')
+    await complete({ kind: 'btw', signal: controller.signal, messages: [{ role: 'user', content: [
+      '[顺便问：这是读者插进来的一个旁支问题，回答不会写进对话记录。请简短、直接地回答。]',
+      `[正在读的文档]《${props.document.title}》`,
+      selected.value.text && `[读者选中的文字]\n${String(selected.value.text).slice(0, 1500)}`,
+      recent && `[最近的对话，仅供参考]\n${recent}`,
+      earlier && `[这张纸条上已经聊过的]\n${earlier}`,
+      `问题：${question}`,
+    ].filter(Boolean).join('\n\n') }], onDelta: (_delta, all) => { if (btw.value === current && current.controller === controller) turn.answer = all } })
+  } catch (error: any) { if (btw.value === current && !controller.signal.aborted) current.error = error?.message || String(error) }
+  finally { if (btw.value === current && current.controller === controller) { current.running = false; turn.finishedAt = Date.now() } }
+}
 // /btw 等第一个字时，也像主对话一样走动星标、计时和 Thinking… 动词。
 let btwTicker: ReturnType<typeof setInterval> | undefined
-watch(() => Boolean(btw.value?.running && !btw.value.answer), waiting => {
+watch(() => Boolean(btw.value?.running && !btwLast.value?.answer), waiting => {
   clearInterval(btwTicker); btwTicker = undefined
   if (waiting && !ticker) btwTicker = setInterval(() => { now.value = Date.now() }, 120)
   now.value = Date.now()
@@ -695,22 +738,8 @@ async function runCommand(name: string, args: string) {
   }
   if (name === 'btw') {
     if (!args) { attachNote('在 /btw 后面写上要顺便问的问题。'); prompt.value = '/btw '; return }
-    closeBtw()
-    const item = ref<Btw>({ id: crypto.randomUUID(), startedAt: Date.now(), question: args, answer: '', running: true, error: '', controller: new AbortController() })
-    btw.value = item.value
-    const current = btw.value!
-    const recent = messages.value.filter(message => !message.compressed && message.content).slice(-6).map(message => `${message.summary ? '【摘要】' : message.role === 'user' ? '读者' : '助手'}：${message.content.slice(0, 1500)}`).join('\n\n')
-    try {
-      const { complete } = await import('../ai/complete')
-      await complete({ kind: 'btw', signal: current.controller.signal, messages: [{ role: 'user', content: [
-        '[顺便问：这是读者插进来的一个旁支问题，回答不会写进对话记录。请简短、直接地回答。]',
-        `[正在读的文档]《${props.document.title}》`,
-        selected.value.text && `[读者选中的文字]\n${String(selected.value.text).slice(0, 1500)}`,
-        recent && `[最近的对话，仅供参考]\n${recent}`,
-        `问题：${args}`,
-      ].filter(Boolean).join('\n\n') }], onDelta: (_delta, all) => { if (btw.value === current) current.answer = all } })
-    } catch (error: any) { if (btw.value === current && !current.controller.signal.aborted) current.error = error?.message || String(error) }
-    finally { if (btw.value === current) current.running = false }
+    // 纸条开着时再 /btw 是接着聊；想另起话头先关掉纸条。
+    await askBtw(args)
   }
 }
 const compressedBefore = (message: Message) => { const index = messages.value.indexOf(message); return messages.value.slice(0, index).filter(item => item.compressed && !item.summary).length }
@@ -899,11 +928,23 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
 
     <Transition name="btw-pop">
       <div v-if="btw" class="btw-card" role="status" aria-live="polite">
-        <p class="btw-head"><span class="btw-tag">/btw</span><span class="btw-question">{{ btw.question }}</span><button type="button" class="meta-button" aria-label="关闭顺便问" data-tip="关闭" data-tip-key="Esc" @click="closeBtw"><AppIcon name="close" :size="12" /></button></p>
-        <div v-if="btw.answer" class="answer-body btw-answer" v-html="renderMarkdown(btw.answer)"></div>
-        <p v-else-if="btw.running" class="thinking live btw-wait"><span class="thinking-star" aria-hidden="true">{{ spinnerFor(btw.id)[Math.floor(now / 120) % spinnerFor(btw.id).length] }}</span><span class="thinking-label">{{ thinkingVerb(btw.id) }}…</span><span class="thinking-meta">{{ seconds(now - btw.startedAt) }}</span></p>
-        <p v-if="btw.error" class="ai-error">{{ btw.error }}</p>
-        <p class="btw-note">不会写进对话记录 · Esc 关闭</p>
+        <p class="btw-head"><span class="btw-tag">/btw</span><span class="btw-question">{{ btw.turns[0]?.question }}</span><button type="button" class="meta-button" aria-label="关闭顺便问" data-tip="关闭" data-tip-key="Esc" @click="closeBtw"><AppIcon name="close" :size="12" /></button></p>
+        <div ref="btwBody" class="btw-body">
+          <template v-for="(turn, index) in btw.turns" :key="turn.id">
+            <p v-if="index" class="btw-ask">{{ turn.question }}</p>
+            <div v-if="turn.answer" class="answer-body btw-answer" v-html="renderMarkdown(turn.answer)"></div>
+            <p v-else-if="btw.running" class="thinking live btw-wait"><span class="thinking-star" aria-hidden="true">{{ spinnerFor(turn.id)[Math.floor(now / 120) % spinnerFor(turn.id).length] }}</span><span class="thinking-label">{{ thinkingVerb(turn.id) }}…</span><span class="thinking-meta">{{ seconds(now - turn.startedAt) }}</span></p>
+          </template>
+          <p v-if="btw.error" class="ai-error">{{ btw.error }}</p>
+        </div>
+        <form v-if="btwReply" class="btw-reply" @submit.prevent="sendBtwReply"><input ref="btwInput" v-model="btwDraft" type="text" placeholder="接着问…" aria-label="接着问" @keydown.esc.stop.prevent="replyBtw" /><button type="submit" class="meta-button" :disabled="!btwDraft.trim() || btw.running" aria-label="发送" data-tip="发送" data-tip-key="Enter"><AppIcon name="arrow-up" :size="13" /></button></form>
+        <p class="btw-tools">
+          <button type="button" class="meta-button" :class="{ on: btwReply }" :aria-pressed="btwReply" aria-label="接着聊" data-tip="接着聊" @click="replyBtw"><AppIcon name="chat-more" :size="14" /></button>
+          <i aria-hidden="true"></i>
+          <button type="button" class="meta-button" :disabled="!btwDone.length" aria-label="另起一段主对话" data-tip="另起一段主对话" @click="adoptBtw('new')"><AppIcon name="chat-new" :size="14" /></button>
+          <button type="button" class="meta-button" :disabled="!btwDone.length" :aria-label="side ? '并入这段附属对话' : '并入当前主对话'" :data-tip="side ? '并入这段附属对话' : '并入当前主对话'" @click="adoptBtw('append')"><AppIcon name="append" :size="14" /></button>
+          <button v-if="!side" type="button" class="meta-button" :disabled="!btwDone.length" aria-label="变成附属对话" data-tip="变成附属对话" @click="adoptBtw('side')"><AppIcon name="branch" :size="14" /></button>
+        </p>
       </div>
     </Transition>
     <div class="ai-composer">
@@ -1050,7 +1091,15 @@ button:disabled{opacity:.4;cursor:default}
 .btw-answer{font-size:13.5px;line-height:1.65}
 .btw-wait{margin:2px 0;padding-left:0}
 .btw-wait:hover{background:none}
-.btw-note{margin:6px 0 0;color:var(--muted);font-size:10.5px}
+.btw-card{display:flex;flex-direction:column;overflow:visible}
+.btw-body{min-height:0;overflow:auto}
+.btw-ask{margin:9px 0 4px;padding-top:7px;border-top:1px dashed var(--hairline);color:var(--secondary);font-size:12.5px}
+.btw-reply{display:flex;align-items:center;gap:4px;margin:7px 0 0;padding:2px 3px 2px 9px;border-radius:9px;background:color-mix(in srgb,var(--ink) 6%,transparent);box-shadow:inset 0 0 0 1px var(--hairline)}
+.btw-reply input{flex:1;min-width:0;min-height:0;height:24px;padding:0;border:0;outline:0;background:none!important;box-shadow:none!important;color:var(--ink);font:inherit;font-size:12.5px}
+.btw-tools{display:flex;align-items:center;gap:2px;margin:6px 0 -2px -4px}
+.btw-tools i{width:1px;height:12px;margin:0 4px;background:var(--hairline)}
+.btw-tools .meta-button.on{color:var(--accent);opacity:1}
+.btw-tools .meta-button:disabled{opacity:.3;cursor:default}
 .btw-pop-enter-active{transition:opacity var(--dur-2) var(--ease-soft),translate var(--dur-3) var(--spring-snappy)}
 .btw-pop-leave-active{transition:opacity var(--dur-1) var(--ease-soft)}
 .btw-pop-enter-from{opacity:0;translate:0 10px}.btw-pop-leave-to{opacity:0}

@@ -635,6 +635,8 @@ function racks(): Painter {
   // 按宽度分档各画一张（16、32、64…像素宽），细节随大小多起来：先是框和两块窗，再是托盘线，最大才有线缆、把手、电源小格。
   const fronts = new Map<string, HTMLCanvasElement>()
   let epoch = spriteEpoch
+  let waveIndex = -1
+  let events: { kind: number; born: number; x: number; z: number; nx: number; nz: number; centre: number }[] = []
   const drawFront = (paper: string, ink: string, size: number) => {
     const wide = size, tall = Math.round(size * TALL / (WIDE - .03)), canvas = makeCanvas(wide, tall)
     const c = canvas.getContext('2d', { willReadFrequently: true })!, pixels = size * .75, some = smooth((pixels - 10) / 8), more = smooth((pixels - 20) / 16), most = smooth((pixels - 40) / 30)
@@ -679,18 +681,27 @@ function racks(): Painter {
       const seconds = env.t / 1000, camera = seconds * SPEED, latest = Math.floor(env.t / EVERY)
       // 波：每隔一阵在随机的地方来一个，形状随机——一滴水的圆环、从画面外推进来的平面波、两滴水的干涉。振幅从零慢慢起来，最后慢慢平息。
       // 一次只来一个波，歇一会儿再来下一个；振幅从零慢慢起来、慢慢平息，波长长、走得慢——云卷云舒，不是惊涛骇浪。
-      const waves = [0, 1].map(k => latest - k).filter(k => k >= 0).map(k => {
-        // 平面波多数前后走（朝着镜头来或往远处去），波峰是横着的一道道，远处看是一排排整齐地起伏，不会斜着露出大片柜子正面。
-        const born = k * EVERY / 1000, age = seconds - born, angle = (hash(k * 3.7 + 5) - .5) * .7 + (hash(k * 1.9 + 7) < .5 ? 0 : Math.PI), pick = hash(k * 5.1 + .3)
-        return { kind: pick < .22 ? 0 : pick < .86 ? 1 : 2, age, gain: smooth(age / 7) * smooth((LIFE - age) / 10), x: (hash(k * 2.3 + 1) - .5) * 36, z: born * SPEED + 12 + hash(k * 2.3 + 2) * 30, nx: Math.sin(angle), nz: Math.cos(angle), centre: born * SPEED + 45 }
+      if (latest !== waveIndex) {
+        waveIndex = latest
+        events = [0, 1].map(k => latest - k).filter(k => k >= 0).map(k => {
+          // 平面波多数前后走（朝着镜头来或往远处去），波峰是横着的一道道，远处看是一排排整齐地起伏，不会斜着露出大片柜子正面。
+          const born = k * EVERY / 1000, angle = (hash(k * 3.7 + 5) - .5) * .7 + (hash(k * 1.9 + 7) < .5 ? 0 : Math.PI), pick = hash(k * 5.1 + .3)
+          return { kind: pick < .22 ? 0 : pick < .86 ? 1 : 2, born, x: (hash(k * 2.3 + 1) - .5) * 36, z: born * SPEED + 12 + hash(k * 2.3 + 2) * 30, nx: Math.sin(angle), nz: Math.cos(angle), centre: born * SPEED + 45 }
+        })
+      }
+      const waves = events.map(event => {
+        const age = seconds - event.born
+        return { ...event, age, gain: smooth(age / 7) * smooth((LIFE - age) / 10), ringZ: 0, planeZ: 0 }
       }).filter(wave => wave.gain > .001)
+      const timePhase = .13 * seconds
       const ring = (x: number, z: number, age: number) => { const d = Math.hypot(x, z) - 1.7 * age, q = d / 9; return q > -3 && q < 3 ? Math.cos(.5 * d) * Math.exp(-q * q) : 0 }
-      const height = (x: number, z: number) => {
-        let y = .04 * Math.sin(.09 * x + .05 * z + .13 * seconds)
+      let rowPhase = 0
+      const height = (x: number) => {
+        let y = .04 * Math.sin(.09 * x + rowPhase + timePhase)
         for (const wave of waves) {
-          if (wave.kind === 0) y += .42 * wave.gain * ring(x - wave.x, z - wave.z, wave.age)
-          else if (wave.kind === 1) { const d = x * wave.nx + (z - wave.centre) * wave.nz + 80 - 2.9 * wave.age, q = d / 14; if (q > -3 && q < 3) y += .37 * wave.gain * Math.cos(.4 * d) * Math.exp(-q * q) }
-          else y += .31 * wave.gain * (ring(x - wave.x - 7, z - wave.z, wave.age) + ring(x - wave.x + 7, z - wave.z, wave.age))
+          if (wave.kind === 0) y += .42 * wave.gain * ring(x - wave.x, wave.ringZ, wave.age)
+          else if (wave.kind === 1) { const d = x * wave.nx + wave.planeZ + 80 - 2.9 * wave.age, q = d / 14; if (q > -3 && q < 3) y += .37 * wave.gain * Math.cos(.4 * d) * Math.exp(-q * q) }
+          else y += .31 * wave.gain * (ring(x - wave.x - 7, wave.ringZ, wave.age) + ring(x - wave.x + 7, wave.ringZ, wave.age))
         }
         return y
       }
@@ -713,12 +724,16 @@ function racks(): Painter {
         if (want > 1) weight *= clamp(2 - want / (row & -row || 1024), 0, 1)
         if (weight < .02) continue
         const coarse = want > 1, line = (coarse ? .1 : .25 * clamp(spacing / 8, .4, 1)) * weight * fade, solid = fade * weight ** .6, shift = hash(row) * WIDE, back = z + DEEP
+        // Reuse row-invariant terms without changing the arithmetic order of the
+        // wave itself. Heights, perspective and all visible primitives stay exact.
+        rowPhase = .05 * world
+        for (const wave of waves) { wave.ringZ = world - wave.z; wave.planeZ = (world - wave.centre) * wave.nz }
         if (pixels <= 16) {
           // 中景、远景：一排机柜连成一道墙，轮廓沿着柜顶的后沿走，前沿另描一条线。机柜还分得清时是一个个方头，再远就连成起伏的一线。
           const blocky = pixels > 6, sides = new Path2D(), step = blocky ? WIDE : Math.max(WIDE * 3, z * .03), from = Math.floor((-half - shift) / step) * step + shift, body = new Path2D(), edges = new Path2D(), wall = new Path2D(), ribs = waves.length && pixels > 2 ? new Path2D() : null
           body.moveTo(sx(from, back), sy(0, z)); wall.moveTo(sx(from, z), sy(0, z))
           for (let x = from, first = true; x <= half + step; x += step, first = false) {
-            const lift = height(x + step / 2, world) + TALL, y = sy(lift, z), behind = sy(lift, back)
+            const lift = height(x + step / 2) + TALL, y = sy(lift, z), behind = sy(lift, back)
             // 波峰上露出来的正面不留白：横着划两道托盘线。
             if (ribs) for (const part of [.3, .62]) { const at = sy(lift - TALL * part, z); ribs.moveTo(sx(x, z), at); ribs.lineTo(sx(x + step, z), at) }
             if (blocky) { body.lineTo(sx(x, back), behind); body.lineTo(sx(x + step, back), behind); sides.moveTo(sx(x, back), behind); sides.lineTo(sx(x, z), y); edges.moveTo(sx(x, z), y); edges.lineTo(sx(x + step, z), y); wall.lineTo(sx(x, z), y); wall.lineTo(sx(x + step, z), y) }
@@ -738,11 +753,16 @@ function racks(): Painter {
         // 后画的盖住先画的，不会有哪个柜顶从别的机柜里穿出来。
         const sprite = front(pixels), first = Math.floor((-half - shift) / WIDE), last = Math.ceil((half - shift) / WIDE), centre = Math.floor(-shift / WIDE)
         const rack = (i: number) => {
-          const x0 = i * WIDE + shift, x1 = x0 + WIDE, y0 = height(x0 + WIDE / 2, world), y1 = y0 + TALL
+          const x0 = i * WIDE + shift, x1 = x0 + WIDE, y0 = height(x0 + WIDE / 2), y1 = y0 + TALL
           const a = sx(x0, z), b = sx(x1, z), high = sy(y1, z), bottom = sy(y0, z), behind = sy(y1, back), a2 = sx(x0, back), b2 = sx(x1, back)
+          // Only reject a complete rack outside the canvas, including a generous
+          // margin for its one-pixel stroke and half-pixel front overlap. Do not
+          // clip intersecting paths: changing their clip can alter rasterization.
+          const backBottom = sy(y0, back)
+          if (Math.max(a, b, a2, b2) < left - 2 || Math.min(a, b, a2, b2) > left + w + 2 || Math.min(high, behind) > top + h + 2 || Math.max(bottom, backBottom) < top - 2) return
           if (x1 < 0 || x0 > 0) {
             const near = x1 < 0 ? b : a, deep = x1 < 0 ? b2 : a2
-            c.beginPath(); c.moveTo(near, high); c.lineTo(deep, behind); c.lineTo(deep, sy(y0, back)); c.lineTo(near, bottom); c.closePath()
+            c.beginPath(); c.moveTo(near, high); c.lineTo(deep, behind); c.lineTo(deep, backBottom); c.lineTo(near, bottom); c.closePath()
             c.fillStyle = shade; c.fill(); c.stroke()
           }
           c.beginPath(); c.moveTo(a, high); c.lineTo(a2, behind); c.lineTo(b2, behind); c.lineTo(b, high); c.closePath()

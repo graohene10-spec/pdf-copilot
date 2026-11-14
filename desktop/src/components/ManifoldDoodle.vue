@@ -3,7 +3,7 @@
 // 流形上的一部分知识直接画在曲面上（切平面、坐标基、法向量、度量圆、坐标卡、Stokes 边界、积分曲线、测地线、指数映射、平行移动、密切圆、主方向）；
 // 神经网络则演示训练：前向传播的信号一层层走过去，反向传播的梯度（红笔）一层层走回来，权重随之变化，歇 5 秒再来下一轮；角落里画损失曲线。
 // 每隔 4–8 分钟随机换一个画面，换的时候像重新画一遍。每秒 30 帧，窗口不可见时停下。
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { manifoldById, nextManifold, buildMesh, THEOREMS, type Mesh, type Note as Knowledge, type Visual, type Vec } from '../sketch/manifolds'
 import { networkById, ML_FACTS, type Graph } from '../sketch/networks'
 import { sketchById, type Painter, type Sketch, resetSprites } from '../sketch/scenes'
@@ -37,8 +37,19 @@ let sketch: Sketch | undefined
 // 重的画面（GB300）交给后台线程画在另一张画布上；remote 为真时这一张画布上只写字。
 let worker: Worker | undefined, remote = false, held = false
 const layer = ref<HTMLCanvasElement>()
-function postView() {
-  worker?.postMessage({ type: 'view', still: reduced.matches, view: { width: Math.max(1, Math.round(fullWidth)), height: Math.max(1, Math.round(fullHeight)), offsetX, offsetY, ink, red, paper, grid: { size: 24, x: -pageLeft - offsetX, y: -pageTop - offsetY } } })
+const layerKey = ref(0)
+let labelDirty = true, labelSettled = false, disposed = false, workerRetries = 0
+let viewFrame = 0, sentView = ''
+function invalidateLabel() { labelDirty = true; run() }
+function postView(force = false) {
+  if (force) sentView = ''
+  if (!worker || viewFrame || disposed) return
+  viewFrame = requestAnimationFrame(() => {
+    viewFrame = 0
+    const message = { type: 'view', still: reduced.matches, view: { width: Math.max(1, Math.round(fullWidth)), height: Math.max(1, Math.round(fullHeight)), offsetX, offsetY, ink, red, paper, grid: { size: 24, x: -pageLeft - offsetX, y: -pageTop - offsetY } } }
+    const key = JSON.stringify(message)
+    if (key !== sentView && worker) { worker.postMessage(message); sentView = key }
+  })
 }
 function startWorker() {
   const element = layer.value
@@ -46,10 +57,28 @@ function startWorker() {
   try {
     const offscreen = element.transferControlToOffscreen()
     worker = new Worker(new URL('../sketch/scene-worker.ts', import.meta.url), { type: 'module' })
-    // 后台线程起不来就退回在这条线程里画。
-    worker.onerror = () => { worker?.terminate(); worker = undefined; if (remote) { remote = false; if (!frame) draw(performance.now()) } }
+    worker.onerror = recoverWorker
     worker.postMessage({ type: 'init', canvas: offscreen }, [offscreen])
   } catch { worker = undefined }
+}
+async function recoverWorker(event: ErrorEvent) {
+  console.warn('[background] worker failed; rebuilding its canvas', event.message)
+  worker?.terminate(); worker = undefined
+  if (disposed) return
+  // A transferred canvas cannot be transferred a second time. Recreate only this
+  // background layer; keep the document/UI and the scene's elapsed time intact.
+  if (workerRetries++ < 1) {
+    layerKey.value++
+    await nextTick()
+    if (disposed) return
+    startWorker(); postView(true)
+    const rebuilt = worker as Worker | undefined
+    rebuilt?.postMessage({ type: 'scene', id: sketch?.offscreen ? current.value : null, elapsed: Math.max(0, performance.now() - drawnAt) })
+    if (document.hidden || held) rebuilt?.postMessage({ type: 'halt' })
+  }
+  remote = Boolean(worker && sketch?.offscreen)
+  if (!worker) console.warn('[background] worker unavailable; using the foreground renderer')
+  labelSettled = false; invalidateLabel()
 }
 let painter: Painter | undefined
 let baseTilt = .42
@@ -91,13 +120,18 @@ function choose(id: string | undefined) {
   const manifold = manifoldById(id), network = networkById(id), other = sketchById(id)
   if (!manifold && !network && !other) return
   current.value = id
+  labelDirty = true; labelSettled = false
   mesh = manifold ? buildMesh(manifold) : undefined
   graph = network ? network.build() : undefined
   training = graph ? newTraining(graph) : undefined
   sketch = other
+  // GB300 stays animated while panes, menus and the document library move.
+  // Keep the existing interaction hold only for the other background scenes.
+  if (other?.offscreen) held = false
   painter = other?.create()
   remote = Boolean(worker && other?.offscreen)
   worker?.postMessage({ type: 'scene', id: remote ? id : null, elapsed: 0 })
+  if (remote && !document.hidden && !held) worker?.postMessage({ type: 'run' })
   baseTilt = other?.tilt ?? manifold?.tilt ?? (network ? .32 : .42)
   jitter = seeded(mesh ? mesh.points.length / 3 : graph ? graph.nodes.length / 3 : 1)
   drawnAt = performance.now()
@@ -105,6 +139,7 @@ function choose(id: string | undefined) {
   if (drawing) drawing.fading = drawnAt
   for (const note of notes.value) note.leaving = true
   scheduleSwitch()
+  run()
 }
 
 function scheduleSwitch() {
@@ -118,6 +153,7 @@ function resize() {
   const element = canvas.value
   if (!element) return
   const box = element.getBoundingClientRect()
+  const changed = box.width !== fullWidth || box.height !== fullHeight || box.left !== pageLeft || box.top !== pageTop
   ratio = 1 // 铅笔线本来就软，背景按 1 倍分辨率画，大画布也省
   // 画布铺满整块桌面；常规画面仍画在留了边的那一块里（左 6%、上 4%、右 2%），铺满的画面（机柜的海）用整块。
   fullWidth = box.width; fullHeight = box.height
@@ -125,12 +161,15 @@ function resize() {
   // 画布连左侧栏下面也铺着（侧栏是歪的纸片，收起来时那一块也要有画面）；常规画面仍画在侧栏右边那一块里。
   const side = props.preview ? 0 : SIDEBAR, room = fullWidth - side
   offsetX = props.preview ? 0 : side + room * .06; offsetY = props.preview ? 0 : fullHeight * .04; width = props.preview ? fullWidth : room * .92; height = fullHeight - offsetY
-  element.width = Math.max(1, Math.round(fullWidth * ratio))
-  element.height = Math.max(1, Math.round(fullHeight * ratio))
+  const pixelsWide = Math.max(1, Math.round(fullWidth * ratio)), pixelsHigh = Math.max(1, Math.round(fullHeight * ratio))
+  if (element.width !== pixelsWide) element.width = pixelsWide
+  if (element.height !== pixelsHigh) element.height = pixelsHigh
+  if (changed) invalidateLabel()
   postView()
 }
 
 function readInk() {
+  const previous = [ink, red, paper, hand].join('|')
   const style = getComputedStyle(document.documentElement)
   ink = style.getPropertyValue('--pencil').trim() || '#2e2d2a'
   red = style.getPropertyValue('--red-pencil').trim() || '#c8553d'
@@ -138,6 +177,7 @@ function readInk() {
   backing.value = paper
   // 草稿用手写体；暖色极简用衬线斜体（--doodle-font）。
   hand = style.getPropertyValue('--doodle-font').trim() || "Caveat, 'Long Cang', cursive"
+  if ([ink, red, paper, hand].join('|') !== previous) invalidateLabel()
   postView()
 }
 
@@ -154,6 +194,7 @@ type Project = (x: number, y: number, z: number) => [number, number, number]
 function draw(now: number) {
   const element = canvas.value, context = element?.getContext('2d')
   if (!element || !context || !jitter || (!mesh && !graph && !painter)) return
+  if (remote && labelSettled && !labelDirty) return
   const angle = reduced.matches ? .6 : ((now - start) / PERIOD) * Math.PI * 2
   const tilt = baseTilt + Math.sin(angle * .5) * .05
   const ca = Math.cos(angle), sa = Math.sin(angle), ct = Math.cos(tilt), st = Math.sin(tilt)
@@ -180,6 +221,7 @@ function draw(now: number) {
   else if (painter) painter({ context, project, t: reduced.matches ? 20000 : Math.max(0, now - drawnAt), fade: reveal, ink, red, paper, hand, width, height, size, camera, full: { x: -offsetX, y: -offsetY, w: fullWidth, h: fullHeight }, grid: props.preview ? { size: 8, x: 0, y: 0 } : { size: 24, x: -pageLeft - offsetX, y: -pageTop - offsetY } })
   if (mesh && drawing && reveal >= 1) drawVisual(context, drawing, now, project)
   context.globalAlpha = 1
+  if (remote) { labelDirty = false; labelSettled = reveal >= 1 }
 }
 
 function drawMesh(context: CanvasRenderingContext2D, { points, lines, closed }: Mesh, project: Project, reveal: number) {
@@ -634,13 +676,13 @@ function tick(now: number) {
   frame = 0
   if (document.hidden) return
   if (held) { frame = requestAnimationFrame(tick); return }
-  // 帧率跟着一帧的耗时走：很轻（平均不到 4 ms）就每秒 60 帧，动得顺；一般每秒 30 帧；实在太重（超过 16 ms）才降到 20 帧，不拖累界面。
-  const interval = cost < (smoothRun ? 10 : 7) ? 1000 / 60 : cost > 16 ? 1000 / 20 : FRAME
+  // GB300 保持原最高目标 60 FPS；其他场景沿用原来的自适应调度。
+  const interval = sketch?.offscreen ? 1000 / 60 : cost < (smoothRun ? 10 : 7) ? 1000 / 60 : cost > 16 ? 1000 / 20 : FRAME
   smoothRun = interval < 20
   if (now - last >= interval - 2) { last = now; const began = performance.now(); draw(now); cost += (performance.now() - began - cost) * .1 }
-  if (!reduced.matches) frame = requestAnimationFrame(tick)
+  if (!reduced.matches && (!remote || !labelSettled || labelDirty)) frame = requestAnimationFrame(tick)
 }
-function run() { if (!frame && !document.hidden) frame = requestAnimationFrame(tick) }
+function run() { if (!disposed && !frame && !document.hidden && (!remote || !labelSettled || labelDirty)) frame = requestAnimationFrame(tick) }
 function halt() { cancelAnimationFrame(frame); frame = 0 }
 
 // 随机的定理 / 定义：洗好的一袋，抽完再洗；夹几条当前画面自己的。流形上能画的就画在曲面上。
@@ -698,10 +740,10 @@ function nextNote() {
 
 function visibility() { if (document.hidden) { halt(); worker?.postMessage({ type: 'halt' }) } else { run(); worker?.postMessage({ type: 'run' }) } }
 const resizer = new ResizeObserver(() => { resize(); if (!frame) draw(performance.now()) })
-// 侧栏 / 助手栏收放的那几百毫秒里后台的画面先停一下，把显卡让给界面动画。
+// GB300 no longer pauses for interaction. Other scenes retain their old policy.
 const themeWatch = new MutationObserver(records => {
   // 拖动排列文档时也停：那一阵卡片的让位动画最怕掉帧。
-  const busy = 'paneMotion' in document.documentElement.dataset || document.documentElement.classList.contains('reordering')
+  const busy = !sketch?.offscreen && ('paneMotion' in document.documentElement.dataset || document.documentElement.classList.contains('reordering'))
   if (busy !== held) { held = busy; worker?.postMessage({ type: busy ? 'halt' : 'run' }) }
   if (records.every(record => record.attributeName === 'data-pane-motion' || record.attributeName === 'class')) return
   readInk(); if (!frame) draw(performance.now())
@@ -721,11 +763,17 @@ onMounted(() => {
   document.addEventListener('visibilitychange', visibility)
   // 显卡上下文丢了又回来（画面会白一下）：预先画好的小图全部重画，画布按当前尺寸重新铺一遍。
   canvas.value?.addEventListener('contextrestored', restored)
+  document.fonts.addEventListener('loadingdone', fontsChanged)
+  void document.fonts.ready.then(fontsChanged)
   run()
   if (!props.preview) noteTimer = setTimeout(nextNote, 2500)
 })
-function restored() { resetSprites(); draw(performance.now()) }
+function fontsChanged() { if (!disposed) invalidateLabel() }
+function restored() { resetSprites(); labelDirty = true; draw(performance.now()); run() }
 onBeforeUnmount(() => {
+  disposed = true
+  cancelAnimationFrame(viewFrame)
+  document.fonts.removeEventListener('loadingdone', fontsChanged)
   canvas.value?.removeEventListener('contextrestored', restored)
   halt(); clearTimeout(switchTimer); clearTimeout(noteTimer); worker?.terminate(); worker = undefined
   for (const timer of timers) clearTimeout(timer)
@@ -736,7 +784,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="manifold-doodle" :class="{ preview }" :style="preview ? { background: backing } : undefined" aria-hidden="true">
-    <canvas ref="layer" class="manifold-canvas manifold-layer" style="opacity:0" />
+    <canvas :key="layerKey" ref="layer" class="manifold-canvas manifold-layer" style="opacity:0" />
     <canvas ref="canvas" class="manifold-canvas" />
     <div class="manifold-notes"><p v-for="note in notes" :key="note.key" class="manifold-note" :class="[`slot-${note.slot}`, { drawn: note.drawn, leaving: note.leaving }]">{{ note.text }}</p></div>
   </div>

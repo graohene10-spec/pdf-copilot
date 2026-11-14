@@ -175,6 +175,22 @@ export function branchConversation(documentId: string, conversationId: string, u
   return branch
 }
 
+/** /btw 的一问一答。 */
+export type AsideTurn = { question: string; answer: string; startedAt: number; finishedAt?: number }
+/** 把 /btw 里聊的搬进正式对话：另起一段主对话（new）、接在这段对话后面（append），或放进它的附属对话（side）。 */
+export function adoptTurns(documentId: string, conversationId: string, target: 'new' | 'append' | 'side', turns: AsideTurn[]): ChatState {
+  const state = target === 'new' ? newConversation(documentId) : target === 'side' ? sideConversation(documentId, conversationId, true)! : chatState(documentId, conversationId)
+  for (const turn of turns) {
+    if (!turn.answer) continue
+    state.messages.push({ id: crypto.randomUUID(), role: 'user', content: turn.question, sources: [] })
+    state.messages.push({ id: crypto.randomUUID(), role: 'assistant', content: turn.answer, sources: [], startedAt: turn.startedAt, finishedAt: turn.finishedAt || Date.now() })
+  }
+  if (!state.title && !state.sideOf && turns[0]) state.title = titleFrom(turns[0].question)
+  state.updatedAt = Date.now()
+  schedulePersist(documentId)
+  return state
+}
+
 // ---- Finished-answer notices for conversations nobody is looking at --------
 export type Notice = { id: string; documentId: string; conversationId: string; title: string; documentTitle: string; at: number }
 export const notices = reactive<Notice[]>([])

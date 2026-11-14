@@ -1,10 +1,10 @@
-// 后台线程里画重的画面（GB300 机柜的海）：每一帧上千次绘制都在这里做，界面那条线程空出来，开关侧栏、设置时不被它拖慢。
+// GB300 的 JS 绘制在 Worker 中执行；GPU 进程仍与界面共享，不能仅靠 Worker 隔离合成开销。
 // 界面只在换画面、尺寸或颜色变了、需要暂停 / 继续时发消息过来；每一帧由这里自己的 requestAnimationFrame 驱动。
 import { sketchById, resetSprites, type Painter } from './scenes'
 
 const scope = self as any
 let canvas: any, context: any, painter: Painter | undefined
-let frame = 0, base = 0, cost = 0, smoothRun = false, last = 0, running = true, still = false
+let frame = 0, base = 0, nextFrame = 0, running = true, still = false
 const view = { width: 1, height: 1, offsetX: 0, offsetY: 0, ink: '#2e2d2a', red: '#c8553d', paper: '#efe9db', grid: { size: 24, x: 0, y: 0 } }
 
 function draw(now: number) {
@@ -17,16 +17,20 @@ function draw(now: number) {
     width: view.width - view.offsetX, height: view.height - view.offsetY, size: 0, camera: 1, full: { x: -view.offsetX, y: -view.offsetY, w: view.width, h: view.height }, grid: view.grid })
   context.globalAlpha = 1
 }
-// 帧率和界面线程里的规则一样：轻就 60 帧，一般 30 帧，太重降到 20 帧。
+// Preserve the existing highest target. Lower rendering cost, not animation FPS.
 function tick(now: number) {
   frame = 0
-  const interval = cost < (smoothRun ? 10 : 7) ? 1000 / 60 : cost > 16 ? 1000 / 20 : 1000 / 30
-  smoothRun = interval < 20
-  if (now - last >= interval - 2) { last = now; const began = performance.now(); draw(now); cost += (performance.now() - began - cost) * .1 }
+  if (!nextFrame || now + .25 >= nextFrame) {
+    // Preserve the 60 Hz cadence on displays whose refresh rate is not a
+    // multiple of 60. Restarting the interval at each rAF caps 160 Hz at 53 Hz.
+    nextFrame = nextFrame ? nextFrame + 1000 / 60 : now + 1000 / 60
+    if (nextFrame < now - .25) nextFrame = now + 1000 / 60
+    draw(now)
+  }
   loop()
 }
 function loop() { if (!frame && running && !still && painter) frame = scope.requestAnimationFrame(tick) }
-function halt() { if (frame) scope.cancelAnimationFrame(frame); frame = 0 }
+function halt() { if (frame) scope.cancelAnimationFrame(frame); frame = 0; nextFrame = 0 }
 
 scope.onmessage = ({ data }: MessageEvent) => {
   if (data.type === 'init') {
