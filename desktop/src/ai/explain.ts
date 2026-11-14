@@ -2,7 +2,7 @@
  * 快速解释：选中一个词或一句话，按鼠标中键（或右键「解释」），用专门配的 AI 就地解释。
  * AI 只拿到解释的要求、选中的文字和它周围的一小段上下文。PDF 里弹一张卡片；Markdown 里直接插在那一段下面，可以留在笔记里。
  */
-import { createApp, reactive, shallowReactive, type App } from 'vue'
+import { createApp, reactive, shallowReactive, watch, type App } from 'vue'
 import { looksMathy, selectionImage } from '../reader/selection-image'
 import { IMAGE_NOTE } from './translate'
 import { complete } from './complete'
@@ -11,7 +11,7 @@ import ExplainNote from '../components/ExplainNote.vue'
 
 export type ExplainMode = 'plain' | 'deeper' | 'example' | 'simpler'
 export type Explain = { id: string; term: string; context: string; mode: ExplainMode; text: string; reasoning: string; status: 'running' | 'done' | 'error'; error: string; startedAt: number; ms: number; /** 选区的截图（PDF 里的公式以图为准）。 */ image?: string }
-export type ExplainTarget = { term: string; context: string; block?: HTMLElement; image?: string; /** PDF：选区所在的那一页，图钉钉住后卡片跟着它走。 */ anchor?: HTMLElement }
+export type ExplainTarget = { term: string; context: string; block?: HTMLElement; image?: string; doc?: string; page?: number; /** PDF：选区所在的那一页，图钉钉住后卡片跟着它走。 */ anchor?: HTMLElement }
 
 const MODES: Record<ExplainMode, string> = {
   plain: '先用一句话说清它是什么，再用两三句讲它在这段上下文里的意思和作用。不超过 150 字。',
@@ -74,15 +74,63 @@ export function explainTarget(): ExplainTarget | undefined {
   }
   const slot = element.closest<HTMLElement>('.page-slot')
   const context = around((slot || element).textContent || term, term)
-  return { term, context, anchor: slot || undefined, image: slot && looksMathy(term + context) ? selectionImage(40, 60) : undefined }
+  return { term, context, doc: slot?.closest<HTMLElement>('.pdf-scroll')?.dataset.explainDoc, page: Number(slot?.dataset.page) || undefined, anchor: slot || undefined, image: slot && looksMathy(term + context) ? selectionImage(40, 60) : undefined }
 }
 
 // ---- PDF：鼠标旁的卡片 ----
 /** 没钉住的卡片点别处就消失，同时最多一张；钉住的留着，可以有好几张。follow：钉住后跟着书页走，还是停在屏幕上。 */
-export type ExplainCardState = { id: string; item: Explain; x: number; y: number; pinned: boolean; follow: 'page' | 'screen'; anchor?: HTMLElement; /** 从翻译卡片变过来时，先显示的译文。 */ from?: string }
+export type ExplainCardState = { id: string; item: Explain; x: number; y: number; pinned: boolean; follow: 'page' | 'screen'; anchor?: HTMLElement
+  /** 所属的文档和页码；钉住之后的位置（相对那一页的比例 / 屏幕上的坐标）和改过的大小——钉住的便签靠这些存下来、下次打开放回原处。 */
+  doc?: string; page?: number; rel?: { x: number; y: number }; screen?: { left: number; top: number }; size?: { width?: number; height?: number }
+  /** 从翻译卡片变过来时，先显示的译文。 */ from?: string }
 export const explainCards = shallowReactive<ExplainCardState[]>([])
 export function closeCard(card: ExplainCardState) { stopExplain(card.item); const at = explainCards.indexOf(card); if (at >= 0) explainCards.splice(at, 1) }
 export function closeLooseCards() { for (const card of [...explainCards]) if (!card.pinned) closeCard(card) }
+
+// 钉住的便签不会自己消失：记在文档库的设置里，关掉文档、关掉应用再打开都放回原处；只有拔下图钉才没。
+const CARDS = 'explain.cards.v1'
+type SavedCard = { id: string; term: string; text: string; page?: number; follow: 'page' | 'screen'; rel?: { x: number; y: number }; screen?: { left: number; top: number }; size?: { width?: number; height?: number } }
+let cardStore: Record<string, SavedCard[]> = {}
+const openDocs = new Map<string, number>()
+const cardsReady: Promise<void> = (async () => {
+  try { const value = JSON.parse(await library.getSetting(CARDS) || '{}'); if (value && typeof value === 'object') cardStore = value } catch { /* 没有记录 */ }
+})()
+function saveCards() {
+  for (const doc of openDocs.keys()) {
+    const list = explainCards.filter(card => card.doc === doc && card.pinned && card.item.status === 'done' && card.item.text)
+      .map(card => ({ id: card.id, term: card.item.term, text: card.item.text, page: card.page, follow: card.follow, rel: card.rel, screen: card.screen, size: card.size }))
+    if (list.length) cardStore[doc] = list; else delete cardStore[doc]
+  }
+  void library.setSetting(CARDS, JSON.stringify(cardStore)).catch(() => { /* 存不进去就只留在这次阅读里 */ })
+}
+let saveTimer = 0
+watch(() => explainCards.map(card => [card.pinned, card.follow, card.rel?.x, card.rel?.y, card.screen?.left, card.screen?.top, card.size?.width, card.size?.height, card.item.status, card.item.text.length].join()).join('|'),
+  () => { clearTimeout(saveTimer); saveTimer = window.setTimeout(() => { void cardsReady.then(saveCards) }, 300) })
+/** PDF 打开、页面摆好之后调用：把这份文档钉住的便签放回去。 */
+export function restoreCards(scroller: HTMLElement, doc: string) {
+  if (scroller.dataset.explainDoc === doc) return
+  scroller.dataset.explainDoc = doc
+  openDocs.set(doc, (openDocs.get(doc) || 0) + 1)
+  void cardsReady.then(() => {
+    for (const saved of cardStore[doc] || []) {
+      if (!scroller.isConnected || explainCards.some(card => card.id === saved.id)) continue
+      const anchor = saved.page ? scroller.querySelector<HTMLElement>(`.page-slot[data-page="${saved.page}"]`) || undefined : undefined
+      const item = reactive<Explain>({ id: saved.id, term: saved.term, context: '', mode: 'plain', text: saved.text, reasoning: '', status: 'done', error: '', startedAt: 0, ms: 0 })
+      explainCards.push(reactive({ id: saved.id, item, x: saved.screen?.left ?? 80, y: saved.screen?.top ?? 120, pinned: true, follow: anchor ? saved.follow : 'screen', anchor, doc, page: saved.page, rel: saved.rel, screen: saved.screen, size: saved.size }) as ExplainCardState)
+    }
+  })
+}
+/** PDF 关闭时调用：便签从屏幕上撤下，记录留着。 */
+export function releaseCards(scroller: HTMLElement) {
+  const doc = scroller.dataset.explainDoc
+  if (!doc) return
+  delete scroller.dataset.explainDoc
+  clearTimeout(saveTimer); saveCards()
+  const left = (openDocs.get(doc) || 1) - 1
+  if (left > 0) { openDocs.set(doc, left); return }
+  openDocs.delete(doc)
+  for (const card of [...explainCards]) if (card.doc === doc) closeCard(card)
+}
 
 // ---- Markdown：插在段落下面的释义；留下的记在本机，下次打开还在 ----
 const NOTES_KEY = 'kaizhi.explain.notes.v1'
@@ -163,5 +211,5 @@ export function runExplain(target: ExplainTarget, x: number, y: number, from?: s
   const item = startExplain(target.term, target.context, 'plain', target.image)
   if (target.block?.isConnected) { insertNote(target.block, item, false); return }
   closeLooseCards()
-  explainCards.push(reactive({ id: item.id, item, x, y, pinned: false, follow: 'page', anchor: target.anchor, from }) as ExplainCardState)
+  explainCards.push(reactive({ id: item.id, item, x, y, pinned: false, follow: 'page', anchor: target.anchor, doc: target.doc, page: target.page, from }) as ExplainCardState)
 }
