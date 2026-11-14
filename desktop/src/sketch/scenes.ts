@@ -50,6 +50,10 @@ function dotAt(env: Env, at: Vec, radius: number, alpha: number, color: string) 
 type Model = { points: Vec[]; radius: number[]; kind: number[]; bonds: number[]; shaded?: boolean }
 // 手画的小球：只用纸色、铅笔、红笔三种平涂，不打高光；右下角划几道铅笔斜线当阴影。按颜色各画一张小图，用的时候缩放贴上去。
 const sprites = new Map<string, HTMLCanvasElement[]>()
+// 预先画好的小图都画在不走显卡的画布上（willReadFrequently）：显卡上下文丢失、重建时它们不会变成空白。
+// 保险起见，主画布恢复时还会调 resetSprites() 让它们全部重画。
+let spriteEpoch = 0
+export function resetSprites() { sprites.clear(); spriteEpoch++ }
 function shadedBalls(env: Env) {
   const key = `${env.paper}|${env.ink}|${env.red}`
   let set = sprites.get(key)
@@ -57,7 +61,7 @@ function shadedBalls(env: Env) {
   const SIZE = 72
   set = [0, 1, 2, 3].map(kind => {
     const canvas = document.createElement('canvas'); canvas.width = canvas.height = SIZE
-    const c = canvas.getContext('2d')!, r = SIZE / 2
+    const c = canvas.getContext('2d', { willReadFrequently: true })!, r = SIZE / 2
     c.beginPath(); c.arc(r, r, r - 1, 0, TAU); c.clip()
     c.fillStyle = env.paper; c.fillRect(0, 0, SIZE, SIZE)
     if (kind) { c.globalAlpha = kind === 1 ? .72 : .8; c.fillStyle = kind === 1 ? env.ink : env.red; c.fillRect(0, 0, SIZE, SIZE); c.globalAlpha = 1 }
@@ -469,10 +473,10 @@ function dijkstra(): Painter {
 // ---- 康威生命游戏：直接拿桌面的格子纸当格点，一格一个细胞；一门高斯帕滑翔机枪加一片随机初始图样，刚出生的细胞用红笔，刚死的留一点淡影 ----
 const GUN = ['........................O', '......................O.O', '............OO......OO............OO', '...........O...O....OO............OO', 'OO........O.....O...OO', 'OO........O...O.OO....O.O', '..........O.....O.......O', '...........O...O', '............OO']
 function life(): Painter {
-  const TICK = 1100
-  let W = 0, H = 0, cells = new Uint8Array(0), before = new Uint8Array(0), generation = 0, seeded = 0, calm = 0, population = 0, done = 0
+  const TICK = 2100
+  let W = 0, H = 0, cells = new Uint8Array(0), before = new Uint8Array(0), earlier = new Uint8Array(0), generation = 0, seeded = 0, calm = 0, population = 0, done = 0
   const seed = () => {
-    cells = new Uint8Array(W * H); before = new Uint8Array(W * H)
+    cells = new Uint8Array(W * H); before = new Uint8Array(W * H); earlier = new Uint8Array(W * H)
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (x > W * .5 && Math.random() < .3) cells[y * W + x] = 1
     if (W > 44 && H > 16) GUN.forEach((row, y) => [...row].forEach((ch, x) => { if (ch === 'O') cells[(y + 5) * W + x + 4] = 1 }))
     seeded = generation; calm = 0
@@ -487,7 +491,7 @@ function life(): Painter {
       out[y * W + x] = on; alive += on
     }
     calm = Math.abs(alive - population) <= 1 ? calm + 1 : 0
-    before = cells; cells = out; population = alive; generation++
+    earlier = before; before = cells; cells = out; population = alive; generation++
     if (alive < 14 || calm > 40 || generation - seeded > 600) seed()
   }
   return env => {
@@ -498,14 +502,23 @@ function life(): Painter {
     const target = Math.floor(env.t / TICK)
     if (target - done > 2) done = target - 2
     while (done < target) { step(); done++ }
-    const old = new Path2D(), born = new Path2D(), ghost = new Path2D()
+    // 每一代之内状态是慢慢变过去的：新生的格子红色淡入；活过一代的由红慢慢变成铅笔色；刚死的褪成淡淡的影子，再过一代影子也散掉。
+    const p = smooth(Math.min(1, (env.t / TICK - target) / .7))
+    const old = new Path2D(), born = new Path2D(), turning = new Path2D(), dying = new Path2D(), ghost = new Path2D()
     for (let i = 0; i < cells.length; i++) {
-      if (!cells[i] && !before[i]) continue
-      (cells[i] ? before[i] ? old : born : ghost).rect(x0 + (i % W) * size + 2, y0 + Math.floor(i / W) * size + 2, size - 3, size - 3)
+      const now = cells[i], was = before[i]
+      if (!now && !was && !earlier[i]) continue
+      (now ? was ? earlier[i] ? old : turning : born : was ? dying : ghost).rect(x0 + (i % W) * size + 2, y0 + Math.floor(i / W) * size + 2, size - 3, size - 3)
     }
-    c.fillStyle = env.ink; c.globalAlpha = .045 * env.fade; c.fill(ghost)
-    c.globalAlpha = .17 * env.fade; c.fill(old)
-    c.fillStyle = env.red; c.globalAlpha = .26 * env.fade; c.fill(born)
+    const fade = env.fade
+    c.fillStyle = env.ink
+    c.globalAlpha = .17 * fade; c.fill(old)
+    c.globalAlpha = .17 * p * fade; c.fill(turning)
+    c.globalAlpha = (.17 + (.045 - .17) * p) * fade; c.fill(dying)
+    c.globalAlpha = .045 * (1 - p) * fade; c.fill(ghost)
+    c.fillStyle = env.red
+    c.globalAlpha = .26 * p * fade; c.fill(born)
+    c.globalAlpha = .26 * (1 - p) * fade; c.fill(turning)
     corner(env, [`generation ${generation - seeded} · population ${population}`, 'B3 / S23'])
   }
 }
@@ -612,10 +625,11 @@ function racks(): Painter {
   // 一个机柜的正面，照着 GB300 画：黑色的框，顶上一小块圆角的窗（交换机与线缆），下面一大块圆角的窗——里面是一层层计算托盘，上半截右侧垂着一束束线缆；窗与窗之间、最底下是深色的电源框。
   // 按宽度分档各画一张（16、32、64…像素宽），细节随大小多起来：先是框和两块窗，再是托盘线，最大才有线缆、把手、电源小格。
   const fronts = new Map<string, HTMLCanvasElement>()
+  let epoch = spriteEpoch
   const drawFront = (paper: string, ink: string, size: number) => {
     const canvas = document.createElement('canvas'), wide = size, tall = Math.round(size * TALL / (WIDE - .03))
     canvas.width = wide; canvas.height = tall
-    const c = canvas.getContext('2d')!, pixels = size * .75, some = smooth((pixels - 10) / 8), more = smooth((pixels - 20) / 16), most = smooth((pixels - 40) / 30)
+    const c = canvas.getContext('2d', { willReadFrequently: true })!, pixels = size * .75, some = smooth((pixels - 10) / 8), more = smooth((pixels - 20) / 16), most = smooth((pixels - 40) / 30)
     const low = new Path2D(), mid = new Path2D(), fine = new Path2D(), dark = new Path2D()
     const a = 0, b = wide, l = wide * .1, r = wide * .9, at = (f: number) => tall * f, round = Math.min(wide * .09, tall * .03)
     const across = (path: Path2D, f: number, from = l, to = r) => { path.moveTo(from, at(f)); path.lineTo(to, at(f)) }
@@ -646,6 +660,7 @@ function racks(): Painter {
   }
   return env => {
     const { x: left, y: top, w, h } = env.full
+    if (epoch !== spriteEpoch) { fronts.clear(); epoch = spriteEpoch }
     const front = (pixels: number) => { const size = 2 ** clamp(Math.ceil(Math.log2(pixels)), 4, 8), id = `${env.paper}|${env.ink}|${size}`; let made = fronts.get(id); if (!made) fronts.set(id, made = drawFront(env.paper, env.ink, size)); return made }
     const horizon = top + h * .5, middle = left + w / 2, focal = w * .85
     const sx = (x: number, z: number) => middle + focal * x / z, sy = (y: number, z: number) => horizon + focal * (EYE - y) / z

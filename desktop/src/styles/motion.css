@@ -532,9 +532,10 @@
 /* ---- 侧栏 / 助手栏收放期间 ------------------------------------------------ */
 /* 面板的宽度每一帧都在变，阅读区跟着让位：这时所有玻璃都停掉背景模糊（每一帧重算整片模糊最贵），
    面板内部不参与命中测试，动画落定后恢复。 */
-:root[data-pane-motion] *,
-:root[data-pane-motion] *::before,
-:root[data-pane-motion] *::after {
+/* 只点名带玻璃的那几类表面：用通配符的话，打开过书之后页面里有上万个文字层节点，切换这个标记要把它们全部重算一遍样式，反而更卡。 */
+:root[data-pane-motion] :is(.app-sidebar, .ai-panel, .reader-pane, .translate-pane, .app-topbar, .pane-shell, .file-tabs, .reader-toolbar, .reading-pill, .ai-composer, .ai-header, .document-details),
+:root[data-pane-motion] :is(.app-sidebar, .ai-panel, .reader-pane, .translate-pane, .app-topbar, .pane-shell)::before,
+:root[data-pane-motion] :is(.app-sidebar, .ai-panel, .reader-pane, .translate-pane, .app-topbar, .pane-shell)::after {
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
 }

@@ -3,7 +3,7 @@
 
 import type { Vec } from './manifolds.ts'
 
-export type NetworkId = 'transformer' | 'cnn' | 'mlp' | 'lstm' | 'autoencoder'
+export type NetworkId = 'transformer' | 'cnn' | 'mlp' | 'lstm' | 'autoencoder' | 'resnet' | 'unet' | 'gan' | 'gnn'
 /** 神经元、连线（起点、终点、所在的传播阶段）、可选的弯曲连线（注意力），以及帮助看清结构的框。 */
 export type Graph = {
   nodes: Float32Array
@@ -133,6 +133,71 @@ function lstm(): Graph {
   return finish(b)
 }
 
+// 和 ring 一样的一圈神经元，但圆心可以上下挪（U-Net 的 U 形、GAN 里并排的真假样本）。
+function ringAt(b: Builder, count: number, x: number, y: number, radius: number, z = 0): number[] {
+  return Array.from({ length: count }, (_, k) => {
+    const a = (k / count) * Math.PI * 2 + .3
+    return node(b, [x, y + Math.cos(a) * radius, z + Math.sin(a) * radius])
+  })
+}
+
+function resnet(): Graph {
+  const b = builder()
+  // 六层等宽的全连接，每两层一个残差块：跳连从块的入口绕过两层，直接加到出口（画成鼓出去的弧线）。
+  const layers = [6, 6, 6, 6, 6, 6, 3].map((count, l) => ring(b, count, l * 1.1, count === 3 ? .5 : .72))
+  dense(b, layers)
+  for (let l = 0; l + 2 < 6; l += 2) {
+    layers[l]!.forEach((a, k) => link(b, a, layers[l + 2]![k]!, l + 1, .75))
+    const x0 = l * 1.1 + .3, x1 = (l + 2) * 1.1 - .3
+    b.frames.push([[x0, .95, -.95], [x1, .95, -.95], [x1, -.95, -.95], [x0, -.95, -.95]])
+  }
+  return finish(b)
+}
+
+function unet(): Graph {
+  const b = builder()
+  // U 形：左边一路下采样（层越来越小、位置越来越低），右边一路上采样回来；同一高度的两层之间有跳连，把细节直接递过去。
+  const sizes = [9, 6, 4, 3, 4, 6, 9], depth = [0, 1, 2, 3, 2, 1, 0]
+  const layers = sizes.map((count, l) => ringAt(b, count, l * 1.05, -depth[l]! * .75, .14 + count * .075))
+  dense(b, layers)
+  for (let l = 0; l < 3; l++) {
+    const from = layers[l]!, to = layers[6 - l]!
+    from.forEach((a, k) => link(b, a, to[k]!, 5 - l, .35))
+  }
+  const x = 3 * 1.05, y = -3 * .75
+  b.frames.push([[x, y + .5, .5], [x, y - .5, .5], [x, y - .5, -.5], [x, y + .5, -.5]])
+  return finish(b)
+}
+
+function gan(): Graph {
+  const b = builder()
+  // 生成器：噪声 z → 两层 → 假样本；旁边是真样本；判别器同时看这两堆，输出一个「真 / 假」。
+  const generator = [ringAt(b, 3, 0, .8, .32), ringAt(b, 5, 1.1, .8, .5), ringAt(b, 7, 2.2, .8, .66)]
+  const fake = ringAt(b, 8, 3.3, .8, .7), real = ringAt(b, 8, 3.3, -1.1, .7)
+  const discriminator = [ringAt(b, 6, 4.6, -.15, .62), ringAt(b, 4, 5.6, -.15, .45), ringAt(b, 1, 6.5, -.15, 0)]
+  dense(b, [...generator, fake])
+  for (const sample of [fake, real]) for (const a of sample) for (const c of discriminator[0]!) link(b, a, c, 3)
+  dense(b, discriminator, 4)
+  for (const [x, y] of [[3.3, .8], [3.3, -1.1]] as const) b.frames.push([[x, y + .82, .82], [x, y - .82, .82], [x, y - .82, -.82], [x, y + .82, -.82]])
+  return finish(b)
+}
+
+function gnn(): Graph {
+  const b = builder()
+  // 同一张图抄三遍（三轮消息传递）：每一轮，每个结点从上一轮的自己和邻居那里收消息；最后全图汇总成一个读出结点。
+  const points: [number, number][] = [[0, .9], [.8, .5], [.95, -.35], [.3, -.95], [-.55, -.8], [-.95, 0], [-.45, .55], [.1, 0], [.45, -.3]]
+  const edges: [number, number][] = [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 0], [7, 0], [7, 6], [7, 8], [8, 2], [8, 3], [7, 5], [1, 8]]
+  const neighbours = points.map((_, i) => [i, ...edges.filter(pair => pair.includes(i)).map(pair => pair[0] === i ? pair[1] : pair[0])])
+  const rounds = [0, 1, 2, 3].map(r => points.map(([y, z]) => node(b, [r * 1.25, y, z])))
+  for (let r = 0; r < 3; r++) {
+    neighbours.forEach((list, i) => { for (const j of list) link(b, rounds[r]![j]!, rounds[r + 1]![i]!, r) })
+    b.frames.push([[r * 1.25, 1.15, -1.15], [r * 1.25, 1.15, 1.15], [r * 1.25, -1.15, 1.15], [r * 1.25, -1.15, -1.15]])
+  }
+  const readout = node(b, [4.7, 0, 0])
+  for (const a of rounds[3]!) link(b, a, readout, 3)
+  return finish(b)
+}
+
 const ML_GENERAL = [
   'Backpropagation: ∂L/∂w = ∂L/∂a · ∂a/∂z · ∂z/∂w — the chain rule, layer by layer',
   'Gradient descent: w ← w − η ∇L(w)',
@@ -208,6 +273,42 @@ export const NETWORKS: Network[] = [
     'VAE: maximise the ELBO  E[log p(x | z)] − KL(q(z | x) ‖ p(z))',
   ] },
 ]
+
+NETWORKS.push(
+  { id: 'resnet', name: 'ResNet', build: resnet, facts: [
+    'Residual block: y = x + F(x) — the layers learn a correction to the identity',
+    'The skip path gives gradients a shortcut: ∂y/∂x = I + ∂F/∂x',
+    'ResNets made networks with hundreds of layers trainable (He et al., 2015)',
+    'A deep ResNet behaves like an ensemble of many shallower paths',
+    'Pre-activation: BN → ReLU → conv keeps the skip path clean',
+    'Highway networks gate the skip; ResNets leave it open',
+  ] },
+  { id: 'unet', name: 'U-Net', build: unet, facts: [
+    'U-Net: a contracting path, a bottleneck, and an expanding path of the same depth',
+    'Skip connections copy fine detail from the encoder straight to the decoder',
+    'Transposed convolution upsamples a feature map with learned weights',
+    'Diffusion models use a U-Net to predict the noise ε added to xₜ',
+    'Dice loss: 1 − 2|A ∩ B| / (|A| + |B|) for segmentation masks',
+    'Downsampling trades resolution for a wider receptive field',
+  ] },
+  { id: 'gan', name: 'GAN', build: gan, facts: [
+    'GAN: min_G max_D  E[log D(x)] + E[log(1 − D(G(z)))]',
+    'The generator never sees real data — only the discriminator’s gradient',
+    'At the optimum D*(x) = p_data / (p_data + p_g), and the game minimises the JS divergence',
+    'Mode collapse: the generator covers only a few modes of the data',
+    'WGAN replaces the JS divergence with the Wasserstein distance and a Lipschitz critic',
+    'Non-saturating loss: train G to maximise log D(G(z))',
+  ] },
+  { id: 'gnn', name: '图神经网络', build: gnn, facts: [
+    'Message passing: hᵥ ← φ(hᵥ, ⊕ᵤ∈N(v) ψ(hᵤ, hᵥ, eᵤᵥ))',
+    'GCN layer: H′ = σ(D̃⁻½ Ã D̃⁻½ H W)',
+    'After k rounds a node has seen its k-hop neighbourhood',
+    'The aggregation must be permutation-invariant: sum, mean or max',
+    'Message-passing GNNs are at most as powerful as the 1-WL isomorphism test',
+    'Over-smoothing: with many layers, node features become indistinguishable',
+    'Graph attention: neighbours are weighted by learned coefficients αᵤᵥ',
+  ] },
+)
 
 export const ML_FACTS = ML_GENERAL
 export function networkById(id: string) { return NETWORKS.find(item => item.id === id) }
