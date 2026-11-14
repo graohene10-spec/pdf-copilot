@@ -15,7 +15,7 @@ function locate() {
   place.value = box && box.width ? { top: Math.round(box.bottom + 8), right: Math.max(8, Math.round(innerWidth - box.right)) } : { top: 12, right: 12 }
 }
 function toggle() { open.value = !open.value }
-watch(open, value => { if (value) { locate(); sweep.value = (Date.now() % 60000) / 1000; fields.h = clock.last.h; fields.m = clock.last.m; fields.s = clock.last.s; alarmAt.value = nextHalfHour() } })
+watch(open, value => { if (value) { locate(); sweep.value = (Date.now() % 60000) / 1000; fields.h = clock.last.h; fields.m = clock.last.m; fields.s = clock.last.s; Object.assign(alarm, nextHalfHour()) } })
 watch(() => clock.ringing, ringing => { if (ringing) open.value = true })
 function outside(event: PointerEvent) { if (!open.value || clock.ringing) return; const target = event.target as Node; if (!panel.value?.contains(target) && !chip.value?.contains(target)) open.value = false }
 function key(event: KeyboardEvent) { if (event.key === 'Escape' && open.value && !clock.ringing) { open.value = false; chip.value?.focus() } }
@@ -28,19 +28,37 @@ const half = computed(() => nowLabel.value.split(' ')[0]), digits = computed(() 
 const today = computed(() => { const date = new Date(clock.now); return `${date.getMonth() + 1}月${date.getDate()}日 周${'日一二三四五六'[date.getDay()]}` })
 
 // ---- 计时 ----------------------------------------------------------------------
-const fields = reactive({ h: clock.last.h, m: clock.last.m, s: clock.last.s })
-const LIMIT = { h: 99, m: 59, s: 59 } as const
-type Unit = keyof typeof LIMIT
-const UNITS: { key: Unit; label: string }[] = [{ key: 'h', label: '时' }, { key: 'm', label: '分' }, { key: 's', label: '秒' }]
-function setField(unit: Unit, value: number) { fields[unit] = Math.min(LIMIT[unit], Math.max(0, Math.round(value) || 0)) }
-function typed(unit: Unit, event: Event) { const input = event.target as HTMLInputElement; setField(unit, Number(input.value.replace(/\D/g, '').slice(-2))); input.value = String(fields[unit]).padStart(2, '0') }
-function nudge(unit: Unit, by: number) { const size = LIMIT[unit] + 1; fields[unit] = (fields[unit] + by + size) % size }
-function wheel(unit: Unit, event: WheelEvent) { event.preventDefault(); nudge(unit, event.deltaY < 0 ? 1 : -1) }
+const fields = reactive<Record<string, number>>({ h: clock.last.h, m: clock.last.m, s: clock.last.s })
+// 每一格是一个自己画的数字：点上下箭头（按住连续变）、滚轮、方向键或直接敲数字都能改，没有文本框的光标和选区。
+type Spin = { key: string; label: string; max: number; model: Record<string, number> }
+const timerSpins: Spin[] = [{ key: 'h', label: '时', max: 99, model: fields }, { key: 'm', label: '分', max: 59, model: fields }, { key: 's', label: '秒', max: 59, model: fields }]
+function bump(spin: Spin, by: number) { const size = spin.max + 1; spin.model[spin.key] = (spin.model[spin.key]! + by + size) % size }
+// 刚点进一格时敲的第一个数字从头写；接着敲的往后补一位。
+let fresh = true
+function keySpin(spin: Spin, event: KeyboardEvent, enter: () => void) {
+  const value = spin.model[spin.key]!
+  if (/^\d$/.test(event.key)) { const digit = Number(event.key), next = fresh ? digit : (value % 10) * 10 + digit; spin.model[spin.key] = next > spin.max ? digit : next; fresh = false }
+  else if (event.key === 'ArrowUp') bump(spin, 1)
+  else if (event.key === 'ArrowDown') bump(spin, -1)
+  else if (event.key === 'Backspace' || event.key === 'Delete') { spin.model[spin.key] = event.key === 'Delete' ? 0 : Math.floor(value / 10); fresh = false }
+  else if (event.key === 'Enter') enter()
+  else return
+  event.preventDefault()
+}
+let holding: ReturnType<typeof setTimeout> | undefined
+function release() { clearTimeout(holding); clearInterval(holding); holding = undefined }
+function hold(spin: Spin, by: number, event: PointerEvent) {
+  if (event.button !== 0) return
+  release(); bump(spin, by)
+  holding = setTimeout(() => { holding = setInterval(() => bump(spin, by), 80) }, 380)
+  window.addEventListener('pointerup', release, { once: true }); window.addEventListener('pointercancel', release, { once: true })
+}
+onBeforeUnmount(release)
 const PRESETS = [5, 15, 25, 60]
 function preset(minutes: number) { fields.h = Math.floor(minutes / 60); fields.m = minutes % 60; fields.s = 0 }
-const total = computed(() => ((fields.h * 60 + fields.m) * 60 + fields.s) * 1000)
+const total = computed(() => ((fields.h! * 60 + fields.m!) * 60 + fields.s!) * 1000)
 function start() {
-  rememberFields(fields.h, fields.m, fields.s)
+  rememberFields(fields.h!, fields.m!, fields.s!)
   if (total.value) startCountdown(total.value); else startStopwatch()
   open.value = false
 }
@@ -51,9 +69,10 @@ const reading = computed(() => clock.mode === 'down' ? span(left.value) : span(g
 const share = computed(() => clock.mode === 'down' ? (clock.total ? left.value / clock.total : 0) : (gone.value % 60000) / 60000)
 
 // ---- 闹钟 ----------------------------------------------------------------------
-function nextHalfHour() { const date = new Date(Date.now() + 30 * 60000); date.setMinutes(date.getMinutes() < 30 ? 30 : 60, 0, 0); return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}` }
-const alarmAt = ref(nextHalfHour())
-function setAlarm() { const [hours, minutes] = alarmAt.value.split(':').map(Number); if (Number.isFinite(hours) && Number.isFinite(minutes)) addAlarm(hours!, minutes!) }
+function nextHalfHour() { const date = new Date(Date.now() + 30 * 60000); date.setMinutes(date.getMinutes() < 30 ? 30 : 60, 0, 0); return { h: date.getHours(), m: date.getMinutes() } }
+const alarm = reactive<Record<string, number>>(nextHalfHour())
+const alarmSpins: Spin[] = [{ key: 'h', label: '时', max: 23, model: alarm }, { key: 'm', label: '分', max: 59, model: alarm }]
+function setAlarm() { addAlarm(alarm.h!, alarm.m!) }
 function alarmLabel(at: number) { const day = new Date(at).getDate() !== new Date(clock.now).getDate(); return `${day ? '明天 ' : ''}${timeLabel(at)}` }
 
 // ---- 到点 ----------------------------------------------------------------------
@@ -123,7 +142,12 @@ watch(tab, () => void nextTick(locate))
             </p>
             <template v-else>
               <div class="cp-fields">
-                <label v-for="unit in UNITS" :key="unit.key"><input type="text" inputmode="numeric" maxlength="3" :value="String(fields[unit.key]).padStart(2, '0')" :aria-label="unit.label" @change="typed(unit.key, $event)" @focus="($event.target as HTMLInputElement).select()" @wheel="wheel(unit.key, $event)" @keydown.up.prevent="nudge(unit.key, 1)" @keydown.down.prevent="nudge(unit.key, -1)" @keydown.enter.prevent="typed(unit.key, $event); start()" /><span>{{ unit.label }}</span></label>
+                <div v-for="spin in timerSpins" :key="spin.key" class="cp-field">
+                  <button type="button" class="cp-step up" tabindex="-1" :aria-label="`${spin.label}加一`" @pointerdown.prevent="hold(spin, 1, $event)"><AppIcon name="down" :size="12" /></button>
+                  <span class="cp-num" tabindex="0" role="spinbutton" :aria-label="spin.label" :aria-valuenow="spin.model[spin.key]" aria-valuemin="0" :aria-valuemax="spin.max" @focus="fresh = true" @keydown="keySpin(spin, $event, start)" @wheel.prevent="bump(spin, $event.deltaY < 0 ? 1 : -1)">{{ String(spin.model[spin.key]).padStart(2, '0') }}</span>
+                  <button type="button" class="cp-step" tabindex="-1" :aria-label="`${spin.label}减一`" @pointerdown.prevent="hold(spin, -1, $event)"><AppIcon name="down" :size="12" /></button>
+                  <small>{{ spin.label }}</small>
+                </div>
               </div>
               <p class="cp-presets"><button v-for="minutes in PRESETS" :key="minutes" type="button" :class="{ on: total === minutes * 60000 }" @click="preset(minutes)">{{ minutes < 60 ? `${minutes} 分` : `${minutes / 60} 小时` }}</button></p>
               <button type="button" class="cp-go" :aria-label="total ? '开始倒计时' : '开始正计时'" :data-tip="total ? '开始倒计时' : '没填时间：正计时'" @click="start"><AppIcon name="play" :size="14" />{{ total ? '开始' : '正计时' }}</button>
@@ -131,7 +155,17 @@ watch(tab, () => void nextTick(locate))
           </template>
           <!-- 闹钟 -->
           <template v-else>
-            <form class="cp-alarm-new" @submit.prevent="setAlarm"><input v-model="alarmAt" type="time" required aria-label="闹钟时间" /><button type="submit" class="cp-go" aria-label="定闹钟" data-tip="定闹钟"><AppIcon name="plus" :size="15" /></button></form>
+            <div class="cp-alarm-new">
+              <div class="cp-fields two">
+                <div v-for="spin in alarmSpins" :key="spin.key" class="cp-field">
+                  <button type="button" class="cp-step up" tabindex="-1" :aria-label="`${spin.label}加一`" @pointerdown.prevent="hold(spin, 1, $event)"><AppIcon name="down" :size="12" /></button>
+                  <span class="cp-num" tabindex="0" role="spinbutton" :aria-label="spin.label" :aria-valuenow="spin.model[spin.key]" aria-valuemin="0" :aria-valuemax="spin.max" @focus="fresh = true" @keydown="keySpin(spin, $event, setAlarm)" @wheel.prevent="bump(spin, $event.deltaY < 0 ? 1 : -1)">{{ String(spin.model[spin.key]).padStart(2, '0') }}</span>
+                  <button type="button" class="cp-step" tabindex="-1" :aria-label="`${spin.label}减一`" @pointerdown.prevent="hold(spin, -1, $event)"><AppIcon name="down" :size="12" /></button>
+                  <small>{{ spin.label }}</small>
+                </div>
+              </div>
+              <button type="button" class="cp-go" aria-label="定闹钟" data-tip="定闹钟" @click="setAlarm"><AppIcon name="plus" :size="15" /></button>
+            </div>
             <TransitionGroup name="cp-alarm" tag="ul" class="cp-alarms">
               <li v-for="alarm in clock.alarms" :key="alarm.id"><AppIcon name="bell" :size="13" /><b>{{ alarmLabel(alarm.at) }}</b><button type="button" aria-label="取消这个闹钟" data-tip="取消" @click="removeAlarm(alarm.id)"><AppIcon name="close" :size="12" /></button></li>
             </TransitionGroup>
@@ -192,8 +226,18 @@ watch(tab, () => void nextTick(locate))
 .cp-tabs button.on,.cp-tabs button.on:hover{background:color-mix(in srgb,var(--surface,#fff) 82%,transparent);box-shadow:0 1px 3px rgb(0 0 0 / .14);color:var(--ink);font-weight:600}
 .cp-tabs i{min-width:15px;padding:0 4px;border-radius:999px;background:var(--accent);color:#fff;font-size:10px;font-style:normal;line-height:15px}
 .cp-fields{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-.cp-fields label{display:flex;flex-direction:column;align-items:center;gap:4px;color:var(--muted);font-size:11px}
-.cp-fields input{width:100%;height:48px;padding:0;border-radius:12px;text-align:center;font-size:25px;font-weight:350;font-variant-numeric:tabular-nums;cursor:ns-resize}
+.cp-fields.two{flex:1;grid-template-columns:repeat(2,1fr)}
+.cp-field{position:relative;display:flex;flex-direction:column;align-items:center;color:var(--muted)}
+.cp-field small{margin-top:1px;font-size:11px}
+.cp-num{display:grid;place-items:center;width:100%;height:44px;border-radius:12px;background:var(--fill-3);color:var(--ink);font-size:25px;font-weight:350;cursor:ns-resize;outline:none!important;user-select:none;-webkit-user-select:none;transition:background-color .15s,box-shadow .15s,color .15s,border-color .15s}
+.cp-num:hover{background:var(--fill-2)}
+.cp-num:focus{background:var(--fill-4);box-shadow:0 0 0 1.5px color-mix(in srgb,var(--accent) 60%,transparent);color:var(--accent)}
+.clock-panel .cp-step{width:100%;height:15px;padding:0;border:0;border-radius:6px;background:none;box-shadow:none;color:var(--muted);opacity:.45}
+.cp-step.up svg{rotate:180deg}
+.clock-panel .cp-step:hover{background:none;color:var(--accent);opacity:1}
+.clock-panel .cp-step:active{scale:.8}
+.cp-alarm-new{display:flex;align-items:center;gap:10px}
+.cp-alarm-new .cp-go{flex:none;width:38px;height:38px;margin-bottom:14px;padding:0}
 .cp-presets{display:flex;gap:4px;margin:10px 0 12px!important}
 .cp-presets button{flex:1;padding:3px 0;border-radius:999px;background:none;box-shadow:none;color:var(--secondary,var(--muted));font-size:11.5px;white-space:nowrap}
 .cp-presets button.on{border-color:color-mix(in srgb,var(--accent) 55%,transparent);color:var(--accent)}
@@ -203,9 +247,6 @@ watch(tab, () => void nextTick(locate))
 .cp-ok{margin-top:14px}
 .cp-controls{display:flex;justify-content:center;gap:12px;padding:2px 0 2px}
 .cp-controls button{width:40px;height:40px;padding:0;border-radius:50%}
-.cp-alarm-new{display:flex;gap:8px}
-.cp-alarm-new input{flex:1;min-width:0;height:38px;padding:0 10px;border-radius:11px;font-size:17px;text-align:center}
-.cp-alarm-new .cp-go{flex:none;width:38px;height:38px;padding:0}
 .cp-alarms{position:relative;display:flex;flex-direction:column;gap:2px;margin:10px 0 0;padding:0;list-style:none}
 .cp-alarms:empty{margin:0}
 .cp-alarms li{display:flex;align-items:center;gap:8px;padding:5px 4px 5px 8px;border-radius:9px;color:var(--secondary,var(--ink))}
@@ -227,8 +268,8 @@ watch(tab, () => void nextTick(locate))
 :root[data-style='warm'] .cp-tabs{gap:18px;display:flex;padding:0;border-radius:0;background:none;border-bottom:.5px solid var(--warm-rule,rgb(31 30 29 / .14))}
 :root[data-style='warm'] .cp-tabs button{padding:0 0 6px;border-radius:0;margin-bottom:-.5px;border-bottom:1.5px solid transparent}
 :root[data-style='warm'] .cp-tabs button.on,:root[data-style='warm'] .cp-tabs button.on:hover{background:none;box-shadow:none;border-bottom-color:var(--accent);color:var(--accent)}
-:root[data-style='warm'] .cp-fields input,:root[data-style='warm'] .cp-alarm-new input{border:0;border-bottom:.5px solid var(--warm-rule,rgb(31 30 29 / .3));border-radius:0;background:none;box-shadow:none}
-:root[data-style='warm'] .cp-fields input:focus,:root[data-style='warm'] .cp-alarm-new input:focus{border-bottom-color:var(--accent)}
+:root[data-style='warm'] .cp-num{border-bottom:.5px solid var(--warm-rule,rgb(31 30 29 / .3));border-radius:0;background:none}
+:root[data-style='warm'] .cp-num:focus{box-shadow:none;border-bottom-color:var(--accent)}
 :root[data-style='warm'] .cp-presets button{border:0;border-radius:0;font-style:italic}
 :root[data-style='warm'] .cp-presets button:hover{background:none;color:var(--accent)}
 :root[data-style='warm'] .cp-presets button.on{text-decoration:underline;text-underline-offset:3px}
@@ -244,18 +285,21 @@ watch(tab, () => void nextTick(locate))
 :root[data-style='sketch'] .cp-second circle{fill:var(--red-pencil,#c8553d)}
 :root[data-style='sketch'] .cp-arc{stroke:var(--red-pencil,#c8553d)}
 :root[data-style='sketch'] .cp-hub{fill:var(--paper,#fbf8f0);stroke:var(--red-pencil,#c8553d)}
-:root[data-style='sketch'] .cp-read small,:root[data-style='sketch'] .cp-read span,:root[data-style='sketch'] .cp-fields label{color:var(--pencil-soft,rgb(46 45 42 / .62));font-size:13px;letter-spacing:.04em}
+:root[data-style='sketch'] .cp-read small,:root[data-style='sketch'] .cp-read span,:root[data-style='sketch'] .cp-field small{color:var(--pencil-soft,rgb(46 45 42 / .62));font-size:13px;letter-spacing:.04em}
 :root[data-style='sketch'] .cp-read b{font-family:Caveat,var(--font);font-size:44px;font-weight:500;line-height:1;letter-spacing:.01em}
 :root[data-style='sketch'] .cp-tabs{display:flex;gap:18px;margin:14px 0 12px;padding:10px 0 0;border-radius:0;background:none;border-top:1px solid color-mix(in srgb,var(--pencil,#2b2a27) 22%,transparent)}
 :root[data-style='sketch'] .cp-tabs button{padding:0 1px 6px;border:0;border-radius:0;color:var(--pencil-soft,rgb(46 45 42 / .62));font-size:15px;background:none}
 :root[data-style='sketch'] .cp-tabs button.on,:root[data-style='sketch'] .cp-tabs button.on:hover{background:var(--scribble) no-repeat 50% 100% / 100% 6px;box-shadow:none;color:var(--pencil,#2b2a27);font-weight:600}
 :root[data-style='sketch'] .cp-tabs i{background:var(--red-pencil,#c8553d);font-family:var(--font-answer,inherit)}
 :root[data-style='sketch'] .cp-fields{gap:0;padding:0 8px}
-:root[data-style='sketch'] .cp-fields label{position:relative;gap:1px}
-:root[data-style='sketch'] .cp-fields label + label::before{content:':';position:absolute;left:-3px;top:4px;color:var(--pencil-soft,rgb(46 45 42 / .45));font:500 30px/1 Caveat,var(--font)}
-:root[data-style='sketch'] .cp-fields input{width:52px;height:42px;border:0;border-bottom:1px solid color-mix(in srgb,var(--pencil,#2b2a27) 35%,transparent);border-radius:0;background:none;box-shadow:none;color:var(--pencil,#2b2a27);font:500 36px/1 Caveat,var(--font)}
-:root[data-style='sketch'] .cp-fields input:hover,:root[data-style='sketch'] .cp-alarm-new input:hover{background:none}
-:root[data-style='sketch'] .cp-fields input:focus,:root[data-style='sketch'] .cp-alarm-new input:focus{background:none;box-shadow:none;border-bottom-color:var(--red-pencil,#c8553d);color:var(--red-pencil,#c8553d)}
+:root[data-style='sketch'] .cp-field + .cp-field::before{content:':';position:absolute;left:-3px;top:19px;color:var(--pencil-soft,rgb(46 45 42 / .45));font:500 30px/1 Caveat,var(--font)}
+:root[data-style='sketch'] .cp-num{width:52px;height:40px;border-bottom:1px solid color-mix(in srgb,var(--pencil,#2b2a27) 35%,transparent);border-radius:0;background:none;color:var(--pencil,#2b2a27);font:500 36px/1 Caveat,var(--font)}
+:root[data-style='sketch'] .cp-num:hover{border-bottom-color:var(--pencil,#2b2a27)}
+:root[data-style='sketch'] .cp-num:focus{background:none;box-shadow:none;border-bottom-color:var(--red-pencil,#c8553d);color:var(--red-pencil,#c8553d)}
+:root[data-style='sketch'] .clock-panel .cp-step{color:var(--pencil-soft,rgb(46 45 42 / .62))}
+:root[data-style='sketch'] .clock-panel .cp-step:hover{color:var(--red-pencil,#c8553d)}
+:root[data-style='sketch'] .cp-alarm-new{gap:14px;padding-right:6px}
+:root[data-style='sketch'] .cp-alarm-new .cp-go,:root[data-style='sketch'] .cp-alarm-new .cp-go:hover:not(:disabled){flex:none;width:36px;height:36px;padding:0;border-radius:50%;letter-spacing:0}
 :root[data-style='sketch'] .cp-presets{gap:6px;margin:13px 0 15px!important}
 :root[data-style='sketch'] .cp-presets button{padding:1px 0;border:1px solid color-mix(in srgb,var(--pencil,#2b2a27) 35%,transparent);border-radius:999px;background:none;box-shadow:none;color:var(--pencil-soft,rgb(46 45 42 / .7));font-size:13px}
 :root[data-style='sketch'] .cp-presets button.on{border-color:var(--pencil,#2b2a27);background-image:repeating-linear-gradient(-35deg,color-mix(in srgb,var(--pencil,#2b2a27) 16%,transparent) 0 1.2px,transparent 1.2px 6px);color:var(--pencil,#2b2a27)}
@@ -265,10 +309,6 @@ watch(tab, () => void nextTick(locate))
 :root[data-style='sketch'] .cp-go:hover:not(:disabled){box-shadow:3px 4px 0 rgb(46 45 42 / .3)}
 :root[data-style='sketch'] .cp-controls button{border:1.2px solid var(--pencil,#2b2a27);border-radius:50%;background:none;box-shadow:1.5px 2px 0 rgb(60 50 30 / .14);color:var(--pencil,#2b2a27)}
 :root[data-style='sketch'] .cp-controls button:hover{color:var(--red-pencil,#c8553d);border-color:currentColor}
-:root[data-style='sketch'] .cp-alarm-new{align-items:center;gap:12px}
-:root[data-style='sketch'] .cp-alarm-new input{height:40px;border:0;border-bottom:1px solid color-mix(in srgb,var(--pencil,#2b2a27) 35%,transparent);border-radius:0;background:none;box-shadow:none;color:var(--pencil,#2b2a27);font:500 26px/1 Caveat,var(--font)}
-:root[data-style='sketch'] .cp-alarm-new input::-webkit-calendar-picker-indicator{display:none}
-:root[data-style='sketch'] .cp-alarm-new .cp-go,:root[data-style='sketch'] .cp-alarm-new .cp-go:hover:not(:disabled){flex:none;width:36px;height:36px;padding:0;border-radius:50%;letter-spacing:0}
 :root[data-style='sketch'] .cp-alarms li:hover{background:none}
 :root[data-style='sketch'] .cp-alarms b{font-size:16px;font-weight:500}
 :root[data-style='sketch'] .cp-alarms li > svg{color:var(--red-pencil,#c8553d)}
