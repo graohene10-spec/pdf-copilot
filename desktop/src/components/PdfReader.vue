@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { installTextSelection } from '../reader/text-selection'
+import { restoreCards, releaseCards } from '../ai/explain'
 installTextSelection()
 import { ref, shallowRef, computed, watch, onMounted, onActivated, onDeactivated, onBeforeUnmount, nextTick } from 'vue'
 import * as pdfjs from 'pdfjs-dist'
@@ -582,6 +583,7 @@ async function load() {
     if (active) {
       emit('progress', { page: page.value, pageCount: total.value, progress: page.value / total.value })
       emit('ready', { pdf, page: page.value })
+      if (container.value && props.documentId) restoreCards(container.value, props.documentId)
       if (searchQuery.value) void runSearch()
     }
     const entries = await pdf.getOutline()
@@ -690,7 +692,7 @@ watch(() => [props.pageLayout, props.coverAlone] as const, async ([layout, cover
 watch(() => props.initialZoom, value => { if (active && !loading.value && viewer?.pdf) void zoom(value === 'fit' ? null : value) })
 watch(() => props.fitRequest, requestPanelFit)
 watch(() => props.sidebarFitEnabled, enabled => { if (!enabled) pendingPanelFit = false; else requestPanelFit() })
-onBeforeUnmount(() => { stopFollow(); themeWatch?.disconnect(); stopSearch(); removeSearchHighlights(); active = false; ++activation; ++epoch; clearTimeout(layoutTimer); observer?.disconnect(); releaseViewport(); viewer?.reset(); releaseCommitWaiters(); for (const clear of transientMarkers) clear(); task?.destroy() })
+onBeforeUnmount(() => { if (container.value) releaseCards(container.value); stopFollow(); themeWatch?.disconnect(); stopSearch(); removeSearchHighlights(); active = false; ++activation; ++epoch; clearTimeout(layoutTimer); observer?.disconnect(); releaseViewport(); viewer?.reset(); releaseCommitWaiters(); for (const clear of transientMarkers) clear(); task?.destroy() })
 function getViewState() {
   if (!active) return cachedView
   if (loading.value || !viewer?.pdf || !container.value) return undefined
@@ -751,6 +753,7 @@ async function resume() {
   // Rebind the parent's active-document API immediately without parsing the
   // file again. The existing current-page bitmap stays visible during refit.
   emit('ready', { pdf, page: viewer.currentPage })
+  if (container.value && props.documentId) restoreCards(container.value, props.documentId)
   if (indexedText.size) emit('text', collectedText())
   if (cachedView?.scale != null && Math.abs(cachedView.scale - viewer.displayScale) > .000001) await renderZoom(cachedView.scale, true)
   if (!active || visible !== activation) return
