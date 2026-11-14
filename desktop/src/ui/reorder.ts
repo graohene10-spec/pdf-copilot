@@ -10,6 +10,10 @@ export type ReorderOptions = {
   commit?: (ids: string[]) => void
   enabled?: () => boolean
   threshold?: number
+  /** 按住不动这么久（毫秒）物件就浮起来，可以直接拖走；不设就只在拖出一小段后浮起。 */
+  hold?: number
+  /** 物件浮起的那一刻调用（比如把当前的排序方式换成可以自由排列的那一种）。 */
+  prepare?: () => void
 }
 
 const spring = (name: string, fallback = 'cubic-bezier(.2,.8,.2,1)') => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback
@@ -87,18 +91,27 @@ export function useReorder(options: ReorderOptions) {
     state.frame = requestAnimationFrame(tick)
   }
 
+  let holdTimer = 0
+  function lift() {
+    if (!state || state.moved) return
+    clearTimeout(holdTimer)
+    options.prepare?.()
+    state.moved = true
+    dragging.value = state.id
+    const root = options.container()
+    root?.classList.add('reorder-active', 'reorder-settled')
+    document.documentElement.classList.add('reordering')
+    state.element.classList.add('reorder-lifted')
+    state.frame = requestAnimationFrame(tick)
+    place()
+  }
+
   function move(event: PointerEvent) {
     if (!state || event.pointerId !== state.pointer) return
     state.x = event.clientX; state.y = event.clientY
     if (!state.moved) {
       if (Math.hypot(state.x - state.startX, state.y - state.startY) < (options.threshold ?? 6)) return
-      state.moved = true
-      dragging.value = state.id
-      const root = options.container()
-      root?.classList.add('reorder-active', 'reorder-settled')
-      document.documentElement.classList.add('reordering')
-      state.element.classList.add('reorder-lifted')
-      state.frame = requestAnimationFrame(tick)
+      lift()
     }
     event.preventDefault()
     place()
@@ -110,6 +123,7 @@ export function useReorder(options: ReorderOptions) {
   function end() {
     const drag = state
     state = undefined
+    clearTimeout(holdTimer)
     window.removeEventListener('pointermove', move)
     window.removeEventListener('pointerup', end)
     window.removeEventListener('pointercancel', end)
@@ -141,6 +155,7 @@ export function useReorder(options: ReorderOptions) {
       grabX: event.clientX - rect.left, grabY: event.clientY - rect.top, moved: false, element, frame: 0,
       scroller: element.closest<HTMLElement>('[data-reorder-scroll]'),
     }
+    if (options.hold) holdTimer = window.setTimeout(lift, options.hold)
     window.addEventListener('pointermove', move, { passive: false })
     window.addEventListener('pointerup', end)
     window.addEventListener('pointercancel', end)

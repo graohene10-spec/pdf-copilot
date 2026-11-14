@@ -250,7 +250,15 @@ const visibleDocuments = computed(() => {
   if (groupFilter.value) list = list.filter(doc => members.value[doc.id] === groupFilter.value)
   return arranged(list)
 })
-const canArrange = computed(() => !query.value && category.value !== 'recent' && librarySort.value.key === 'default' && visibleDocuments.value.length > 1)
+// 搜索结果和「最近阅读」的顺序是算出来的，不能手排；其余时候都可以拖——正按名称、大小等排序时，一拖就改成自己排的顺序。
+const canArrange = computed(() => !query.value && category.value !== 'recent' && visibleDocuments.value.length > 1)
+function beginArrange() {
+  if (librarySort.value.key === 'default') return
+  const shown = visibleDocuments.value.map(doc => doc.id), seen = new Set(shown)
+  libraryOrder.value = [...shown, ...[...documents.value].sort((a, b) => (librarySort.value.descending ? -1 : 1) * sortValue(a, b, librarySort.value.key) || byRecent(a, b)).map(doc => doc.id).filter(id => !seen.has(id))]
+  librarySort.value = { key: 'default', descending: true }
+  notify('已改为自己排列的顺序；排序菜单里可以换回按名称等排序。')
+}
 const collection = ref<HTMLElement>()
 const libraryView = ref<HTMLElement>()
 // 文档库的框选：空白处按住左键拖框选中，Ctrl / Shift 点卡片增减；选中后底部浮出批量操作条。
@@ -322,6 +330,9 @@ const reorderLibrary = useReorder({
   apply: arrangeLibrary,
   commit: saveLibraryOrder,
   enabled: () => canArrange.value,
+  // 长按卡片或列表里的一行，它就浮起来，可以直接拖到新位置。
+  hold: 320,
+  prepare: beginArrange,
 })
 watch(visibleDocuments, docs => { if (!picked.value.size) return; const ids = new Set(docs.map(doc => doc.id)); if ([...picked.value].some(id => !ids.has(id))) picked.value = new Set([...picked.value].filter(id => ids.has(id))) })
 watch(active, value => { if (value) { clearPicked(); batchTag.value = null } })
