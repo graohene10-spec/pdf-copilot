@@ -54,7 +54,11 @@ watch(host, (layer, previous) => {
     const base = previous.getBoundingClientRect(); place.value = { left: inPage.value.left + base.left + previous.clientLeft - previous.scrollLeft, top: inPage.value.top + base.top + previous.clientTop - previous.scrollTop }
   }
 }, { flush: 'sync' })
-const position = computed(() => host.value ? { position: 'absolute' as const, left: `${inPage.value.left}px`, top: `${inPage.value.top}px` } : { left: `${place.value.left}px`, top: `${place.value.top}px` })
+const position = computed(() => ({
+  ...(host.value ? { position: 'absolute' as const, left: `${inPage.value.left}px`, top: `${inPage.value.top}px` } : { left: `${place.value.left}px`, top: `${place.value.top}px` }),
+  ...(size.value.width ? { width: `${size.value.width}px`, maxWidth: 'none' } : {}),
+  ...(size.value.height ? { height: `${size.value.height}px`, maxHeight: 'none' } : {}),
+}))
 function togglePin() { props.card.pinned = !props.card.pinned }
 function toggleFollow() { props.card.follow = props.card.follow === 'page' ? 'screen' : 'page' }
 // 拖动只按指针走过的距离挪，不去量卡片的外框：草稿主题的便签是歪着贴的，量出来的外框比它实际的位置偏一点，松手时会跳一下。
@@ -81,6 +85,22 @@ function startDrag(event: PointerEvent) {
   }
   handle.addEventListener('pointermove', move); handle.addEventListener('pointerup', end); handle.addEventListener('pointercancel', end)
 }
+// 拉右边、下边或右下角改便签的大小；内容放不下时在便签里滚动。
+const size = ref<{ width?: number; height?: number }>({})
+function startResize(event: PointerEvent, edge: 'e' | 's' | 'se') {
+  if (event.button !== 0 || !box.value) return
+  const handle = event.currentTarget as HTMLElement
+  let x = event.clientX, y = event.clientY, width = size.value.width ?? box.value.offsetWidth, height = size.value.height ?? box.value.offsetHeight
+  handle.setPointerCapture(event.pointerId); dragging.value = true; event.preventDefault(); event.stopPropagation()
+  const move = (next: PointerEvent) => {
+    if (edge !== 's') width = Math.min(innerWidth - 24, Math.max(180, width + next.clientX - x))
+    if (edge !== 'e') height = Math.min(innerHeight - 24, Math.max(72, height + next.clientY - y))
+    x = next.clientX; y = next.clientY
+    size.value = { width: edge === 's' ? size.value.width : width, height: edge === 'e' ? size.value.height : height }
+  }
+  const end = () => { handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', end); handle.removeEventListener('pointercancel', end); dragging.value = false }
+  handle.addEventListener('pointermove', move); handle.addEventListener('pointerup', end); handle.addEventListener('pointercancel', end)
+}
 // 中键是「解释」：不当作点了外面。
 function outside(event: Event) { if (props.card.pinned || (event as PointerEvent).button === 1) return; if (!box.value?.contains(event.target as Node)) emit('close') }
 function key(event: KeyboardEvent) { if (event.key === 'Escape' && !props.card.pinned) emit('close') }
@@ -94,11 +114,11 @@ watch(() => [props.card.item.text, props.card.item.status, props.card.item.reaso
 
 <template>
   <Teleport :to="host || 'body'">
-  <div ref="box" class="selection-translation explain-card" :class="{ pinned: card.pinned, dragging, 'in-page': Boolean(host), morph: Boolean(card.from) }" role="status" aria-live="polite" :style="position" @pointerdown.stop @mousedown.stop @click.stop @dblclick.stop @contextmenu.stop>
+  <div ref="box" class="selection-translation explain-card" :class="{ pinned: card.pinned, dragging, sized: Boolean(size.width || size.height), 'in-page': Boolean(host), morph: Boolean(card.from) }" role="status" aria-live="polite" :style="position" @pointerdown.stop="$event.target === box && startDrag($event)" @mousedown.stop @click.stop @dblclick.stop @contextmenu.stop>
     <Transition name="st-swap" mode="out-in" @after-enter="settle">
       <div v-if="showFrom" key="from" class="st-text" v-html="renderMarkdown(card.from || '')"></div>
       <div v-else key="explain" class="st-explain">
-        <div class="ec-head" @pointerdown="startDrag">
+        <div class="ec-head" @pointerdown.stop="startDrag">
           <span class="st-term">{{ card.item.term.length > 48 ? card.item.term.slice(0, 48) + '…' : card.item.term }}</span>
           <button v-if="card.pinned && card.anchor" type="button" class="ec-tool" :aria-label="card.follow === 'page' ? '跟着书页走' : '停在屏幕上'" :data-tip="card.follow === 'page' ? '现在跟着书页走，点一下改成停在屏幕上' : '现在停在屏幕上，点一下改成跟着书页走'" @click="toggleFollow"><AppIcon :name="card.follow === 'page' ? 'doc' : 'fullscreen'" :size="13" /></button>
           <button type="button" class="ec-tool ec-pin" :class="{ on: card.pinned }" :aria-pressed="card.pinned" :aria-label="card.pinned ? '拔下图钉' : '钉住'" :data-tip="card.pinned ? '拔下图钉（之后点别处就消失）' : '钉住：不会自己消失，可以拖动'" @click="togglePin"><AppIcon name="pin" :size="13" /></button>
@@ -106,12 +126,24 @@ watch(() => [props.card.item.text, props.card.item.status, props.card.item.reaso
         <ExplainBody :item="card.item" />
       </div>
     </Transition>
+    <i class="ec-resize ec-e" @pointerdown="startResize($event, 'e')"></i><i class="ec-resize ec-s" @pointerdown="startResize($event, 's')"></i><i class="ec-resize ec-se" @pointerdown="startResize($event, 'se')"></i>
   </div>
   </Teleport>
 </template>
 
 <style>
-.explain-card{min-width:220px}
+.explain-card{min-width:180px;display:flex;flex-direction:column;overflow:visible!important}
+.explain-card > :is(.st-explain,.st-text){min-height:0;overflow:auto}
+.explain-card .st-explain{display:flex;flex-direction:column;flex:1}
+.explain-card .explain-body{flex:1;min-height:0;overflow:auto}
+.explain-card.sized .st-explain{max-height:none!important}
+/* 右边、下边各一条看不见的把手，右下角一个小角标。 */
+.ec-resize{position:absolute;z-index:2;touch-action:none}
+.ec-e{top:8px;bottom:14px;right:-4px;width:9px;cursor:ew-resize}
+.ec-s{left:8px;right:14px;bottom:-4px;height:9px;cursor:ns-resize}
+.ec-se{right:-3px;bottom:-3px;width:16px;height:16px;cursor:nwse-resize}
+.ec-se::after{content:'';position:absolute;right:5px;bottom:5px;width:7px;height:7px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;opacity:0;transition:opacity .15s}
+.explain-card:hover .ec-se::after,.explain-card.dragging .ec-se::after{opacity:.4}
 .explain-card.morph{animation:none}
 /* 跟着书页走时压在工具栏的毛边（z-index 4）下面、书页上面。 */
 .explain-card.in-page{z-index:3;animation:none}
