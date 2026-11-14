@@ -1689,6 +1689,11 @@ kbd {
 .document-collection.arrangeable > .document-card { touch-action: none; }
 .document-collection.reorder-settled > .document-card { animation: none; }
 
+/* 抬起来的卡片不能还带着入场动画（草稿主题的「落到桌上」等）：动画期间它会盖掉拖动用的位移，卡片不跟手，松手才跳到新位置。 */
+.document-collection > .document-card:is(.reorder-lifted, .reorder-landing) {
+  animation: none !important;
+}
+
 .document-collection > .document-card.reorder-lifted {
   z-index: 30;
   translate: none;
