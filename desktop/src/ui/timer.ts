@@ -31,10 +31,14 @@ export const remaining = () => clock.mode !== 'down' ? 0 : clock.paused ? clock.
 /** 正计时已经走了多少毫秒。 */
 export const elapsed = () => clock.mode !== 'up' ? 0 : clock.paused ? clock.held : Math.max(0, clock.now - clock.mark)
 
+/** 一天分五段：这样 00:30 是「凌晨 12:30」，12:30 是「中午 12:30」，不会混。icon 是 AppIcon 里的图标名。 */
+export function period(hours: number) {
+  return hours < 6 ? { name: '凌晨', icon: 'dawn' } : hours < 12 ? { name: '上午', icon: 'sunrise' } : hours < 13 ? { name: '中午', icon: 'sun' } : hours < 18 ? { name: '下午', icon: 'sunset' } : { name: '晚上', icon: 'moon' }
+}
 /** 「下午 3:42」：不带秒。 */
 export function timeLabel(at: number) {
   const date = new Date(at), hours = date.getHours()
-  return `${hours < 12 ? '上午' : '下午'} ${hours % 12 || 12}:${String(date.getMinutes()).padStart(2, '0')}`
+  return `${period(hours).name} ${hours % 12 || 12}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 /** 「1:02:03」或「02:03」。倒计时向上取整，这样刚开始时显示的是设定的时间，归零那一刻正好响。 */
 export function span(ms: number, up = false) {

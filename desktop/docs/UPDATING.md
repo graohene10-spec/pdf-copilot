@@ -1,15 +1,15 @@
 # 升级开智
 
-当前桌面版为 [0.10.49](https://github.com/graohene10-spec/pdf-copilot/releases/tag/desktop-v0.10.49)。可以在「设置 → 更新」查看当前版本和发行形式，并点击「检查更新」。设置共有「外观、阅读、快捷键、AI、更新」五页。
+当前桌面版为 [0.10.50](https://github.com/graohene10-spec/pdf-copilot/releases/tag/desktop-v0.10.50)。可以在「设置 → 更新」查看当前版本和发行形式，并点击「检查更新」。设置共有「外观、阅读、快捷键、AI、更新」五页。
 
 ## 升级后留意
 
 - 默认回车发送问题，`Ctrl + Enter` 或 `Shift + Enter` 换行。旧默认发送绑定 `Ctrl + Enter` 会迁移为回车发送，其他自定义发送组合键保留。
 - 「设置 → 外观 → 边缘高光」默认 50%，可在 0–100% 调整并实时预览。玻璃可读性仍可选择加厚玻璃、切换字色或关闭。
 - PDF 与 Markdown 都可用 `Alt + B` 添加书签，`Ctrl + ↑ / ↓` 跳转；Markdown 新增框选、手写标记与整篇缩放。
-- 新版更新器优先使用 GitHub API 的附件 SHA-256 摘要。0.6.0 及更早版本若提示缺少校验信息，可手动下载 0.10.49；后续更新使用新的校验方式。
+- 新版更新器优先使用 GitHub API 的附件 SHA-256 摘要。0.6.0 及更早版本若提示缺少校验信息，可手动下载 0.10.50；后续更新使用新的校验方式。
 
-完整改进见 [0.10.49 更新说明](../RELEASE_NOTES_0.10.49.md) 和[使用说明](../README.md)。
+完整改进见 [0.10.50 更新说明](../RELEASE_NOTES_0.10.50.md) 和[使用说明](../README.md)。
 
 ## 选择升级方式
 
@@ -43,11 +43,11 @@
 
 ## 手动升级
 
-在[桌面版 0.10.49 发布页](https://github.com/graohene10-spec/pdf-copilot/releases/tag/desktop-v0.10.49)选择对应附件；以后升级可从[发布列表](https://github.com/graohene10-spec/pdf-copilot/releases)选择较新的 `desktop-v` 版本。
+在[桌面版 0.10.50 发布页](https://github.com/graohene10-spec/pdf-copilot/releases/tag/desktop-v0.10.50)选择对应附件；以后升级可从[发布列表](https://github.com/graohene10-spec/pdf-copilot/releases)选择较新的 `desktop-v` 版本。
 
-**安装版**：下载 `kaizhi_0.10.49_x64-setup.exe`，关闭开智后运行安装包即可。从 0.10.1 及更早版本升级时，新版装进 `%LOCALAPPDATA%\OpenIntelligence`，旧的「开智」安装会在新版第一次启动时静默卸载。无需先卸载，也无需重新导入文档。
+**安装版**：下载 `kaizhi_0.10.50_x64-setup.exe`，关闭开智后运行安装包即可。从 0.10.1 及更早版本升级时，新版装进 `%LOCALAPPDATA%\OpenIntelligence`，旧的「开智」安装会在新版第一次启动时静默卸载。无需先卸载，也无需重新导入文档。
 
-**免安装版**：下载 `kaizhi_0.10.49_x64-portable.zip`，关闭开智，解压后将 `OpenIntelligence-portable` 中的新文件复制到原程序文件夹并替换同名文件。保留 `OpenIntelligence.exe` 旁的 `native-host/` 文件夹，以及原来额外放入的个人文件。也可以解压到新目录后运行；同一 Windows 账号下仍会读取原文档库。
+**免安装版**：下载 `kaizhi_0.10.50_x64-portable.zip`，关闭开智，解压后将 `OpenIntelligence-portable` 中的新文件复制到原程序文件夹并替换同名文件。保留 `OpenIntelligence.exe` 旁的 `native-host/` 文件夹，以及原来额外放入的个人文件。也可以解压到新目录后运行；同一 Windows 账号下仍会读取原文档库。
 
 发布页同时提供完整源码、`manifest.json` 和 `SHA256SUMS.txt`。源码包用于开发，不是可直接运行的桌面程序。
 
