@@ -4,7 +4,7 @@
 
 | 产品 | 最新正式版 | 下载与说明 |
 | --- | --- | --- |
-| 开智 Windows 桌面版 | **0.10.48** | [下载](https://github.com/graohene10-spec/pdf-copilot/releases/tag/desktop-v0.10.48) · [使用说明](desktop/README.md) · [本版更新](desktop/RELEASE_NOTES_0.10.48.md) |
+| 开智 Windows 桌面版 | **0.10.49** | [下载](https://github.com/graohene10-spec/pdf-copilot/releases/tag/desktop-v0.10.49) · [使用说明](desktop/README.md) · [本版更新](desktop/RELEASE_NOTES_0.10.49.md) |
 | PDF Copilot 浏览器扩展 | **v0.3.3** | [下载](https://github.com/graohene10-spec/pdf-copilot/releases/tag/v0.3.3) · [扩展教程](docs/USER_GUIDE.md) |
 
 ## 开智 Windows 桌面版
@@ -24,16 +24,16 @@
 
 | 文件 | 用途 |
 | --- | --- |
-| [kaizhi_0.10.48_x64-setup.exe](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.10.48/kaizhi_0.10.48_x64-setup.exe) | Windows x64 安装版 |
-| [kaizhi_0.10.48_x64-portable.zip](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.10.48/kaizhi_0.10.48_x64-portable.zip) | 免安装版；全部解压后运行 `OpenIntelligence-portable/OpenIntelligence.exe` |
-| [kaizhi_0.10.48_source.zip](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.10.48/kaizhi_0.10.48_source.zip) | 完整源码，供开发者构建 |
+| [kaizhi_0.10.49_x64-setup.exe](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.10.49/kaizhi_0.10.49_x64-setup.exe) | Windows x64 安装版 |
+| [kaizhi_0.10.49_x64-portable.zip](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.10.49/kaizhi_0.10.49_x64-portable.zip) | 免安装版；全部解压后运行 `OpenIntelligence-portable/OpenIntelligence.exe` |
+| [kaizhi_0.10.49_source.zip](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.10.49/kaizhi_0.10.49_source.zip) | 完整源码，供开发者构建 |
 | manifest.json / SHA256SUMS.txt | 发布清单与附件校验值 |
 
 1. 安装或解压运行，系统需有 WebView2；免安装版保留程序旁的 `native-host/` 文件夹。
 2. 点击「加入文档」、按 `Ctrl + O` 或拖入 PDF / Markdown 文件，即可阅读；包内 `samples/` 提供示例。
 3. 需要 AI 时进入「设置 → AI」：API 服务填写自己的 Key，Codex 使用本机已安装并登录的程序。打开「阅读助手」即可提问。
 
-**升级到 0.10.48**：0.3.1 及以后版本、0.3.0 安装版可在应用内升级；旧版若提示缺少校验信息，可手动下载本版。0.2.2 及更早安装版、0.3.0 及更早免安装版需手动升级。文档库、阅读进度、设置和已保存凭据继续沿用；免安装版的数据也保存在当前 Windows 账号的应用数据目录。具体步骤见[升级指南](desktop/docs/UPDATING.md)。
+**升级到 0.10.49**：0.3.1 及以后版本、0.3.0 安装版可在应用内升级；旧版若提示缺少校验信息，可手动下载本版。0.2.2 及更早安装版、0.3.0 及更早免安装版需手动升级。文档库、阅读进度、设置和已保存凭据继续沿用；免安装版的数据也保存在当前 Windows 账号的应用数据目录。具体步骤见[升级指南](desktop/docs/UPDATING.md)。
 
 [桌面使用与快捷键](desktop/README.md) · [升级与备份](desktop/docs/UPDATING.md) · [桌面隐私说明](desktop/docs/PRIVACY.md) · [源码构建与发布](desktop/docs/RELEASING.md)
 
