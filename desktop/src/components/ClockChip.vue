@@ -4,7 +4,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import AppIcon from './AppIcon.vue'
 import WheelColumn from './WheelColumn.vue'
-import { addAlarm, clock, dismissRing, elapsed, pauseTimer, remaining, removeAlarm, rememberFields, resumeTimer, span, startCountdown, startStopwatch, stopTimer, timeLabel } from '../ui/timer'
+import { addAlarm, clock, dismissRing, elapsed, pauseTimer, remaining, removeAlarm, rememberFields, resumeTimer, span, period, startCountdown, startStopwatch, stopTimer, timeLabel } from '../ui/timer'
 
 const open = ref(false)
 const tab = ref<'timer' | 'alarm'>('timer')
@@ -16,7 +16,7 @@ function locate() {
   place.value = box && box.width ? { top: Math.round(box.bottom + 8), right: Math.max(8, Math.round(innerWidth - box.right)) } : { top: 12, right: 12 }
 }
 function toggle() { open.value = !open.value }
-watch(open, value => { if (value) { locate(); sweep.value = (Date.now() % 60000) / 1000; fields.h = clock.last.h; fields.m = clock.last.m; fields.s = clock.last.s; Object.assign(alarm, nextHalfHour()) } })
+watch(open, value => { if (value) { locate(); sweep.value = (Date.now() % 60000) / 1000; fields.h = Math.min(23, clock.last.h); fields.m = clock.last.m; fields.s = clock.last.s; Object.assign(alarm, nextHalfHour()) } })
 watch(() => clock.ringing, ringing => { if (ringing) open.value = true })
 function outside(event: PointerEvent) { if (!open.value || clock.ringing) return; const target = event.target as Node; if (!panel.value?.contains(target) && !chip.value?.contains(target)) open.value = false }
 function key(event: KeyboardEvent) { if (event.key === 'Escape' && open.value && !clock.ringing) { open.value = false; chip.value?.focus() } }
@@ -26,35 +26,13 @@ onBeforeUnmount(() => { document.removeEventListener('pointerdown', outside, tru
 // ---- 现在几点 ------------------------------------------------------------------
 const nowLabel = computed(() => timeLabel(clock.now))
 const half = computed(() => nowLabel.value.split(' ')[0]), digits = computed(() => nowLabel.value.split(' ')[1])
+const nowIcon = computed(() => period(new Date(clock.now).getHours()).icon)
 const today = computed(() => { const date = new Date(clock.now); return `${date.getMonth() + 1}月${date.getDate()}日 周${'日一二三四五六'[date.getDay()]}` })
 
 // ---- 计时 ----------------------------------------------------------------------
-const fields = reactive<Record<string, number>>({ h: clock.last.h, m: clock.last.m, s: clock.last.s })
-// 每一格是一个自己画的数字：点上下箭头（按住连续变）、滚轮、方向键或直接敲数字都能改，没有文本框的光标和选区。
-type Spin = { key: string; label: string; max: number; model: Record<string, number> }
-const timerSpins: Spin[] = [{ key: 'h', label: '时', max: 99, model: fields }, { key: 'm', label: '分', max: 59, model: fields }, { key: 's', label: '秒', max: 59, model: fields }]
-function bump(spin: Spin, by: number) { const size = spin.max + 1; spin.model[spin.key] = (spin.model[spin.key]! + by + size) % size }
-// 刚点进一格时敲的第一个数字从头写；接着敲的往后补一位。
-let fresh = true
-function keySpin(spin: Spin, event: KeyboardEvent, enter: () => void) {
-  const value = spin.model[spin.key]!
-  if (/^\d$/.test(event.key)) { const digit = Number(event.key), next = fresh ? digit : (value % 10) * 10 + digit; spin.model[spin.key] = next > spin.max ? digit : next; fresh = false }
-  else if (event.key === 'ArrowUp') bump(spin, 1)
-  else if (event.key === 'ArrowDown') bump(spin, -1)
-  else if (event.key === 'Backspace' || event.key === 'Delete') { spin.model[spin.key] = event.key === 'Delete' ? 0 : Math.floor(value / 10); fresh = false }
-  else if (event.key === 'Enter') enter()
-  else return
-  event.preventDefault()
-}
-let holding: ReturnType<typeof setTimeout> | undefined
-function release() { clearTimeout(holding); clearInterval(holding); holding = undefined }
-function hold(spin: Spin, by: number, event: PointerEvent) {
-  if (event.button !== 0) return
-  release(); bump(spin, by)
-  holding = setTimeout(() => { holding = setInterval(() => bump(spin, by), 80) }, 380)
-  window.addEventListener('pointerup', release, { once: true }); window.addEventListener('pointercancel', release, { once: true })
-}
-onBeforeUnmount(release)
+const fields = reactive({ h: Math.min(23, clock.last.h), m: clock.last.m, s: clock.last.s })
+// 计时的长度用三列滚轮选：时（0–23）、分、秒。
+const HOURS24 = Array.from({ length: 24 }, (_, index) => String(index).padStart(2, '0'))
 const PRESETS = [5, 15, 25, 60]
 function preset(minutes: number) { fields.h = Math.floor(minutes / 60); fields.m = minutes % 60; fields.s = 0 }
 const total = computed(() => ((fields.h! * 60 + fields.m!) * 60 + fields.s!) * 1000)
@@ -73,7 +51,9 @@ const share = computed(() => clock.mode === 'down' ? (clock.total ? left.value /
 function nextHalfHour() { const date = new Date(Date.now() + 30 * 60000); date.setMinutes(date.getMinutes() < 30 ? 30 : 60, 0, 0); return { h: date.getHours(), m: date.getMinutes() } }
 const alarm = reactive<Record<string, number>>(nextHalfHour())
 // 三列滚轮：上午 / 下午、时（12、1…11）、分。
-const HALVES = ['上午', '下午'], HOURS12 = ['12', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'], MINUTES = Array.from({ length: 60 }, (_, index) => String(index).padStart(2, '0'))
+// 第一列的两行跟着钟点变：12 点是「凌晨 / 中午」，3 点是「凌晨 / 下午」，7 点是「上午 / 晚上」。
+const halves = computed(() => [0, 1].map(half => period(half * 12 + alarm.h! % 12)))
+const HOURS12 = ['12', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'], MINUTES = Array.from({ length: 60 }, (_, index) => String(index).padStart(2, '0'))
 const alarmHalf = computed({ get: () => alarm.h! < 12 ? 0 : 1, set: value => { alarm.h = value * 12 + alarm.h! % 12 } })
 const alarmHour = computed({ get: () => alarm.h! % 12, set: value => { alarm.h = alarmHalf.value * 12 + value } })
 const alarmMinute = computed({ get: () => alarm.m!, set: value => { alarm.m = value } })
@@ -97,10 +77,10 @@ const sweep = ref(0)
 const hands = computed(() => { const date = new Date(clock.now), minutes = date.getMinutes(); return { hour: (date.getHours() % 12 + minutes / 60) * 30, minute: minutes * 6 } })
 const hero = computed(() => {
   const ringing = clock.ringing
-  if (ringing) return ringing.kind === 'alarm' ? { small: '闹钟响了', big: timeLabel(ringing.at).split(' ')[1], sub: timeLabel(ringing.at).split(' ')[0] } : { small: '时间到', big: '00:00', sub: ringText.value }
-  if (clock.mode === 'down') return { small: clock.paused ? '已暂停' : '倒计时', big: reading.value, sub: clock.paused ? '' : `${timeLabel(clock.mark)} 到点` }
-  if (clock.mode === 'up') return { small: clock.paused ? '已暂停' : '正计时', big: reading.value, sub: '' }
-  return { small: half.value, big: digits.value, sub: today.value }
+  if (ringing) return ringing.kind === 'alarm' ? { small: '闹钟响了', icon: 'bell', big: timeLabel(ringing.at).split(' ')[1], sub: timeLabel(ringing.at).split(' ')[0] } : { small: '时间到', icon: 'bell', big: '00:00', sub: ringText.value }
+  if (clock.mode === 'down') return { small: clock.paused ? '已暂停' : '倒计时', icon: clock.paused ? 'pause' : 'timer', big: reading.value, sub: clock.paused ? '' : `${timeLabel(clock.mark)} 到点` }
+  if (clock.mode === 'up') return { small: clock.paused ? '已暂停' : '正计时', icon: clock.paused ? 'pause' : 'timer', big: reading.value, sub: '' }
+  return { small: half.value, icon: nowIcon.value, big: digits.value, sub: today.value }
 })
 watch(tab, () => void nextTick(locate))
 </script>
@@ -112,7 +92,7 @@ watch(tab, () => void nextTick(locate))
       <svg class="cc-ring" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6" /><circle cx="8" cy="8" r="6" pathLength="1" :stroke-dasharray="`${share} 1`" /></svg>
       <span>{{ reading }}</span>
     </template>
-    <template v-else><AppIcon v-if="clock.alarms.length" name="bell" :size="13" class="cc-alarm" /><span><small>{{ half }}</small>{{ digits }}</span></template>
+    <template v-else><AppIcon :name="nowIcon" :size="14" class="cc-alarm" /><span><small>{{ half }}</small>{{ digits }}</span><i v-if="clock.alarms.length" class="cc-dot" aria-label="有闹钟"></i></template>
   </button>
   <Teleport to="body">
     <Transition name="clock-pop">
@@ -129,7 +109,7 @@ watch(tab, () => void nextTick(locate))
             <g class="cp-second" :style="{ animationDelay: `-${sweep}s` }"><path d="M50 62.5V22.5" /><circle cx="50" cy="62.5" r="1.3" /></g>
             <circle class="cp-hub" cx="50" cy="54" r="1.5" />
           </svg>
-          <p class="cp-read"><small>{{ hero.small }}</small><b>{{ hero.big }}</b><span>{{ hero.sub }}</span></p>
+          <p class="cp-read"><small><AppIcon :name="hero.icon" :size="13" />{{ hero.small }}</small><b>{{ hero.big }}</b><span>{{ hero.sub }}</span></p>
         </div>
         <!-- 到点 -->
         <button v-if="clock.ringing" type="button" class="cp-go cp-ok" @click="done">好</button>
@@ -146,13 +126,11 @@ watch(tab, () => void nextTick(locate))
               <button type="button" aria-label="结束计时" data-tip="结束" @click="stopTimer"><AppIcon name="stop" :size="15" /></button>
             </p>
             <template v-else>
-              <div class="cp-fields">
-                <div v-for="spin in timerSpins" :key="spin.key" class="cp-field">
-                  <button type="button" class="cp-step up" tabindex="-1" :aria-label="`${spin.label}加一`" @pointerdown.prevent="hold(spin, 1, $event)"><AppIcon name="down" :size="12" /></button>
-                  <span class="cp-num" tabindex="0" role="spinbutton" :aria-label="spin.label" :aria-valuenow="spin.model[spin.key]" aria-valuemin="0" :aria-valuemax="spin.max" @focus="fresh = true" @keydown="keySpin(spin, $event, start)" @wheel.prevent="bump(spin, $event.deltaY < 0 ? 1 : -1)">{{ String(spin.model[spin.key]).padStart(2, '0') }}</span>
-                  <button type="button" class="cp-step" tabindex="-1" :aria-label="`${spin.label}减一`" @pointerdown.prevent="hold(spin, -1, $event)"><AppIcon name="down" :size="12" /></button>
-                  <small>{{ spin.label }}</small>
-                </div>
+              <div class="cp-wheels units" @keydown.enter="start">
+                <WheelColumn v-model="fields.h" :items="HOURS24" loop label="时" />
+                <WheelColumn v-model="fields.m" :items="MINUTES" loop label="分" />
+                <WheelColumn v-model="fields.s" :items="MINUTES" loop label="秒" />
+                <span v-for="(unit, index) in ['时', '分', '秒']" :key="unit" class="cp-unit" :style="{ '--i': index }">{{ unit }}</span>
               </div>
               <p class="cp-presets"><button v-for="minutes in PRESETS" :key="minutes" type="button" :class="{ on: total === minutes * 60000 }" @click="preset(minutes)">{{ minutes < 60 ? `${minutes} 分` : `${minutes / 60} 小时` }}</button></p>
               <button type="button" class="cp-go" :aria-label="total ? '开始倒计时' : '开始正计时'" :data-tip="total ? '开始倒计时' : '没填时间：正计时'" @click="start"><AppIcon name="play" :size="14" />{{ total ? '开始' : '正计时' }}</button>
@@ -161,13 +139,13 @@ watch(tab, () => void nextTick(locate))
           <!-- 闹钟 -->
           <template v-else>
             <div class="cp-wheels">
-              <WheelColumn v-model="alarmHalf" :items="HALVES" label="上午或下午" />
+              <WheelColumn v-model="alarmHalf" :items="halves.map(item => item.name)" :icons="halves.map(item => item.icon)" label="时段" />
               <WheelColumn v-model="alarmHour" :items="HOURS12" loop label="时" />
               <WheelColumn v-model="alarmMinute" :items="MINUTES" loop label="分" />
             </div>
             <button type="button" class="cp-go cp-add" aria-label="定闹钟" data-tip="定闹钟" @click="setAlarm"><AppIcon name="plus" :size="14" />添加</button>
             <TransitionGroup name="cp-alarm" tag="ul" class="cp-alarms">
-              <li v-for="alarm in clock.alarms" :key="alarm.id"><AppIcon name="bell" :size="13" /><b>{{ alarmLabel(alarm.at) }}</b><button type="button" aria-label="取消这个闹钟" data-tip="取消" @click="removeAlarm(alarm.id)"><AppIcon name="close" :size="12" /></button></li>
+              <li v-for="alarm in clock.alarms" :key="alarm.id"><AppIcon :name="period(new Date(alarm.at).getHours()).icon" :size="14" /><b>{{ alarmLabel(alarm.at) }}</b><button type="button" aria-label="取消这个闹钟" data-tip="取消" @click="removeAlarm(alarm.id)"><AppIcon name="close" :size="12" /></button></li>
             </TransitionGroup>
           </template>
         </template>
@@ -180,7 +158,10 @@ watch(tab, () => void nextTick(locate))
 /* ---- 顶栏上的小钟 ---- */
 .app-topbar .topbar-actions .icon-button.clock-chip{flex:none;width:auto;min-width:0;gap:6px;padding:0 10px;font-size:12.5px;font-weight:550;font-variant-numeric:tabular-nums;white-space:nowrap;letter-spacing:.01em}
 .clock-chip small{margin-right:.3em;font-size:.82em;font-weight:500;opacity:.62}
-.clock-chip .cc-alarm{opacity:.6}
+.clock-chip .cc-alarm{opacity:.62}
+.app-topbar .topbar-actions .icon-button.clock-chip{position:relative}
+.cc-dot{position:absolute;top:6px;right:6px;width:5px;height:5px;border-radius:50%;background:var(--accent)}
+:root[data-style='sketch'] .cc-dot{background:var(--red-pencil,#c8553d)}
 .cc-ring{flex:none;rotate:-90deg}
 .cc-ring circle{fill:none;stroke:currentColor;stroke-width:2}
 .cc-ring circle:first-child{opacity:.18}
@@ -217,7 +198,7 @@ watch(tab, () => void nextTick(locate))
 .cp-face.shake{transform-origin:50% 8%;animation:cp-shake .9s ease-in-out infinite}
 @keyframes cp-shake{0%,100%{rotate:0deg}25%{rotate:-5deg}75%{rotate:5deg}}
 .cp-read{display:flex;flex-direction:column;min-width:0}
-.cp-read small{color:var(--muted);font-size:11px;line-height:1.3;letter-spacing:.14em}
+.cp-read small{display:flex;align-items:center;gap:4px;color:var(--muted);font-size:11px;line-height:1.3;letter-spacing:.14em}
 .cp-read b{font-size:34px;font-weight:250;line-height:1.1;letter-spacing:-.01em;white-space:nowrap}
 .cp-read span{min-height:1.3em;color:var(--muted);font-size:11.5px;line-height:1.3}
 .cp-tabs{display:grid;grid-template-columns:1fr 1fr;gap:2px;margin:13px 0 12px;padding:2px;border-radius:10px;background:color-mix(in srgb,var(--ink) 7%,transparent)}
@@ -225,16 +206,6 @@ watch(tab, () => void nextTick(locate))
 .cp-tabs button:hover:not(.on){background:none;color:var(--ink)}
 .cp-tabs button.on,.cp-tabs button.on:hover{background:color-mix(in srgb,var(--surface,#fff) 82%,transparent);box-shadow:0 1px 3px rgb(0 0 0 / .14);color:var(--ink);font-weight:600}
 .cp-tabs i{min-width:15px;padding:0 4px;border-radius:999px;background:var(--accent);color:#fff;font-size:10px;font-style:normal;line-height:15px}
-.cp-fields{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-.cp-field{position:relative;display:flex;flex-direction:column;align-items:center;color:var(--muted)}
-.cp-field small{margin-top:1px;font-size:11px}
-.cp-num{display:grid;place-items:center;width:100%;height:44px;border-radius:12px;background:var(--fill-3);color:var(--ink);font-size:25px;font-weight:350;cursor:ns-resize;outline:none!important;user-select:none;-webkit-user-select:none;transition:background-color .15s,box-shadow .15s,color .15s,border-color .15s}
-.cp-num:hover{background:var(--fill-2)}
-.cp-num:focus{background:var(--fill-4);box-shadow:0 0 0 1.5px color-mix(in srgb,var(--accent) 60%,transparent);color:var(--accent)}
-.clock-panel .cp-step{width:100%;height:15px;padding:0;border:0;border-radius:6px;background:none;box-shadow:none;color:var(--muted);opacity:.45}
-.cp-step.up svg{rotate:180deg}
-.clock-panel .cp-step:hover{background:none;color:var(--accent);opacity:1}
-.clock-panel .cp-step:active{scale:.8}
 .cp-presets{display:flex;gap:4px;margin:10px 0 12px!important}
 .cp-presets button{flex:1;padding:3px 0;border-radius:999px;background:none;box-shadow:none;color:var(--secondary,var(--muted));font-size:11.5px;white-space:nowrap}
 .cp-presets button.on{border-color:color-mix(in srgb,var(--accent) 55%,transparent);color:var(--accent)}
@@ -245,10 +216,16 @@ watch(tab, () => void nextTick(locate))
 .cp-controls{display:flex;justify-content:center;gap:12px;padding:2px 0 2px}
 .cp-controls button{width:40px;height:40px;padding:0;border-radius:50%}
 /* 闹钟：三列滚轮，中间一条选中带。 */
-.cp-wheels{position:relative;display:grid;grid-template-columns:1.15fr 1fr 1fr;margin:-6px 0 2px}
+.cp-wheels{position:relative;display:grid;grid-template-columns:1.35fr 1fr 1fr;margin:-6px 0 2px}
 .cp-wheels::before{content:'';position:absolute;left:0;right:0;top:50%;height:32px;translate:0 -50%;border-radius:10px;background:var(--fill-3)}
 .cp-wheels .wheel:first-child .wheel-row{font-size:16px}
 .cp-add{margin-top:8px}
+/* 计时：三列等宽，选中带上每列数字右边标着 时 / 分 / 秒。 */
+.cp-wheels.units{grid-template-columns:repeat(3,1fr)}
+.cp-wheels.units .wheel:first-child .wheel-row{font-size:20px}
+.cp-wheels.units .wheel-row{padding-right:18px}
+.cp-unit{position:absolute;z-index:2;top:50%;left:calc(var(--i) * 33.333% + 16.667% + 8px);translate:0 -50%;color:var(--muted);font-size:11px;pointer-events:none}
+.cp-wheels.units + .cp-presets{margin-top:4px!important}
 .cp-alarms{position:relative;display:flex;flex-direction:column;gap:2px;margin:10px 0 0;padding:0;list-style:none}
 .cp-alarms:empty{margin:0}
 .cp-alarms li{display:flex;align-items:center;gap:8px;padding:5px 4px 5px 8px;border-radius:9px;color:var(--secondary,var(--ink))}
@@ -270,8 +247,6 @@ watch(tab, () => void nextTick(locate))
 :root[data-style='warm'] .cp-tabs{gap:18px;display:flex;padding:0;border-radius:0;background:none;border-bottom:.5px solid var(--warm-rule,rgb(31 30 29 / .14))}
 :root[data-style='warm'] .cp-tabs button{padding:0 0 6px;border-radius:0;margin-bottom:-.5px;border-bottom:1.5px solid transparent}
 :root[data-style='warm'] .cp-tabs button.on,:root[data-style='warm'] .cp-tabs button.on:hover{background:none;box-shadow:none;border-bottom-color:var(--accent);color:var(--accent)}
-:root[data-style='warm'] .cp-num{border-bottom:.5px solid var(--warm-rule,rgb(31 30 29 / .3));border-radius:0;background:none}
-:root[data-style='warm'] .cp-num:focus{box-shadow:none;border-bottom-color:var(--accent)}
 :root[data-style='warm'] .cp-wheels::before{border-radius:0;background:none;border-block:.5px solid var(--warm-rule,rgb(31 30 29 / .3))}
 :root[data-style='warm'] .cp-wheels{--wheel-on:var(--accent)}
 :root[data-style='warm'] .cp-presets button{border:0;border-radius:0;font-style:italic}
@@ -289,23 +264,18 @@ watch(tab, () => void nextTick(locate))
 :root[data-style='sketch'] .cp-second circle{fill:var(--red-pencil,#c8553d)}
 :root[data-style='sketch'] .cp-arc{stroke:var(--red-pencil,#c8553d)}
 :root[data-style='sketch'] .cp-hub{fill:var(--paper,#fbf8f0);stroke:var(--red-pencil,#c8553d)}
-:root[data-style='sketch'] .cp-read small,:root[data-style='sketch'] .cp-read span,:root[data-style='sketch'] .cp-field small{color:var(--pencil-soft,rgb(46 45 42 / .62));font-size:13px;letter-spacing:.04em}
+:root[data-style='sketch'] .cp-read small,:root[data-style='sketch'] .cp-read span,:root[data-style='sketch'] .cp-unit{color:var(--pencil-soft,rgb(46 45 42 / .62));font-size:13px;letter-spacing:.04em}
 :root[data-style='sketch'] .cp-read b{font-family:Caveat,var(--font);font-size:44px;font-weight:500;line-height:1;letter-spacing:.01em}
 :root[data-style='sketch'] .cp-tabs{display:flex;gap:18px;margin:14px 0 12px;padding:10px 0 0;border-radius:0;background:none;border-top:1px solid color-mix(in srgb,var(--pencil,#2b2a27) 22%,transparent)}
 :root[data-style='sketch'] .cp-tabs button{padding:0 1px 6px;border:0;border-radius:0;color:var(--pencil-soft,rgb(46 45 42 / .62));font-size:15px;background:none}
 :root[data-style='sketch'] .cp-tabs button.on,:root[data-style='sketch'] .cp-tabs button.on:hover{background:var(--scribble) no-repeat 50% 100% / 100% 6px;box-shadow:none;color:var(--pencil,#2b2a27);font-weight:600}
 :root[data-style='sketch'] .cp-tabs i{background:var(--red-pencil,#c8553d);font-family:var(--font-answer,inherit)}
-:root[data-style='sketch'] .cp-fields{gap:0;padding:0 8px}
-:root[data-style='sketch'] .cp-field + .cp-field::before{content:':';position:absolute;left:-3px;top:19px;color:var(--pencil-soft,rgb(46 45 42 / .45));font:500 30px/1 Caveat,var(--font)}
-:root[data-style='sketch'] .cp-num{width:52px;height:40px;border-bottom:1px solid color-mix(in srgb,var(--pencil,#2b2a27) 35%,transparent);border-radius:0;background:none;color:var(--pencil,#2b2a27);font:500 36px/1 Caveat,var(--font)}
-:root[data-style='sketch'] .cp-num:hover{border-bottom-color:var(--pencil,#2b2a27)}
-:root[data-style='sketch'] .cp-num:focus{background:none;box-shadow:none;border-bottom-color:var(--red-pencil,#c8553d);color:var(--red-pencil,#c8553d)}
-:root[data-style='sketch'] .clock-panel .cp-step{color:var(--pencil-soft,rgb(46 45 42 / .62))}
-:root[data-style='sketch'] .clock-panel .cp-step:hover{color:var(--red-pencil,#c8553d)}
 :root[data-style='sketch'] .cp-wheels{--wheel-on:var(--pencil,#2b2a27);--wheel-off:var(--pencil-soft,rgb(46 45 42 / .62))}
 :root[data-style='sketch'] .cp-wheels::before{left:4px;right:4px;height:34px;border-radius:0;background:none;border-block:1px solid color-mix(in srgb,var(--pencil,#2b2a27) 45%,transparent)}
 :root[data-style='sketch'] .cp-wheels .wheel-row{font:500 28px/1 Caveat,var(--font)}
 :root[data-style='sketch'] .cp-wheels .wheel:first-child .wheel-row{font:inherit;font-size:17px}
+:root[data-style='sketch'] .cp-wheels.units .wheel:first-child .wheel-row{font:500 28px/1 Caveat,var(--font)}
+:root[data-style='sketch'] .cp-unit{left:calc(var(--i) * 33.333% + 16.667% + 10px)}
 :root[data-style='sketch'] .cp-presets{gap:6px;margin:13px 0 15px!important}
 :root[data-style='sketch'] .cp-presets button{padding:1px 0;border:1px solid color-mix(in srgb,var(--pencil,#2b2a27) 35%,transparent);border-radius:999px;background:none;box-shadow:none;color:var(--pencil-soft,rgb(46 45 42 / .7));font-size:13px}
 :root[data-style='sketch'] .cp-presets button.on{border-color:var(--pencil,#2b2a27);background-image:repeating-linear-gradient(-35deg,color-mix(in srgb,var(--pencil,#2b2a27) 16%,transparent) 0 1.2px,transparent 1.2px 6px);color:var(--pencil,#2b2a27)}
