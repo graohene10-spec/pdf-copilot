@@ -51,19 +51,34 @@ watch(host, (layer, previous) => {
     observer.observe(props.card.anchor!); if (props.card.anchor!.parentElement) observer.observe(props.card.anchor!.parentElement)
   } else if (previous && box.value) {
     // 回到屏幕上：停在眼下看到的位置。
-    const rect = box.value.getBoundingClientRect(); place.value = { left: rect.left, top: rect.top }
+    const base = previous.getBoundingClientRect(); place.value = { left: inPage.value.left + base.left + previous.clientLeft - previous.scrollLeft, top: inPage.value.top + base.top + previous.clientTop - previous.scrollTop }
   }
 }, { flush: 'sync' })
 const position = computed(() => host.value ? { position: 'absolute' as const, left: `${inPage.value.left}px`, top: `${inPage.value.top}px` } : { left: `${place.value.left}px`, top: `${place.value.top}px` })
 function togglePin() { props.card.pinned = !props.card.pinned }
 function toggleFollow() { props.card.follow = props.card.follow === 'page' ? 'screen' : 'page' }
+// 拖动只按指针走过的距离挪，不去量卡片的外框：草稿主题的便签是歪着贴的，量出来的外框比它实际的位置偏一点，松手时会跳一下。
 function startDrag(event: PointerEvent) {
   if (event.button !== 0 || (event.target as HTMLElement).closest('button')) return
-  const handle = event.currentTarget as HTMLElement, origin = box.value!.getBoundingClientRect(), dx = event.clientX - origin.left, dy = event.clientY - origin.top
-  place.value = { left: origin.left, top: origin.top }
+  const handle = event.currentTarget as HTMLElement
+  let x = event.clientX, y = event.clientY
   handle.setPointerCapture(event.pointerId); dragging.value = true; event.preventDefault()
-  const move = (next: PointerEvent) => { const before = place.value; place.value = { left: Math.min(innerWidth - 40, Math.max(8 - (box.value?.offsetWidth || 0) + 40, next.clientX - dx)), top: Math.min(innerHeight - 30, Math.max(4, next.clientY - dy)) }; if (host.value) inPage.value = { left: inPage.value.left + place.value.left - before.left, top: inPage.value.top + place.value.top - before.top } }
-  const end = () => { handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', end); handle.removeEventListener('pointercancel', end); dragging.value = false; if (host.value) { const rect = box.value!.getBoundingClientRect(); place.value = { left: rect.left, top: rect.top } } remember(); locate() }
+  const move = (next: PointerEvent) => {
+    const dx = next.clientX - x, dy = next.clientY - y
+    x = next.clientX; y = next.clientY
+    if (host.value) inPage.value = { left: inPage.value.left + dx, top: inPage.value.top + dy }
+    else place.value = { left: Math.min(innerWidth - 40, Math.max(48 - (box.value?.offsetWidth || 0), place.value.left + dx)), top: Math.min(innerHeight - 30, Math.max(4, place.value.top + dy)) }
+  }
+  const end = () => {
+    handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', end); handle.removeEventListener('pointercancel', end)
+    dragging.value = false
+    // 跟着书页时，记下它现在相对那一页的位置。
+    const anchor = props.card.anchor, layer = host.value
+    if (anchor?.isConnected && layer) {
+      const slot = anchor.getBoundingClientRect(), base = layer.getBoundingClientRect()
+      if (slot.width) relative = { x: (inPage.value.left - (slot.left - base.left - layer.clientLeft + layer.scrollLeft)) / slot.width, y: (inPage.value.top - (slot.top - base.top - layer.clientTop + layer.scrollTop)) / slot.height }
+    }
+  }
   handle.addEventListener('pointermove', move); handle.addEventListener('pointerup', end); handle.addEventListener('pointercancel', end)
 }
 // 中键是「解释」：不当作点了外面。

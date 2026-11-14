@@ -598,7 +598,41 @@ kbd {
 .group-nav {
   max-height: 32vh;
   flex-shrink: 0;
+  /* 草稿主题里悬停的那一项会歪一点、描一圈边，比这一栏略大：留出余量并藏起滚动条，不然一悬停就冒出横竖两根滚动条。 */
+  overflow: hidden auto;
+  scrollbar-width: none;
+  padding: 4px 6px;
+  margin: -4px -6px;
 }
+
+.group-nav::-webkit-scrollbar {
+  display: none;
+}
+
+/* 文档库为空时的小画：摊开的一本书，扁平、手画的线。 */
+.library-empty .empty-art {
+  width: auto;
+  height: auto;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  margin-bottom: 18px;
+}
+
+.empty-art svg {
+  width: 96px;
+  height: auto;
+  overflow: visible;
+}
+
+.empty-art .ea-page { fill: color-mix(in srgb, var(--accent) 12%, var(--surface, #fff)); }
+.empty-art .ea-right { fill: color-mix(in srgb, var(--accent) 20%, var(--surface, #fff)); }
+.empty-art .ea-shade { fill: color-mix(in srgb, var(--ink) 10%, transparent); }
+.empty-art .ea-star { fill: var(--accent); }
+.empty-art .ea-line { fill: none; stroke: var(--ink); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; opacity: .8; }
+:root[data-style='sketch'] .empty-art .ea-star { fill: var(--red-pencil, #c8553d); }
+:root[data-style='sketch'] .empty-art :is(.ea-page, .ea-right) { fill: var(--paper, #fdfaf0); }
 
 .group-nav button > svg {
   flex-shrink: 0;
