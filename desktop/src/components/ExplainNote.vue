@@ -6,12 +6,13 @@ import { dropNote, keepNote, rerunExplain, type Explain, type ExplainMode } from
 
 const props = defineProps<{ item: Explain; kept: boolean; doc: string; line: number }>()
 const emit = defineEmits<{ close: [] }>()
-const saved = ref(props.kept)
+// 解释写完就自动记下来，关掉文档再打开还在；不想留的点一下「已记入」取消，或者直接「关闭」。
+const saved = ref(true)
 const leaving = ref(false)
 function keep() { if (props.item.status !== 'done') return; saved.value = !saved.value; if (saved.value) keepNote(props.doc, props.line, props.item); else dropNote(props.doc, props.item.id) }
 function again(mode: ExplainMode) { rerunExplain(props.item, mode) }
 // 留下的释义换了讲法，存的也跟着换。
-watch(() => props.item.status, status => { if (status === 'done' && saved.value) keepNote(props.doc, props.line, props.item) })
+watch(() => props.item.status, status => { if (status === 'done' && saved.value) keepNote(props.doc, props.line, props.item) }, { immediate: !props.kept })
 function discard() { dropNote(props.doc, props.item.id); leaving.value = true; setTimeout(() => emit('close'), 160) }
 </script>
 
