@@ -4,6 +4,7 @@ import { library, isDesktop, importDroppedDocuments } from './sdk'
 import { groups, members, groupFilter, currentGroup, loadGroups, createGroup, renameGroup, removeGroup, assignGroup } from './library/groups'
 import type { Doc } from './sdk/types'
 import AppIcon from './components/AppIcon.vue'
+import ClockChip from './components/ClockChip.vue'
 import FileTabs from './components/FileTabs.vue'
 import CaptureQuickPrompt from './components/CaptureQuickPrompt.vue'
 import { chatPhase, chatState, sendChat, closeChat, closeAllChats, configureRequests, stopChat, notices, dismissNotice, selectConversation, type Notice } from './ai/workspace'
@@ -1703,6 +1704,7 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
         <FileTabs v-if="tabs.length" :tabs="fileTabs" :active-id="active?.id" :group="group.length > 1 ? group : []" :visible="paneIds" @select="selectTab" @close="closeTab" @library="toggleLibrary" :library-open="libraryShown" @menu="tabMenu" @drag="tabDrag" @reorder="reorderTabs" />
         <button v-else class="breadcrumb breadcrumb-toggle" :class="{ open: libraryShown }" :aria-pressed="libraryShown" :data-tip="libraryShown ? '收起文档库，只留桌面' : '打开文档库'" @click="toggleLibrary"><AppIcon name="library" :size="15" /><b>{{ libraryShown ? currentTitle : '文档库' }}</b></button>
         <div class="topbar-actions">
+          <ClockChip />
           <template v-if="active"><button class="icon-button" :class="{ 'is-starred': active.starred }" @click="toggleStar(active)" data-tip="收藏文档" aria-label="收藏文档"><AppIcon name="star" :size="18" /></button><button class="icon-button" :class="{ active: detailsOpen }" @click="detailsOpen = !detailsOpen" data-tip="文档详情与标签" aria-label="文档详情与标签" :aria-expanded="detailsOpen"><AppIcon name="tag" :size="18" /></button><button class="icon-button split-toggle" data-split-anchor :class="{ active: splitPicker || splitView }" @click="toggleSplitPicker($event)" data-tip="并排阅读" :data-tip-key="tipKey('split')" aria-label="并排阅读" :aria-expanded="!!splitPicker"><AppIcon name="split" :size="18" /><span v-if="splitView" class="split-count">{{ paneIds.length }}</span></button><button class="ai-toggle" data-tip="阅读助手" :data-tip-key="tipKey('ai')" :class="{ active: aiOpen }" @click="toggleAssistant" :aria-expanded="aiOpen"><ClaudeBurst :size="17" />阅读助手</button></template>
           <button v-else class="icon-button" @click="toggleTheme" :data-tip="theme === 'dark' ? '切换浅色主题' : '切换深色主题'" :aria-label="theme === 'dark' ? '切换浅色主题' : '切换深色主题'"><AppIcon :name="theme === 'dark' ? 'sun' : 'moon'" :size="18" /></button>
           <button class="icon-button" @click="collapseChrome" data-tip="收起顶栏与侧栏，阅读区占满窗口" aria-label="收起顶栏与侧栏"><AppIcon name="collapse-up" :size="18" /></button>

@@ -6,7 +6,7 @@ import 'katex/dist/katex.min.css'
 import { renderMarkdown } from '../ai/render'
 import AppIcon from './AppIcon.vue'
 import ExplainBody from './ExplainBody.vue'
-import type { ExplainCardState } from '../ai/explain'
+import { rerunExplain, type ExplainCardState } from '../ai/explain'
 
 const props = defineProps<{ card: ExplainCardState }>()
 const emit = defineEmits<{ close: [] }>()
@@ -130,6 +130,11 @@ watch(() => [props.card.item.text, props.card.item.status, props.card.item.reaso
           <button type="button" class="ec-tool ec-pin" :class="{ on: card.pinned }" :aria-pressed="card.pinned" :aria-label="card.pinned ? '拔下图钉' : '钉住'" :data-tip="card.pinned ? '拔下图钉（之后点别处就消失）' : '钉住：不会自己消失，可以拖动'" @click="togglePin"><AppIcon name="pin" :size="13" /></button>
         </div>
         <ExplainBody :item="card.item" />
+        <p v-if="card.item.status !== 'error' || card.item.text" class="ec-actions">
+          <button type="button" class="ec-tool" :disabled="card.item.status === 'running'" aria-label="深入" data-tip="深入" @click="rerunExplain(card.item, 'deeper')"><AppIcon name="deeper" :size="14" /></button>
+          <button type="button" class="ec-tool" :disabled="card.item.status === 'running'" aria-label="简化" data-tip="简化" @click="rerunExplain(card.item, 'simpler')"><AppIcon name="simpler" :size="14" /></button>
+          <button type="button" class="ec-tool" :disabled="card.item.status === 'running'" aria-label="举例" data-tip="举例" @click="rerunExplain(card.item, 'example')"><AppIcon name="example" :size="14" /></button>
+        </p>
       </div>
     </Transition>
     <i class="ec-resize ec-e" @pointerdown="startResize($event, 'e')"></i><i class="ec-resize ec-s" @pointerdown="startResize($event, 's')"></i><i class="ec-resize ec-se" @pointerdown="startResize($event, 'se')"></i>
@@ -158,6 +163,13 @@ watch(() => [props.card.item.text, props.card.item.status, props.card.item.reaso
 .ec-head .st-term{flex:1;min-width:0;margin:0!important}
 .ec-tool{display:grid;place-items:center;flex:none;width:22px;height:22px;min-height:0;padding:0;border:0;border-radius:50%;background:none!important;box-shadow:none!important;color:var(--muted);opacity:.55;cursor:pointer;transition:opacity .15s,color .15s,rotate .2s var(--spring-snappy,ease-out),background-color .15s}
 .ec-tool:hover{opacity:1;background:color-mix(in srgb,var(--ink) 8%,transparent)!important}
+.ec-actions{display:flex;align-items:center;gap:2px;flex:none;margin:6px 0 -5px -5px!important}
+.ec-actions .ec-tool{width:24px;height:22px;border-radius:6px}
+.ec-actions .ec-tool:disabled{opacity:.25;cursor:default}
+.ec-actions .ec-tool:active:not(:disabled){scale:.9}
+:root[data-style='sketch'] .ec-actions .ec-tool{color:var(--pencil,#2b2a27)}
+:root[data-style='sketch'] .ec-actions .ec-tool:hover:not(:disabled){background:none!important;color:var(--red-pencil,#c0392b);rotate:-6deg}
+:root[data-style='warm'] .ec-actions .ec-tool:hover:not(:disabled){background:none!important;color:var(--accent)}
 .ec-pin{rotate:35deg}
 .ec-pin.on{opacity:1;color:var(--accent);rotate:0deg}
 .explain-card.pinned{box-shadow:var(--shadow-3),var(--glass-edge),0 0 0 1px color-mix(in srgb,var(--accent) 35%,transparent)}
