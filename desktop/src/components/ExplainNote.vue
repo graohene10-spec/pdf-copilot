@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Markdown 里插在段落下面的一条释义：可以留在笔记里、换个讲法，或者丢掉。
-import { ref, watch } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import ExplainBody from './ExplainBody.vue'
 import { dropNote, keepNote, rerunExplain, type Explain, type ExplainMode } from '../ai/explain'
 
@@ -13,11 +13,24 @@ function keep() { if (props.item.status !== 'done') return; saved.value = !saved
 function again(mode: ExplainMode) { rerunExplain(props.item, mode) }
 // 留下的释义换了讲法，存的也跟着换。
 watch(() => props.item.status, status => { if (status === 'done' && saved.value) keepNote(props.doc, props.line, props.item) }, { immediate: !props.kept })
-function discard() { dropNote(props.doc, props.item.id); leaving.value = true; setTimeout(() => emit('close'), 160) }
+// 出现和关闭都带着高度一起变：下面的正文被慢慢推开、慢慢合拢，不会一下子跳。
+const root = ref<HTMLElement>()
+const still = () => matchMedia('(prefers-reduced-motion: reduce)').matches
+const folded = { height: '0px', marginTop: '0px', marginBottom: '0px', paddingTop: '0px', paddingBottom: '0px', opacity: 0 }
+function open() { const style = getComputedStyle(root.value!); return { height: `${root.value!.offsetHeight}px`, marginTop: style.marginTop, marginBottom: style.marginBottom, paddingTop: style.paddingTop, paddingBottom: style.paddingBottom, opacity: 1 } }
+onMounted(() => { if (root.value && !props.kept && !still()) { root.value.style.overflow = 'hidden'; root.value.animate([folded, open()], { duration: 280, easing: 'cubic-bezier(.22,.9,.28,1)' }).finished.then(() => { if (root.value) root.value.style.overflow = '' }, () => {}) } })
+function discard() {
+  dropNote(props.doc, props.item.id)
+  if (!root.value || still()) { emit('close'); return }
+  leaving.value = true
+  root.value.style.overflow = 'hidden'
+  const done = () => emit('close')
+  root.value.animate([open(), folded], { duration: 240, easing: 'cubic-bezier(.4,0,.2,1)', fill: 'forwards' }).finished.then(done, done)
+}
 </script>
 
 <template>
-  <aside class="explain-note" :class="{ leaving, saved }" contenteditable="false">
+  <aside ref="root" class="explain-note" :class="{ leaving, saved }" contenteditable="false">
     <p class="en-head"><span>释义</span><b>{{ item.term.length > 60 ? item.term.slice(0, 60) + '…' : item.term }}</b></p>
     <ExplainBody :item="item" />
     <p class="en-actions">
@@ -33,8 +46,8 @@ function discard() { dropNote(props.doc, props.item.id); leaving.value = true; s
 <style>
 /* 释义卡片跟着界面风格走：液态玻璃是一块磨砂卡片，暖色极简是带陶土色竖线的象牙白纸，铅笔草稿是一张贴着胶带的便签。 */
 .explain-host{display:block}
-.explain-note{position:relative;margin:.9em 0 1.4em;padding:.85em 1.1em .8em;border:1px solid var(--glass-outline);border-radius:var(--r-lg,16px);background-color:var(--popup-glass);background-image:radial-gradient(90% 120% at 0 0,color-mix(in srgb,var(--accent) 12%,transparent),transparent 55%),var(--popup-sheen);-webkit-backdrop-filter:blur(var(--popup-blur)) saturate(var(--glass-sat));backdrop-filter:blur(var(--popup-blur)) saturate(var(--glass-sat));box-shadow:0 14px 30px -20px rgb(0 0 0 / .45),var(--glass-edge);color:var(--ink);font-size:.92em;line-height:1.65;user-select:text;animation:en-in .26s var(--ease-out) both;transform-origin:0 0}
-.explain-note.leaving{opacity:0;translate:0 -4px;transition:opacity .15s,translate .15s}
+.explain-note{position:relative;margin:.9em 0 1.4em;padding:.85em 1.1em .8em;border:1px solid var(--glass-outline);border-radius:var(--r-lg,16px);background-color:var(--popup-glass);background-image:radial-gradient(90% 120% at 0 0,color-mix(in srgb,var(--accent) 12%,transparent),transparent 55%),var(--popup-sheen);-webkit-backdrop-filter:blur(var(--popup-blur)) saturate(var(--glass-sat));backdrop-filter:blur(var(--popup-blur)) saturate(var(--glass-sat));box-shadow:0 14px 30px -20px rgb(0 0 0 / .45),var(--glass-edge);color:var(--ink);font-size:.92em;line-height:1.65;user-select:text;transform-origin:0 0}
+.explain-note.leaving{pointer-events:none}
 .explain-note p{margin:0}
 .en-head{display:flex;align-items:center;gap:.55em;margin-bottom:.35em!important;padding-right:1.8em}
 .en-head span{flex:none;padding:.1em .7em;border-radius:999px;background:linear-gradient(135deg,var(--accent),color-mix(in srgb,var(--accent) 62%,#fff));color:#fff;font-size:.72em;font-weight:650;letter-spacing:.1em;line-height:1.6}
