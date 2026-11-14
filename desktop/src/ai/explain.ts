@@ -6,6 +6,7 @@ import { createApp, reactive, shallowReactive, type App } from 'vue'
 import { looksMathy, selectionImage } from '../reader/selection-image'
 import { IMAGE_NOTE } from './translate'
 import { complete } from './complete'
+import { library } from '../sdk'
 import ExplainNote from '../components/ExplainNote.vue'
 
 export type ExplainMode = 'plain' | 'deeper' | 'example' | 'simpler'
@@ -86,12 +87,38 @@ export function closeLooseCards() { for (const card of [...explainCards]) if (!c
 // ---- Markdown：插在段落下面的释义；留下的记在本机，下次打开还在 ----
 const NOTES_KEY = 'kaizhi.explain.notes.v1'
 type Saved = { id: string; line: number; term: string; text: string }
-function allNotes(): Record<string, Saved[]> { try { return JSON.parse(localStorage.getItem(NOTES_KEY) || '{}') || {} } catch { return {} } }
+// 记在文档库的设置里（和分组、排列顺序一样，跟着库走），关掉应用再开还在；浏览器的本地存储只当备份，
+// 以前只存在那里的也并进来。
+const SETTING = 'explain.notes.v1'
+let store: Record<string, Saved[]> = {}
+const parse = (text: string | null): Record<string, Saved[]> => { try { const value = JSON.parse(text || '{}'); return value && typeof value === 'object' ? value : {} } catch { return {} } }
+const ready: Promise<void> = (async () => {
+  let local: Record<string, Saved[]> = {}
+  try { local = parse(localStorage.getItem(NOTES_KEY)) } catch { /* 读不到就算了 */ }
+  let saved: Record<string, Saved[]> = {}
+  try { saved = parse(await library.getSetting(SETTING)) } catch { /* 文档库读不到时先用本地的 */ }
+  const merged: Record<string, Saved[]> = { ...saved }
+  for (const [doc, list] of Object.entries(local)) {
+    if (!Array.isArray(list)) continue
+    const known = new Set((merged[doc] || []).map(note => note.id))
+    merged[doc] = [...(merged[doc] || []), ...list.filter(note => note && !known.has(note.id))]
+  }
+  // 读取期间已经记下的不丢。
+  for (const [doc, list] of Object.entries(store)) { const known = new Set(list.map(note => note.id)); merged[doc] = [...(merged[doc] || []).filter(note => !known.has(note.id)), ...list] }
+  store = merged
+  if (JSON.stringify(merged) !== JSON.stringify(saved)) persist()
+})()
+function persist() {
+  const text = JSON.stringify(store)
+  try { localStorage.setItem(NOTES_KEY, text) } catch { /* 备份存不下不要紧 */ }
+  void library.setSetting(SETTING, text).catch(() => { /* 存不进文档库时至少本地有一份 */ })
+}
+function allNotes(): Record<string, Saved[]> { return store }
 function writeNotes(doc: string, change: (list: Saved[]) => Saved[]) {
   if (!doc) return
-  const all = allNotes(), list = change(Array.isArray(all[doc]) ? all[doc] : [])
-  if (list.length) all[doc] = list.slice(-200); else delete all[doc]
-  try { localStorage.setItem(NOTES_KEY, JSON.stringify(all)) } catch { /* 存不下就只留在这次阅读里 */ }
+  const list = change(Array.isArray(store[doc]) ? store[doc] : [])
+  if (list.length) store[doc] = list.slice(-200); else delete store[doc]
+  void ready.then(persist)
 }
 export function keepNote(doc: string, line: number, item: Explain) { writeNotes(doc, list => [...list.filter(note => note.id !== item.id), { id: item.id, line, term: item.term, text: item.text }]) }
 export function dropNote(doc: string, id: string) { writeNotes(doc, list => list.filter(note => note.id !== id)) }
@@ -102,6 +129,7 @@ function insertNote(block: HTMLElement, item: Explain, kept: boolean) {
   if (!paper) return
   const host = document.createElement('div')
   host.className = 'explain-host'
+  host.dataset.note = item.id
   // 新的释义排在这一段已有的释义后面。
   let after: Element = block
   while (after.nextElementSibling?.classList.contains('explain-host')) after = after.nextElementSibling
@@ -118,10 +146,17 @@ export function restoreNotes(paper: HTMLElement, doc: string) {
   for (const app of mounted.get(paper) || []) app.unmount()
   mounted.delete(paper)
   paper.querySelectorAll('.explain-host').forEach(host => host.remove())
-  for (const note of allNotes()[doc] || []) {
-    const block = [...paper.querySelectorAll<HTMLElement>(`[data-source-line="${note.line}"]`)].find(item => !item.parentElement?.closest('[data-source-line]'))
-    if (block) insertNote(block, reactive<Explain>({ id: note.id, term: note.term, context: block.textContent || '', mode: 'plain', text: note.text, reasoning: '', status: 'done', error: '', startedAt: 0, ms: 0 }), true)
-  }
+  // 刚开应用时记录可能还在读：读完再插（已经读完就是马上）。期间文档又重排了就以后一次为准。
+  const turn = String((Number(paper.dataset.explainTurn) || 0) + 1)
+  paper.dataset.explainTurn = turn
+  void ready.then(() => {
+    if (!paper.isConnected || paper.dataset.explainTurn !== turn) return
+    for (const note of allNotes()[doc] || []) {
+      if (paper.querySelector(`.explain-host[data-note="${note.id}"]`)) continue
+      const block = [...paper.querySelectorAll<HTMLElement>(`[data-source-line="${note.line}"]`)].find(item => !item.parentElement?.closest('[data-source-line]'))
+      if (block) insertNote(block, reactive<Explain>({ id: note.id, term: note.term, context: block.textContent || '', mode: 'plain', text: note.text, reasoning: '', status: 'done', error: '', startedAt: 0, ms: 0 }), true)
+    }
+  })
 }
 
 export function runExplain(target: ExplainTarget, x: number, y: number, from?: string) {
