@@ -5,7 +5,16 @@ export type Project = (x: number, y: number, z: number) => [number, number, numb
 /** size：模型里 1 个单位在画布中心是多少像素；full：整块桌面（画面的常规区域之外也能画）。 */
 export type Env = { context: CanvasRenderingContext2D; project: Project; t: number; fade: number; ink: string; red: string; paper: string; hand: string; width: number; height: number; size: number; camera: number; full: { x: number; y: number; w: number; h: number }; grid: { size: number; x: number; y: number } }
 export type Painter = (env: Env) => void
-export type Sketch = { id: string; name: string; tilt: number; zoom?: number; camera?: number; facts: string[]; create: () => Painter }
+export type Sketch = { id: string; name: string; tilt: number; zoom?: number; camera?: number; facts: string[]; create: () => Painter
+  /** 这个画面很重，放到后台线程里画（sketch/scene-worker.ts），不占界面的那条线程；它不用投影，也不在后台线程里写字。 */
+  offscreen?: boolean
+  /** 后台线程里写不了手写体：画面上的字由界面这边单独写。 */
+  label?: Painter }
+/** 小画布：界面线程里是普通的 canvas，后台线程里是 OffscreenCanvas。 */
+function makeCanvas(width: number, height: number): HTMLCanvasElement {
+  if (typeof document !== 'undefined') { const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height; return canvas }
+  return new OffscreenCanvas(width, height) as unknown as HTMLCanvasElement
+}
 
 const TAU = Math.PI * 2
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value))
@@ -60,7 +69,7 @@ function shadedBalls(env: Env) {
   if (set) return set
   const SIZE = 72
   set = [0, 1, 2, 3].map(kind => {
-    const canvas = document.createElement('canvas'); canvas.width = canvas.height = SIZE
+    const canvas = makeCanvas(SIZE, SIZE)
     const c = canvas.getContext('2d', { willReadFrequently: true })!, r = SIZE / 2
     c.beginPath(); c.arc(r, r, r - 1, 0, TAU); c.clip()
     c.fillStyle = env.paper; c.fillRect(0, 0, SIZE, SIZE)
@@ -613,7 +622,7 @@ function blend(base: string, over: string, amount: number) {
   const key = `${base}|${over}|${amount}`
   let made = blends.get(key)
   if (!made) {
-    const probe = document.createElement('canvas').getContext('2d', { willReadFrequently: true })!
+    const probe = makeCanvas(1, 1).getContext('2d', { willReadFrequently: true })!
     probe.fillStyle = base; probe.fillRect(0, 0, 1, 1); probe.globalAlpha = amount; probe.fillStyle = over; probe.fillRect(0, 0, 1, 1)
     const data = probe.getImageData(0, 0, 1, 1).data
     blends.set(key, made = `rgb(${data[0]},${data[1]},${data[2]})`)
@@ -627,8 +636,7 @@ function racks(): Painter {
   const fronts = new Map<string, HTMLCanvasElement>()
   let epoch = spriteEpoch
   const drawFront = (paper: string, ink: string, size: number) => {
-    const canvas = document.createElement('canvas'), wide = size, tall = Math.round(size * TALL / (WIDE - .03))
-    canvas.width = wide; canvas.height = tall
+    const wide = size, tall = Math.round(size * TALL / (WIDE - .03)), canvas = makeCanvas(wide, tall)
     const c = canvas.getContext('2d', { willReadFrequently: true })!, pixels = size * .75, some = smooth((pixels - 10) / 8), more = smooth((pixels - 20) / 16), most = smooth((pixels - 40) / 30)
     const low = new Path2D(), mid = new Path2D(), fine = new Path2D(), dark = new Path2D()
     const a = 0, b = wide, l = wide * .1, r = wide * .9, at = (f: number) => tall * f, round = Math.min(wide * .09, tall * .03)
@@ -750,9 +758,13 @@ function racks(): Painter {
     }
     c.strokeStyle = env.ink; c.lineWidth = 1; c.globalAlpha = .1 * env.fade
     c.beginPath(); c.moveTo(left, horizon); c.lineTo(left + w, horizon); c.stroke()
-    c.globalAlpha = .4 * env.fade; c.fillStyle = env.ink; c.font = `18px ${env.hand}`
-    c.fillText('∂²φ/∂t² = c² ∇²φ', left + w * .06, horizon - 16)
+    if (env.hand) racksLabel(env)
   }
+}
+function racksLabel(env: Env) {
+  const { x: left, y: top, w, h } = env.full, c = env.context
+  c.globalAlpha = .4 * env.fade; c.fillStyle = env.ink; c.font = `18px ${env.hand}`
+  c.fillText('∂²φ/∂t² = c² ∇²φ', left + w * .06, top + h * .5 - 16)
 }
 
 export const SKETCHES: Sketch[] = [
@@ -836,7 +848,7 @@ export const SKETCHES: Sketch[] = [
     'An AVL tree is more strictly balanced; a red-black tree rotates less on update.',
     'Catalan: the number of binary trees with n nodes is Cₙ = (2n)! / ((n + 1)! n!).',
   ] },
-  { id: 'racks', name: 'GB300', tilt: .7, create: racks, facts: [
+  { id: 'racks', name: 'GB300', tilt: .7, create: racks, offscreen: true, label: racksLabel, facts: [
     'A field is a degree of freedom at every point; a lattice makes that literal.',
     'Wave equation: ∂²φ/∂t² = c² ∇²φ.',
     'Lattice dispersion: ω(k) = 2√(K/m) |sin(ka/2)|.',

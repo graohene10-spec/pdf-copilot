@@ -34,6 +34,23 @@ const CURVE_VISUALS: Visual[] = ['field', 'curve']
 let mesh: Mesh | undefined
 let graph: Graph | undefined
 let sketch: Sketch | undefined
+// 重的画面（GB300）交给后台线程画在另一张画布上；remote 为真时这一张画布上只写字。
+let worker: Worker | undefined, remote = false, held = false
+const layer = ref<HTMLCanvasElement>()
+function postView() {
+  worker?.postMessage({ type: 'view', still: reduced.matches, view: { width: Math.max(1, Math.round(fullWidth)), height: Math.max(1, Math.round(fullHeight)), offsetX, offsetY, ink, red, paper, grid: { size: 24, x: -pageLeft - offsetX, y: -pageTop - offsetY } } })
+}
+function startWorker() {
+  const element = layer.value
+  if (props.preview || !element || typeof Worker === 'undefined' || !('transferControlToOffscreen' in element)) return
+  try {
+    const offscreen = element.transferControlToOffscreen()
+    worker = new Worker(new URL('../sketch/scene-worker.ts', import.meta.url), { type: 'module' })
+    // 后台线程起不来就退回在这条线程里画。
+    worker.onerror = () => { worker?.terminate(); worker = undefined; if (remote) { remote = false; if (!frame) draw(performance.now()) } }
+    worker.postMessage({ type: 'init', canvas: offscreen }, [offscreen])
+  } catch { worker = undefined }
+}
 let painter: Painter | undefined
 let baseTilt = .42
 let jitter: Float32Array | undefined
@@ -79,6 +96,8 @@ function choose(id: string | undefined) {
   training = graph ? newTraining(graph) : undefined
   sketch = other
   painter = other?.create()
+  remote = Boolean(worker && other?.offscreen)
+  worker?.postMessage({ type: 'scene', id: remote ? id : null, elapsed: 0 })
   baseTilt = other?.tilt ?? manifold?.tilt ?? (network ? .32 : .42)
   jitter = seeded(mesh ? mesh.points.length / 3 : graph ? graph.nodes.length / 3 : 1)
   drawnAt = performance.now()
@@ -108,6 +127,7 @@ function resize() {
   offsetX = props.preview ? 0 : side + room * .06; offsetY = props.preview ? 0 : fullHeight * .04; width = props.preview ? fullWidth : room * .92; height = fullHeight - offsetY
   element.width = Math.max(1, Math.round(fullWidth * ratio))
   element.height = Math.max(1, Math.round(fullHeight * ratio))
+  postView()
 }
 
 function readInk() {
@@ -118,6 +138,7 @@ function readInk() {
   backing.value = paper
   // 草稿用手写体；暖色极简用衬线斜体（--doodle-font）。
   hand = style.getPropertyValue('--doodle-font').trim() || "Caveat, 'Long Cang', cursive"
+  postView()
 }
 
 // ---- 向量小工具 ----
@@ -154,6 +175,8 @@ function draw(now: number) {
   const reveal = reduced.matches || props.preview ? 1 : Math.min(1, (now - drawnAt) / DRAW_IN)
   if (mesh) drawMesh(context, mesh, project, reveal)
   else if (graph && training) drawNetwork(context, graph, training, project, reveal, now)
+  if (layer.value) { const shown = remote ? String(Math.round(reveal * 100) / 100) : '0'; if (layer.value.style.opacity !== shown) layer.value.style.opacity = shown }
+  if (remote) sketch?.label?.({ context, project, t: 0, fade: reveal, ink, red, paper, hand, width, height, size, camera, full: { x: -offsetX, y: -offsetY, w: fullWidth, h: fullHeight }, grid: { size: 24, x: 0, y: 0 } })
   else if (painter) painter({ context, project, t: reduced.matches ? 20000 : Math.max(0, now - drawnAt), fade: reveal, ink, red, paper, hand, width, height, size, camera, full: { x: -offsetX, y: -offsetY, w: fullWidth, h: fullHeight }, grid: props.preview ? { size: 8, x: 0, y: 0 } : { size: 24, x: -pageLeft - offsetX, y: -pageTop - offsetY } })
   if (mesh && drawing && reveal >= 1) drawVisual(context, drawing, now, project)
   context.globalAlpha = 1
@@ -610,6 +633,7 @@ function drawVisual(context: CanvasRenderingContext2D, item: Drawing, now: numbe
 function tick(now: number) {
   frame = 0
   if (document.hidden) return
+  if (held) { frame = requestAnimationFrame(tick); return }
   // 帧率跟着一帧的耗时走：很轻（平均不到 4 ms）就每秒 60 帧，动得顺；一般每秒 30 帧；实在太重（超过 16 ms）才降到 20 帧，不拖累界面。
   const interval = cost < (smoothRun ? 10 : 7) ? 1000 / 60 : cost > 16 ? 1000 / 20 : FRAME
   smoothRun = interval < 20
@@ -672,20 +696,28 @@ function nextNote() {
   noteTimer = setTimeout(nextNote, reduced.matches ? 60000 : NOTE_EVERY)
 }
 
-function visibility() { if (document.hidden) halt(); else run() }
+function visibility() { if (document.hidden) { halt(); worker?.postMessage({ type: 'halt' }) } else { run(); worker?.postMessage({ type: 'run' }) } }
 const resizer = new ResizeObserver(() => { resize(); if (!frame) draw(performance.now()) })
-const themeWatch = new MutationObserver(() => { readInk(); if (!frame) draw(performance.now()) })
+// 侧栏 / 助手栏收放的那几百毫秒里后台的画面先停一下，把显卡让给界面动画。
+const themeWatch = new MutationObserver(records => {
+  // 拖动排列文档时也停：那一阵卡片的让位动画最怕掉帧。
+  const busy = 'paneMotion' in document.documentElement.dataset || document.documentElement.classList.contains('reordering')
+  if (busy !== held) { held = busy; worker?.postMessage({ type: busy ? 'halt' : 'run' }) }
+  if (records.every(record => record.attributeName === 'data-pane-motion' || record.attributeName === 'class')) return
+  readInk(); if (!frame) draw(performance.now())
+})
 
 watch(() => props.shapes.join(','), () => { if (!current.value || !props.shapes.includes(current.value)) choose(nextManifold(props.shapes, undefined)); else scheduleSwitch() })
 
 onMounted(() => {
+  startWorker()
   readInk()
   start = performance.now()
   choose(nextManifold(props.shapes, undefined))
   resize()
   draw(performance.now())
   if (canvas.value) resizer.observe(canvas.value)
-  themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-style'] })
+  themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-style', 'data-pane-motion', 'class'] })
   document.addEventListener('visibilitychange', visibility)
   // 显卡上下文丢了又回来（画面会白一下）：预先画好的小图全部重画，画布按当前尺寸重新铺一遍。
   canvas.value?.addEventListener('contextrestored', restored)
@@ -695,7 +727,7 @@ onMounted(() => {
 function restored() { resetSprites(); draw(performance.now()) }
 onBeforeUnmount(() => {
   canvas.value?.removeEventListener('contextrestored', restored)
-  halt(); clearTimeout(switchTimer); clearTimeout(noteTimer)
+  halt(); clearTimeout(switchTimer); clearTimeout(noteTimer); worker?.terminate(); worker = undefined
   for (const timer of timers) clearTimeout(timer)
   resizer.disconnect(); themeWatch.disconnect()
   document.removeEventListener('visibilitychange', visibility)
@@ -704,6 +736,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="manifold-doodle" :class="{ preview }" :style="preview ? { background: backing } : undefined" aria-hidden="true">
+    <canvas ref="layer" class="manifold-canvas manifold-layer" style="opacity:0" />
     <canvas ref="canvas" class="manifold-canvas" />
     <div class="manifold-notes"><p v-for="note in notes" :key="note.key" class="manifold-note" :class="[`slot-${note.slot}`, { drawn: note.drawn, leaving: note.leaving }]">{{ note.text }}</p></div>
   </div>
