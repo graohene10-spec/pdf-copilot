@@ -113,7 +113,8 @@ watch(() => [props.card.item.text, props.card.item.status, props.card.item.reaso
 <style>
 .explain-card{min-width:220px}
 .explain-card.morph{animation:none}
-.explain-card.in-page{z-index:40;animation:none}
+/* 跟着书页走时压在工具栏的毛边（z-index 4）下面、书页上面。 */
+.explain-card.in-page{z-index:3;animation:none}
 .explain-card.dragging{transition:none;cursor:grabbing;user-select:none}
 .ec-head{display:flex;align-items:center;gap:4px;margin:-3px -5px 4px 0;cursor:grab;touch-action:none}
 .ec-head .st-term{flex:1;min-width:0;margin:0!important}
