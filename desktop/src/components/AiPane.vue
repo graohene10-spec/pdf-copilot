@@ -1273,7 +1273,7 @@ button:disabled{opacity:.4;cursor:default}
 .source-heading{margin:4px 0 0;font-size:11.5px;font-weight:650;color:var(--secondary)}
 /* 问题气泡下面：这一问一起发给 AI 的截图、所选文字与文档。 */
 .sent-context{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:5px;max-width:88%;margin:5px 0 0 auto}
-.sent-context img{width:38px;height:28px;object-fit:cover;border-radius:6px;border:1px solid var(--hairline)}
+.sent-context img{flex:none;height:48px;width:auto;max-width:180px;object-fit:contain;border-radius:6px;border:1px solid var(--hairline);background:#fff}
 .sent-context span{display:inline-flex;align-items:center;gap:4px;max-width:100%;height:24px;padding:0 9px;overflow:hidden;border-radius:var(--r-sm);background:var(--frost);border:1px solid var(--hairline);color:var(--secondary);font-size:11.5px;white-space:nowrap;text-overflow:ellipsis}
 .sent-context .sent-quote{display:block;line-height:22px}
 .source-list button{display:block;width:100%;margin-top:6px;padding:8px 11px;border:1px solid var(--hairline);border-radius:var(--r-md);background:var(--frost);box-shadow:none;text-align:left}
@@ -1331,10 +1331,10 @@ textarea::placeholder{color:var(--muted);font-family:'Anthropic Serif','Source H
 .chip-remove:hover{background:var(--frost-hover)}
 /* 输入框里的图片：一排小图，没有文字。留住的那些有一圈红框；刚截的那张是虚线框，点一下就留住。 */
 .composer-shots{--shot-red:#e5484d;display:flex;flex-wrap:wrap;gap:14px;padding:14px 15px 2px}
-.shot{position:relative;display:block;border-radius:8px;transition:scale .22s var(--spring-snappy,ease-out),rotate .22s var(--spring-snappy,ease-out)}
+.shot{position:relative;display:block;flex:none;border-radius:8px;transition:scale .22s var(--spring-snappy,ease-out),rotate .22s var(--spring-snappy,ease-out)}
 /* 刚截的那张带着取景框的光：一圈主色细线和光晕，亮两下；留住后换成红框和淡淡的红晕。 */
 /* 小图按截图本身的宽高比显示（高 60，宽度跟着走），不再裁成固定的小方块，看得清是哪一段。 */
-.shot img{display:block;height:60px;width:auto;min-width:48px;max-width:220px;border-radius:8px;object-fit:cover;background:#fff;outline:1.5px solid color-mix(in srgb,var(--accent) 72%,#fff);outline-offset:2px;box-shadow:0 0 14px 1px color-mix(in srgb,var(--accent) 38%,transparent);cursor:pointer;transition:outline-color .2s,outline-offset .25s var(--spring-snappy,ease-out),box-shadow .25s}
+.shot img{display:block;height:64px;width:auto;min-width:0;max-width:240px;aspect-ratio:auto;border-radius:8px;object-fit:contain;background:#fff;outline:1.5px solid color-mix(in srgb,var(--accent) 72%,#fff);outline-offset:2px;box-shadow:0 0 14px 1px color-mix(in srgb,var(--accent) 38%,transparent);cursor:pointer;transition:outline-color .2s,outline-offset .25s var(--spring-snappy,ease-out),box-shadow .25s}
 .shot:not(.kept) img{animation:shot-glow 2.2s var(--ease-soft,ease-in-out) .35s 2}
 @keyframes shot-glow{50%{box-shadow:0 0 24px 4px color-mix(in srgb,var(--accent) 62%,transparent)}}
 .shot:not(.kept):hover img{outline-color:var(--shot-red);box-shadow:0 0 18px 2px color-mix(in srgb,var(--shot-red) 45%,transparent)}
