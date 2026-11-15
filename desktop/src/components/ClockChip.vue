@@ -6,19 +6,23 @@ import AppIcon from './AppIcon.vue'
 import WheelColumn from './WheelColumn.vue'
 import { addAlarm, clock, dismissRing, elapsed, pauseTimer, remaining, removeAlarm, rememberFields, resumeTimer, span, period, startCountdown, startStopwatch, stopTimer, timeLabel } from '../ui/timer'
 
+// collapsed：顶栏收起来了，小钟看不见。这时计时改在窗口左下角用一只小圆环表示。
+const props = defineProps<{ collapsed?: boolean }>()
 const open = ref(false)
 const tab = ref<'timer' | 'alarm'>('timer')
-const chip = ref<HTMLElement>(), panel = ref<HTMLElement>()
-const place = ref({ top: 12, right: 12 })
+const chip = ref<HTMLElement>(), panel = ref<HTMLElement>(), corner = ref<HTMLElement>()
+const place = ref<Record<string, string>>({ top: '12px', right: '12px' })
 // 卡片挂在小钟下面、右边对齐；顶栏收起来时小钟不在，就放在窗口右上角。
 function locate() {
-  const box = chip.value?.getBoundingClientRect()
-  place.value = box && box.width ? { top: Math.round(box.bottom + 8), right: Math.max(8, Math.round(innerWidth - box.right)) } : { top: 12, right: 12 }
+  const box = chip.value?.getBoundingClientRect(), ring = corner.value?.getBoundingClientRect()
+  place.value = box && box.width ? { top: `${Math.round(box.bottom + 8)}px`, right: `${Math.max(8, Math.round(innerWidth - box.right))}px` }
+    // 从左下角的圆环打开：卡片立在圆环上面。
+    : ring && ring.width ? { left: `${Math.round(ring.left)}px`, bottom: `${Math.round(innerHeight - ring.top + 10)}px`, transformOrigin: '18px 100%' } : { top: '12px', right: '12px' }
 }
 function toggle() { open.value = !open.value }
 watch(open, value => { if (value) { locate(); sweep.value = (Date.now() % 60000) / 1000; fields.h = Math.min(23, clock.last.h); fields.m = clock.last.m; fields.s = clock.last.s; Object.assign(alarm, nextHalfHour()) } })
 watch(() => clock.ringing, ringing => { if (ringing) open.value = true })
-function outside(event: PointerEvent) { if (!open.value || clock.ringing) return; const target = event.target as Node; if (!panel.value?.contains(target) && !chip.value?.contains(target)) open.value = false }
+function outside(event: PointerEvent) { if (!open.value || clock.ringing) return; const target = event.target as Node; if (!panel.value?.contains(target) && !chip.value?.contains(target) && !corner.value?.contains(target)) open.value = false }
 function key(event: KeyboardEvent) { if (event.key === 'Escape' && open.value && !clock.ringing) { open.value = false; chip.value?.focus() } }
 onMounted(() => { document.addEventListener('pointerdown', outside, true); document.addEventListener('keydown', key); window.addEventListener('resize', locate) })
 onBeforeUnmount(() => { document.removeEventListener('pointerdown', outside, true); document.removeEventListener('keydown', key); window.removeEventListener('resize', locate) })
@@ -44,6 +48,11 @@ function start() {
 const left = computed(() => remaining()), gone = computed(() => elapsed())
 const running = computed(() => clock.mode !== 'idle')
 const reading = computed(() => clock.mode === 'down' ? span(left.value) : span(gone.value, true))
+const timerTip = computed(() => `${clock.paused ? '已暂停 · ' : ''}${clock.mode === 'down' ? '还剩' : '已计时'} ${reading.value}`)
+const chipTip = computed(() => running.value ? timerTip.value : '计时 / 闹钟')
+const cornerShown = computed(() => Boolean(props.collapsed) && (running.value || Boolean(clock.ringing)))
+// 顶栏收放时，开着的卡片跟到新的位置。
+watch(() => [props.collapsed, cornerShown.value], () => { if (open.value) void nextTick(locate) })
 // 倒计时的圆环：走过的部分一点点擦掉。正计时没有终点，圆环每分钟转一圈。
 const share = computed(() => clock.mode === 'down' ? (clock.total ? left.value / clock.total : 0) : (gone.value % 60000) / 60000)
 
@@ -86,17 +95,25 @@ watch(tab, () => void nextTick(locate))
 </script>
 
 <template>
-  <button ref="chip" type="button" class="icon-button clock-chip" :class="{ active: open, running, paused: clock.paused, ringing: clock.ringing }" :aria-expanded="open" aria-label="计时与闹钟" :data-tip="open ? undefined : '计时 / 闹钟'" @click="toggle">
+  <button ref="chip" type="button" class="icon-button clock-chip" :class="{ active: open, running, paused: clock.paused, ringing: clock.ringing }" :aria-expanded="open" aria-label="计时与闹钟" :data-tip="open ? undefined : chipTip" @click="toggle">
     <template v-if="clock.ringing"><AppIcon name="bell" :size="15" class="cc-bell" /><span>到点了</span></template>
-    <template v-else-if="running">
-      <svg class="cc-ring" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6" /><circle cx="8" cy="8" r="6" pathLength="1" :stroke-dasharray="`${share} 1`" /></svg>
-      <span>{{ reading }}</span>
+    <template v-else>
+      <!-- 计时中：时段图标换成一只圆环（剩下多少），旁边仍是现在几点；确切的剩余时间点开卡片看。 -->
+      <svg v-if="running" class="cc-ring" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6" /><circle cx="8" cy="8" r="6" pathLength="1" :stroke-dasharray="`${share} 1`" /></svg>
+      <AppIcon v-else :name="nowIcon" :size="14" class="cc-alarm" />
+      <span><small>{{ half }}</small>{{ digits }}</span><i v-if="clock.alarms.length" class="cc-dot" aria-label="有闹钟"></i>
     </template>
-    <template v-else><AppIcon :name="nowIcon" :size="14" class="cc-alarm" /><span><small>{{ half }}</small>{{ digits }}</span><i v-if="clock.alarms.length" class="cc-dot" aria-label="有闹钟"></i></template>
   </button>
   <Teleport to="body">
+    <!-- 顶栏收起时：左下角一只圆环，直接画在背板上，没有底。 -->
+    <Transition name="clock-corner">
+      <button v-if="cornerShown" ref="corner" type="button" class="clock-corner" :class="{ paused: clock.paused, ringing: clock.ringing }" aria-label="计时与闹钟" :aria-expanded="open" :data-tip="open ? undefined : clock.ringing ? '到点了' : `${nowLabel} · ${timerTip}`" data-tip-fast @click="toggle">
+        <AppIcon v-if="clock.ringing" name="bell" :size="18" class="cc-bell" />
+        <svg v-else width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><circle cx="13" cy="13" r="10" /><circle cx="13" cy="13" r="10" pathLength="1" :stroke-dasharray="`${share} 1`" /></svg>
+      </button>
+    </Transition>
     <Transition name="clock-pop">
-      <div v-if="open" ref="panel" class="clock-panel" :class="{ ringing: clock.ringing }" role="dialog" aria-label="计时与闹钟" :style="{ top: `${place.top}px`, right: `${place.right}px` }">
+      <div v-if="open" ref="panel" class="clock-panel" :class="{ ringing: clock.ringing }" role="dialog" aria-label="计时与闹钟" :style="place">
         <div class="cp-hero">
           <svg class="cp-face" :class="{ shake: clock.ringing }" viewBox="0 0 100 100" aria-hidden="true">
             <!-- 怀表式的表冠和提环 -->
@@ -167,12 +184,31 @@ watch(tab, () => void nextTick(locate))
 .cc-ring circle:first-child{opacity:.18}
 /* 圆环一秒跳一小格，不加过渡：过渡会让顶栏每一帧都重画，拖慢背景动画。 */
 .cc-ring circle:last-child{stroke-linecap:round}
-.clock-chip.running{color:var(--accent)}
-.clock-chip.paused{color:var(--muted)}
+.clock-chip.running .cc-ring{color:var(--accent)}
+.clock-chip.paused .cc-ring{color:var(--muted)}
 .clock-chip.ringing{color:var(--accent);animation:cc-pulse 1.3s ease-in-out infinite}
 .cc-bell{transform-origin:50% 10%;animation:cc-swing 1.3s ease-in-out infinite}
 @keyframes cc-pulse{50%{background-color:color-mix(in srgb,var(--accent) 18%,transparent)}}
 @keyframes cc-swing{0%,55%,100%{rotate:0deg}10%{rotate:14deg}22%{rotate:-12deg}34%{rotate:8deg}45%{rotate:-4deg}}
+
+/* ---- 顶栏收起时左下角的圆环：没有底，直接在背板上；一圈淡淡的光晕让它在深浅背景上都看得清 ---- */
+.clock-corner{position:fixed;left:16px;bottom:16px;z-index:60;display:grid;place-items:center;width:34px;height:34px;min-height:0;padding:0;border:0!important;border-radius:50%;background:none!important;box-shadow:none!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important;color:var(--ink);cursor:pointer;opacity:.78;transition:opacity .2s,scale .22s var(--spring-snappy,ease-out)}
+.clock-corner:hover{opacity:1;scale:1.12}
+.clock-corner:active{scale:.94}
+.clock-corner svg{rotate:-90deg;overflow:visible;filter:drop-shadow(0 0 3px color-mix(in srgb,var(--surface,#fff) 80%,transparent))}
+.clock-corner circle{fill:none;stroke:currentColor;stroke-width:2.2}
+.clock-corner circle:first-child{opacity:.2}
+.clock-corner circle:last-child{stroke:var(--accent);stroke-linecap:round}
+.clock-corner.paused circle:last-child{stroke:var(--muted)}
+.clock-corner.ringing{color:var(--accent);opacity:1}
+.clock-corner-enter-active,.clock-corner-leave-active{transition:opacity .25s,scale .3s var(--spring-snappy,ease-out)}
+.clock-corner-enter-from,.clock-corner-leave-to{opacity:0;scale:.5}
+:root[data-style='sketch'] .clock-corner{color:var(--pencil,#2b2a27)}
+:root[data-style='sketch'] .clock-corner svg{filter:url(#sk-pencil)}
+:root[data-style='sketch'] .clock-corner circle{stroke-width:1.6}
+:root[data-style='sketch'] .clock-corner circle:first-child{opacity:.45;stroke-dasharray:2.5 2.5}
+:root[data-style='sketch'] .clock-corner circle:last-child{stroke:var(--red-pencil,#c0392b);stroke-width:2.4}
+:root[data-style='sketch'] .clock-corner.paused circle:last-child{stroke:var(--pencil-soft,#8a8578)}
 
 /* ---- 卡片：上面是一只表盘和大号读数（平时是现在几点，计时中是剩下的时间），下面是计时 / 闹钟 ---- */
 .clock-panel{position:fixed;z-index:430;width:256px;padding:14px 16px 14px;border:1px solid var(--glass-outline);border-radius:var(--r-lg,16px);background-color:var(--popup-glass);background-image:radial-gradient(110% 70% at 100% 0,color-mix(in srgb,var(--accent) 13%,transparent),transparent 62%),var(--popup-sheen);-webkit-backdrop-filter:blur(var(--popup-blur)) saturate(var(--glass-sat));backdrop-filter:blur(var(--popup-blur)) saturate(var(--glass-sat));box-shadow:var(--shadow-3),var(--glass-edge);color:var(--ink);transform-origin:calc(100% - 30px) 0;font-variant-numeric:tabular-nums}
@@ -258,7 +294,7 @@ watch(tab, () => void nextTick(locate))
 
 /* ---- 铅笔草稿：一页白纸、细铅笔线；钟是细线画的，只有秒针和要紧处用红铅笔 ---- */
 :root[data-style='sketch'] .topbar-actions .icon-button.clock-chip,:root[data-style='sketch'] .topbar-actions .icon-button.clock-chip:hover:not(:disabled){width:auto;padding:0 11px;border-radius:15px 19px 16px 18px / 18px 15px 19px 16px}
-:root[data-style='sketch'] .clock-chip.running{color:var(--red-pencil,#c0392b)}
+:root[data-style='sketch'] .clock-chip.running:not(.paused) .cc-ring{color:var(--red-pencil,#c0392b)}
 :root[data-style='sketch'] .clock-panel{--scribble:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='8' viewBox='0 0 48 8' preserveAspectRatio='none'%3E%3Cpath d='M2 5.4c7-3.2 12 1.6 20-.6s14-2.6 24-.4' fill='none' stroke='%23c8553d' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");width:262px;padding:18px 20px 18px;border:1.2px solid var(--pencil,#2b2a27);border-radius:10px 13px 9px 12px / 12px 9px 13px 10px;background:var(--paper,#fbf8f0);-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:2px 3px 0 rgb(60 50 30 / .14),10px 18px 30px -16px rgb(60 50 30 / .4);color:var(--pencil,#2b2a27)}
 :root[data-style='sketch'] .cp-second{stroke:var(--red-pencil,#c8553d)}
 :root[data-style='sketch'] .cp-second circle{fill:var(--red-pencil,#c8553d)}

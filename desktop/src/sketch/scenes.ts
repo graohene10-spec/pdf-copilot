@@ -674,9 +674,10 @@ function racks(): Painter {
     const front = (pixels: number) => { const size = 2 ** clamp(Math.ceil(Math.log2(pixels)), 4, 8), id = `${env.paper}|${env.ink}|${size}`; let made = fronts.get(id); if (!made) fronts.set(id, made = drawFront(env.paper, env.ink, size)); return made }
     const horizon = top + h * .5, middle = left + w / 2, focal = w * .85
     const sx = (x: number, z: number) => middle + focal * x / z, sy = (y: number, z: number) => horizon + focal * (EYE - y) / z
-    // 最前面的一排一直画到整个机柜滑出画面下沿为止，不会凭空消失；最远画到离天际线 5 个像素。
+    // 最前面的一排一直画到整个机柜滑出画面下沿为止，不会凭空消失。
+    // 最远只画到排与排相距约一个半像素的地方：再远的排挤成一片没有细节的线，不画了，天际线也就比视平线低一截。
     const shade = blend(env.paper, env.ink, .16), stroke = blend(env.paper, env.ink, .25)
-    const nearest = Math.max(2.2, focal * (EYE - TALL - .9) / (h * .5)), FAR = focal * (EYE - TALL) / 1.5, c = env.context, fade = env.fade
+    const nearest = Math.max(2.2, focal * (EYE - TALL - .9) / (h * .5)), FAR = Math.sqrt(focal * (EYE - TALL) * PITCH / 1.5), skyline = sy(TALL, FAR), c = env.context, fade = env.fade
     {
       const seconds = env.t / 1000, camera = seconds * SPEED, latest = Math.floor(env.t / EVERY)
       // 波：每隔一阵在随机的地方来一个，形状随机——一滴水的圆环、从画面外推进来的平面波、两滴水的干涉。振幅从零慢慢起来，最后慢慢平息。
@@ -695,30 +696,25 @@ function racks(): Painter {
       }).filter(wave => wave.gain > .001)
       const timePhase = .13 * seconds
       const ring = (x: number, z: number, age: number) => { const d = Math.hypot(x, z) - 1.7 * age, q = d / 9; return q > -3 && q < 3 ? Math.cos(.5 * d) * Math.exp(-q * q) : 0 }
-      let rowPhase = 0
+      // 波越近越高：远处的排在屏幕上只隔几个像素，同样高的波会把一排排柜顶线挤到几乎重叠，细线扎堆，一动就像摩尔纹。
+      // 所以每一排的波高按距离收小（机柜还画成一个个的近处不变，再远按距离的平方降下去），像浪靠岸才涌起来。
+      const calmFrom = .56 * focal * WIDE / 16
+      let rowPhase = 0, rowCalm = 1
       const height = (x: number) => {
-        let y = .04 * Math.sin(.09 * x + rowPhase + timePhase)
+        let y = 0
         for (const wave of waves) {
           if (wave.kind === 0) y += .42 * wave.gain * ring(x - wave.x, wave.ringZ, wave.age)
           else if (wave.kind === 1) { const d = x * wave.nx + wave.planeZ + 80 - 2.9 * wave.age, q = d / 14; if (q > -3 && q < 3) y += .37 * wave.gain * Math.cos(.4 * d) * Math.exp(-q * q) }
           else y += .31 * wave.gain * (ring(x - wave.x - 7, wave.ringZ, wave.age) + ring(x - wave.x + 7, wave.ringZ, wave.age))
         }
-        return y
+        return y * rowCalm + .04 * Math.sin(.09 * x + rowPhase + timePhase)
       }
       c.strokeStyle = env.ink; c.lineJoin = 'round'
-      {
-        // 远景：从天际线到「排距约 6 像素」的地方铺一层均匀的淡铅笔色，代替挤成一片的线。
-        const zFull = Math.sqrt(focal * (EYE - TALL) * PITCH / .12), bottom = sy(TALL - .6, zFull)
-        const haze = c.createLinearGradient(0, horizon, 0, bottom); haze.addColorStop(0, blend(env.paper, env.ink, .05)); haze.addColorStop(1, blend(env.paper, env.ink, .06))
-        c.globalAlpha = fade; c.fillStyle = haze; c.fillRect(left, horizon, w, Math.max(0, bottom - horizon))
-      }
       for (let row = Math.floor((camera + FAR) / PITCH); row * PITCH - camera > nearest; row--) {
         const world = row * PITCH, z = world - camera, half = z * (w / 2) / focal + WIDE
         // 远近之间不留接缝：线的深浅只看这一排在屏幕上占多高。排密到两个像素以下就只留一部分排——按排号里 2 的幂次分层，
         // 留下的总是同一批，走近时其余的排从透明慢慢显出来，不会一排排地跳。
         const pixels = focal * WIDE / z, spacing = focal * (EYE - TALL) * PITCH / (z * z), want = 4 / spacing
-        // 排与排挤到三四个像素以内就不再一排排画：细线落在半个像素上，镜头一动整片都在闪。那一带由下面铺好的一层平涂接手，
-        // 这里的排随间距变小慢慢淡进那层颜色里。
         // 再远一些只留一部分排（按排号里 2 的幂次分层，留下的总是同一批），线画粗一点、淡一点，粗略地一直铺到天际线附近。
         let weight = smooth((FAR - z) / (FAR * .08))
         if (want > 1) weight *= clamp(2 - want / (row & -row || 1024), 0, 1)
@@ -727,6 +723,7 @@ function racks(): Painter {
         // Reuse row-invariant terms without changing the arithmetic order of the
         // wave itself. Heights, perspective and all visible primitives stay exact.
         rowPhase = .05 * world
+        rowCalm = Math.min(1, (calmFrom / z) ** 2)
         for (const wave of waves) { wave.ringZ = world - wave.z; wave.planeZ = (world - wave.centre) * wave.nz }
         if (pixels <= 16) {
           // 中景、远景：一排机柜连成一道墙，轮廓沿着柜顶的后沿走，前沿另描一条线。机柜还分得清时是一个个方头，再远就连成起伏的一线。
@@ -777,7 +774,8 @@ function racks(): Painter {
       }
     }
     c.strokeStyle = env.ink; c.lineWidth = 1; c.globalAlpha = .1 * env.fade
-    c.beginPath(); c.moveTo(left, horizon); c.lineTo(left + w, horizon); c.stroke()
+    // 天际线：机柜铺到这里为止。
+    c.beginPath(); c.moveTo(left, skyline - 1); c.lineTo(left + w, skyline - 1); c.stroke()
     if (env.hand) racksLabel(env)
   }
 }

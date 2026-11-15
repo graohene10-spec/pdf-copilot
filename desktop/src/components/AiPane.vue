@@ -3,7 +3,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, defineAsync
 import 'katex/dist/katex.min.css'
 import { getProvider, getNativeModels, getNativeStatus } from '../ai/providers.mjs'
 import { nativeModelInventory, registerNativeModelInventory } from '../ai/native-models'
-import { adoptTurns, addExcerpt, removeExcerpt, removeMessage, compressConversation, sideConversation, chatState, sendChat, stopChat, configureRequests, taskSummary, conversations, activeConversationId, selectConversation, newConversation, deleteConversation, loadConversations, conversationTokens, contextWindow, branchConversation, resendQuestion, watchConversation, allConversations, pinMessage, MAX_ATTACHMENTS, type Message, type ChatState } from '../ai/workspace'
+import { adoptTurns, addExcerpt, removeExcerpt, removeMessage, compressConversation, sideConversation, chatState, sendChat, stopChat, configureRequests, taskSummary, conversations, activeConversationId, selectConversation, newConversation, deleteConversation, loadConversations, conversationTokens, contextWindow, branchConversation, resendQuestion, watchConversation, allConversations, pinMessage, MAX_ATTACHMENTS, pendingImages, setPendingImages, keepImage, type Message, type ChatState } from '../ai/workspace'
 import { renderMarkdown, renderDiagrams } from '../ai/render'
 import { mountIntelligentUi } from '../ai/intelligent-ui'
 import { nudgeGlassMotion } from '../ui/glass-motion'
@@ -58,8 +58,6 @@ const input = ref<HTMLTextAreaElement>()
 // 浅拷贝：截图晚到时同一个选区对象被补上 image，拷贝能让依赖它的显示跟着刷新。
 const selected = computed(() => ({ ...(props.context?.selection || {}) }))
 const hasSelection = computed(() => Boolean(selected.value.text || selected.value.image))
-// Markdown has no pages: its region screenshots are named by what they are.
-const selectionLabel = computed(() => selected.value.rect?.space === 'markdown' ? '框选区域截图' : `第 ${selected.value.page} 页截图`)
 const { preferences, effectiveAppearance } = useSettings()
 const avatar = computed(() => preferences.value.assistant.avatar)
 // 每段对话的问候与占位语各固定一句，切换对话或新建时再随机挑；占位语每问一次换一句。
@@ -379,7 +377,8 @@ let follow = true
 function scroll() { void nextTick(() => { if (messageList.value && follow) messageList.value.scrollTop = messageList.value.scrollHeight; updateRail() }) }
 function scheduleScroll() { if (!renderFrame) renderFrame = requestAnimationFrame(() => { renderFrame = 0; scroll() }) }
 watch(() => [conversationId.value, messages.value.length, messages.value.at(-1)?.content, messages.value.at(-1)?.reasoning], (value, previous) => {
-  if (value[0] !== previous?.[0]) return
+  // 换了一场对话（包括刚打开时，存着的对话晚一步才读出来）：不跟到底，但右边的问题刻度要按新对话重算，否则会空着或留着上一场的。
+  if (value[0] !== previous?.[0]) { void nextTick(updateRail); return }
   if (value[1] !== previous?.[1]) follow = true
   scheduleScroll()
 })
@@ -603,7 +602,20 @@ function keydown(event: KeyboardEvent) {
   }
 }
 // ---- 输入框附图：Ctrl+V 粘贴、拖进输入框，或点「添加图片」；随问题一起发出，发出后清空 ----
-const attachments = ref<string[]>([])
+// 这些图片按文档记在外面（workspace）：按住 Shift 截图时，上一张截图也是存到这里。
+const imageKey = computed(() => props.document.id + (props.side ? '#side' : ''))
+const attachments = computed<string[]>({ get: () => pendingImages(imageKey.value), set: value => setPendingImages(imageKey.value, value) })
+// 刚截的图还没确认：再截一张会把它换掉。点一下就留住（加上红框），之后再截图是新增一张。
+const freshShot = computed(() => selected.value.image && !attachments.value.includes(selected.value.image) ? selected.value.image as string : '')
+const shots = computed(() => [...attachments.value.map(image => ({ image, kept: true })), ...(freshShot.value ? [{ image: freshShot.value, kept: false }] : [])])
+const shotKey = (image: string) => `${image.length}:${image.slice(-40)}`
+function keepShot() {
+  const image = freshShot.value
+  if (!image) return
+  if (!keepImage(imageKey.value, image)) { attachNote(`一次最多附 ${MAX_ATTACHMENTS} 张图片。`); return }
+  emit('clearSelection')
+}
+function dropShot(shot: { image: string; kept: boolean }) { if (shot.kept) attachments.value = attachments.value.filter(image => image !== shot.image); else emit('clearSelection') }
 // 双击问题里的图片放大看；点一下或按 Esc 收起。
 const zoomed = ref('')
 function zoomKey(event: KeyboardEvent) { if (event.key === 'Escape' && zoomed.value) { event.stopPropagation(); zoomed.value = '' } }
@@ -647,7 +659,6 @@ function pickImages(event: Event) {
   const files = imageFiles(input.files); input.value = ''
   void addImages(files)
 }
-function removeAttachment(index: number) { attachments.value = attachments.value.filter((_, item) => item !== index) }
 // ---- 斜杠命令：/btw 顺便问、/compress 压缩对话、/usage 用量 ------------------------------
 const COMMANDS = [
   { name: '/btw', args: '问题', label: '顺便问一句', hint: '快速问一个旁支问题，回答不写进对话记录' },
@@ -754,12 +765,12 @@ function send(question?: string) {
   // 发出去的选区就算交给了 AI：输入框上方的选区随之清空，改在问题气泡下面显示。
   const usesSelection = includeSelection.value && Boolean(selection?.image || selection?.text)
   const consumeCapture = props.consumeCapture
-  const sentImages = [...attachments.value]
+  const sentImages = [...attachments.value], sentKey = imageKey.value
   follow = true
   return sendChat({ ...props.document }, { ...props.context }, () => { if (id === props.document.id) emit('settings') }, () => {
     // The request can be accepted after this pane closes or switches files.
     if (usesSelection) consumeCapture?.({ documentId: id, selection })
-    if (sentImages.length) attachments.value = attachments.value.filter(image => !sentImages.includes(image))
+    if (sentImages.length) setPendingImages(sentKey, pendingImages(sentKey).filter(image => !sentImages.includes(image)))
   }, question, { conversationId: state.value.id, attachments: sentImages })
 }
 // ---- Predicted next question --------------------------------------------------
@@ -957,8 +968,8 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
       </Transition>
       <div ref="composerField" class="composer-field" :class="{ busy, expanded: pickerOpen }" @keydown.esc="drawerEscape" @dragover="dragImages" @drop="dropImages">
         <div class="composer-resize" role="separator" aria-orientation="horizontal" aria-label="拖动调整输入框高度" data-tip="拖动调整高度，双击恢复" @pointerdown="startResize" @pointermove="resize" @pointerup="endResize" @pointercancel="endResize" @dblclick="resetResize" />
-        <div v-if="hasSelection" class="ai-selection-context">
-          <label class="selection-chip" :class="{ off: !includeSelection }"><input v-model="includeSelection" type="checkbox" :disabled="busy" :aria-label="selected.image ? `使用${selectionLabel}` : '使用所选文字'" /><img v-if="selected.image" :src="selected.image" alt="选取的截图预览" /><span v-else class="selection-text">{{ selected.text.slice(0, 80) }}</span><small>{{ selected.image ? selectionLabel : selected.rect?.space === 'markdown' ? '框选区域的文字' : '所选文字' }}</small></label>
+        <div v-if="hasSelection && !selected.image" class="ai-selection-context">
+          <label class="selection-chip" :class="{ off: !includeSelection }"><input v-model="includeSelection" type="checkbox" :disabled="busy" aria-label="使用所选文字" /><span class="selection-text">{{ selected.text.slice(0, 80) }}</span><small>{{ selected.rect?.space === 'markdown' ? '框选区域的文字' : '所选文字' }}</small></label>
           <button class="chip-remove" data-tip="清除选区" aria-label="清除选区" @click="emit('clearSelection')"><AppIcon name="close" :size="11" /></button>
         </div>
         <TransitionGroup v-if="excerpts.length" tag="div" name="excerpt" class="ai-excerpts" aria-label="随下一个问题发送的摘录">
@@ -968,9 +979,13 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
             <button type="button" class="note-remove" aria-label="移除这段摘录" @click="removeExcerpt(document.id, state.id, item.id)"><AppIcon name="close" :size="10" /></button>
           </span>
         </TransitionGroup>
-        <div v-if="attachments.length" class="ai-attachments" aria-label="附上的图片">
-          <span v-for="(image, index) in attachments" :key="image.slice(-48) + index" class="attachment"><img :src="image" alt="附上的图片" @dblclick="zoomed = image" /><button type="button" class="chip-remove" :aria-label="`移除第 ${index + 1} 张图片`" data-tip="移除这张图片" @click="removeAttachment(index)"><AppIcon name="close" :size="11" /></button></span>
-        </div>
+        <!-- 随问题发出的图片：只有图。留住的带红框；刚截的那张点一下留住，双击放大。 -->
+        <TransitionGroup v-if="shots.length" tag="div" name="shot" class="composer-shots" aria-label="随问题发送的图片">
+          <span v-for="(shot, index) in shots" :key="shotKey(shot.image)" class="shot" :class="{ kept: shot.kept }">
+            <img :src="shot.image" :alt="shot.kept ? '已留住的图片' : '刚截的图'" :data-tip="shot.kept ? '双击放大' : '点一下留住，再截图会新增一张 · 双击放大'" draggable="false" @click="shot.kept || keepShot()" @dblclick="zoomed = shot.image" />
+            <button type="button" class="shot-remove" :aria-label="`移除第 ${index + 1} 张图片`" @click="dropShot(shot)"><AppIcon name="close" :size="10" /></button>
+          </span>
+        </TransitionGroup>
         <div class="prompt-box">
           <textarea ref="input" v-model="prompt" @paste="pasteImages" :style="{ height: `${composerHeight}px` }" :placeholder="prediction ? '' : placeholder" aria-label="向 AI 提问" :aria-describedby="prediction ? `prediction-${state.id}` : undefined" @keydown="keydown" />
           <!-- 预判的问题：像 Claude Code 一样以淡色出现在空输入框里，按 Tab 或回车采用。 -->
@@ -1269,7 +1284,11 @@ button:disabled{opacity:.4;cursor:default}
 .answer-meta:hover .meta-time,.answer-meta:focus-within .meta-time{opacity:1}
 .image-zoom{position:fixed;inset:0;z-index:900;display:grid;place-items:center;padding:28px;background:rgb(0 0 0 / .55);cursor:zoom-out;animation:zoom-in var(--dur-2) var(--ease-out) both}
 .image-zoom img{max-width:100%;max-height:100%;border-radius:var(--r-md);background:#fff;box-shadow:var(--shadow-3)}
-.sent-context img,.attachment img{cursor:zoom-in}
+/* 图片从小图的大小弹开。 */
+.image-zoom img{animation:zoom-pop .34s var(--spring-snappy,ease-out) both}
+@keyframes zoom-pop{from{opacity:0;scale:.82}}
+@media(prefers-reduced-motion:reduce){.image-zoom img{animation:none}}
+.sent-context img{cursor:zoom-in}
 @keyframes zoom-in{from{opacity:0}}
 .meta-flag{margin-left:4px;padding:1px 7px;border-radius:var(--r-xs);background:var(--frost);font-weight:600}
 .meta-flag.error{background:color-mix(in srgb,var(--danger) 14%,transparent);color:var(--danger)}
@@ -1304,7 +1323,30 @@ textarea::placeholder{color:var(--muted);font-family:'Anthropic Serif','Source H
 .selection-chip small{flex-shrink:0;font-size:11px;color:var(--muted)}
 .chip-remove{display:grid;place-items:center;width:22px;height:22px;margin-top:8px;padding:0;border:0;border-radius:var(--r-xs);background:var(--frost);box-shadow:none}
 .chip-remove:hover{background:var(--frost-hover)}
-.ai-attachments{display:flex;flex-wrap:wrap;gap:10px;padding:12px 12px 0}
+/* 输入框里的图片：一排小图，没有文字。留住的那些有一圈红框；刚截的那张是虚线框，点一下就留住。 */
+.composer-shots{--shot-red:#e5484d;display:flex;flex-wrap:wrap;gap:14px;padding:14px 15px 2px}
+.shot{position:relative;display:block;border-radius:8px;transition:scale .22s var(--spring-snappy,ease-out),rotate .22s var(--spring-snappy,ease-out)}
+.shot img{display:block;width:60px;height:46px;border-radius:8px;object-fit:cover;background:#fff;outline:1.5px dashed color-mix(in srgb,var(--ink) 30%,transparent);outline-offset:2px;cursor:pointer;transition:outline-color .2s,outline-offset .25s var(--spring-snappy,ease-out),box-shadow .2s}
+.shot:not(.kept):hover img{outline-color:var(--shot-red)}
+.shot.kept img{outline:2px solid var(--shot-red);outline-offset:1px;box-shadow:0 0 0 4px color-mix(in srgb,var(--shot-red) 14%,transparent);cursor:zoom-in}
+.shot.kept{animation:shot-kept .42s var(--spring-snappy,ease-out)}
+.shot:hover{scale:1.05}
+.shot:active{scale:.97}
+.shot-remove{position:absolute;top:-7px;right:-7px;display:grid;place-items:center;width:18px;height:18px;min-height:0;padding:0;border:0;border-radius:50%;background:var(--surface);box-shadow:0 1px 3px rgb(0 0 0 / .25);color:var(--ink);opacity:0;scale:.6;transition:opacity .15s,scale .18s var(--spring-snappy,ease-out)}
+.shot:hover .shot-remove,.shot-remove:focus-visible{opacity:1;scale:1}
+@keyframes shot-kept{0%{scale:1}35%{scale:.9}70%{scale:1.08}100%{scale:1}}
+.shot-enter-active{transition:opacity .22s var(--ease-out),scale .34s var(--spring-snappy,ease-out),translate .34s var(--spring-snappy,ease-out)}
+.shot-leave-active{position:absolute;transition:opacity .16s,scale .16s}
+.shot-move{transition:translate .3s var(--spring-snappy,ease-out)}
+.shot-enter-from{opacity:0;scale:.5;translate:0 10px}.shot-leave-to{opacity:0;scale:.6}
+:root[data-style='warm'] .composer-shots{--shot-red:var(--accent)}
+:root[data-style='sketch'] .composer-shots{--shot-red:var(--red-pencil,#c0392b)}
+/* 草稿主题：小图像一张张贴上去的照片，微微歪着；留住的是红铅笔圈出来的。 */
+:root[data-style='sketch'] .shot{rotate:-1.5deg}
+:root[data-style='sketch'] .shot:nth-child(even){rotate:1.6deg}
+:root[data-style='sketch'] .shot img{border-radius:2px;outline:1.2px dashed var(--pencil-soft,#8a8578)}
+:root[data-style='sketch'] .shot.kept img{outline:2px solid var(--shot-red);outline-offset:2px;box-shadow:none;filter:none}
+@media(prefers-reduced-motion:reduce){.shot.kept{animation:none}}
 /* 输入框里攒的摘录：一行一枚，和输入框连成一体，悬停看全文。 */
 .ai-excerpts{display:flex;flex-direction:column;gap:4px;padding:9px 10px 0}
 .excerpt-chip{display:flex;align-items:center;gap:6px;min-width:0;height:24px;padding:0 3px 0 8px;border-left:2px solid color-mix(in srgb,var(--accent) 65%,transparent);border-radius:3px 7px 7px 3px;background:color-mix(in srgb,var(--accent) 7%,transparent);color:var(--secondary);font-size:12px}
@@ -1316,9 +1358,6 @@ textarea::placeholder{color:var(--muted);font-family:'Anthropic Serif','Source H
 .excerpt-enter-active,.excerpt-leave-active{transition:opacity var(--dur-2) var(--ease-out),translate var(--dur-2) var(--ease-out)}
 .excerpt-enter-from{opacity:0;translate:0 6px}.excerpt-leave-to{opacity:0}
 .sent-context .sent-excerpt{display:inline-flex;gap:4px}
-.attachment{position:relative;display:block}
-.attachment img{display:block;width:56px;height:42px;border:1px solid var(--hairline);border-radius:var(--r-sm);object-fit:cover;background:#fff}
-.attachment .chip-remove{position:absolute;top:-7px;right:-7px;width:18px;height:18px;margin:0;border-radius:50%;background:var(--surface);box-shadow:0 1px 3px rgb(0 0 0 / .25)}
 .attach-button{display:grid;place-items:center;flex-shrink:0;width:30px;height:30px;padding:0;border:0;border-radius:var(--r-control);background:transparent;box-shadow:none;color:var(--muted)}
 .attach-button:hover:not(:disabled){background:var(--frost-hover);color:var(--ink)}
 .attach-file{display:none}
