@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // 一条解释的正文：思考时是助手的形象 + Thinking… + 用时；出字后是渲染好的 Markdown（公式也渲染）。超过 10 秒提示换个更快的服务商。
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { mountIntelligentUi } from '../ai/intelligent-ui'
 import 'katex/dist/katex.min.css'
 import { renderMarkdown } from '../ai/render'
 import { thinkingVerb } from '../ai/greeting'
@@ -17,6 +18,9 @@ watch(() => props.item.status, status => { clearInterval(ticker); if (status ===
 onBeforeUnmount(() => clearInterval(ticker))
 const elapsed = computed(() => Math.max(0, Math.floor((now.value - props.item.startedAt) / 1000)))
 const thought = computed(() => props.item.reasoning.trim().split(/\n+/).filter(Boolean).at(-1)?.slice(0, 120) || '')
+// 解释里的 ```ui 块画成可以操作的界面（Intelligent UI）。
+const body = ref<HTMLElement>()
+watch(() => [props.item.text, props.item.status], () => { void nextTick(() => { if (body.value && props.item.text.includes('```ui')) mountIntelligentUi(body.value, { streaming: props.item.status === 'running' }) }) }, { immediate: true, flush: 'post' })
 function openSettings() { window.dispatchEvent(new CustomEvent('kaizhi:open-ai-settings')) }
 </script>
 
@@ -24,7 +28,7 @@ function openSettings() { window.dispatchEvent(new CustomEvent('kaizhi:open-ai-s
   <div class="explain-body">
     <p v-if="item.status === 'running' && !item.text" class="ex-think"><AssistantMark :kind="avatar.kind" :image="avatar.image" :size="18" /><span class="ex-verb">{{ thinkingVerb(item.id) }}…</span><span class="ex-time">{{ elapsed }}s</span></p>
     <p v-if="item.status === 'running' && !item.text && thought" class="ex-thought">{{ thought }}</p>
-    <div v-if="item.text" class="ex-text" v-html="renderMarkdown(item.text)"></div>
+    <div v-if="item.text" ref="body" class="ex-text" v-html="renderMarkdown(item.text)"></div>
     <p v-if="item.status === 'error'" class="ex-error">{{ item.error || '解释失败' }}</p>
     <p v-if="item.status === 'running' && elapsed >= 10" class="ex-slow">有点慢，<button type="button" @click="openSettings">换个更快的服务商</button></p>
   </div>

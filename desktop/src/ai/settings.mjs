@@ -60,6 +60,15 @@ export function explainSettings(main = loadAiSettings()) {
   const connection = { provider: from.provider, baseUrl: from.baseUrl, protocol: from.protocol };
   return { ...main, ...connection, model: own.model, effort: own.effort, fast: Boolean(own.fast) && supportsFast(connection.provider), explain: own };
 }
+/**
+ * 快速解释里的「可视化讲解」（Intelligent UI）用的 AI：默认跟阅读助手一样（服务、模型、强度都跟着走），也可以单独选一家。
+ */
+export const VISUAL_DEFAULTS = Object.freeze({ share: 'assistant', provider: 'deepseek', baseUrl: 'https://api.deepseek.com', protocol: 'chat', model: '', effort: '', fast: false });
+export function visualSettings(main = loadAiSettings()) {
+  const own = { ...VISUAL_DEFAULTS, ...(main.visual || {}) };
+  if (own.share !== 'own') return { ...main, visual: own };
+  return { ...main, provider: own.provider, baseUrl: own.baseUrl, protocol: own.protocol, model: own.model, effort: own.effort, fast: Boolean(own.fast) && supportsFast(own.provider), visual: own };
+}
 /** 翻译窗口里改模型 / 强度 / Fast：只动 translation 这一块。 */
 export function saveTranslationChoice(patch) {
   let stored = {};

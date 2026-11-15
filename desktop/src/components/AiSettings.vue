@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, computed, watch, onBeforeUnmount } from 'vue'
+// AI 设置分两步：先把要用的服务连上（各家的 API Key、本机 Codex 的登录），再给每个功能挑一个模型。
+import { ref, reactive, computed, onBeforeUnmount } from 'vue'
 import { PROVIDERS, PROTOCOLS, getProvider, getNativeModels, getNativeStatus } from '../ai/providers.mjs'
 import { nativeModelInventory, registerNativeModelInventory } from '../ai/native-models'
-import { loadAiSettings, loadApiKey, saveAiSettings, saveCredential, supportsFast, TRANSLATION_DEFAULTS, EXPLAIN_DEFAULTS } from '../ai/settings.mjs'
+import { loadAiSettings, loadApiKey, saveAiSettings, saveCredential, supportsFast, TRANSLATION_DEFAULTS, EXPLAIN_DEFAULTS, VISUAL_DEFAULTS } from '../ai/settings.mjs'
 import { concreteChoice } from '../ai/translate-model'
 import { DOCUMENT_LIMIT_FIELDS } from '../../../extension/common/document-limits.mjs'
 import { apiOrigin } from '../../../extension/common/settings.js'
@@ -11,128 +12,114 @@ import { normalizeRequestLimits } from '../../../extension/common/request-queue.
 withDefaults(defineProps<{ embedded?: boolean }>(), { embedded: false })
 const emit = defineEmits<{ saved: [value: any]; close: [] }>()
 const settings = ref<any>(loadAiSettings())
-settings.value.translation = { ...TRANSLATION_DEFAULTS, ...(settings.value.translation || {}) }
-settings.value.explain = { ...EXPLAIN_DEFAULTS, ...(settings.value.explain || {}) }
-const key = ref('')
+const main = settings.value
+// 以前翻译、快速解释可以「跟着」别的功能走；现在每个功能各选各的，先把跟着的那一份抄过来。
+const tr0 = { ...TRANSLATION_DEFAULTS, ...(main.translation || {}) }
+if (tr0.share) Object.assign(tr0, { share: false, provider: main.provider, baseUrl: main.baseUrl, protocol: main.protocol })
+const ex0 = { ...EXPLAIN_DEFAULTS, ...(main.explain || {}) }
+if (ex0.share !== 'own') { const from = ex0.share === 'translation' ? tr0 : main; Object.assign(ex0, { share: 'own', provider: from.provider, baseUrl: from.baseUrl, protocol: from.protocol }) }
+main.translation = tr0; main.explain = ex0
+main.visual = { ...VISUAL_DEFAULTS, ...(main.visual || {}) }
+// 每家服务的地址和协议各记一份，功能只管选哪一家。
+const connections = reactive<Record<string, { baseUrl: string; protocol: string }>>({})
+for (const item of PROVIDERS as any[]) connections[item.id] = { baseUrl: main.connections?.[item.id]?.baseUrl || item.baseUrl || '', protocol: main.connections?.[item.id]?.protocol || item.protocol || 'chat' }
+for (const used of [main, tr0, ex0, ...(main.visual.share === 'own' ? [main.visual] : [])]) if (used.provider && used.provider !== 'codex' && used.baseUrl && connections[used.provider]) Object.assign(connections[used.provider]!, { baseUrl: used.baseUrl, protocol: used.protocol || connections[used.provider]!.protocol })
+const keys = reactive<Record<string, string>>({})
+const keyEdited = new Set<string>()
 const status = ref('')
 const error = ref(false)
 const saving = ref(false)
 const refreshing = ref(false)
-const keyLoading = ref(false)
+const keysLoading = ref(true)
 const edited = ref(false)
 function markEdited() { edited.value = true }
 const nativeModels = nativeModelInventory
-const provider = computed<any>(() => getProvider(settings.value.provider))
-const models = computed<any[]>(() => settings.value.provider === 'codex' ? nativeModels.value : provider.value?.models || [])
-const model = computed<any>(() => models.value.find(item => item.id === settings.value.model))
-const hasStoredModel = computed(() => Boolean(settings.value.model) && !models.value.some(item => item.id === settings.value.model))
-const requestFields = [
-  { key: 'concurrent', label: '同时运行的提问', min: 1, max: 4 },
-  { key: 'codex', label: '其中 Codex 同时运行数', min: 1, max: 2 },
-  { key: 'queued', label: '最多等待的提问', min: 0, max: 16 },
-]
-const efforts = computed<string[]>(() => model.value?.efforts || (settings.value.provider === 'kimi' || settings.value.provider === 'qwen' ? [] : ['', 'none', 'low', 'medium', 'high', 'xhigh', 'max']))
-let keyEpoch = 0
+const codexStatus = ref('')
+const codexReady = computed(() => nativeModels.value.length > 0)
 let disposed = false
 let modelRequest: AbortController | undefined
-watch(() => settings.value.provider, async (value, previous) => {
-  if (previous) {
-    const next: any = getProvider(value)
-    settings.value.baseUrl = next?.baseUrl || ''
-    settings.value.model = next?.defaultModel || next?.models[0]?.id || ''
-    settings.value.effort = next?.models[0]?.defaultEffort || ''
-    if (next?.custom) settings.value.protocol ||= 'chat'
-  }
-  const epoch = ++keyEpoch
-  keyLoading.value = true
-  key.value = ''
-  if (value === 'codex' && !nativeModels.value.length && (globalThis as any).__TAURI_INTERNALS__) void refreshNative()
-  try { const result = await loadApiKey(value); if (epoch === keyEpoch) key.value = result }
-  catch (cause: any) { status.value = cause?.message || String(cause); error.value = true }
-  finally { if (epoch === keyEpoch) keyLoading.value = false }
-}, { immediate: true })
-watch(model, value => {
-  if (value && !value.efforts.includes(settings.value.effort)) settings.value.effort = value.defaultEffort || ''
-})
+void Promise.all((PROVIDERS as any[]).filter(item => item.id !== 'codex').map(async item => { try { const value = await loadApiKey(item.id); if (!keyEdited.has(item.id)) keys[item.id] = value || '' } catch { keys[item.id] ||= '' } })).finally(() => { keysLoading.value = false })
+const local = (id: string) => id === 'custom' && /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/i.test(connections[id]?.baseUrl || '')
+const connected = (id: string) => id === 'codex' ? codexReady.value : Boolean(keys[id]) || local(id)
 async function refreshNative() {
   if (refreshing.value || disposed) return
   const request = new AbortController()
   modelRequest = request
-  refreshing.value = true; error.value = false; status.value = '正在检查本机 Codex…'
+  refreshing.value = true; codexStatus.value = '正在检查本机 Codex…'
   try {
     const info: any = await getNativeStatus(request.signal)
     if (!info.compatible || !info.loggedIn) throw new Error(info.diagnostic || (info.loggedIn === false ? 'Codex 尚未登录。请先在 Codex 中登录。' : '未找到可用 Codex。'))
     const list: any[] = await getNativeModels(request.signal)
     if (disposed || request.signal.aborted) return
     registerNativeModelInventory(list)
-    if (!settings.value.model && list.length) { settings.value.model = list[0].id; settings.value.effort = list[0].defaultEffort || '' }
-    if (settings.value.provider === 'codex') status.value = `Codex ${info.version} · 已登录 · ${list.length} 个模型`
-  } catch (cause: any) { if (!disposed && !request.signal.aborted && settings.value.provider === 'codex') { status.value = cause?.message || String(cause); error.value = true } }
+    codexStatus.value = `Codex ${info.version} · 已登录 · ${list.length} 个模型`
+    for (const slot of slots) if (slot.target.provider === 'codex') settle(slot)
+  } catch (cause: any) { if (!disposed && !request.signal.aborted) codexStatus.value = cause?.message || String(cause) }
   finally { if (modelRequest === request) { modelRequest = undefined; refreshing.value = false } }
 }
-onBeforeUnmount(() => { disposed = true; keyEpoch++; modelRequest?.abort() })
-// ---- 翻译用的 AI：默认共用上面的服务商；不共用时单独选服务商（需要时单独填密钥）。 ----
-const tr = computed<any>(() => settings.value.translation)
-const trProvider = computed<any>(() => getProvider(tr.value.share ? settings.value.provider : tr.value.provider))
-const trModels = computed<any[]>(() => trProvider.value?.id === 'codex' ? nativeModels.value : trProvider.value?.models || [])
-const trEfforts = computed<string[]>(() => (trModels.value.find(item => item.id === tr.value.model)?.efforts || ['none', 'low', 'medium', 'high']).filter(Boolean))
-const trNeedsKey = computed(() => !tr.value.share && tr.value.provider !== 'codex' && tr.value.provider !== settings.value.provider)
-const trKey = ref('')
-let trKeyEpoch = 0
-watch(() => tr.value.provider, async (value, previous) => {
-  if (previous && value !== previous) { const next: any = getProvider(value); tr.value.baseUrl = next?.baseUrl || ''; tr.value.protocol = 'chat'; tr.value.model = ''; tr.value.effort = '' }
-  const epoch = ++trKeyEpoch; trKey.value = ''
-  if (value === 'codex' && !nativeModels.value.length && (globalThis as any).__TAURI_INTERNALS__) void refreshNative()
-  try { const result = await loadApiKey(value); if (epoch === trKeyEpoch) trKey.value = result } catch { /* 读不到就留空 */ }
-}, { immediate: true })
-watch(() => tr.value.share, () => { tr.value.model = ''; tr.value.effort = '' })
-// 共用服务商时，阅读助手换了服务商，翻译的模型也要跟着换成新服务商的。
-watch(() => settings.value.provider, (value, previous) => { if (previous && value !== previous && tr.value.share) { tr.value.model = ''; tr.value.effort = '' } })
-// 没有「自动」：模型空着（或 Codex 的模型不在列表里）就填上该服务商的默认模型与最低思考强度。
-watch([trModels, () => tr.value.model, () => tr.value.share], () => {
-  const list = trModels.value.filter(item => item.id)
+onBeforeUnmount(() => { disposed = true; modelRequest?.abort() })
+
+// ---- 每个功能用哪个模型 ----
+type Slot = { id: string; label: string; note: string; target: any; follow?: boolean }
+const slots: Slot[] = [
+  { id: 'assistant', label: '阅读助手', note: '对话、框选提问、/btw', target: main },
+  { id: 'translation', label: '翻译', note: '划词翻译、翻译窗口', target: main.translation },
+  { id: 'explain', label: '快速解释', note: '中键解释、深入 / 简化 / 举例', target: main.explain },
+  { id: 'visual', label: '可视化讲解', note: '快速解释里的 Intelligent UI', target: main.visual, follow: true },
+]
+const following = (slot: Slot) => Boolean(slot.follow) && slot.target.share === 'assistant'
+const modelsOf = (id: string): any[] => id === 'codex' ? nativeModels.value : (getProvider(id) as any)?.models || []
+const effortsOf = (slot: Slot): string[] => (modelsOf(slot.target.provider).find(item => item.id === slot.target.model)?.efforts || (slot.target.provider === 'kimi' || slot.target.provider === 'qwen' ? [] : ['none', 'low', 'medium', 'high'])).filter(Boolean)
+const EFFORT: Record<string, string> = { none: '不思考', low: '低', medium: '中', high: '高', xhigh: '很高', max: '最高', minimal: '极低', ultra: '极高' }
+/** 模型空着、或思考强度不是这个模型支持的：补成一个具体的选择。阅读助手取模型自己的默认强度，其余取最低档（要快）。 */
+function settle(slot: Slot) {
+  const target = slot.target, info: any = getProvider(target.provider), list = modelsOf(target.provider).filter(item => item.id)
   if (!list.length) return
-  const choice = concreteChoice(list, tr.value.model, tr.value.effort, trProvider.value?.defaultModel, trProvider.value?.id !== 'codex')
-  if (choice.model !== tr.value.model || choice.effort !== tr.value.effort) Object.assign(tr.value, choice)
-}, { immediate: true })
-// ---- 快速解释用的 AI：服务商跟阅读助手、跟翻译，或单独一家；模型 / 强度 / Fast 自己选。 ----
-const ex = computed<any>(() => settings.value.explain)
-const exProvider = computed<any>(() => getProvider(ex.value.share === 'own' ? ex.value.provider : ex.value.share === 'translation' ? trProvider.value?.id : settings.value.provider))
-const exModels = computed<any[]>(() => exProvider.value?.id === 'codex' ? nativeModels.value : exProvider.value?.models || [])
-const exEfforts = computed<string[]>(() => (exModels.value.find(item => item.id === ex.value.model)?.efforts || ['none', 'low', 'medium', 'high']).filter(Boolean))
-const exNeedsKey = computed(() => ex.value.share === 'own' && ex.value.provider !== 'codex' && ex.value.provider !== settings.value.provider && !(trNeedsKey.value && ex.value.provider === tr.value.provider))
-const exKey = ref('')
-let exKeyEpoch = 0
-watch(() => ex.value.provider, async (value, previous) => {
-  if (previous && value !== previous) { const next: any = getProvider(value); ex.value.baseUrl = next?.baseUrl || ''; ex.value.protocol = 'chat' }
-  const epoch = ++exKeyEpoch; exKey.value = ''
+  if (slot.id === 'assistant') {
+    if (!target.model) target.model = info?.defaultModel || list[0].id
+    const chosen = list.find(item => item.id === target.model)
+    if (chosen && target.effort && !chosen.efforts.includes(target.effort)) target.effort = chosen.defaultEffort || ''
+    return
+  }
+  Object.assign(target, concreteChoice(list, target.model, target.effort, info?.defaultModel, target.provider !== 'codex'))
+}
+function chooseProvider(slot: Slot, value: string) {
+  if (slot.follow) slot.target.share = value === '' ? 'assistant' : 'own'
+  if (!value) return
+  Object.assign(slot.target, { provider: value, model: '', effort: '' })
   if (value === 'codex' && !nativeModels.value.length && (globalThis as any).__TAURI_INTERNALS__) void refreshNative()
-  try { const result = await loadApiKey(value); if (epoch === exKeyEpoch) exKey.value = result } catch { /* 读不到就留空 */ }
-}, { immediate: true })
-watch(() => exProvider.value?.id, (value, previous) => { if (previous && value !== previous) { ex.value.model = ''; ex.value.effort = '' } })
-watch([exModels, () => ex.value.model], () => {
-  const list = exModels.value.filter(item => item.id)
-  if (!list.length) return
-  const choice = concreteChoice(list, ex.value.model, ex.value.effort, exProvider.value?.defaultModel, exProvider.value?.id !== 'codex')
-  if (choice.model !== ex.value.model || choice.effort !== ex.value.effort) Object.assign(ex.value, choice)
-}, { immediate: true })
+  settle(slot)
+}
+for (const slot of slots) if (!following(slot)) settle(slot)
+if (slots.some(slot => !following(slot) && slot.target.provider === 'codex') && !nativeModels.value.length && (globalThis as any).__TAURI_INTERNALS__) void refreshNative()
+
+const requestFields = [
+  { key: 'concurrent', label: '同时运行的提问', min: 1, max: 4 },
+  { key: 'codex', label: '其中 Codex 同时运行数', min: 1, max: 2 },
+  { key: 'queued', label: '最多等待的提问', min: 0, max: 16 },
+]
 async function save() {
   saving.value = true; status.value = ''; error.value = false
   try {
-    if (keyLoading.value) throw new Error('正在读取 AI 配置，请稍后保存。')
-    if (settings.value.provider !== 'codex') {
-      apiOrigin(settings.value.baseUrl)
-      if (!settings.value.model.trim()) throw new Error('请填写模型名称。')
+    if (keysLoading.value) throw new Error('正在读取 AI 配置，请稍后保存。')
+    for (const slot of slots) {
+      if (following(slot)) continue
+      const target = slot.target
+      if (target.provider !== 'codex') {
+        Object.assign(target, { baseUrl: connections[target.provider]?.baseUrl || '', protocol: connections[target.provider]?.protocol || 'chat' })
+        try { apiOrigin(target.baseUrl) } catch (cause: any) { throw new Error(`${(getProvider(target.provider) as any)?.name || target.provider} 的 API 地址不对：${cause?.message || cause}`) }
+        if (!String(target.model || '').trim()) throw new Error(`请给「${slot.label}」填一个模型。`)
+      }
     }
     for (const field of requestFields) {
       const value = settings.value.requestLimits[field.key]
       if (!Number.isInteger(value) || value < field.min || value > field.max) throw new Error(`${field.label}须为 ${field.min}–${field.max} 的整数。`)
     }
     settings.value.requestLimits = normalizeRequestLimits(settings.value.requestLimits)
-    if (trNeedsKey.value) { apiOrigin(tr.value.baseUrl); await saveCredential(tr.value.provider, trKey.value) }
-    if (exNeedsKey.value) { apiOrigin(ex.value.baseUrl); await saveCredential(ex.value.provider, exKey.value) }
-    await saveAiSettings(settings.value, key.value)
-    edited.value = false
+    settings.value.connections = JSON.parse(JSON.stringify(connections))
+    for (const id of keyEdited) if (id !== main.provider) await saveCredential(id, keys[id] || '')
+    await saveAiSettings(settings.value, main.provider === 'codex' ? '' : keys[main.provider] || '')
+    keyEdited.clear(); edited.value = false
     const saved = { ...settings.value }
     emit('saved', saved)
     return saved
@@ -145,48 +132,40 @@ defineExpose({ save, hasChanges: () => edited.value })
 <template>
   <section class="ai-settings" :class="{ embedded }" aria-label="AI 设置" @input="markEdited" @change="markEdited">
     <div v-if="!embedded" class="settings-heading"><strong>AI 设置</strong><button class="text-button" @click="emit('close')">返回</button></div>
-    <label>服务商<select v-model="settings.provider" aria-label="服务商"><option v-for="item in PROVIDERS" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
-    <template v-if="settings.provider !== 'codex'">
-      <label v-if="provider?.custom">接口协议<select v-model="settings.protocol" aria-label="接口协议"><option v-for="item in PROTOCOLS" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
-      <label>API 地址<input v-model="settings.baseUrl" aria-label="API 地址" type="url" :placeholder="provider?.custom ? 'https://openrouter.ai/api/v1 或 http://localhost:11434/v1' : 'https://api.example.com/v1'" /></label>
-      <label>API Key<input v-model="key" aria-label="API Key" type="password" autocomplete="off" placeholder="仅供所选服务商使用" /></label>
-      <label class="check"><input v-model="settings.rememberKey" type="checkbox" /> 在这台电脑记住密钥</label>
-      <p class="settings-note">桌面版使用 Windows 加密保存。浏览器预览的密钥只保留在本次页面会话。<template v-if="provider?.custom"> 本机服务（Ollama、LM Studio）可以不填密钥。</template></p>
-    </template>
-    <template v-else>
-      <p class="settings-note">沿用本机 Codex 的登录，无需填写 API Key。需要已安装并登录 Codex CLI。</p>
-      <button class="secondary-button" :disabled="refreshing" @click="refreshNative">{{ refreshing ? '检查中…' : '检查登录并读取模型' }}</button>
-    </template>
-    <label>模型<select v-if="settings.provider === 'codex'" v-model="settings.model" aria-label="模型" :disabled="refreshing"><option value="">模型默认</option><option v-if="hasStoredModel" :value="settings.model">当前设置：{{ settings.model }}</option><option v-for="item in models" :key="item.id" :value="item.id">{{ item.name || item.id }}</option></select><input v-else v-model="settings.model" aria-label="模型" list="ai-model-list" placeholder="模型默认或自定义名称" /></label>
-    <datalist v-if="settings.provider !== 'codex'" id="ai-model-list"><option v-for="item in models" :key="item.id" :value="item.id">{{ item.name }}</option></datalist>
-    <label>思考强度<select v-model="settings.effort" aria-label="思考强度"><option value="">模型默认</option><option v-for="item in efforts.filter(Boolean)" :key="item" :value="item">{{ ({ none:'不思考',low:'低',medium:'中',high:'高',xhigh:'很高',max:'最高',minimal:'极低',ultra:'极高' } as any)[item] || item }}</option></select></label>
-    <label v-if="supportsFast(settings.provider)" class="check"><input v-model="settings.fast" type="checkbox" /> Fast：更快出字，额度消耗更多</label>
-    <details class="limit-settings"><summary>翻译用的 AI</summary>
-      <label class="check"><input v-model="tr.share" type="checkbox" /> 与阅读助手共用服务商</label>
-      <template v-if="!tr.share">
-        <label>服务商<select v-model="tr.provider" aria-label="翻译服务商"><option v-for="item in PROVIDERS" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
-        <label v-if="trProvider?.custom">接口协议<select v-model="tr.protocol" aria-label="翻译接口协议"><option v-for="item in PROTOCOLS" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
-        <label v-if="tr.provider !== 'codex'">API 地址<input v-model="tr.baseUrl" aria-label="翻译 API 地址" type="url" /></label>
-        <label v-if="trNeedsKey">API Key<input v-model="trKey" aria-label="翻译 API Key" type="password" autocomplete="off" placeholder="加密保存在本机" /></label>
-      </template>
-      <label>模型<select v-if="trProvider?.id === 'codex'" v-model="tr.model" aria-label="翻译模型"><option v-for="item in trModels.filter(item => item.id)" :key="item.id" :value="item.id">{{ item.name || item.id }}</option></select><input v-else v-model="tr.model" aria-label="翻译模型" list="tr-model-list" placeholder="模型名称" /></label>
-      <datalist id="tr-model-list"><option v-for="item in trModels" :key="item.id" :value="item.id">{{ item.name }}</option></datalist>
-      <label>思考强度<select v-model="tr.effort" aria-label="翻译思考强度"><option v-for="item in trEfforts" :key="item" :value="item">{{ ({ none:'不思考',low:'低',medium:'中',high:'高',xhigh:'很高',max:'最高',minimal:'极低',ultra:'极高' } as any)[item] || item }}</option></select></label>
-      <label v-if="supportsFast(trProvider?.id)" class="check"><input v-model="tr.fast" type="checkbox" /> Fast</label>
-    </details>
-    <details class="limit-settings"><summary>快速解释用的 AI</summary>
-      <label>服务商<select v-model="ex.share" aria-label="快速解释的服务商来源"><option value="assistant">与阅读助手共用</option><option value="translation">与翻译共用</option><option value="own">单独设置</option></select></label>
-      <template v-if="ex.share === 'own'">
-        <label>服务商<select v-model="ex.provider" aria-label="快速解释服务商"><option v-for="item in PROVIDERS" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
-        <label v-if="exProvider?.custom">接口协议<select v-model="ex.protocol" aria-label="快速解释接口协议"><option v-for="item in PROTOCOLS" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
-        <label v-if="ex.provider !== 'codex'">API 地址<input v-model="ex.baseUrl" aria-label="快速解释 API 地址" type="url" /></label>
-        <label v-if="exNeedsKey">API Key<input v-model="exKey" aria-label="快速解释 API Key" type="password" autocomplete="off" placeholder="加密保存在本机" /></label>
-      </template>
-      <label>模型<select v-if="exProvider?.id === 'codex'" v-model="ex.model" aria-label="快速解释模型"><option v-for="item in exModels.filter(item => item.id)" :key="item.id" :value="item.id">{{ item.name || item.id }}</option></select><input v-else v-model="ex.model" aria-label="快速解释模型" list="ex-model-list" placeholder="模型名称" /></label>
-      <datalist id="ex-model-list"><option v-for="item in exModels" :key="item.id" :value="item.id">{{ item.name }}</option></datalist>
-      <label>思考强度<select v-model="ex.effort" aria-label="快速解释思考强度"><option v-for="item in exEfforts" :key="item" :value="item">{{ ({ none:'不思考',low:'低',medium:'中',high:'高',xhigh:'很高',max:'最高',minimal:'极低',ultra:'极高' } as any)[item] || item }}</option></select></label>
-      <label v-if="supportsFast(exProvider?.id)" class="check"><input v-model="ex.fast" type="checkbox" /> Fast</label>
-    </details>
+    <h4 class="step"><i>1</i>连接服务<small>填 API Key，或用本机 Codex 的登录</small></h4>
+    <div class="links">
+      <details v-for="item in (PROVIDERS as any[])" :key="item.id" class="link" :class="{ on: connected(item.id) }">
+        <summary><i class="link-dot" aria-hidden="true"></i><b>{{ item.name }}</b><small>{{ item.id === 'codex' ? (codexReady ? '已登录' : '未检查') : keys[item.id] ? '已填密钥' : local(item.id) ? '本机服务' : '未连接' }}</small></summary>
+        <template v-if="item.id === 'codex'">
+          <p class="settings-note">沿用本机 Codex 的登录，不用填 API Key。需要已安装并登录 Codex CLI。</p>
+          <button class="secondary-button" :disabled="refreshing" @click="refreshNative">{{ refreshing ? '检查中…' : '检查登录并读取模型' }}</button>
+          <p v-if="codexStatus" class="settings-note">{{ codexStatus }}</p>
+        </template>
+        <template v-else>
+          <label>API Key<input v-model="keys[item.id]" :aria-label="`${item.name} API Key`" type="password" autocomplete="off" placeholder="加密保存在本机" @input="keyEdited.add(item.id)" /></label>
+          <label v-if="item.custom">接口协议<select v-model="connections[item.id]!.protocol" aria-label="接口协议"><option v-for="protocol in PROTOCOLS" :key="protocol.id" :value="protocol.id">{{ protocol.name }}</option></select></label>
+          <label>API 地址<input v-model="connections[item.id]!.baseUrl" :aria-label="`${item.name} API 地址`" type="url" :placeholder="item.custom ? 'https://openrouter.ai/api/v1 或 http://localhost:11434/v1' : item.baseUrl" /></label>
+          <p v-if="item.custom" class="settings-note">本机服务（Ollama、LM Studio）可以不填密钥。</p>
+        </template>
+      </details>
+    </div>
+    <label class="check"><input v-model="settings.rememberKey" type="checkbox" /> 在这台电脑记住阅读助手的密钥</label>
+    <h4 class="step"><i>2</i>每个功能用哪个模型</h4>
+    <div class="slots">
+      <div v-for="slot in slots" :key="slot.id" class="slot">
+        <p class="slot-name"><b>{{ slot.label }}</b><small>{{ slot.note }}</small></p>
+        <label>服务<select :value="following(slot) ? '' : slot.target.provider" :aria-label="`${slot.label}用的服务`" @change="chooseProvider(slot, ($event.target as HTMLSelectElement).value)">
+          <option v-if="slot.follow" value="">跟阅读助手一样</option>
+          <option v-for="item in (PROVIDERS as any[])" :key="item.id" :value="item.id">{{ item.name }}{{ connected(item.id) ? '' : '（未连接）' }}</option>
+        </select></label>
+        <template v-if="!following(slot)">
+          <label>模型<select v-if="slot.target.provider === 'codex'" v-model="slot.target.model" :aria-label="`${slot.label}模型`" :disabled="refreshing" @change="settle(slot)"><option v-if="slot.target.model && !modelsOf('codex').some(item => item.id === slot.target.model)" :value="slot.target.model">{{ slot.target.model }}</option><option v-for="item in modelsOf('codex').filter(item => item.id)" :key="item.id" :value="item.id">{{ item.name || item.id }}</option></select><input v-else v-model="slot.target.model" :aria-label="`${slot.label}模型`" :list="`models-${slot.id}`" placeholder="模型名称" @change="settle(slot)" /></label>
+          <datalist :id="`models-${slot.id}`"><option v-for="item in modelsOf(slot.target.provider)" :key="item.id" :value="item.id">{{ item.name }}</option></datalist>
+          <label v-if="effortsOf(slot).length">思考强度<select v-model="slot.target.effort" :aria-label="`${slot.label}思考强度`"><option v-if="slot.id === 'assistant'" value="">模型默认</option><option v-for="item in effortsOf(slot)" :key="item" :value="item">{{ EFFORT[item] || item }}</option></select></label>
+          <label v-if="supportsFast(slot.target.provider)" class="check"><input v-model="slot.target.fast" type="checkbox" /> Fast：更快出字，额度消耗更多</label>
+        </template>
+      </div>
+    </div>
     <details class="limit-settings"><summary>每题阅读预算</summary><label v-for="field in DOCUMENT_LIMIT_FIELDS" :key="field.key">{{ field.label }}<input v-model.number="settings.documentLimits[field.key]" type="number" :min="field.min" :max="field.max" :step="field.step || 1" /></label></details>
     <details class="limit-settings"><summary>多文件提问</summary><label v-for="field in requestFields" :key="field.key">{{ field.label }}<input v-model.number="settings.requestLimits[field.key]" type="number" :min="field.min" :max="field.max" :aria-label="field.label" /></label><p class="settings-note">切换标签或收起助手后继续回答；关闭文件标签会停止该文件的提问。</p></details>
     <p v-if="status" class="settings-status" :class="{ error }" role="status">{{ status }}</p>
@@ -221,4 +200,24 @@ button{font:inherit;cursor:pointer;color:var(--control-ink)}
 .limit-settings summary:hover{background-color:var(--control-hover);color:var(--control-ink)}
 .limit-settings label{margin:10px 0}
 button:disabled{opacity:.5;cursor:wait}
+
+.step{display:flex;align-items:baseline;gap:8px;margin:6px 0 -4px;font-size:13.5px;font-weight:650;color:var(--control-ink)}
+.step i{display:grid;place-items:center;flex:none;align-self:center;width:20px;height:20px;border-radius:50%;background:var(--accent);color:var(--accent-on,#fff);font-style:normal;font-size:11.5px;font-weight:700}
+.step small{font-size:11.5px;font-weight:500;color:var(--muted)}
+.links{display:flex;flex-direction:column;border:1px solid var(--separator);border-radius:var(--r-md);overflow:hidden}
+.link + .link{border-top:1px solid var(--separator)}
+.link summary{display:flex;align-items:center;gap:9px;min-height:38px;padding:4px 12px;cursor:pointer;list-style:none;font-size:12.5px;color:var(--control-ink);transition:background-color var(--dur-1) var(--ease-soft)}
+.link summary::-webkit-details-marker{display:none}
+.link summary:hover{background-color:var(--control-hover)}
+.link summary b{flex:1;font-weight:550}
+.link summary small{font-size:11.5px;color:var(--muted)}
+.link.on summary small{color:var(--accent)}
+.link-dot{flex:none;width:7px;height:7px;border-radius:50%;background:color-mix(in srgb,var(--ink) 22%,transparent)}
+.link.on .link-dot{background:var(--accent);box-shadow:0 0 8px color-mix(in srgb,var(--accent) 70%,transparent)}
+.link[open]{padding-bottom:12px}
+.link[open] > :not(summary){margin:8px 12px 0}
+.slots{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
+.slot{display:flex;flex-direction:column;gap:9px;padding:11px 12px 12px;border:1px solid var(--separator);border-radius:var(--r-md)}
+.slot-name{display:flex;align-items:baseline;gap:8px;margin:0;font-size:13px;color:var(--control-ink)}
+.slot-name small{font-size:11px;color:var(--muted)}
 </style>

@@ -6,10 +6,11 @@ import { createApp, reactive, shallowReactive, watch, type App } from 'vue'
 import { looksMathy, selectionImage } from '../reader/selection-image'
 import { IMAGE_NOTE } from './translate'
 import { complete } from './complete'
+import { UI_INSTRUCTIONS } from './intelligent-ui'
 import { library } from '../sdk'
 import ExplainNote from '../components/ExplainNote.vue'
 
-export type ExplainMode = 'plain' | 'deeper' | 'example' | 'simpler'
+export type ExplainMode = 'plain' | 'deeper' | 'example' | 'simpler' | 'visual'
 export type Explain = { id: string; term: string; context: string; mode: ExplainMode; text: string; reasoning: string; status: 'running' | 'done' | 'error'; error: string; startedAt: number; ms: number; /** 选区的截图（PDF 里的公式以图为准）。 */ image?: string }
 export type ExplainTarget = { term: string; context: string; block?: HTMLElement; image?: string; doc?: string; page?: number; /** PDF：选区所在的那一页，图钉钉住后卡片跟着它走。 */ anchor?: HTMLElement }
 
@@ -18,6 +19,8 @@ const MODES: Record<ExplainMode, string> = {
   deeper: '讲得更深入一些：给出准确的定义、来由或推导要点，以及它和上下文里其他概念的关系。不超过 300 字。',
   example: '举一个具体的小例子把它讲明白（数字、图景或类比都可以），例子要贴合这段上下文。不超过 200 字。',
   simpler: '说得再浅一点：假设读者没有学过这个领域，用日常的话讲，不用术语。不超过 120 字。',
+  // 可视化讲解：必须给出一个 ui 代码块（Intelligent UI），写法随请求一起告诉模型。
+  visual: '用一个可交互的界面把它讲明白：先用一两句话点题，然后必须给出一个语言标记为 ui 的代码块（按系统说明里的 JSON 写法）——能随参数变化的用 sim，有数据对比的用 chart 或 table，几个要点并列的用 cards；界面里的数字是示意的就注明「示例」。界面之外的文字不超过 80 字。',
 }
 export function explainPrompt(term: string, context: string, mode: ExplainMode, previous = '') {
   return `解释下面这段文字里「${term}」的意思。${MODES[mode]}\n用简体中文，直接开始解释，不要寒暄、不要复述原文；公式写成 $...$。`
@@ -31,7 +34,8 @@ function run(item: Explain, previous = '') {
   const controller = new AbortController()
   controllers.set(item.id, controller)
   Object.assign(item, { text: '', reasoning: '', status: 'running', error: '', startedAt: Date.now(), ms: 0 })
-  const ask = (image?: string) => complete({ kind: 'explain', messages: [{ role: 'user', content: explainPrompt(item.term, item.context, item.mode, previous) + (image ? IMAGE_NOTE : ''), ...(image ? { images: [image] } : {}) }], signal: controller.signal,
+  const visual = item.mode === 'visual'
+  const ask = (image?: string) => complete({ kind: 'explain', visual, ...(visual ? { extraInstructions: UI_INSTRUCTIONS } : {}), messages: [{ role: 'user', content: explainPrompt(item.term, item.context, item.mode, previous) + (image ? IMAGE_NOTE : ''), ...(image ? { images: [image] } : {}) }], signal: controller.signal,
     onDelta: (_delta, all) => { if (controllers.get(item.id) === controller) item.text = all },
     onReasoning: delta => { if (controllers.get(item.id) === controller) item.reasoning += delta } })
   // 模型看不了图就退回只用文字。

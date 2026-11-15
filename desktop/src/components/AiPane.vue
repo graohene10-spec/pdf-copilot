@@ -606,7 +606,11 @@ function keydown(event: KeyboardEvent) {
 const imageKey = computed(() => props.document.id + (props.side ? '#side' : ''))
 const attachments = computed<string[]>({ get: () => pendingImages(imageKey.value), set: value => setPendingImages(imageKey.value, value) })
 // 刚截的图还没确认：再截一张会把它换掉。点一下就留住（加上红框），之后再截图是新增一张。
-const freshShot = computed(() => selected.value.image && !attachments.value.includes(selected.value.image) ? selected.value.image as string : '')
+// 换一张截图时，新图要等编码好才有：这期间先留着上一张，不让输入栏空一下再回来。
+const heldShot = ref('')
+watch(() => selected.value.image, image => { if (image) heldShot.value = image }, { immediate: true })
+watch(() => [Boolean(props.context?.selection?.image), Boolean(props.context?.selection?.imagePending)], ([image, pending]) => { if (!image && !pending) heldShot.value = '' })
+const freshShot = computed(() => { const image = (selected.value.image || (selected.value.imagePending ? heldShot.value : '')) as string; return image && !attachments.value.includes(image) ? image : '' })
 const shots = computed(() => [...attachments.value.map(image => ({ image, kept: true })), ...(freshShot.value ? [{ image: freshShot.value, kept: false }] : [])])
 const shotKey = (image: string) => `${image.length}:${image.slice(-40)}`
 function keepShot() {
@@ -1329,7 +1333,8 @@ textarea::placeholder{color:var(--muted);font-family:'Anthropic Serif','Source H
 .composer-shots{--shot-red:#e5484d;display:flex;flex-wrap:wrap;gap:14px;padding:14px 15px 2px}
 .shot{position:relative;display:block;border-radius:8px;transition:scale .22s var(--spring-snappy,ease-out),rotate .22s var(--spring-snappy,ease-out)}
 /* 刚截的那张带着取景框的光：一圈主色细线和光晕，亮两下；留住后换成红框和淡淡的红晕。 */
-.shot img{display:block;width:60px;height:46px;border-radius:8px;object-fit:cover;background:#fff;outline:1.5px solid color-mix(in srgb,var(--accent) 72%,#fff);outline-offset:2px;box-shadow:0 0 14px 1px color-mix(in srgb,var(--accent) 38%,transparent);cursor:pointer;transition:outline-color .2s,outline-offset .25s var(--spring-snappy,ease-out),box-shadow .25s}
+/* 小图按截图本身的宽高比显示（高 60，宽度跟着走），不再裁成固定的小方块，看得清是哪一段。 */
+.shot img{display:block;height:60px;width:auto;min-width:48px;max-width:220px;border-radius:8px;object-fit:cover;background:#fff;outline:1.5px solid color-mix(in srgb,var(--accent) 72%,#fff);outline-offset:2px;box-shadow:0 0 14px 1px color-mix(in srgb,var(--accent) 38%,transparent);cursor:pointer;transition:outline-color .2s,outline-offset .25s var(--spring-snappy,ease-out),box-shadow .25s}
 .shot:not(.kept) img{animation:shot-glow 2.2s var(--ease-soft,ease-in-out) .35s 2}
 @keyframes shot-glow{50%{box-shadow:0 0 24px 4px color-mix(in srgb,var(--accent) 62%,transparent)}}
 .shot:not(.kept):hover img{outline-color:var(--shot-red);box-shadow:0 0 18px 2px color-mix(in srgb,var(--shot-red) 45%,transparent)}

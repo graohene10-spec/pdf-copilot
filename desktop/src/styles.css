@@ -4131,3 +4131,16 @@ kbd {
   box-shadow: inset 3px 0 0 var(--accent);
 }
 .document-collection.list .card-pick { display: none; }
+
+/* ---- 文档库：同一分组的书挨在一起，左边一条很淡的细线把它们连起来，第一本上方有小小的组名。不抢眼。 ---- */
+.document-card.grouped { position: relative; }
+.group-thread { position: absolute; left: -9px; top: -6px; bottom: -6px; width: 2px; border-radius: 1px; background: color-mix(in srgb, var(--accent) 30%, transparent); pointer-events: none; }
+.group-start > .group-thread { top: 8px; }
+.group-end > .group-thread { bottom: 8px; }
+.group-chip { position: absolute; left: 0; top: -15px; font-size: 10.5px; line-height: 1; letter-spacing: .04em; color: var(--muted); white-space: nowrap; pointer-events: none; }
+.document-collection.list .document-card.group-start { margin-top: 18px; }
+.document-collection.list .document-card.group-end { margin-bottom: 8px; }
+.document-collection.grid .document-card.group-start { margin-top: 6px; }
+:root[data-style='sketch'] .group-thread { width: 0; border-left: 1.4px dashed color-mix(in srgb, var(--pencil, #2b2a27) 40%, transparent); background: none; }
+.document-collection.list .group-thread { left: 3px; }
+.document-collection.list .group-chip { left: 18px; top: -13px; }

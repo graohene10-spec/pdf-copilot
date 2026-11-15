@@ -249,7 +249,23 @@ const visibleDocuments = computed(() => {
   if (category.value === 'recent') list = list.filter(doc => doc.lastOpenedAt)
   if (tagFilter.value) list = list.filter(doc => doc.tags.includes(tagFilter.value))
   if (groupFilter.value) list = list.filter(doc => members.value[doc.id] === groupFilter.value)
-  return arranged(list)
+  list = arranged(list)
+  // 同一分组的书挨在一起（排在组里第一本的位置）；搜索结果、最近阅读的顺序是算出来的，不动。
+  if (query.value || category.value === 'recent' || groupFilter.value) return list
+  const first = new Map<string, number>()
+  list.forEach((doc, index) => { const group = members.value[doc.id]; if (group && !first.has(group)) first.set(group, index) })
+  return list.map((doc, index) => ({ doc, index, at: first.get(members.value[doc.id] || '') ?? index })).sort((a, b) => a.at - b.at || a.index - b.index).map(item => item.doc)
+})
+/** 文档库里每本书在它那一组里的位置：第一本上方写组名，整组左边连一条淡淡的细线。 */
+const groupMarks = computed(() => {
+  const marks = new Map<string, { name: string; start: boolean; end: boolean }>()
+  if (groupFilter.value) return marks
+  const list = visibleDocuments.value
+  list.forEach((doc, index) => {
+    const group = members.value[doc.id], name = group && groups.value.find(item => item.id === group)?.name
+    if (name) marks.set(doc.id, { name, start: members.value[list[index - 1]?.id || ''] !== group, end: members.value[list[index + 1]?.id || ''] !== group })
+  })
+  return marks
 })
 // 搜索结果和「最近阅读」的顺序是算出来的，不能手排；其余时候都可以拖——正按名称、大小等排序时，一拖就改成自己排的顺序。
 const canArrange = computed(() => !query.value && category.value !== 'recent' && visibleDocuments.value.length > 1)
@@ -1743,7 +1759,8 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
         <div v-if="loading" class="library-empty"><span class="spinner"></span><p>正在读取文档库…</p></div>
         <div v-else-if="!visibleDocuments.length" class="library-empty"><div class="empty-art"><svg viewBox="0 0 120 96" aria-hidden="true"><path class="ea-shade" d="M14 80c16-5 30-5 45 1 16-6 30-6 47-1l1 6c-17-4-31-4-47 2-16-6-30-6-45-2z" /><path class="ea-page" d="M15 22c14-6 29-6 44 2v56c-15-7-30-7-45-2z" /><path class="ea-page ea-right" d="M59 24c15-8 30-8 46-3l1 57c-16-5-31-5-47 2z" /><path class="ea-line" d="M15 22c14-6 29-6 44 2 15-8 30-8 46-3l1 57c-16-5-31-5-47 2-15-7-30-7-45-2z M59 24.500c.4 18 .2 37 .1 55.300 M24 35c8-2.500 17-2 26 1 M24 46.500c8-2.400 17-2 26 1.200 M24.500 58c7-2 14-2 21 .300 M69 36c9-3.200 18-3.400 27-1.400 M69 47.500c9-3 18-3.300 27-1.300 M69.500 59c6-2 12-2.400 18-1.500" /><path class="ea-star" d="M97 6.500c1 5 3 7.200 8 8.500-5 1.200-7 3.400-8.200 8.500-1-5-3.200-7.300-8.300-8.500 5-1.300 7.300-3.500 8.500-8.500z" /><path class="ea-line" d="M112 21.500l.4 5 M109.500 24l5.400.200 M83 4.500l.300 3.600 M81.200 6.300l3.900.100" /></svg></div><h2>{{ query ? '没有匹配的文档' : category === 'starred' ? '暂无收藏' : groupFilter ? '这个分组还是空的' : tagFilter ? '此标签下暂无文档' : '暂无文档' }}</h2><p>{{ query ? '可搜索标题、标签和已读取的文档内容。' : '点击“加入文档”添加 PDF 或 Markdown，可一次选择多个文件。' }}</p><button v-if="query" @click="query = ''; refresh()">查看全部文档</button><small>导入不会移动或修改原文件</small></div>
         <div v-else ref="collection" class="document-collection" :class="[display, { arrangeable: canArrange }]" :aria-description="canArrange ? '拖动卡片或按 Alt+方向键调整位置' : undefined">
-          <article v-for="doc in visibleDocuments" :key="doc.id" class="document-card" :class="[doc.kind, { 'reorder-lifted': reorderLibrary.dragging.value === doc.id, picked: picked.has(doc.id) }]" :data-reorder-id="doc.id" tabindex="0" role="button" :aria-label="`打开 ${doc.name}`" :aria-selected="picked.size ? picked.has(doc.id) : undefined" @click="cardClick($event, doc)" @keydown.enter="openDocument(doc)" @keydown="reorderLibrary.keydown($event, doc.id)" @pointerdown="reorderLibrary.pointerdown($event, doc.id)">
+          <article v-for="doc in visibleDocuments" :key="doc.id" class="document-card" :class="[doc.kind, { 'reorder-lifted': reorderLibrary.dragging.value === doc.id, picked: picked.has(doc.id), grouped: groupMarks.has(doc.id), 'group-start': groupMarks.get(doc.id)?.start, 'group-end': groupMarks.get(doc.id)?.end }]" :data-reorder-id="doc.id" tabindex="0" role="button" :aria-label="`打开 ${doc.name}`" :aria-selected="picked.size ? picked.has(doc.id) : undefined" @click="cardClick($event, doc)" @keydown.enter="openDocument(doc)" @keydown="reorderLibrary.keydown($event, doc.id)" @pointerdown="reorderLibrary.pointerdown($event, doc.id)">
+            <i v-if="groupMarks.has(doc.id)" class="group-thread" aria-hidden="true"></i><span v-if="groupMarks.get(doc.id)?.start" class="group-chip">{{ groupMarks.get(doc.id)!.name }}</span>
             <div class="document-cover" :class="{ 'has-image': covers.has(sourceId(doc.id)) }"><img v-if="covers.has(sourceId(doc.id))" class="cover-image" :class="covers.get(sourceId(doc.id))!.kind" :src="covers.get(sourceId(doc.id))!.image" alt="" draggable="false" /><template v-else><div class="cover-lines"><i></i><i></i><i></i><i></i></div><div class="document-type-icon"><AppIcon :name="doc.kind === 'pdf' ? 'file' : 'markdown'" :size="display === 'list' ? 23 : 30" /></div></template><button class="card-star" :class="{ 'is-starred': doc.starred }" @click.stop="toggleStar(doc)" :data-tip="doc.starred ? '取消收藏' : '收藏文档'" :aria-label="doc.starred ? '取消收藏' : '收藏文档'"><AppIcon name="star" :size="17" /></button></div>
             <div class="document-card-body"><div class="document-card-title"><h3 :data-tip="doc.name">{{ doc.name.replace(/\.(pdf|md|markdown)$/i, '') }}</h3><span class="format-pill">{{ doc.kind === 'pdf' ? 'PDF' : 'MD' }}</span></div><p class="document-meta">{{ size(doc.size) }}<span>·</span>{{ doc.lastOpenedAt ? `阅读于 ${date(doc.lastOpenedAt)}` : `加入于 ${date(doc.addedAt)}` }}</p><div class="document-tags"><span v-for="tag in doc.tags.slice(0, 3)" :key="tag">{{ tag }}</span><span v-if="doc.tags.length > 3">+{{ doc.tags.length - 3 }}</span></div><div class="document-progress"><div><i :style="{ width: `${progressPercent(doc)}%` }"></i></div><span>{{ doc.progress ? `${progressPercent(doc)}%` : '未读' }}</span></div></div>
             <button class="card-remove icon-button" @click.stop="removeTarget = doc" data-tip="从文档库移除" aria-label="从文档库移除"><AppIcon name="trash" :size="15" /></button>
