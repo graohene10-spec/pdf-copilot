@@ -8,7 +8,11 @@
  */
 const SELECTOR = '[data-tip]'
 const PAPER = '.pdf-scroll .page-slot, .markdown-paper'
+// Our own notes pinned inside the paper are interface, not document content.
+const ISLAND = '.explain-note, .explain-card'
 const DELAY = 600
+// `data-tip-fast`: icon-only actions whose meaning is the label itself.
+const FAST = 180
 const WARM = 450
 const GAP = 8
 const MARGIN = 8
@@ -33,7 +37,8 @@ export function installTooltips(root: HTMLElement): () => void {
   const removal = new MutationObserver(() => { if (target && !target.isConnected) hide() })
 
   function candidate(node: EventTarget | null) {
-    if (!(node instanceof Element) || !root.contains(node) || node.closest(PAPER)) return null
+    // Cards and menus teleported to <body> sit outside `root`; they still get tips.
+    if (!(node instanceof Element) || !doc.body.contains(node) || tip.contains(node) || node.closest(PAPER) && !node.closest(ISLAND)) return null
     const element = node.closest<HTMLElement>(SELECTOR)
     return element?.dataset.tip ? element : null
   }
@@ -66,7 +71,7 @@ export function installTooltips(root: HTMLElement): () => void {
     place(element)
     if (!swap) { void tip.offsetWidth; tip.classList.add('visible') }
     shown = true
-    removal.observe(root, { childList: true, subtree: true })
+    removal.observe(doc.body, { childList: true, subtree: true })
   }
   function hide() {
     if (timer) { clearTimeout(timer); timer = undefined }
@@ -83,7 +88,7 @@ export function installTooltips(root: HTMLElement): () => void {
     const warm = shown || performance.now() < warmUntil
     if (!element) { hide(); return }
     target = element
-    timer = setTimeout(() => show(element), warm ? 0 : DELAY)
+    timer = setTimeout(() => show(element), warm ? 0 : 'tipFast' in element.dataset ? FAST : DELAY)
   }
   function over(event: PointerEvent) {
     if (event.pointerType === 'touch') return
@@ -107,8 +112,8 @@ export function installTooltips(root: HTMLElement): () => void {
   doc.addEventListener('keydown', dismiss, true)
   doc.addEventListener('wheel', dismiss, { passive: true, capture: true })
   doc.addEventListener('scroll', dismiss, { passive: true, capture: true })
-  root.addEventListener('focusin', focusIn)
-  root.addEventListener('focusout', focusOut)
+  doc.addEventListener('focusin', focusIn)
+  doc.addEventListener('focusout', focusOut)
   win.addEventListener('blur', dismiss)
   win.addEventListener('resize', dismiss)
 
@@ -120,8 +125,8 @@ export function installTooltips(root: HTMLElement): () => void {
     doc.removeEventListener('keydown', dismiss, true)
     doc.removeEventListener('wheel', dismiss, true)
     doc.removeEventListener('scroll', dismiss, true)
-    root.removeEventListener('focusin', focusIn)
-    root.removeEventListener('focusout', focusOut)
+    doc.removeEventListener('focusin', focusIn)
+    doc.removeEventListener('focusout', focusOut)
     win.removeEventListener('blur', dismiss)
     win.removeEventListener('resize', dismiss)
     tip.remove()

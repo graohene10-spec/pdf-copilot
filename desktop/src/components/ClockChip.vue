@@ -165,10 +165,10 @@ watch(tab, () => void nextTick(locate))
 .cc-ring{flex:none;rotate:-90deg}
 .cc-ring circle{fill:none;stroke:currentColor;stroke-width:2}
 .cc-ring circle:first-child{opacity:.18}
-.cc-ring circle:last-child{stroke-linecap:round;transition:stroke-dasharray .3s linear}
+/* 圆环一秒跳一小格，不加过渡：过渡会让顶栏每一帧都重画，拖慢背景动画。 */
+.cc-ring circle:last-child{stroke-linecap:round}
 .clock-chip.running{color:var(--accent)}
 .clock-chip.paused{color:var(--muted)}
-.clock-chip.paused .cc-ring circle:last-child{transition:none}
 .clock-chip.ringing{color:var(--accent);animation:cc-pulse 1.3s ease-in-out infinite}
 .cc-bell{transform-origin:50% 10%;animation:cc-swing 1.3s ease-in-out infinite}
 @keyframes cc-pulse{50%{background-color:color-mix(in srgb,var(--accent) 18%,transparent)}}
@@ -189,7 +189,7 @@ watch(tab, () => void nextTick(locate))
 .cp-rim.inner{stroke-width:.45;opacity:.45}
 .cp-ticks{stroke-width:.55;opacity:.7}
 .cp-ticks.quarter{stroke-width:.95;opacity:1}
-.cp-arc{stroke:var(--accent);stroke-width:2;transition:stroke-dasharray .3s linear}
+.cp-arc{stroke:var(--accent);stroke-width:2}
 .cp-hand{fill:currentColor;stroke:none}
 .cp-second{stroke:var(--accent);stroke-width:.55;transform-origin:50px 54px;animation:cp-sweep 60s linear infinite}
 .cp-second circle{fill:var(--accent);stroke:none}
