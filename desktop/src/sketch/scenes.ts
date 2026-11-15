@@ -785,6 +785,116 @@ function racksLabel(env: Env) {
   c.fillText('∂²φ/∂t² = c² ∇²φ', left + w * .06, top + h * .5 - 16)
 }
 
+// ---- 递归自我改进：格子上先冒出一颗点阵的星芒，化成一团，再收成一块圆角方砖；方砖一块接一块长满一整片，
+// 镜头拉远——这一整片正好是更大一格里的一块砖的点阵——然后在更大的格子上重新来过。长得越多，长得越快。
+// （灵感来自 Anthropic Institute〈When AI builds itself〉页头的动画；这里是照着那个意思自己重画的，节奏放慢了很多。）
+function rsi(): Painter {
+  // 一格里是 M×M 个小点；一整片也是 M×M 格，所以拉远 M 倍之后首尾正好接上。砖只占格子中间的 DOT，四周留缝。
+  const M = 12, DOT = .8, INSET = (1 - DOT) / 2
+  // 一格的一生（秒）：星芒冒出来、停一下、化成一团、停一下、收成方块（稀疏的点阵）、点阵变密、连成一块砖。
+  const T_SPARK = 1.5, T_BLOB = 2.8, T_BLOB_END = 4.6, T_SQUARE = 5.4, T_SQUARE_END = 7.2, T_DENSE = 10, T_SOLID = 12.5
+  const REST = 2.5, ZOOM = 7, A_DOT = .52, A_TILE = .4
+  const at = (k: number) => (k + .5) / M * 2 - 1
+  // 圆角方块里外：也决定一整片里哪些格子会长砖（角上缺几格，拉远后正好是一块圆角砖的点阵）。
+  const square = (u: number, v: number) => { const half = .93, round = .42; return (round - Math.hypot(Math.max(Math.abs(u) - (half - round), 0), Math.max(Math.abs(v) - (half - round), 0))) / .2 }
+  const SQUARE = new Float32Array(M * M), RADIUS = new Float32Array(M * M)
+  for (let b = 0; b < M; b++) for (let a = 0; a < M; a++) { SQUARE[b * M + a] = square(at(a), at(b)); RADIUS[b * M + a] = Math.hypot(at(a), at(b)) }
+  const SLOTS = SQUARE.reduce((sum, value) => sum + (value > 0 ? 1 : 0), 0)
+  type Cell = { i: number; j: number; born: number; spark: Float32Array; blob: Float32Array }
+  const make = (i: number, j: number, born: number): Cell => {
+    const seed = Math.random() * 1000, spark = new Float32Array(M * M), blob = new Float32Array(M * M), RAYS = 11, turn = hash(seed) * TAU
+    const rays = Array.from({ length: RAYS }, (_, k) => { const angle = turn + (k + (hash(seed + k * 7.3) - .5) * .5) * TAU / RAYS; return { x: Math.cos(angle), y: Math.sin(angle), length: .58 + .4 * hash(seed + k * 3.1) } })
+    const p1 = hash(seed + 1) * TAU, p2 = hash(seed + 2) * TAU
+    for (let b = 0; b < M; b++) for (let a = 0; a < M; a++) {
+      const u = at(a), v = at(b), r = RADIUS[b * M + a]!, angle = Math.atan2(v, u)
+      let best = (.24 - r) / .1
+      for (const ray of rays) {
+        const along = u * ray.x + v * ray.y
+        if (along <= 0 || along > ray.length) continue
+        best = Math.max(best, (.1 * (1 - .45 * along / ray.length) - Math.abs(v * ray.x - u * ray.y)) / .06)
+      }
+      spark[b * M + a] = best
+      blob[b * M + a] = (.66 + .13 * Math.sin(3 * angle + p1) + .08 * Math.sin(5 * angle + p2) - r) / .2
+    }
+    return { i, j, born, spark, blob }
+  }
+  let cells: Cell[] = [], taken = new Uint8Array(M * M), clock = 0, last = -1, nextBirth = 0, fullAt = 0, level = 0
+  let zoom: { from: number; i: number; j: number } | null = null
+  const put = (i: number, j: number, born: number) => { cells.push(make(i, j, born)); taken[j * M + i] = 1 }
+  const middle = () => 3 + Math.floor(Math.random() * (M - 6))
+  put(middle(), middle(), 0); nextBirth = 2.2
+  // 新的一格长在已有的旁边；身边越空的位置越容易被选中，所以先抽出枝杈，后面才慢慢填满。
+  const birth = () => {
+    const options: number[] = [], weights: number[] = []
+    let total = 0
+    for (let j = 0; j < M; j++) for (let i = 0; i < M; i++) {
+      if (taken[j * M + i] || SQUARE[j * M + i]! <= 0) continue
+      let near = 0, touching = 0
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+        const x = i + di, y = j + dj
+        if ((!di && !dj) || x < 0 || y < 0 || x >= M || y >= M || !taken[y * M + x]) continue
+        near++; if (!di || !dj) touching++
+      }
+      if (!touching) continue
+      const weight = 1 / (near * near); options.push(j * M + i); weights.push(weight); total += weight
+    }
+    if (!options.length) return
+    let pick = Math.random() * total, index = 0
+    while (index < options.length - 1 && (pick -= weights[index]!) > 0) index++
+    put(options[index]! % M, Math.floor(options[index]! / M), clock)
+  }
+  return env => {
+    const c = env.context, { x: left, y: top, w, h } = env.full, g = env.grid.size, fade = env.fade
+    // 自己走表：一帧最多走 0.1 秒，窗口藏起来再回来不会一下子跳过去一大段。
+    if (last >= 0) clock += clamp((env.t - last) / 1000, 0, .1)
+    last = env.t
+    if (zoom) {
+      if (clock - zoom.from >= ZOOM) {
+        // 拉远到头：刚才那一整片现在就是这一格里的点阵，从「点阵变密」那一步接着走。
+        const { i, j } = zoom
+        cells = []; taken = new Uint8Array(M * M); put(i, j, clock - T_DENSE)
+        zoom = null; fullAt = 0; level++; nextBirth = clock + 1.6
+      }
+    } else if (cells.length < SLOTS) {
+      // 长得越多，长得越快。
+      while (clock >= nextBirth && cells.length < SLOTS) { birth(); nextBirth += Math.max(.22, 1.5 / (1 + cells.length / 9)) }
+    } else if (cells.every(cell => clock - cell.born >= T_SOLID)) {
+      fullAt ||= clock
+      if (clock - fullAt > REST) zoom = { from: clock, i: middle(), j: middle() }
+    }
+    const S = g * clamp(Math.floor(Math.min(w * .56, h * .8) / M / g * 2) / 2, 1, 3), B = S * M, inner = S * DOT, pitch = inner / M
+    const bx = env.grid.x + Math.round((left + w * .6 - B / 2 - env.grid.x) / g) * g, by = env.grid.y + Math.round((top + h * .52 - B / 2 - env.grid.y) / g) * g
+    c.fillStyle = env.red
+    const solid = new Path2D()
+    for (const cell of cells) {
+      const age = clock - cell.born, x0 = bx + cell.i * S + INSET * S, y0 = by + cell.j * S + INSET * S
+      if (age >= T_SOLID) { solid.roundRect(x0, y0, inner, inner, inner * .21); continue }
+      // 这一格的点阵：星芒、一团、方块各是一张「里外」的图，中间慢慢换过去；点的大小看它离边缘多远。
+      const toBlob = smooth((age - T_BLOB) / (T_BLOB_END - T_BLOB)), toSquare = smooth((age - T_SQUARE) / (T_SQUARE_END - T_SQUARE))
+      const even = smooth((age - T_SQUARE_END) / (T_DENSE - T_SQUARE_END)), merge = smooth((age - T_DENSE) / (T_SOLID - T_DENSE))
+      const reveal = age < T_SPARK ? smooth(age / T_SPARK) * 1.5 : 9, base = .62 + (DOT - .62) * even + (1 - DOT) * merge
+      const dots = new Path2D()
+      for (let k = 0; k < M * M; k++) {
+        let field = cell.spark[k]! + (cell.blob[k]! - cell.spark[k]!) * toBlob
+        field += (SQUARE[k]! - field) * toSquare
+        if (reveal < 9) field = Math.min(field, (reveal - RADIUS[k]!) / .15)
+        if (field <= 0) continue
+        const size = pitch * base * (clamp(.35 + field, 0, 1) * (1 - even) + even), a = k % M, b = (k - a) / M
+        dots.rect(x0 + (a + .5) * pitch - size / 2, y0 + (b + .5) * pitch - size / 2, size, size)
+      }
+      c.globalAlpha = (A_DOT + (A_TILE - A_DOT) * even) * fade; c.fill(dots)
+    }
+    c.globalAlpha = A_TILE * fade
+    if (zoom) {
+      // 整片缩向它在下一层里的那一格：缩到头时，每块砖正好落在那一格的一个点上。
+      const q = DOT / M, scale = q ** smooth((clock - zoom.from) / ZOOM)
+      const fx = (bx + zoom.i * S + INSET * S - bx * q) / (1 - q), fy = (by + zoom.j * S + INSET * S - by * q) / (1 - q)
+      c.save(); c.translate(fx, fy); c.scale(scale, scale); c.translate(-fx, -fy); c.fill(solid); c.restore()
+    } else c.fill(solid)
+    if (env.hand) { c.globalAlpha = .4 * fade; c.fillStyle = env.ink; c.font = `18px ${env.hand}`; c.fillText(`xₙ₊₁ = f(xₙ)   n = ${level}`, bx + INSET * S, by + B + 24) }
+  }
+}
+
 export const SKETCHES: Sketch[] = [
   { id: 'dna', name: 'DNA 双螺旋', tilt: .1, zoom: .5, camera: 2.8, create: dna, facts: [
     'B-DNA: a right-handed double helix, about 10.5 base pairs per turn, 3.4 Å rise per base pair.',
@@ -865,6 +975,18 @@ export const SKETCHES: Sketch[] = [
     'Red-black trees are 2-3-4 trees in disguise (Guibas–Sedgewick, 1978).',
     'An AVL tree is more strictly balanced; a red-black tree rotates less on update.',
     'Catalan: the number of binary trees with n nodes is Cₙ = (2n)! / ((n + 1)! n!).',
+  ] },
+  { id: 'rsi', name: '递归自我改进', tilt: .5, create: rsi, facts: [
+    'Recursive self-improvement: a system that improves the process that improves it.',
+    'Fixed point: x = f(x). The Y combinator: Y f = f (Y f).',
+    'A quine is a program whose output is its own source.',
+    'Kleene: every computable transformation of programs has a fixed point.',
+    'Von Neumann’s universal constructor builds a copy of itself, description included.',
+    'Bootstrapping: a compiler written in the language it compiles.',
+    'I. J. Good (1965): an ultraintelligent machine could design even better machines.',
+    'Self-similarity: N = sᴰ copies at scale 1/s; here s = 12 and D = 2.',
+    'Geometric growth: xₙ₊₁ = r·xₙ ⇒ xₙ = rⁿ x₀.',
+    'Renormalization: zoom out, and the coarse picture obeys the same rules.',
   ] },
   { id: 'racks', name: 'GB300', tilt: .7, create: racks, offscreen: true, label: racksLabel, facts: [
     'A field is a degree of freedom at every point; a lattice makes that literal.',

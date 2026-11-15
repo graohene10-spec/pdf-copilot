@@ -96,8 +96,11 @@ export const SKETCH_ANSWER_FONTS: FontChoice[] = [
   ...['Times New Roman', 'Georgia', 'Arial', 'Calibri', 'Segoe UI'].map(name => ({ id: `latin-${name.toLowerCase().replace(/\s+/g, '-')}`, label: name, families: [], stack: `'${name}', KaiTi, STKaiti, ${SYSTEM_SANS}` })),
 ]
 /** 铅笔草稿的格子纸背景上慢慢自旋的流形：是否显示、阅读时是否也显示、在哪几种之间轮换。 */
-export type ManifoldPreferences = { show: boolean; reader: boolean; shapes: string[] }
-export function defaultManifold(): ManifoldPreferences { return { show: true, reader: false, shapes: [...MANIFOLD_IDS] } }
+/** known：存这份设置时已经有的画面。之后新加的画面默认勾上，读者自己取消过的不会再被勾回来。 */
+export type ManifoldPreferences = { show: boolean; reader: boolean; shapes: string[]; known: string[] }
+export function defaultManifold(): ManifoldPreferences { return { show: true, reader: false, shapes: [...MANIFOLD_IDS], known: [...MANIFOLD_IDS] } }
+/** 0.10.54 加的画面：更早的设置里没有 known，就当它认识除此以外的全部。 */
+const SCENES_SINCE_KNOWN = ['rsi']
 export const BACKDROPS: { id: BackdropPreset; label: string }[] = [
   { id: 'mist', label: '晨雾' }, { id: 'dawn', label: '暮光' }, { id: 'mint', label: '薄荷' },
   { id: 'lavender', label: '薰衣草' }, { id: 'graphite', label: '石墨' }, { id: 'paper', label: '素白' },
@@ -218,7 +221,9 @@ export function normalizePreferences(value: unknown, legacyTheme?: string | null
   const manifold = record(appearance.manifold)
   const shapes = Array.isArray(manifold.shapes) ? [...new Set(manifold.shapes.filter((id: unknown) => typeof id === 'string' && (MANIFOLD_IDS as string[]).includes(id)))] as string[] : MANIFOLD_IDS
   const everyOld = shapes.length === LEGACY_SCENE_IDS.length && LEGACY_SCENE_IDS.every(id => shapes.includes(id))
-  defaults.appearance.manifold = { show: manifold.show !== false, reader: manifold.reader === true, shapes: shapes.length && !everyOld ? shapes : [...MANIFOLD_IDS] }
+  const known = Array.isArray(manifold.known) ? manifold.known.filter((id: unknown) => typeof id === 'string') as string[] : MANIFOLD_IDS.filter(id => !SCENES_SINCE_KNOWN.includes(id))
+  const chosen = shapes.length && !everyOld ? [...new Set([...shapes, ...MANIFOLD_IDS.filter(id => !known.includes(id))])] : [...MANIFOLD_IDS]
+  defaults.appearance.manifold = { show: manifold.show !== false, reader: manifold.reader === true, shapes: chosen, known: [...MANIFOLD_IDS] }
   defaults.appearance.sketchAnswerFont = SKETCH_ANSWER_FONTS.some(item => item.id === appearance.sketchAnswerFont) ? appearance.sketchAnswerFont : 'mashanzheng'
   defaults.appearance.libraryView = ['grid', 'list'].includes(appearance.libraryView) ? appearance.libraryView : defaults.appearance.libraryView
   const legacyGlass = typeof appearance.glass === 'string' && Object.hasOwn(LEGACY_GLASS, appearance.glass) ? LEGACY_GLASS[appearance.glass] : defaults.appearance.glassTransparency
