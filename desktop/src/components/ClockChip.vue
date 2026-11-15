@@ -50,6 +50,8 @@ const running = computed(() => clock.mode !== 'idle')
 const reading = computed(() => clock.mode === 'down' ? span(left.value) : span(gone.value, true))
 const timerTip = computed(() => `${clock.paused ? '已暂停 · ' : ''}${clock.mode === 'down' ? '还剩' : '已计时'} ${reading.value}`)
 const chipTip = computed(() => running.value ? timerTip.value : '计时 / 闹钟')
+// 圆弧走到哪儿，头上有一颗亮点。
+const head = computed(() => { const angle = share.value * Math.PI * 2; return { cos: Math.cos(angle), sin: Math.sin(angle) } })
 const cornerShown = computed(() => Boolean(props.collapsed) && (running.value || Boolean(clock.ringing)))
 // 顶栏收放时，开着的卡片跟到新的位置。
 watch(() => [props.collapsed, cornerShown.value], () => { if (open.value) void nextTick(locate) })
@@ -109,7 +111,7 @@ watch(tab, () => void nextTick(locate))
     <Transition name="clock-corner">
       <button v-if="cornerShown" ref="corner" type="button" class="clock-corner" :class="{ paused: clock.paused, ringing: clock.ringing }" aria-label="计时与闹钟" :aria-expanded="open" :data-tip="open ? undefined : clock.ringing ? '到点了' : `${nowLabel} · ${timerTip}`" data-tip-fast @click="toggle">
         <AppIcon v-if="clock.ringing" name="bell" :size="18" class="cc-bell" />
-        <svg v-else width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><circle cx="13" cy="13" r="10" /><circle cx="13" cy="13" r="10" pathLength="1" :stroke-dasharray="`${share} 1`" /></svg>
+        <svg v-else width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><circle cx="13" cy="13" r="10" /><circle cx="13" cy="13" r="10" pathLength="1" :stroke-dasharray="`${share} 1`" /><circle class="cc-head" :cx="13 + 10 * head.cos" :cy="13 + 10 * head.sin" r="1.7" /></svg>
       </button>
     </Transition>
     <Transition name="clock-pop">
@@ -120,7 +122,7 @@ watch(tab, () => void nextTick(locate))
             <circle class="cp-bow" cx="50" cy="7.6" r="3.5" /><path class="cp-crown" d="M47.4 11.4h5.2v3.4h-5.2z" />
             <circle class="cp-rim" cx="50" cy="54" r="38" /><circle class="cp-rim inner" cx="50" cy="54" r="35.4" />
             <path class="cp-ticks" :d="HOURS" /><path class="cp-ticks quarter" :d="QUARTERS" />
-            <circle v-if="running && !clock.ringing" class="cp-arc" cx="50" cy="54" r="38" pathLength="1" :stroke-dasharray="`${share} 1`" transform="rotate(-90 50 54)" />
+            <g v-if="running && !clock.ringing" transform="rotate(-90 50 54)"><circle class="cp-arc" cx="50" cy="54" r="38" pathLength="1" :stroke-dasharray="`${share} 1`" /><circle class="cp-head" :cx="50 + 38 * head.cos" :cy="54 + 38 * head.sin" r="1.9" /></g>
             <path class="cp-hand" d="M50 57.5 48.9 44 50 33.5 51.1 44z" :transform="`rotate(${hands.hour} 50 54)`" />
             <path class="cp-hand" d="M50 58.5 49.15 38 50 23 50.85 38z" :transform="`rotate(${hands.minute} 50 54)`" />
             <g class="cp-second" :style="{ animationDelay: `-${sweep}s` }"><path d="M50 62.5V22.5" /><circle cx="50" cy="62.5" r="1.3" /></g>
@@ -183,7 +185,8 @@ watch(tab, () => void nextTick(locate))
 .cc-ring circle{fill:none;stroke:currentColor;stroke-width:2}
 .cc-ring circle:first-child{opacity:.18}
 /* 圆环一秒跳一小格，不加过渡：过渡会让顶栏每一帧都重画，拖慢背景动画。 */
-.cc-ring circle:last-child{stroke-linecap:round}
+.cc-ring{overflow:visible}
+.cc-ring circle:last-child{stroke-linecap:round;filter:drop-shadow(0 0 2px color-mix(in srgb,currentColor 75%,transparent))}
 .clock-chip.running .cc-ring{color:var(--accent)}
 .clock-chip.paused .cc-ring{color:var(--muted)}
 .clock-chip.ringing{color:var(--accent);animation:cc-pulse 1.3s ease-in-out infinite}
@@ -198,8 +201,11 @@ watch(tab, () => void nextTick(locate))
 .clock-corner svg{rotate:-90deg;overflow:visible;filter:drop-shadow(0 0 3px color-mix(in srgb,var(--surface,#fff) 80%,transparent))}
 .clock-corner circle{fill:none;stroke:currentColor;stroke-width:2.2}
 .clock-corner circle:first-child{opacity:.2}
-.clock-corner circle:last-child{stroke:var(--accent);stroke-linecap:round}
-.clock-corner.paused circle:last-child{stroke:var(--muted)}
+.clock-corner circle:nth-child(2){stroke:var(--accent);stroke-linecap:round;filter:drop-shadow(0 0 3.5px color-mix(in srgb,var(--accent) 85%,transparent))}
+.clock-corner .cc-head{fill:#fff;stroke:var(--accent);stroke-width:1;opacity:1;filter:drop-shadow(0 0 3px var(--accent))}
+.clock-corner:hover circle:nth-child(2){filter:drop-shadow(0 0 6px var(--accent))}
+.clock-corner.paused circle:nth-child(2){stroke:var(--muted);filter:none}
+.clock-corner.paused .cc-head{stroke:var(--muted);filter:none}
 .clock-corner.ringing{color:var(--accent);opacity:1}
 .clock-corner-enter-active,.clock-corner-leave-active{transition:opacity .25s,scale .3s var(--spring-snappy,ease-out)}
 .clock-corner-enter-from,.clock-corner-leave-to{opacity:0;scale:.5}
@@ -207,8 +213,10 @@ watch(tab, () => void nextTick(locate))
 :root[data-style='sketch'] .clock-corner svg{filter:url(#sk-pencil)}
 :root[data-style='sketch'] .clock-corner circle{stroke-width:1.6}
 :root[data-style='sketch'] .clock-corner circle:first-child{opacity:.45;stroke-dasharray:2.5 2.5}
-:root[data-style='sketch'] .clock-corner circle:last-child{stroke:var(--red-pencil,#c0392b);stroke-width:2.4}
-:root[data-style='sketch'] .clock-corner.paused circle:last-child{stroke:var(--pencil-soft,#8a8578)}
+:root[data-style='sketch'] .clock-corner circle:nth-child(2){stroke:var(--red-pencil,#c0392b);stroke-width:2.4;filter:none}
+:root[data-style='sketch'] .clock-corner .cc-head{fill:var(--paper,#fbf8f0);stroke:var(--red-pencil,#c0392b);stroke-width:1.2;filter:none}
+:root[data-style='sketch'] .clock-corner svg{filter:url(#sk-pencil) drop-shadow(0 0 4px color-mix(in srgb,var(--red-pencil,#c0392b) 40%,transparent))}
+:root[data-style='sketch'] .clock-corner.paused circle:nth-child(2),:root[data-style='sketch'] .clock-corner.paused .cc-head{stroke:var(--pencil-soft,#8a8578)}
 
 /* ---- 卡片：上面是一只表盘和大号读数（平时是现在几点，计时中是剩下的时间），下面是计时 / 闹钟 ---- */
 .clock-panel{position:fixed;z-index:430;width:256px;padding:14px 16px 14px;border:1px solid var(--glass-outline);border-radius:var(--r-lg,16px);background-color:var(--popup-glass);background-image:radial-gradient(110% 70% at 100% 0,color-mix(in srgb,var(--accent) 13%,transparent),transparent 62%),var(--popup-sheen);-webkit-backdrop-filter:blur(var(--popup-blur)) saturate(var(--glass-sat));backdrop-filter:blur(var(--popup-blur)) saturate(var(--glass-sat));box-shadow:var(--shadow-3),var(--glass-edge);color:var(--ink);transform-origin:calc(100% - 30px) 0;font-variant-numeric:tabular-nums}
@@ -225,7 +233,8 @@ watch(tab, () => void nextTick(locate))
 .cp-rim.inner{stroke-width:.45;opacity:.45}
 .cp-ticks{stroke-width:.55;opacity:.7}
 .cp-ticks.quarter{stroke-width:.95;opacity:1}
-.cp-arc{stroke:var(--accent);stroke-width:2}
+.cp-arc{stroke:var(--accent);stroke-width:2;filter:drop-shadow(0 0 2.5px color-mix(in srgb,var(--accent) 80%,transparent))}
+.cp-head{fill:#fff;stroke:var(--accent);stroke-width:.9;filter:drop-shadow(0 0 3px var(--accent))}
 .cp-hand{fill:currentColor;stroke:none}
 .cp-second{stroke:var(--accent);stroke-width:.55;transform-origin:50px 54px;animation:cp-sweep 60s linear infinite}
 .cp-second circle{fill:var(--accent);stroke:none}
@@ -246,7 +255,7 @@ watch(tab, () => void nextTick(locate))
 .cp-presets button{flex:1;padding:3px 0;border-radius:999px;background:none;box-shadow:none;color:var(--secondary,var(--muted));font-size:11.5px;white-space:nowrap}
 .cp-presets button.on{border-color:color-mix(in srgb,var(--accent) 55%,transparent);color:var(--accent)}
 .cp-go{width:100%;gap:6px;padding:7px 0;border:0;border-radius:11px;background:var(--accent);background-image:linear-gradient(180deg,rgb(255 255 255 / .16),transparent);box-shadow:0 6px 14px -8px var(--accent);color:#fff;font-size:13px;font-weight:600}
-.cp-go:hover:not(:disabled){background-color:color-mix(in srgb,var(--accent) 88%,#000);color:#fff}
+.cp-go:hover:not(:disabled){background-color:color-mix(in srgb,var(--accent) 92%,#000);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 24%,transparent),0 8px 22px -8px var(--accent);color:#fff}
 .cp-go:active{scale:.97}
 .cp-ok{margin-top:14px}
 .cp-controls{display:flex;justify-content:center;gap:12px;padding:2px 0 2px}
@@ -298,7 +307,8 @@ watch(tab, () => void nextTick(locate))
 :root[data-style='sketch'] .clock-panel{--scribble:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='8' viewBox='0 0 48 8' preserveAspectRatio='none'%3E%3Cpath d='M2 5.4c7-3.2 12 1.6 20-.6s14-2.6 24-.4' fill='none' stroke='%23c8553d' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");width:262px;padding:18px 20px 18px;border:1.2px solid var(--pencil,#2b2a27);border-radius:10px 13px 9px 12px / 12px 9px 13px 10px;background:var(--paper,#fbf8f0);-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:2px 3px 0 rgb(60 50 30 / .14),10px 18px 30px -16px rgb(60 50 30 / .4);color:var(--pencil,#2b2a27)}
 :root[data-style='sketch'] .cp-second{stroke:var(--red-pencil,#c8553d)}
 :root[data-style='sketch'] .cp-second circle{fill:var(--red-pencil,#c8553d)}
-:root[data-style='sketch'] .cp-arc{stroke:var(--red-pencil,#c8553d)}
+:root[data-style='sketch'] .cp-arc{stroke:var(--red-pencil,#c8553d);filter:drop-shadow(0 0 2px color-mix(in srgb,var(--red-pencil,#c8553d) 45%,transparent))}
+:root[data-style='sketch'] .cp-head{fill:var(--paper,#fbf8f0);stroke:var(--red-pencil,#c8553d);filter:none}
 :root[data-style='sketch'] .cp-hub{fill:var(--paper,#fbf8f0);stroke:var(--red-pencil,#c8553d)}
 :root[data-style='sketch'] .cp-read small,:root[data-style='sketch'] .cp-read span,:root[data-style='sketch'] .cp-unit{color:var(--pencil-soft,rgb(46 45 42 / .62));font-size:13px;letter-spacing:.04em}
 :root[data-style='sketch'] .cp-read b{font-family:Caveat,var(--font);font-size:44px;font-weight:500;line-height:1;letter-spacing:.01em}

@@ -57,7 +57,7 @@ function discard() {
 /* 选项是一排图标：液态玻璃收在一条胶囊里，关闭在右上角；暖色极简是细线上的一行；铅笔草稿是铅笔画的小记号。 */
 .en-actions{display:inline-flex;align-items:center;gap:1px;width:fit-content;max-width:100%;margin-top:.8em!important;padding:2px;border-radius:999px;background:color-mix(in srgb,var(--ink) 6%,transparent);box-shadow:inset 0 0 0 1px var(--glass-outline)}
 .en-actions button{display:grid;place-items:center;width:30px;height:24px;min-height:0;padding:0;border:0;border-radius:999px;background:none!important;box-shadow:none!important;color:var(--muted);cursor:pointer;transition:color .15s,background-color .15s,box-shadow .15s,scale .18s var(--spring-snappy,ease-out)}
-.en-actions button:hover:not(:disabled){background:color-mix(in srgb,var(--surface,#fff) 78%,transparent)!important;box-shadow:0 1px 3px rgb(0 0 0 / .14)!important;color:var(--ink)}
+.en-actions button:hover:not(:disabled){background:color-mix(in srgb,var(--surface,#fff) 78%,transparent)!important;box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 26%,transparent),0 0 14px color-mix(in srgb,var(--accent) 42%,transparent)!important;color:var(--accent)}
 .en-actions button:active:not(:disabled){scale:.9}
 .en-actions button.on{color:var(--accent)}
 .en-actions button.on svg{fill:color-mix(in srgb,currentColor 28%,transparent)}

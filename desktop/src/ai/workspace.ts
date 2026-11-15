@@ -366,7 +366,8 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
     if (state.messages.length >= MAX_MESSAGES || state.messages.reduce((sum, message) => sum + message.content.length, question.length) > 150000) throw new Error('这段对话已经很长，请新建对话继续，以控制上下文与内存。')
     // 框选截图在前，输入框里粘贴或添加的图片随后。
     const attached = (sendOptions.attachments || []).slice(0, MAX_ATTACHMENTS)
-    const images = [...(selection.image ? [selection.image] : []), ...attached]
+    // 同一张图只发一次（同一块地方截了两遍）。
+    const images = [...new Set([...(selection.image ? [selection.image] : []), ...attached])]
     if (images.reduce((sum, image) => sum + image.length, 0) > 8 * 1024 * 1024) throw new Error('图片总量太大，请减少几张或换小一点的图片。')
     const user: Message = { id: crypto.randomUUID(), role: 'user', content: question, sources: [], images, ...(excerpts.length ? { excerpts } : {}), ask: { includeDocument, selectionOnly: sendOptions.selectionOnly, page: context.page, text: selection.text ? String(selection.text).slice(0, 20000) : undefined } }
     const wireContent = sendOptions.selectionOnly
