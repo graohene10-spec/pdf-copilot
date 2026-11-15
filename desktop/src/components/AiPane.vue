@@ -1282,11 +1282,13 @@ button:disabled{opacity:.4;cursor:default}
 .meta-button:hover:not(:disabled){background:var(--frost);border-color:var(--hairline);color:var(--ink)}
 .meta-time{margin-left:6px;font-variant-numeric:tabular-nums;opacity:0;transition:opacity var(--dur-2) var(--ease-out)}
 .answer-meta:hover .meta-time,.answer-meta:focus-within .meta-time{opacity:1}
-.image-zoom{position:fixed;inset:0;z-index:900;display:grid;place-items:center;padding:28px;background:rgb(0 0 0 / .55);cursor:zoom-out;animation:zoom-in var(--dur-2) var(--ease-out) both}
-.image-zoom img{max-width:100%;max-height:100%;border-radius:var(--r-md);background:#fff;box-shadow:var(--shadow-3)}
+/* 和框选截图一样：周围虚化压暗，图片外一圈白色细线和主色辉光。 */
+.image-zoom{position:fixed;inset:0;z-index:900;display:grid;place-items:center;padding:28px;background:color-mix(in srgb,var(--canvas-deep,#0c101a) 30%,rgb(12 16 26 / .42));-webkit-backdrop-filter:blur(9px) saturate(120%);backdrop-filter:blur(9px) saturate(120%);cursor:zoom-out;animation:zoom-in var(--dur-2) var(--ease-out) both}
+.image-zoom img{max-width:100%;max-height:100%;border-radius:7px;background:#fff;outline:1.5px solid rgb(255 255 255 / .92);box-shadow:0 0 0 1px rgb(0 0 0 / .22),0 0 40px 4px color-mix(in srgb,var(--accent) 45%,transparent)}
 /* 图片从小图的大小弹开。 */
-.image-zoom img{animation:zoom-pop .34s var(--spring-snappy,ease-out) both}
+.image-zoom img{animation:zoom-pop .34s var(--spring-snappy,ease-out) both,zoom-glow 2.6s var(--ease-soft,ease-in-out) .34s 2}
 @keyframes zoom-pop{from{opacity:0;scale:.82}}
+@keyframes zoom-glow{50%{box-shadow:0 0 0 1px rgb(0 0 0 / .22),0 0 60px 8px color-mix(in srgb,var(--accent) 60%,transparent)}}
 @media(prefers-reduced-motion:reduce){.image-zoom img{animation:none}}
 .sent-context img{cursor:zoom-in}
 @keyframes zoom-in{from{opacity:0}}
@@ -1326,9 +1328,12 @@ textarea::placeholder{color:var(--muted);font-family:'Anthropic Serif','Source H
 /* 输入框里的图片：一排小图，没有文字。留住的那些有一圈红框；刚截的那张是虚线框，点一下就留住。 */
 .composer-shots{--shot-red:#e5484d;display:flex;flex-wrap:wrap;gap:14px;padding:14px 15px 2px}
 .shot{position:relative;display:block;border-radius:8px;transition:scale .22s var(--spring-snappy,ease-out),rotate .22s var(--spring-snappy,ease-out)}
-.shot img{display:block;width:60px;height:46px;border-radius:8px;object-fit:cover;background:#fff;outline:1.5px dashed color-mix(in srgb,var(--ink) 30%,transparent);outline-offset:2px;cursor:pointer;transition:outline-color .2s,outline-offset .25s var(--spring-snappy,ease-out),box-shadow .2s}
-.shot:not(.kept):hover img{outline-color:var(--shot-red)}
-.shot.kept img{outline:2px solid var(--shot-red);outline-offset:1px;box-shadow:0 0 0 4px color-mix(in srgb,var(--shot-red) 14%,transparent);cursor:zoom-in}
+/* 刚截的那张带着取景框的光：一圈主色细线和光晕，亮两下；留住后换成红框和淡淡的红晕。 */
+.shot img{display:block;width:60px;height:46px;border-radius:8px;object-fit:cover;background:#fff;outline:1.5px solid color-mix(in srgb,var(--accent) 72%,#fff);outline-offset:2px;box-shadow:0 0 14px 1px color-mix(in srgb,var(--accent) 38%,transparent);cursor:pointer;transition:outline-color .2s,outline-offset .25s var(--spring-snappy,ease-out),box-shadow .25s}
+.shot:not(.kept) img{animation:shot-glow 2.2s var(--ease-soft,ease-in-out) .35s 2}
+@keyframes shot-glow{50%{box-shadow:0 0 24px 4px color-mix(in srgb,var(--accent) 62%,transparent)}}
+.shot:not(.kept):hover img{outline-color:var(--shot-red);box-shadow:0 0 18px 2px color-mix(in srgb,var(--shot-red) 45%,transparent)}
+.shot.kept img{outline:2px solid var(--shot-red);outline-offset:1px;box-shadow:0 0 0 4px color-mix(in srgb,var(--shot-red) 14%,transparent),0 0 16px 1px color-mix(in srgb,var(--shot-red) 34%,transparent);cursor:zoom-in}
 .shot.kept{animation:shot-kept .42s var(--spring-snappy,ease-out)}
 .shot:hover{scale:1.05}
 .shot:active{scale:.97}
@@ -1344,7 +1349,7 @@ textarea::placeholder{color:var(--muted);font-family:'Anthropic Serif','Source H
 /* 草稿主题：小图像一张张贴上去的照片，微微歪着；留住的是红铅笔圈出来的。 */
 :root[data-style='sketch'] .shot{rotate:-1.5deg}
 :root[data-style='sketch'] .shot:nth-child(even){rotate:1.6deg}
-:root[data-style='sketch'] .shot img{border-radius:2px;outline:1.2px dashed var(--pencil-soft,#8a8578)}
+:root[data-style='sketch'] .shot img{border-radius:2px;outline:1.2px dashed var(--pencil-soft,#8a8578);box-shadow:none;animation:none}
 :root[data-style='sketch'] .shot.kept img{outline:2px solid var(--shot-red);outline-offset:2px;box-shadow:none;filter:none}
 @media(prefers-reduced-motion:reduce){.shot.kept{animation:none}}
 /* 输入框里攒的摘录：一行一枚，和输入框连成一体，悬停看全文。 */

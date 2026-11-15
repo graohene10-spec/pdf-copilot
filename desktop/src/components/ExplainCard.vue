@@ -123,8 +123,12 @@ onMounted(() => {
   settle(); document.addEventListener('pointerdown', outside, true); document.addEventListener('wheel', outside, { capture: true, passive: true }); document.addEventListener('keydown', key)
   if (showFrom.value) void nextTick(() => requestAnimationFrame(() => { showFrom.value = false }))
 })
-onBeforeUnmount(() => { observer?.disconnect(); document.removeEventListener('pointerdown', outside, true); document.removeEventListener('wheel', outside, true); document.removeEventListener('keydown', key) })
+onBeforeUnmount(() => { clearTimeout(sheenTimer); observer?.disconnect(); document.removeEventListener('pointerdown', outside, true); document.removeEventListener('wheel', outside, true); document.removeEventListener('keydown', key) })
 watch(() => [props.card.item.text, props.card.item.status, props.card.item.reasoning, showFrom.value], () => { void nextTick(settle) })
+// 解释写完的那一刻，一道高光从卡片上滑过去。
+const sheen = ref(false)
+let sheenTimer: ReturnType<typeof setTimeout> | undefined
+watch(() => props.card.item.status, (status, previous) => { if (previous === 'running' && status === 'done') { sheen.value = true; clearTimeout(sheenTimer); sheenTimer = setTimeout(() => { sheen.value = false }, 1300) } })
 </script>
 
 <template>
@@ -149,6 +153,7 @@ watch(() => [props.card.item.text, props.card.item.status, props.card.item.reaso
         </p>
       </div>
     </Transition>
+    <i class="ec-halo" aria-hidden="true"></i><i v-if="sheen" class="ec-sheen" aria-hidden="true"></i>
     <i class="ec-resize ec-e" @pointerdown="startResize($event, 'e')"></i><i class="ec-resize ec-s" @pointerdown="startResize($event, 's')"></i><i class="ec-resize ec-se" @pointerdown="startResize($event, 'se')"></i>
   </div>
   </Teleport>
@@ -170,6 +175,21 @@ watch(() => [props.card.item.text, props.card.item.status, props.card.item.reaso
 .ec-se{right:-3px;bottom:-3px;width:16px;height:16px;cursor:nwse-resize}
 .ec-se::after{content:'';position:absolute;right:5px;bottom:5px;width:7px;height:7px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;opacity:0;transition:opacity .15s}
 .explain-card:hover .ec-se::after,.explain-card.dragging .ec-se::after{opacity:.4}
+/* 发光，和框选截图是同一种语言：出现时从略大处收拢，外面一圈主色的光晕呼吸两下再收成淡淡的一圈；写完时一道高光滑过。
+   光晕单独放在一层上，只动透明度，不重画卡片。 */
+.explain-card{--ec-glow:color-mix(in srgb,var(--accent) 46%,transparent)}
+.explain-card:not(.morph):not(.in-page){animation:ec-focus var(--dur-bounce,.4s) var(--spring-snappy,ease-out) both}
+@keyframes ec-focus{from{opacity:0;scale:1.07}}
+.ec-halo{position:absolute;inset:0;z-index:-1;border-radius:inherit;box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 42%,transparent),0 0 30px 2px var(--ec-glow);opacity:.32;pointer-events:none;animation:ec-halo 2.4s var(--ease-soft,ease-in-out) .3s 2 backwards}
+@keyframes ec-halo{0%,100%{opacity:.32}50%{opacity:1}}
+.explain-card.pinned .ec-halo{opacity:.6}
+.ec-sheen{position:absolute;inset:0;z-index:1;border-radius:inherit;overflow:hidden;pointer-events:none}
+.ec-sheen::after{content:'';position:absolute;inset:0;background:linear-gradient(105deg,transparent 34%,color-mix(in srgb,var(--accent) 22%,rgb(255 255 255 / .62)) 50%,transparent 66%);translate:-100% 0;animation:ec-sweep 1.15s cubic-bezier(.3,0,.2,1) both}
+@keyframes ec-sweep{to{translate:100% 0}}
+.ec-spark{filter:drop-shadow(0 0 4px color-mix(in srgb,var(--accent) 70%,transparent))}
+:root[data-style='sketch'] .explain-card{--ec-glow:color-mix(in srgb,var(--red-pencil,#c0392b) 26%,transparent)}
+:root[data-style='sketch'] .ec-halo{box-shadow:0 0 34px 4px var(--ec-glow);opacity:.25}
+:root[data-style='sketch'] .ec-spark{filter:none}
 .explain-card.morph{animation:none}
 /* 跟着书页走时压在工具栏的毛边（z-index 4）下面、书页上面。 */
 .explain-card.in-page{z-index:3;animation:none}
@@ -189,7 +209,7 @@ watch(() => [props.card.item.text, props.card.item.status, props.card.item.reaso
 /* 三个追问按钮收在一枚小药丸里，和 Markdown 里的解释纸条是同一套。 */
 .ec-actions{display:inline-flex;align-items:center;align-self:flex-start;gap:1px;flex:none;margin:9px 0 -2px -3px!important;padding:2px;border-radius:999px;background:color-mix(in srgb,var(--ink) 6%,transparent);box-shadow:inset 0 0 0 1px var(--glass-outline)}
 .ec-actions .ec-tool{width:30px;height:24px;border-radius:999px;opacity:.75;transition:opacity .15s,color .15s,background-color .15s,box-shadow .15s,scale .18s var(--spring-snappy,ease-out),rotate .2s var(--spring-snappy,ease-out),translate .18s var(--spring-snappy,ease-out)}
-.ec-actions .ec-tool:hover:not(:disabled){background:color-mix(in srgb,var(--surface,#fff) 82%,transparent)!important;box-shadow:0 1px 3px rgb(0 0 0 / .14)!important;color:var(--ink);translate:0 -1px}
+.ec-actions .ec-tool:hover:not(:disabled){background:color-mix(in srgb,var(--surface,#fff) 82%,transparent)!important;box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 26%,transparent),0 0 14px color-mix(in srgb,var(--accent) 42%,transparent)!important;color:var(--accent);translate:0 -1px}
 .ec-actions .ec-tool:disabled{opacity:.25;cursor:default}
 .ec-actions .ec-tool:active:not(:disabled){scale:.9}
 :root:is([data-style='warm'],[data-style='sketch']) .ec-actions{gap:.3em;margin:8px 0 -3px -4px!important;padding:0;border-radius:0;background:none;box-shadow:none}
@@ -210,7 +230,7 @@ watch(() => [props.card.item.text, props.card.item.status, props.card.item.reaso
 :root[data-style='sketch'] .ec-rule.running{height:2px;border-top:0;background:color-mix(in srgb,var(--pencil,#2b2a27) 12%,transparent)}
 :root[data-style='sketch'] .ec-rule.running::after{background:linear-gradient(90deg,transparent,var(--red-pencil,#c0392b),transparent)}
 :root[data-style='sketch'] .explain-card::after{content:'';position:absolute;right:0;bottom:0;width:26px;height:26px;background:linear-gradient(315deg,rgb(60 50 30 / .2),transparent 52%);pointer-events:none}
-@media(prefers-reduced-motion:reduce){.ec-spark,.ec-rule.running::after,:root[data-style='sketch'] .explain-card{animation:none!important}}
+@media(prefers-reduced-motion:reduce){.ec-halo,.ec-sheen::after,.explain-card,.ec-spark,.ec-rule.running::after,:root[data-style='sketch'] .explain-card{animation:none!important}}
 .ec-pin{rotate:35deg}
 .ec-pin.on{opacity:1;color:var(--accent);rotate:0deg}
 .explain-card.pinned{box-shadow:var(--shadow-3),var(--glass-edge),0 0 0 1px color-mix(in srgb,var(--accent) 35%,transparent)}
