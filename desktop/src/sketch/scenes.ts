@@ -785,24 +785,16 @@ function racksLabel(env: Env) {
   c.fillText('∂²φ/∂t² = c² ∇²φ', left + w * .06, top + h * .5 - 16)
 }
 
-// ---- RSI（递归自我改进）：小星芒从方块上冒出来，弹着滑到空格，身后留下方块，拼成一个大星芒；拼满后缩成一枚小星芒再来。
+// ---- RSI（递归自我改进）：像素星芒沿枝杈滑行，身后留下的格子从一团点长成方块，拼成同一张图的大星芒；镜头一直拉远，大星芒成为下一层的一枚星芒。
 // 镜头拉远——这一整片正好是更大一格里的一块砖的点阵——然后在更大的格子上重新来过。长得越多，长得越快。
 // （灵感来自 Anthropic Institute〈When AI builds itself〉页头的动画；这里是照着那个意思自己重画的，节奏放慢了很多。）
 function rsi(): Painter {
-  // 一个大星芒由 N×N 格里的方块拼成。小星芒从已有的方块上冒出来，弹着滑到旁边的空格，身后留下一块方块；
-  // 拼满之后整个大星芒缩成一枚小星芒，再从头拼起。
-  const N = 19, MID = (N - 1) / 2, DOT = .8, A_STAR = .56, A_TILE = .4
-  const POP = .22, MOVE = .42, LAND = .2, REST = 1.6, ZOOM = 4.2
-  // 星芒的形状（大小两种用同一组射线，所以缩到头正好对上）。
+  // 星芒是 P×P 的像素画（小方块之间留缝）；大星芒由同一张图的 P×P 格方块拼成。镜头一直在拉远：
+  // 拼满的大星芒缩到一格大小时，它的每块方块正好是下一层那枚星芒的一个像素。
+  const P = 19, MID = (P - 1) / 2, DOT = .8, ALPHA = .5
+  const POP = .22, MOVE = .42, T_HOLD = 1.1, T_SQUARE = 1.9, T_DENSE = 3.4, T_SOLID = 4.6
   const RAYS = 11, CORE = .25
   const rays = Array.from({ length: RAYS }, (_, k) => { const angle = -Math.PI / 2 + (k + (hash(k * 7.3 + 2) - .5) * .42) * TAU / RAYS; return { x: Math.cos(angle), y: Math.sin(angle), length: .7 + .3 * hash(k * 3.1 + 5) } })
-  const STAR = new Path2D()
-  STAR.arc(0, 0, CORE, 0, TAU)
-  for (const ray of rays) {
-    const px = -ray.y, py = ray.x, a = .125, b = .078, L = ray.length
-    STAR.moveTo(-px * a, -py * a); STAR.lineTo(ray.x * L - px * b, ray.y * L - py * b)
-    STAR.arc(ray.x * L, ray.y * L, b, Math.atan2(-py, -px), Math.atan2(py, px)); STAR.lineTo(px * a, py * a); STAR.closePath()
-  }
   const inside = (u: number, v: number) => {
     if (Math.hypot(u, v) < CORE + .05) return true
     for (const ray of rays) {
@@ -811,86 +803,120 @@ function rsi(): Painter {
     }
     return false
   }
+  const at = (k: number) => (k - MID) / (P / 2)
   // 能从正中一格走到的格子才算数（斜着也算），免得射线尖上留下够不着的孤格。
-  const MASK = new Uint8Array(N * N)
-  { const raw = new Uint8Array(N * N); for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) raw[j * N + i] = inside((i - MID) / (N / 2), (j - MID) / (N / 2)) ? 1 : 0
-    const queue = [MID * N + MID]; MASK[queue[0]!] = 1
-    while (queue.length) { const k = queue.pop()!, i = k % N, j = (k - i) / N
-      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const x = i + di, y = j + dj, n = y * N + x; if (x >= 0 && y >= 0 && x < N && y < N && raw[n] && !MASK[n]) { MASK[n] = 1; queue.push(n) } } } }
-  const SLOTS = MASK.reduce((sum, value) => sum + value, 0)
-  // 弹簧：冲过头一点再回来。
+  const MASK = new Uint8Array(P * P)
+  { const raw = new Uint8Array(P * P); for (let j = 0; j < P; j++) for (let i = 0; i < P; i++) raw[j * P + i] = inside(at(i), at(j)) ? 1 : 0
+    const queue = [MID * P + MID]; MASK[queue[0]!] = 1
+    while (queue.length) { const k = queue.pop()!, i = k % P, j = (k - i) / P
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const x = i + di, y = j + dj, n = y * P + x; if (x >= 0 && y >= 0 && x < P && y < P && raw[n] && !MASK[n]) { MASK[n] = 1; queue.push(n) } } } }
+  const SLOTS = MASK.reduce((sum, value) => sum + value, 0), PIXELS: number[] = []
+  for (let k = 0; k < P * P; k++) if (MASK[k]) PIXELS.push(k)
+  // 一格里每个点离中心多远、朝哪边、在圆角方块里多深：中间那几步（一团、点阵方块）用它们算。
+  const RADIUS = new Float32Array(P * P), ANGLE = new Float32Array(P * P), SQUARE = new Float32Array(P * P)
+  for (let b = 0; b < P; b++) for (let a = 0; a < P; a++) {
+    const u = at(a), v = at(b), half = .95, round = .4
+    RADIUS[b * P + a] = Math.hypot(u, v); ANGLE[b * P + a] = Math.atan2(v, u)
+    SQUARE[b * P + a] = (round - Math.hypot(Math.max(Math.abs(u) - (half - round), 0), Math.max(Math.abs(v) - (half - round), 0))) / .2
+  }
   const spring = (p: number) => p >= 1 ? 1 : p <= 0 ? 0 : 1 - Math.exp(-5.5 * p) * Math.cos(8.5 * p)
+  // 方块上的纹理：几团深浅不一的晕，像手工染的色块。只做四张，轮着用。
+  let textures: HTMLCanvasElement[] | null = null
+  const texture = () => textures ||= [0, 1, 2, 3].map(n => {
+    const size = 48, canvas = makeCanvas(size, size), c = canvas.getContext('2d')!
+    for (let k = 0; k < 9; k++) {
+      const x = hash(n * 31 + k * 1.7) * size, y = hash(n * 17 + k * 2.9 + 4) * size, r = size * (.22 + .3 * hash(n * 5 + k * 3.3 + 8)), dark = k % 2 === 0
+      const blot = c.createRadialGradient(x, y, 0, x, y, r)
+      blot.addColorStop(0, dark ? 'rgb(60 20 10 / .2)' : 'rgb(255 236 220 / .2)'); blot.addColorStop(1, dark ? 'rgb(60 20 10 / 0)' : 'rgb(255 236 220 / 0)')
+      c.fillStyle = blot; c.fillRect(0, 0, size, size)
+    }
+    c.globalCompositeOperation = 'destination-in'; c.beginPath(); c.roundRect(0, 0, size, size, size * .21); c.fill()
+    return canvas
+  })
   type Head = { from: number; to: number; start: number; pop: boolean }
-  let taken = new Uint8Array(N * N), tiles = new Map<number, number>(), heads: Head[] = [], filled = 1
-  let clock = 0, last = -1, next = 1.4, doneAt = 0, zoomAt = 0, level = 0
-  const seed = () => { taken = new Uint8Array(N * N); tiles = new Map(); const k = MID * N + MID; taken[k] = 1; heads = [{ from: k, to: k, start: clock - 9, pop: false }]; filled = 1; doneAt = 0; zoomAt = 0 }
+  type Tile = { born: number; star: boolean; blob: Float32Array }
+  let taken = new Uint8Array(P * P), tiles = new Map<number, Tile>(), heads: Head[] = [], filled = 1, reach = 0
+  let clock = 0, last = -1, next = 1.2, z = 0, level = 0
+  // 每格那一团的形状各不相同，留下时算好一次。
+  const leave = (k: number, star: boolean) => {
+    const p1 = Math.random() * TAU, p2 = Math.random() * TAU, blob = new Float32Array(P * P)
+    for (let n = 0; n < P * P; n++) blob[n] = (.7 + .13 * Math.sin(3 * ANGLE[n]! + p1) + .08 * Math.sin(5 * ANGLE[n]! + p2) - RADIUS[n]!) / .2
+    tiles.set(k, { born: clock, star, blob })
+  }
+  const seed = () => { taken = new Uint8Array(P * P); tiles = new Map(); const k = MID * P + MID; taken[k] = 1; heads = [{ from: k, to: k, start: clock - 9, pop: false }]; filled = 1; reach = 0 }
   seed()
   const idle = (head: Head) => clock >= head.start + (head.pop ? POP : 0) + MOVE
-  const crowd = (k: number) => { const i = k % N, j = (k - i) / N; let near = 0; for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const x = i + di, y = j + dj; if ((di || dj) && x >= 0 && y >= 0 && x < N && y < N && taken[y * N + x]) near++ } return near }
-  // 从 k 出发能去的空格：先看紧挨着的；身边越空越容易被挑中，所以先抽枝后填满。
+  const crowd = (k: number) => { const i = k % P, j = (k - i) / P; let near = 0; for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const x = i + di, y = j + dj; if ((di || dj) && x >= 0 && y >= 0 && x < P && y < P && taken[y * P + x]) near++ } return near }
+  // 从 k 出发能去的空格；身边越空越容易被挑中，所以先抽枝后填满。
   const around = (k: number) => {
-    const i = k % N, j = (k - i) / N, options: number[] = [], weights: number[] = []
-    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const x = i + di, y = j + dj, n = y * N + x; if ((di || dj) && x >= 0 && y >= 0 && x < N && y < N && MASK[n] && !taken[n]) { options.push(n); weights.push((di && dj ? .45 : 1) / crowd(n) ** 2) } }
+    const i = k % P, j = (k - i) / P, options: number[] = [], weights: number[] = []
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const x = i + di, y = j + dj, n = y * P + x; if ((di || dj) && x >= 0 && y >= 0 && x < P && y < P && MASK[n] && !taken[n]) { options.push(n); weights.push((di && dj ? .45 : 1) / crowd(n) ** 2) } }
     if (!options.length) return -1
     let pick = Math.random() * weights.reduce((sum, value) => sum + value, 0), index = 0
     while (index < options.length - 1 && (pick -= weights[index]!) > 0) index++
     return options[index]!
   }
-  const go = (head: Head | null, from: number, to: number) => {
-    taken[to] = 1; filled++
-    if (head) { tiles.set(from, clock); head.from = from; head.to = to; head.start = clock; head.pop = false }
-    else heads.push({ from, to, start: clock, pop: true })
-  }
+  const claim = (to: number) => { taken[to] = 1; filled++; reach = Math.max(reach, Math.abs(to % P - MID), Math.abs(Math.floor(to / P) - MID)) }
   const step = () => {
+    // 走到分支尽头的星芒就地化成方块。
+    heads = heads.filter(head => { if (!idle(head) || around(head.to) >= 0) return true; leave(head.to, true); return false })
     const free = heads.filter(idle), want = Math.min(9, 1 + Math.floor(filled / 9))
-    // 星芒不够多：从一块有空邻居的方块上再冒出一枚。
     if (heads.length < want || !free.length) {
+      // 星芒不够多：从一块还有空邻居的方块上再冒出一枚。
       const sources = [...tiles.keys()].filter(k => around(k) >= 0)
-      if (sources.length) { const from = sources[Math.floor(Math.random() * sources.length)]!; go(null, from, around(from)); return }
+      if (sources.length) { const from = sources[Math.floor(Math.random() * sources.length)]!, to = around(from); claim(to); heads.push({ from, to, start: clock, pop: true }); return }
       if (!free.length) return
     }
-    const head = free[Math.floor(Math.random() * free.length)]!
-    let to = around(head.to)
-    if (to < 0) {
-      // 走到头了：飞去别处的空格（挨着已有方块的）。
-      const open: number[] = []
-      for (let k = 0; k < N * N; k++) if (MASK[k] && !taken[k] && crowd(k)) open.push(k)
-      if (!open.length) return
-      to = open[Math.floor(Math.random() * open.length)]!
-    }
-    go(head, head.to, to)
+    const head = free[Math.floor(Math.random() * free.length)]!, to = around(head.to)
+    claim(to); leave(head.to, false); head.from = head.to; head.to = to; head.start = clock; head.pop = false
   }
   return env => {
-    const c = env.context, { x: left, y: top, w, h } = env.full, g = env.grid.size, fade = env.fade
+    const c = env.context, { x: left, y: top, w, h } = env.full, fade = env.fade
     // 自己走表：一帧最多走 0.1 秒，窗口藏起来再回来不会一下子跳过去一大段。
-    if (last >= 0) clock += clamp((env.t - last) / 1000, 0, .1)
-    last = env.t
-    if (zoomAt) { if (clock - zoomAt >= ZOOM) { seed(); level++; next = clock + 1.1 } }
-    else if (filled < SLOTS) { while (clock >= next) { step(); next += Math.max(.09, .8 / (1 + filled / 7)) } }
-    else if (heads.every(idle)) { doneAt ||= clock; if (clock - doneAt > REST) zoomAt = clock }
-    const S = g * clamp(Math.floor(Math.min(w * .6, h * .84) / N / g * 2) / 2, .5, 3), B = S * N, inner = S * DOT, r = S * .62
-    const bx = env.grid.x + Math.round((left + w * .6 - B / 2 - env.grid.x) / g) * g, by = env.grid.y + Math.round((top + h * .5 - B / 2 - env.grid.y) / g) * g
-    const cx = (k: number) => bx + (k % N + .5) * S, cy = (k: number) => by + (Math.floor(k / N) + .5) * S
-    const star = (x: number, y: number, radius: number) => { c.save(); c.translate(x, y); c.scale(radius, radius); c.fill(STAR); c.restore() }
+    const dt = last >= 0 ? clamp((env.t - last) / 1000, 0, .1) : 0
+    clock += dt; last = env.t
+    const fit = Math.min(w * .62, h * .86), S0 = fit / 3, growing = filled < SLOTS || heads.length > 0
+    if (growing) { while (clock >= next) { step(); next += Math.max(.09, .8 / (1 + filled / 7)) } }
+    let settled = !growing
+    if (settled) for (const tile of tiles.values()) if (clock - tile.born < T_SOLID) { settled = false; break }
+    // 镜头：长的时候慢慢拉远，刚好装下已经长出来的部分；拼满后快一些，一直拉到整个大星芒只有一格大。
+    const target = settled ? 1 : Math.min(.95, Math.log(S0 / (fit / (2 * reach + 3.5))) / Math.log(P))
+    z += Math.max(.004 * dt, settled ? .11 * dt * smooth((1.02 - z) * 8 + .25) + .02 * dt : (target - z) * (1 - Math.exp(-dt * 1.5)))
+    if (z >= 1) { z -= 1; seed(); level++; next = clock + .9 }
+    const S = S0 * P ** -z, pitch = S / P, inner = S * DOT
+    const mx = left + w * .6, my = top + h * .5, cx = (k: number) => mx + (k % P - MID) * S, cy = (k: number) => my + (Math.floor(k / P) - MID) * S
     c.fillStyle = env.red
-    // 拼满后：留在场上的星芒也落成方块；然后整片缩向正中，方块淡出、同样形状的一枚星芒显出来。
-    const settle = doneAt ? smooth((clock - doneAt) / .5) : 0, q = zoomAt ? smooth((clock - zoomAt) / ZOOM) : 0
-    const scale = (.94 / N) ** q, toStar = smooth((q - .45) / .4)
-    c.save()
-    if (q) { const mx = bx + B / 2, my = by + B / 2; c.translate(mx, my); c.scale(scale, scale); c.translate(-mx, -my) }
-    const tile = (k: number, grow: number) => { const size = inner * grow; path.roundRect(cx(k) - size / 2, cy(k) - size / 2, size, size, size * .21) }
-    let path = new Path2D()
-    for (const [k, born] of tiles) tile(k, spring((clock - born) / LAND * .6) )
-    if (settle) for (const head of heads) tile(head.to, settle)
-    c.globalAlpha = A_TILE * fade * (1 - toStar); c.fill(path)
-    c.globalAlpha = A_STAR * fade * (1 - settle)
-    if (settle < 1) for (const head of heads) {
-      const t0 = head.start + (head.pop ? POP : 0), grow = head.pop ? spring((clock - head.start) / POP * .7) : 1, p = spring((clock - t0) / MOVE)
-      star(cx(head.from) + (cx(head.to) - cx(head.from)) * p, cy(head.from) + (cy(head.to) - cy(head.from)) * p, r * grow * (1 - .5 * settle))
+    // 拼好的方块。
+    const solid = new Path2D(), done: number[] = [], dots = new Path2D(), coarse = pitch < .9
+    for (const [k, tile] of tiles) {
+      const age = clock - tile.born, x0 = cx(k) - S / 2, y0 = cy(k) - S / 2
+      if (age >= T_SOLID) { solid.roundRect(cx(k) - inner / 2, cy(k) - inner / 2, inner, inner, inner * .21); done.push(k); continue }
+      // 还在变的一格：一团点 → 圆角方块形的点阵 → 点变密 → 连成一块。
+      const toBlob = tile.star ? smooth(age / .7) : 1, reveal = tile.star ? 9 : smooth(age / .3) * 1.5
+      const toSquare = smooth((age - T_HOLD) / (T_SQUARE - T_HOLD)), even = smooth((age - T_SQUARE) / (T_DENSE - T_SQUARE)), merge = smooth((age - T_DENSE) / (T_SOLID - T_DENSE))
+      if (coarse) { const size = inner * (.55 + .45 * even) * Math.min(1, reveal); dots.rect(cx(k) - size / 2, cy(k) - size / 2, size, size); continue }
+      const base = (tile.star ? DOT + (.62 - DOT) * toBlob : .62) * (1 - even) + DOT * even + (1 / DOT - 1) * DOT * merge * 1.02
+      for (let n = 0; n < P * P; n++) {
+        let field = tile.blob[n]!
+        if (toBlob < 1) field = (MASK[n] ? 1 : -1) * (1 - toBlob) + field * toBlob
+        if (toSquare) field += (SQUARE[n]! - field) * toSquare
+        if (reveal < 9) field = Math.min(field, (reveal - RADIUS[n]!) / .15)
+        if (field <= 0) continue
+        const size = pitch * base * (clamp(.35 + field, 0, 1) * (1 - even) + even), a = n % P, b = (n - a) / P
+        dots.rect(x0 + (a + .5) * pitch - size / 2, y0 + (b + .5) * pitch - size / 2, size, size)
+      }
     }
-    if (toStar) { c.globalAlpha = A_STAR * fade * toStar; star(bx + B / 2, by + B / 2, B / 2) }
-    c.restore()
-    if (env.hand) { c.globalAlpha = .4 * fade; c.fillStyle = env.ink; c.font = `18px ${env.hand}`; c.fillText(`xₙ₊₁ = f(xₙ)   n = ${level}`, bx + S, by + B + 24) }
+    // 星芒：一枚像素画，弹着滑向下一格。
+    for (const head of heads) {
+      const t0 = head.start + (head.pop ? POP : 0), grow = head.pop ? spring((clock - head.start) / POP * .7) : 1, p = spring((clock - t0) / MOVE)
+      const x = cx(head.from) + (cx(head.to) - cx(head.from)) * p, y = cy(head.from) + (cy(head.to) - cy(head.from)) * p, step = pitch * grow, size = step * DOT
+      if (coarse) { dots.rect(x - S * .3 * grow, y - S * .3 * grow, S * .6 * grow, S * .6 * grow); continue }
+      for (const n of PIXELS) { const a = n % P, b = (n - a) / P; if (size > 5) dots.roundRect(x + (a - MID) * step - size / 2, y + (b - MID) * step - size / 2, size, size, size * .21); else dots.rect(x + (a - MID) * step - size / 2, y + (b - MID) * step - size / 2, size, size) }
+    }
+    c.globalAlpha = ALPHA * fade; c.fill(solid); c.fill(dots)
+    const grain = clamp((inner - 10) / 26, 0, 1)
+    if (grain > 0) { c.globalAlpha = fade * grain; const sheets = texture(); for (const k of done) c.drawImage(sheets[(k * 7 + level) % 4]!, cx(k) - inner / 2, cy(k) - inner / 2, inner, inner) }
+    if (env.hand) { c.globalAlpha = .4 * fade; c.fillStyle = env.ink; c.font = `18px ${env.hand}`; c.fillText(`xₙ₊₁ = f(xₙ)   n = ${level}`, mx - fit / 2, my + fit / 2 + 22) }
   }
 }
 
