@@ -66,6 +66,8 @@ const fit = computed(() => {
   const text = showFrom.value ? props.card.from || '' : props.card.item.text
   let units = 0
   for (const char of text) units += char.charCodeAt(0) > 0x2e7f ? 1 : .55
+  // 带界面的讲解（图表、可调的模拟）要宽一些才摆得开。
+  if (text.includes('```ui')) return 560
   return Math.min(600, Math.max(300, Math.round(Math.sqrt(units * 900) / 40) * 40))
 })
 const position = computed(() => ({
@@ -150,6 +152,7 @@ watch(() => props.card.item.status, (status, previous) => { if (previous === 'ru
           <button type="button" class="ec-tool" :disabled="card.item.status === 'running'" aria-label="深入" data-tip="深入" data-tip-fast @click="rerunExplain(card.item, 'deeper')"><AppIcon name="deeper" :size="16" /></button>
           <button type="button" class="ec-tool" :disabled="card.item.status === 'running'" aria-label="简化" data-tip="简化" data-tip-fast @click="rerunExplain(card.item, 'simpler')"><AppIcon name="simpler" :size="16" /></button>
           <button type="button" class="ec-tool" :disabled="card.item.status === 'running'" aria-label="举例" data-tip="举例" data-tip-fast @click="rerunExplain(card.item, 'example')"><AppIcon name="example" :size="16" /></button>
+          <button type="button" class="ec-tool" :disabled="card.item.status === 'running'" aria-label="可视化讲解" data-tip="可视化讲解（Intelligent UI）" data-tip-fast @click="rerunExplain(card.item, 'visual')"><AppIcon name="visual" :size="16" /></button>
         </p>
       </div>
     </Transition>
