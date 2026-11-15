@@ -72,13 +72,19 @@ export function compileExpression(source: string): Compiled {
   return result
 }
 
+// 文字里带 $...$ 的公式：按 Markdown 渲染成一行（按钮、下拉项除外），其余原样当文字。
+const MATH = /\$[^$\n]+\$|\\\(|\\\[/
+function write(element: Element, value: string) {
+  if (!MATH.test(value) || /^(BUTTON|OPTION|INPUT|TEXTAREA)$/.test(element.tagName)) { element.textContent = value; return }
+  element.innerHTML = renderMarkdown(value).trim().replace(/^<p>/, '').replace(/<\/p>$/, '').replace(/<\/p>\s*<p>/g, '<br>')
+}
 // ---- DOM 小工具 ---------------------------------------------------------------
 const SVG = 'http://www.w3.org/2000/svg'
 type Attributes = Record<string, string | number | undefined>
 function h<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', text = ''): HTMLElementTagNameMap[K] {
   const element = document.createElement(tag)
   if (className) element.className = className
-  if (text) element.textContent = text
+  if (text) write(element, text)
   return element
 }
 function s(tag: string, attributes: Attributes = {}, text = '') {
@@ -113,7 +119,7 @@ const W = 560, H = 300, PAD = { left: 46, right: 14, top: 14, bottom: 34 }
 function frame(root: HTMLElement, title?: string, subtitle?: string) {
   const card = h('section', 'iui-card')
   if (title) card.append(h('h4', 'iui-title', text(title, 80)))
-  if (subtitle) card.append(h('p', 'iui-sub', text(subtitle, 160)))
+  if (subtitle) card.append(h('p', 'iui-sub', text(subtitle, 300)))
   root.append(card)
   return card
 }
@@ -224,7 +230,7 @@ const builders: Record<string, Builder> = {
       const card = h('div', 'iui-metric')
       if (item?.badge) card.append(h('span', 'iui-badge' + tone(item.tone || 'good'), text(item.badge, 16)))
       card.append(h('strong', 'iui-value' + tone(item?.tone), text(item?.value, 24)), h('span', 'iui-label', text(item?.label, 40)))
-      if (item?.note) card.append(h('small', 'iui-note', text(item.note, 80)))
+      if (item?.note) card.append(h('small', 'iui-note', text(item.note, 400)))
       grid.append(card)
     }
     root.append(grid)
@@ -251,7 +257,7 @@ const builders: Record<string, Builder> = {
         const line = h('tr')
         columns.forEach((_, index) => {
           const cell = row[index], td = h('td')
-          if (cell && typeof cell === 'object') td.append(h('span', 'iui-badge' + tone(cell.tone), text(cell.text, 40))); else td.textContent = text(cell, 120)
+          if (cell && typeof cell === 'object') td.append(h('span', 'iui-badge' + tone(cell.tone), text(cell.text, 40))); else write(td, text(cell, 200))
           line.append(td)
         })
         body.append(line)
@@ -265,7 +271,7 @@ const builders: Record<string, Builder> = {
       card.append(tabs)
     }
     const scroller = h('div', 'iui-table-wrap'); scroller.append(table); card.append(scroller)
-    if (spec.note) card.append(h('p', 'iui-sub', text(spec.note, 200)))
+    if (spec.note) card.append(h('p', 'iui-sub', text(spec.note, 400)))
     draw()
   },
   // 可以拖的模拟：参数滑块和开关改变后，曲线和读数用表达式重新算。
@@ -278,7 +284,7 @@ const builders: Record<string, Builder> = {
     try {
       curves = list(spec.plot?.y, 4).map(item => ({ name: text(item?.name, 30), run: compileExpression(text(item?.expr, 300)) }))
       readouts = list(spec.outputs, 6).map(item => {
-        const row = h('div', 'iui-output'), value = h('strong'); row.append(h('span', '', text(item?.label, 40)), value); outputs.append(row)
+        const row = h('div', 'iui-output'), value = h('strong'); row.append(h('span', '', text(item?.label, 80)), value); outputs.append(row)
         return { label: text(item?.label, 40), unit: text(item?.unit, 12), digits: number(item?.digits, 3), run: compileExpression(text(item?.expr, 300)), value }
       })
     } catch (error: any) { card.append(h('p', 'iui-error', error?.message || '表达式无法解析')); return }
@@ -319,7 +325,7 @@ const builders: Record<string, Builder> = {
     }
     card.append(controls, options, chart, outputs)
     if (spec.formula) { const formula = h('div', 'iui-formula'); formula.innerHTML = renderMarkdown(`$$${text(spec.formula, 300)}$$`); card.append(formula) }
-    if (spec.note) card.append(h('p', 'iui-sub', text(spec.note, 240)))
+    if (spec.note) card.append(h('p', 'iui-sub', text(spec.note, 400)))
     update()
   },
   // 表单：填好后把内容按模板拼成一句话，交给阅读助手继续（一次新的提问）。
@@ -371,14 +377,18 @@ function build(spec: any, root: HTMLElement, context: Context) {
   builder(spec, root, context)
 }
 
+const waiting = new WeakMap<HTMLElement, number>()
 /** 把回答里所有还没画的 ```ui 块画出来。streaming：回答还在写，JSON 可能没写完，先显示占位。 */
 export function mountIntelligentUi(root: HTMLElement, options: Context & { streaming?: boolean } = {}) {
+  // 界面块写了超过 10 秒还没写完：告诉读者它本来就慢。
+  if (!options.streaming) waiting.delete(root); else if (!waiting.has(root)) waiting.set(root, Date.now())
+  const slow = Date.now() - (waiting.get(root) ?? Date.now()) >= 10000
   for (const host of root.querySelectorAll<HTMLElement>('.iui[data-ui]:not([data-mounted])')) {
     host.dataset.mounted = 'true'
     let spec: unknown
     try { spec = JSON.parse(host.dataset.ui || '') }
     catch {
-      host.append(h('p', options.streaming ? 'iui-wait' : 'iui-error', options.streaming ? '正在生成交互界面…' : '这段界面描述不是合法的 JSON，无法显示。'))
+      host.append(h('p', options.streaming ? 'iui-wait' : 'iui-error', options.streaming ? (slow ? '正在生成交互界面… Intelligent UI 比较复杂，可能会慢一些' : '正在生成交互界面…') : '这段界面描述不是合法的 JSON，无法显示。'))
       continue
     }
     try { build(spec, host, options) }

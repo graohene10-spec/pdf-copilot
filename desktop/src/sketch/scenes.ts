@@ -785,113 +785,112 @@ function racksLabel(env: Env) {
   c.fillText('∂²φ/∂t² = c² ∇²φ', left + w * .06, top + h * .5 - 16)
 }
 
-// ---- 递归自我改进：格子上先冒出一颗点阵的星芒，化成一团，再收成一块圆角方砖；方砖一块接一块长满一整片，
+// ---- RSI（递归自我改进）：小星芒从方块上冒出来，弹着滑到空格，身后留下方块，拼成一个大星芒；拼满后缩成一枚小星芒再来。
 // 镜头拉远——这一整片正好是更大一格里的一块砖的点阵——然后在更大的格子上重新来过。长得越多，长得越快。
 // （灵感来自 Anthropic Institute〈When AI builds itself〉页头的动画；这里是照着那个意思自己重画的，节奏放慢了很多。）
 function rsi(): Painter {
-  // 一格里是 M×M 个小点；一整片也是 M×M 格，所以拉远 M 倍之后首尾正好接上。砖只占格子中间的 DOT，四周留缝。
-  const M = 12, DOT = .8, INSET = (1 - DOT) / 2
-  // 一格的一生（秒）：星芒冒出来、停一下、化成一团、停一下、收成方块（稀疏的点阵）、点阵变密、连成一块砖。
-  const T_SPARK = 1.5, T_BLOB = 2.8, T_BLOB_END = 4.6, T_SQUARE = 5.4, T_SQUARE_END = 7.2, T_DENSE = 10, T_SOLID = 12.5
-  const REST = 2.5, ZOOM = 7, A_DOT = .52, A_TILE = .4
-  const at = (k: number) => (k + .5) / M * 2 - 1
-  // 圆角方块里外：也决定一整片里哪些格子会长砖（角上缺几格，拉远后正好是一块圆角砖的点阵）。
-  const square = (u: number, v: number) => { const half = .93, round = .42; return (round - Math.hypot(Math.max(Math.abs(u) - (half - round), 0), Math.max(Math.abs(v) - (half - round), 0))) / .2 }
-  const SQUARE = new Float32Array(M * M), RADIUS = new Float32Array(M * M)
-  for (let b = 0; b < M; b++) for (let a = 0; a < M; a++) { SQUARE[b * M + a] = square(at(a), at(b)); RADIUS[b * M + a] = Math.hypot(at(a), at(b)) }
-  const SLOTS = SQUARE.reduce((sum, value) => sum + (value > 0 ? 1 : 0), 0)
-  type Cell = { i: number; j: number; born: number; spark: Float32Array; blob: Float32Array }
-  const make = (i: number, j: number, born: number): Cell => {
-    const seed = Math.random() * 1000, spark = new Float32Array(M * M), blob = new Float32Array(M * M), RAYS = 11, turn = hash(seed) * TAU
-    const rays = Array.from({ length: RAYS }, (_, k) => { const angle = turn + (k + (hash(seed + k * 7.3) - .5) * .5) * TAU / RAYS; return { x: Math.cos(angle), y: Math.sin(angle), length: .58 + .4 * hash(seed + k * 3.1) } })
-    const p1 = hash(seed + 1) * TAU, p2 = hash(seed + 2) * TAU
-    for (let b = 0; b < M; b++) for (let a = 0; a < M; a++) {
-      const u = at(a), v = at(b), r = RADIUS[b * M + a]!, angle = Math.atan2(v, u)
-      let best = (.24 - r) / .1
-      for (const ray of rays) {
-        const along = u * ray.x + v * ray.y
-        if (along <= 0 || along > ray.length) continue
-        best = Math.max(best, (.1 * (1 - .45 * along / ray.length) - Math.abs(v * ray.x - u * ray.y)) / .06)
-      }
-      spark[b * M + a] = best
-      blob[b * M + a] = (.66 + .13 * Math.sin(3 * angle + p1) + .08 * Math.sin(5 * angle + p2) - r) / .2
-    }
-    return { i, j, born, spark, blob }
+  // 一个大星芒由 N×N 格里的方块拼成。小星芒从已有的方块上冒出来，弹着滑到旁边的空格，身后留下一块方块；
+  // 拼满之后整个大星芒缩成一枚小星芒，再从头拼起。
+  const N = 19, MID = (N - 1) / 2, DOT = .8, A_STAR = .56, A_TILE = .4
+  const POP = .22, MOVE = .42, LAND = .2, REST = 1.6, ZOOM = 4.2
+  // 星芒的形状（大小两种用同一组射线，所以缩到头正好对上）。
+  const RAYS = 11, CORE = .25
+  const rays = Array.from({ length: RAYS }, (_, k) => { const angle = -Math.PI / 2 + (k + (hash(k * 7.3 + 2) - .5) * .42) * TAU / RAYS; return { x: Math.cos(angle), y: Math.sin(angle), length: .7 + .3 * hash(k * 3.1 + 5) } })
+  const STAR = new Path2D()
+  STAR.arc(0, 0, CORE, 0, TAU)
+  for (const ray of rays) {
+    const px = -ray.y, py = ray.x, a = .125, b = .078, L = ray.length
+    STAR.moveTo(-px * a, -py * a); STAR.lineTo(ray.x * L - px * b, ray.y * L - py * b)
+    STAR.arc(ray.x * L, ray.y * L, b, Math.atan2(-py, -px), Math.atan2(py, px)); STAR.lineTo(px * a, py * a); STAR.closePath()
   }
-  let cells: Cell[] = [], taken = new Uint8Array(M * M), clock = 0, last = -1, nextBirth = 0, fullAt = 0, level = 0
-  let zoom: { from: number; i: number; j: number } | null = null
-  const put = (i: number, j: number, born: number) => { cells.push(make(i, j, born)); taken[j * M + i] = 1 }
-  const middle = () => 3 + Math.floor(Math.random() * (M - 6))
-  put(middle(), middle(), 0); nextBirth = 2.2
-  // 新的一格长在已有的旁边；身边越空的位置越容易被选中，所以先抽出枝杈，后面才慢慢填满。
-  const birth = () => {
-    const options: number[] = [], weights: number[] = []
-    let total = 0
-    for (let j = 0; j < M; j++) for (let i = 0; i < M; i++) {
-      if (taken[j * M + i] || SQUARE[j * M + i]! <= 0) continue
-      let near = 0, touching = 0
-      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
-        const x = i + di, y = j + dj
-        if ((!di && !dj) || x < 0 || y < 0 || x >= M || y >= M || !taken[y * M + x]) continue
-        near++; if (!di || !dj) touching++
-      }
-      if (!touching) continue
-      const weight = 1 / (near * near); options.push(j * M + i); weights.push(weight); total += weight
+  const inside = (u: number, v: number) => {
+    if (Math.hypot(u, v) < CORE + .05) return true
+    for (const ray of rays) {
+      const along = u * ray.x + v * ray.y
+      if (along > 0 && along < ray.length + .04 && Math.abs(v * ray.x - u * ray.y) < .135 - .04 * along / ray.length) return true
     }
-    if (!options.length) return
-    let pick = Math.random() * total, index = 0
+    return false
+  }
+  // 能从正中一格走到的格子才算数（斜着也算），免得射线尖上留下够不着的孤格。
+  const MASK = new Uint8Array(N * N)
+  { const raw = new Uint8Array(N * N); for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) raw[j * N + i] = inside((i - MID) / (N / 2), (j - MID) / (N / 2)) ? 1 : 0
+    const queue = [MID * N + MID]; MASK[queue[0]!] = 1
+    while (queue.length) { const k = queue.pop()!, i = k % N, j = (k - i) / N
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const x = i + di, y = j + dj, n = y * N + x; if (x >= 0 && y >= 0 && x < N && y < N && raw[n] && !MASK[n]) { MASK[n] = 1; queue.push(n) } } } }
+  const SLOTS = MASK.reduce((sum, value) => sum + value, 0)
+  // 弹簧：冲过头一点再回来。
+  const spring = (p: number) => p >= 1 ? 1 : p <= 0 ? 0 : 1 - Math.exp(-5.5 * p) * Math.cos(8.5 * p)
+  type Head = { from: number; to: number; start: number; pop: boolean }
+  let taken = new Uint8Array(N * N), tiles = new Map<number, number>(), heads: Head[] = [], filled = 1
+  let clock = 0, last = -1, next = 1.4, doneAt = 0, zoomAt = 0, level = 0
+  const seed = () => { taken = new Uint8Array(N * N); tiles = new Map(); const k = MID * N + MID; taken[k] = 1; heads = [{ from: k, to: k, start: clock - 9, pop: false }]; filled = 1; doneAt = 0; zoomAt = 0 }
+  seed()
+  const idle = (head: Head) => clock >= head.start + (head.pop ? POP : 0) + MOVE
+  const crowd = (k: number) => { const i = k % N, j = (k - i) / N; let near = 0; for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const x = i + di, y = j + dj; if ((di || dj) && x >= 0 && y >= 0 && x < N && y < N && taken[y * N + x]) near++ } return near }
+  // 从 k 出发能去的空格：先看紧挨着的；身边越空越容易被挑中，所以先抽枝后填满。
+  const around = (k: number) => {
+    const i = k % N, j = (k - i) / N, options: number[] = [], weights: number[] = []
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const x = i + di, y = j + dj, n = y * N + x; if ((di || dj) && x >= 0 && y >= 0 && x < N && y < N && MASK[n] && !taken[n]) { options.push(n); weights.push((di && dj ? .45 : 1) / crowd(n) ** 2) } }
+    if (!options.length) return -1
+    let pick = Math.random() * weights.reduce((sum, value) => sum + value, 0), index = 0
     while (index < options.length - 1 && (pick -= weights[index]!) > 0) index++
-    put(options[index]! % M, Math.floor(options[index]! / M), clock)
+    return options[index]!
+  }
+  const go = (head: Head | null, from: number, to: number) => {
+    taken[to] = 1; filled++
+    if (head) { tiles.set(from, clock); head.from = from; head.to = to; head.start = clock; head.pop = false }
+    else heads.push({ from, to, start: clock, pop: true })
+  }
+  const step = () => {
+    const free = heads.filter(idle), want = Math.min(9, 1 + Math.floor(filled / 9))
+    // 星芒不够多：从一块有空邻居的方块上再冒出一枚。
+    if (heads.length < want || !free.length) {
+      const sources = [...tiles.keys()].filter(k => around(k) >= 0)
+      if (sources.length) { const from = sources[Math.floor(Math.random() * sources.length)]!; go(null, from, around(from)); return }
+      if (!free.length) return
+    }
+    const head = free[Math.floor(Math.random() * free.length)]!
+    let to = around(head.to)
+    if (to < 0) {
+      // 走到头了：飞去别处的空格（挨着已有方块的）。
+      const open: number[] = []
+      for (let k = 0; k < N * N; k++) if (MASK[k] && !taken[k] && crowd(k)) open.push(k)
+      if (!open.length) return
+      to = open[Math.floor(Math.random() * open.length)]!
+    }
+    go(head, head.to, to)
   }
   return env => {
     const c = env.context, { x: left, y: top, w, h } = env.full, g = env.grid.size, fade = env.fade
     // 自己走表：一帧最多走 0.1 秒，窗口藏起来再回来不会一下子跳过去一大段。
     if (last >= 0) clock += clamp((env.t - last) / 1000, 0, .1)
     last = env.t
-    if (zoom) {
-      if (clock - zoom.from >= ZOOM) {
-        // 拉远到头：刚才那一整片现在就是这一格里的点阵，从「点阵变密」那一步接着走。
-        const { i, j } = zoom
-        cells = []; taken = new Uint8Array(M * M); put(i, j, clock - T_DENSE)
-        zoom = null; fullAt = 0; level++; nextBirth = clock + 1.6
-      }
-    } else if (cells.length < SLOTS) {
-      // 长得越多，长得越快。
-      while (clock >= nextBirth && cells.length < SLOTS) { birth(); nextBirth += Math.max(.22, 1.5 / (1 + cells.length / 9)) }
-    } else if (cells.every(cell => clock - cell.born >= T_SOLID)) {
-      fullAt ||= clock
-      if (clock - fullAt > REST) zoom = { from: clock, i: middle(), j: middle() }
-    }
-    const S = g * clamp(Math.floor(Math.min(w * .56, h * .8) / M / g * 2) / 2, 1, 3), B = S * M, inner = S * DOT, pitch = inner / M
-    const bx = env.grid.x + Math.round((left + w * .6 - B / 2 - env.grid.x) / g) * g, by = env.grid.y + Math.round((top + h * .52 - B / 2 - env.grid.y) / g) * g
+    if (zoomAt) { if (clock - zoomAt >= ZOOM) { seed(); level++; next = clock + 1.1 } }
+    else if (filled < SLOTS) { while (clock >= next) { step(); next += Math.max(.09, .8 / (1 + filled / 7)) } }
+    else if (heads.every(idle)) { doneAt ||= clock; if (clock - doneAt > REST) zoomAt = clock }
+    const S = g * clamp(Math.floor(Math.min(w * .6, h * .84) / N / g * 2) / 2, .5, 3), B = S * N, inner = S * DOT, r = S * .62
+    const bx = env.grid.x + Math.round((left + w * .6 - B / 2 - env.grid.x) / g) * g, by = env.grid.y + Math.round((top + h * .5 - B / 2 - env.grid.y) / g) * g
+    const cx = (k: number) => bx + (k % N + .5) * S, cy = (k: number) => by + (Math.floor(k / N) + .5) * S
+    const star = (x: number, y: number, radius: number) => { c.save(); c.translate(x, y); c.scale(radius, radius); c.fill(STAR); c.restore() }
     c.fillStyle = env.red
-    const solid = new Path2D()
-    for (const cell of cells) {
-      const age = clock - cell.born, x0 = bx + cell.i * S + INSET * S, y0 = by + cell.j * S + INSET * S
-      if (age >= T_SOLID) { solid.roundRect(x0, y0, inner, inner, inner * .21); continue }
-      // 这一格的点阵：星芒、一团、方块各是一张「里外」的图，中间慢慢换过去；点的大小看它离边缘多远。
-      const toBlob = smooth((age - T_BLOB) / (T_BLOB_END - T_BLOB)), toSquare = smooth((age - T_SQUARE) / (T_SQUARE_END - T_SQUARE))
-      const even = smooth((age - T_SQUARE_END) / (T_DENSE - T_SQUARE_END)), merge = smooth((age - T_DENSE) / (T_SOLID - T_DENSE))
-      const reveal = age < T_SPARK ? smooth(age / T_SPARK) * 1.5 : 9, base = .62 + (DOT - .62) * even + (1 - DOT) * merge
-      const dots = new Path2D()
-      for (let k = 0; k < M * M; k++) {
-        let field = cell.spark[k]! + (cell.blob[k]! - cell.spark[k]!) * toBlob
-        field += (SQUARE[k]! - field) * toSquare
-        if (reveal < 9) field = Math.min(field, (reveal - RADIUS[k]!) / .15)
-        if (field <= 0) continue
-        const size = pitch * base * (clamp(.35 + field, 0, 1) * (1 - even) + even), a = k % M, b = (k - a) / M
-        dots.rect(x0 + (a + .5) * pitch - size / 2, y0 + (b + .5) * pitch - size / 2, size, size)
-      }
-      c.globalAlpha = (A_DOT + (A_TILE - A_DOT) * even) * fade; c.fill(dots)
+    // 拼满后：留在场上的星芒也落成方块；然后整片缩向正中，方块淡出、同样形状的一枚星芒显出来。
+    const settle = doneAt ? smooth((clock - doneAt) / .5) : 0, q = zoomAt ? smooth((clock - zoomAt) / ZOOM) : 0
+    const scale = (.94 / N) ** q, toStar = smooth((q - .45) / .4)
+    c.save()
+    if (q) { const mx = bx + B / 2, my = by + B / 2; c.translate(mx, my); c.scale(scale, scale); c.translate(-mx, -my) }
+    const tile = (k: number, grow: number) => { const size = inner * grow; path.roundRect(cx(k) - size / 2, cy(k) - size / 2, size, size, size * .21) }
+    let path = new Path2D()
+    for (const [k, born] of tiles) tile(k, spring((clock - born) / LAND * .6) )
+    if (settle) for (const head of heads) tile(head.to, settle)
+    c.globalAlpha = A_TILE * fade * (1 - toStar); c.fill(path)
+    c.globalAlpha = A_STAR * fade * (1 - settle)
+    if (settle < 1) for (const head of heads) {
+      const t0 = head.start + (head.pop ? POP : 0), grow = head.pop ? spring((clock - head.start) / POP * .7) : 1, p = spring((clock - t0) / MOVE)
+      star(cx(head.from) + (cx(head.to) - cx(head.from)) * p, cy(head.from) + (cy(head.to) - cy(head.from)) * p, r * grow * (1 - .5 * settle))
     }
-    c.globalAlpha = A_TILE * fade
-    if (zoom) {
-      // 整片缩向它在下一层里的那一格：缩到头时，每块砖正好落在那一格的一个点上。
-      const q = DOT / M, scale = q ** smooth((clock - zoom.from) / ZOOM)
-      const fx = (bx + zoom.i * S + INSET * S - bx * q) / (1 - q), fy = (by + zoom.j * S + INSET * S - by * q) / (1 - q)
-      c.save(); c.translate(fx, fy); c.scale(scale, scale); c.translate(-fx, -fy); c.fill(solid); c.restore()
-    } else c.fill(solid)
-    if (env.hand) { c.globalAlpha = .4 * fade; c.fillStyle = env.ink; c.font = `18px ${env.hand}`; c.fillText(`xₙ₊₁ = f(xₙ)   n = ${level}`, bx + INSET * S, by + B + 24) }
+    if (toStar) { c.globalAlpha = A_STAR * fade * toStar; star(bx + B / 2, by + B / 2, B / 2) }
+    c.restore()
+    if (env.hand) { c.globalAlpha = .4 * fade; c.fillStyle = env.ink; c.font = `18px ${env.hand}`; c.fillText(`xₙ₊₁ = f(xₙ)   n = ${level}`, bx + S, by + B + 24) }
   }
 }
 
@@ -976,7 +975,7 @@ export const SKETCHES: Sketch[] = [
     'An AVL tree is more strictly balanced; a red-black tree rotates less on update.',
     'Catalan: the number of binary trees with n nodes is Cₙ = (2n)! / ((n + 1)! n!).',
   ] },
-  { id: 'rsi', name: '递归自我改进', tilt: .5, create: rsi, facts: [
+  { id: 'rsi', name: 'RSI（递归自我改进）', tilt: .5, create: rsi, facts: [
     'Recursive self-improvement: a system that improves the process that improves it.',
     'Fixed point: x = f(x). The Y combinator: Y f = f (Y f).',
     'A quine is a program whose output is its own source.',

@@ -1,5 +1,5 @@
 /* Intelligent UI：回答里的可操作界面（ai/intelligent-ui.ts）。颜色都取主题变量，三种界面风格通用。 */
-.iui{--iui-1:var(--accent);--iui-2:#e39a4b;--iui-3:#55ab82;--iui-4:#d9707c;--iui-5:#9482d8;display:grid;gap:12px;margin:.4em 0 1em;font-family:var(--font-ui);font-size:13px;line-height:1.5;color:var(--surface-ink,var(--ink))}
+.iui{--iui-1:var(--accent);--iui-2:#e39a4b;--iui-3:#55ab82;--iui-4:#d9707c;--iui-5:#9482d8;display:grid;gap:12px;margin:.4em 0 1em;font-family:inherit;font-size:13px;line-height:1.5;color:var(--surface-ink,var(--ink))}
 :root[data-style='sketch'] .iui{--iui-1:var(--pencil);--iui-2:var(--red-pencil)}
 .iui-card{position:relative;padding:14px 14px 12px;border:1px solid var(--line,var(--hairline));border-radius:var(--r-md,12px);background:color-mix(in srgb,var(--surface) 78%,transparent)}
 .iui-title{margin:0 0 2px;font-size:13.5px;font-weight:650}
@@ -59,3 +59,7 @@
 .iui-radio{display:flex;flex-wrap:wrap;gap:6px 14px}
 .iui-submit{height:36px;border:0;border-radius:999px;background:var(--surface-ink,var(--ink));color:var(--surface);box-shadow:none;font-size:13px;font-weight:600}
 .iui-submit:disabled{opacity:.45}
+
+/* 字体跟着所在的回答走；说明文字里的公式照常渲染。 */
+.iui button,.iui input,.iui select,.iui textarea{font-family:inherit}
+.iui .katex{font-size:1.05em}
