@@ -30,7 +30,8 @@ function openSettings() { window.dispatchEvent(new CustomEvent('kaizhi:open-ai-s
     <p v-if="item.status === 'running' && !item.text && thought" class="ex-thought">{{ thought }}</p>
     <div v-if="item.text" ref="body" class="ex-text" v-html="renderMarkdown(item.text)"></div>
     <p v-if="item.status === 'error'" class="ex-error">{{ item.error || '解释失败' }}</p>
-    <p v-if="item.status === 'running' && elapsed >= 10" class="ex-slow">有点慢，<button type="button" @click="openSettings">换个更快的服务商</button></p>
+    <p v-if="item.status === 'running' && elapsed >= 10 && (item.mode === 'visual' || item.text.includes('```ui'))" class="ex-slow">Intelligent UI 比较复杂，可能会慢一些</p>
+    <p v-else-if="item.status === 'running' && elapsed >= 10" class="ex-slow">有点慢，<button type="button" @click="openSettings">换个更快的服务商</button></p>
   </div>
 </template>
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CLAUDE_PATH, DEEPSEEK_PATH } from './assistant-glyphs'
+import { CLAUDE_PATH, DEEPSEEK_PATH, KNOT_PATH } from './assistant-glyphs'
 
 // 阅读助手的形象：内置小螃蟹动图、Claude、ChatGPT、DeepSeek，或用户自己的图片/动图。
 withDefaults(defineProps<{ kind: string; image?: string | null; size?: number }>(), { size: 52 })
@@ -10,9 +10,10 @@ withDefaults(defineProps<{ kind: string; image?: string | null; size?: number }>
     <img v-if="kind === 'custom' && image" :src="image" alt="" draggable="false" />
     <svg v-else-if="kind === 'claude'" viewBox="0 0 24 24"><path :d="CLAUDE_PATH" /></svg>
     <svg v-else-if="kind === 'deepseek'" viewBox="0 0 24 24"><path :d="DEEPSEEK_PATH" /></svg>
+    <!-- 六瓣风车结：同一段弯钩转六次，每一瓣在被下一瓣压住的地方断开。 -->
     <svg v-else-if="kind === 'chatgpt'" viewBox="0 0 24 24" class="knot">
-      <g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round">
-        <rect v-for="angle in [0, 60, 120, 180, 240, 300]" :key="angle" x="9" y="2.6" width="6" height="11" rx="3" :transform="`rotate(${angle} 12 12)`" />
+      <g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">
+        <path v-for="angle in [0, 60, 120, 180, 240, 300]" :key="angle" :d="KNOT_PATH" :transform="`rotate(${angle} 12 12)`" />
       </g>
     </svg>
     <!-- 像素小螃蟹：身体轻轻起伏，八条腿交替迈步，偶尔眨眼。 -->
@@ -37,6 +38,7 @@ withDefaults(defineProps<{ kind: string; image?: string | null; size?: number }>
 .mark-claude svg,.mark-deepseek svg{fill:currentColor}
 .mark-deepseek{background:#eef1ff;color:#4d6bfe}
 .mark-chatgpt{background:#fff;color:#111;box-shadow:inset 0 0 0 1px rgb(0 0 0 / .08)}
+.assistant-mark .knot{width:70%;height:70%}
 .mark-crab{background:transparent}
 .mark-crab svg{width:88%;height:88%;fill:#d97757;overflow:visible}
 .mark-crab .crab-eyes rect{fill:#2b1a12}
