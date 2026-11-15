@@ -791,7 +791,7 @@ function racksLabel(env: Env) {
 function rsi(): Painter {
   // 星芒是 P×P 的像素画（小方块之间留缝）；大星芒由同一张图的 P×P 格方块拼成。镜头一直在拉远：
   // 拼满的大星芒缩到一格大小时，它的每块方块正好是下一层那枚星芒的一个像素。
-  const P = 19, MID = (P - 1) / 2, DOT = .8, ALPHA = .5
+  const P = 19, MID = (P - 1) / 2, DOT = .8, ALPHA = .68
   const POP = .22, MOVE = .42, T_HOLD = 1.1, T_SQUARE = 1.9, T_DENSE = 3.4, T_SOLID = 4.6
   const RAYS = 11, CORE = .25
   const rays = Array.from({ length: RAYS }, (_, k) => { const angle = -Math.PI / 2 + (k + (hash(k * 7.3 + 2) - .5) * .42) * TAU / RAYS; return { x: Math.cos(angle), y: Math.sin(angle), length: .7 + .3 * hash(k * 3.1 + 5) } })
@@ -815,7 +815,7 @@ function rsi(): Painter {
   // 一格里每个点离中心多远、朝哪边、在圆角方块里多深：中间那几步（一团、点阵方块）用它们算。
   const RADIUS = new Float32Array(P * P), ANGLE = new Float32Array(P * P), SQUARE = new Float32Array(P * P)
   for (let b = 0; b < P; b++) for (let a = 0; a < P; a++) {
-    const u = at(a), v = at(b), half = .95, round = .4
+    const u = at(a), v = at(b), half = 1, round = .3
     RADIUS[b * P + a] = Math.hypot(u, v); ANGLE[b * P + a] = Math.atan2(v, u)
     SQUARE[b * P + a] = (round - Math.hypot(Math.max(Math.abs(u) - (half - round), 0), Math.max(Math.abs(v) - (half - round), 0))) / .2
   }
@@ -836,7 +836,7 @@ function rsi(): Painter {
   type Head = { from: number; to: number; start: number; pop: boolean }
   type Tile = { born: number; star: boolean; blob: Float32Array }
   let taken = new Uint8Array(P * P), tiles = new Map<number, Tile>(), heads: Head[] = [], filled = 1, reach = 0
-  let clock = 0, last = -1, next = 1.2, z = 0, level = 0
+  let clock = 0, last = -1, next = 1.2, z = 0, speed = .004, level = 0
   // 每格那一团的形状各不相同，留下时算好一次。
   const leave = (k: number, star: boolean) => {
     const p1 = Math.random() * TAU, p2 = Math.random() * TAU, blob = new Float32Array(P * P)
@@ -876,12 +876,14 @@ function rsi(): Painter {
     const dt = last >= 0 ? clamp((env.t - last) / 1000, 0, .1) : 0
     clock += dt; last = env.t
     const fit = Math.min(w * .62, h * .86), S0 = fit / 3, growing = filled < SLOTS || heads.length > 0
-    if (growing) { while (clock >= next) { step(); next += Math.max(.09, .8 / (1 + filled / 7)) } }
+    if (growing) { while (clock >= next) { step(); next += Math.max(.3, 1.6 / (1 + filled / 10)) } }
     let settled = !growing
     if (settled) for (const tile of tiles.values()) if (clock - tile.born < T_SOLID) { settled = false; break }
     // 镜头：长的时候慢慢拉远，刚好装下已经长出来的部分；拼满后快一些，一直拉到整个大星芒只有一格大。
     const target = settled ? 1 : Math.min(.95, Math.log(S0 / (fit / (2 * reach + 3.5))) / Math.log(P))
-    z += Math.max(.004 * dt, settled ? .11 * dt * smooth((1.02 - z) * 8 + .25) + .02 * dt : (target - z) * (1 - Math.exp(-dt * 1.5)))
+    // 速度本身也慢慢变，不会忽快忽慢；只往远处走。
+    speed += (Math.max(.004, settled ? .12 : (target - z) * .5) - speed) * (1 - Math.exp(-dt * 1.1))
+    z += speed * dt
     if (z >= 1) { z -= 1; seed(); level++; next = clock + .9 }
     const S = S0 * P ** -z, pitch = S / P, inner = S * DOT
     const mx = left + w * .6, my = top + h * .5, cx = (k: number) => mx + (k % P - MID) * S, cy = (k: number) => my + (Math.floor(k / P) - MID) * S
@@ -889,21 +891,22 @@ function rsi(): Painter {
     // 拼好的方块。
     const solid = new Path2D(), done: number[] = [], dots = new Path2D(), coarse = pitch < .9
     for (const [k, tile] of tiles) {
-      const age = clock - tile.born, x0 = cx(k) - S / 2, y0 = cy(k) - S / 2
+      const age = clock - tile.born
       if (age >= T_SOLID) { solid.roundRect(cx(k) - inner / 2, cy(k) - inner / 2, inner, inner, inner * .21); done.push(k); continue }
       // 还在变的一格：一团点 → 圆角方块形的点阵 → 点变密 → 连成一块。
       const toBlob = tile.star ? smooth(age / .7) : 1, reveal = tile.star ? 9 : smooth(age / .3) * 1.5
       const toSquare = smooth((age - T_HOLD) / (T_SQUARE - T_HOLD)), even = smooth((age - T_SQUARE) / (T_DENSE - T_SQUARE)), merge = smooth((age - T_DENSE) / (T_SOLID - T_DENSE))
-      if (coarse) { const size = inner * (.55 + .45 * even) * Math.min(1, reveal); dots.rect(cx(k) - size / 2, cy(k) - size / 2, size, size); continue }
-      const base = (tile.star ? DOT + (.62 - DOT) * toBlob : .62) * (1 - even) + DOT * even + (1 / DOT - 1) * DOT * merge * 1.02
+      if (coarse) { const size = inner * Math.min(1, reveal); dots.rect(cx(k) - size / 2, cy(k) - size / 2, size, size); continue }
+      // 点阵就铺在成品方块那么大的范围里：点变密、连起来之后正好是成品，不会先胀开再缩回去。
+      const base = (tile.star ? DOT + (.62 - DOT) * toBlob : .62) * (1 - even) + DOT * even + (1.03 - DOT) * merge, fine = inner / P, x1 = cx(k) - inner / 2, y1 = cy(k) - inner / 2
       for (let n = 0; n < P * P; n++) {
         let field = tile.blob[n]!
         if (toBlob < 1) field = (MASK[n] ? 1 : -1) * (1 - toBlob) + field * toBlob
         if (toSquare) field += (SQUARE[n]! - field) * toSquare
         if (reveal < 9) field = Math.min(field, (reveal - RADIUS[n]!) / .15)
         if (field <= 0) continue
-        const size = pitch * base * (clamp(.35 + field, 0, 1) * (1 - even) + even), a = n % P, b = (n - a) / P
-        dots.rect(x0 + (a + .5) * pitch - size / 2, y0 + (b + .5) * pitch - size / 2, size, size)
+        const size = fine * base * (clamp(.35 + field, 0, 1) * (1 - even) + even), a = n % P, b = (n - a) / P
+        dots.rect(x1 + (a + .5) * fine - size / 2, y1 + (b + .5) * fine - size / 2, size, size)
       }
     }
     // 星芒：一枚像素画，弹着滑向下一格。
