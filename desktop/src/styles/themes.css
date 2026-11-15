@@ -918,6 +918,10 @@
 
 /* ---- 草稿的版式：纸片各自歪着摆在方格桌面上 ------------------------------ */
 
+/* 侧栏歪着贴：收放动画期间旋转的支点不能换（motion.css 为了缩放把它挪到了左上角），
+   否则动画一结束支点回到中心，整栏会跳几像素。 */
+:root[data-style='sketch'] .app-sidebar:is(.sidebar-enter-active, .sidebar-leave-active) { transform-origin: 50% 50%; }
+
 /* 侧栏是一张贴了胶带的纸，没有框线，只有纸的厚度与投影。 */
 :root[data-style='sketch'] .app-sidebar {
   rotate: -.8deg;

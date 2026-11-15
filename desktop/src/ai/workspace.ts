@@ -46,7 +46,17 @@ const STORAGE_PREFIX = 'ai.conversations.v1.'
 const MAX_STORED_CONVERSATIONS = 40
 const MAX_MESSAGES = 60
 /** 输入框里一次最多附上的图片数。 */
-export const MAX_ATTACHMENTS = 4
+export const MAX_ATTACHMENTS = 6
+// 输入框里已经确认要发的图片：粘贴、拖进来的，还有点过「留住」的截图。按文档记，发出后清掉。
+const composerImages = reactive(new Map<string, string[]>())
+export function pendingImages(key: string) { return composerImages.get(key) || [] }
+export function setPendingImages(key: string, images: string[]) { if (images.length) composerImages.set(key, images.slice(0, MAX_ATTACHMENTS)); else composerImages.delete(key) }
+/** 留住一张截图：之后再截图是新增一张，不会把它换掉。满了或已经有了返回 false。 */
+export function keepImage(key: string, image: string) {
+  const list = pendingImages(key)
+  if (!image || list.includes(image) || list.length >= MAX_ATTACHMENTS) return false
+  composerImages.set(key, [...list, image]); return true
+}
 
 function blank(documentId: string): ChatState {
   const now = Date.now()
