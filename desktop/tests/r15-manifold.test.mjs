@@ -33,9 +33,12 @@ test('the next manifold differs from the current one when there is a choice', ()
 })
 
 test('manifold preferences: shown in the library, hidden while reading, all shapes by default; at least one shape kept', () => {
-  assert.deepEqual(defaultPreferences().appearance.manifold, { show: true, reader: false, shapes: MANIFOLD_IDS })
+  assert.deepEqual(defaultPreferences().appearance.manifold, { show: true, reader: false, shapes: MANIFOLD_IDS, known: MANIFOLD_IDS })
   const custom = normalizePreferences({ appearance: { manifold: { show: false, reader: true, shapes: ['klein', 'boy', 'boy', 'sphere'] } } })
-  assert.deepEqual(custom.appearance.manifold, { show: false, reader: true, shapes: ['klein', 'boy'] })
+  // Settings saved before a scene existed get that scene switched on once; `known` then records it.
+  assert.deepEqual(custom.appearance.manifold, { show: false, reader: true, shapes: ['klein', 'boy', 'rsi'], known: MANIFOLD_IDS })
+  // Saved again with the new scene unticked: it stays off.
+  assert.deepEqual(normalizePreferences({ appearance: { manifold: { shapes: ['klein', 'boy'], known: MANIFOLD_IDS } } }).appearance.manifold.shapes, ['klein', 'boy'])
   assert.deepEqual(normalizePreferences({ appearance: { manifold: { shapes: ['sphere'] } } }).appearance.manifold.shapes, MANIFOLD_IDS)
   assert.deepEqual(preferenceErrors(custom), [])
   assert.ok(preferenceErrors({ ...custom, appearance: { ...custom.appearance, manifold: { show: true, reader: false, shapes: [] } } }).includes('请至少选择一种流形。'))
@@ -46,7 +49,7 @@ test('neural networks build finite graphs and rotate with the manifolds; every n
   const { SCENES } = await import('../src/sketch/manifolds.ts')
   const { SKETCHES } = await import('../src/sketch/scenes.ts')
   assert.deepEqual(SCENES.map(item => item.id), [...MANIFOLDS.map(item => item.id), ...NETWORKS.map(item => item.id), ...SKETCHES.map(item => item.id)])
-  assert.deepEqual(SKETCHES.map(item => item.id), ['dna', 'lorenz', 'cayley', 'higgs', 'dijkstra', 'life', 'tree', 'racks'])
+  assert.deepEqual(SKETCHES.map(item => item.id), ['dna', 'lorenz', 'cayley', 'higgs', 'dijkstra', 'life', 'tree', 'rsi', 'racks'])
   for (const item of SKETCHES) { assert.ok(item.facts.length >= 8, item.id); for (const fact of item.facts) assert.ok(!/[\u4e00-\u9fff]/.test(fact) && !/GB300/i.test(fact), fact) }
   // 存着旧的一整套画面：升级后带上新画面；自己挑过的不动。
   const { LEGACY_SCENE_IDS } = await import('../src/sketch/manifolds.ts')
