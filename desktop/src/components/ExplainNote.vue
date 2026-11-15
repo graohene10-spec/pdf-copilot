@@ -37,9 +37,9 @@ function discard() {
     <p class="en-actions">
       <button type="button" :class="{ on: saved }" :disabled="item.status !== 'done'" :aria-pressed="saved" :aria-label="saved ? '已记入文档' : '记入文档'" :data-tip="saved ? '已记入文档，点一下取消' : '记入文档'" @click="keep"><AppIcon name="bookmark" :size="15" /></button>
       <i aria-hidden="true"></i>
-      <button type="button" :disabled="item.status === 'running'" aria-label="深入" data-tip="深入" @click="again('deeper')"><AppIcon name="deeper" :size="15" /></button>
-      <button type="button" :disabled="item.status === 'running'" aria-label="简化" data-tip="简化" @click="again('simpler')"><AppIcon name="simpler" :size="15" /></button>
-      <button type="button" :disabled="item.status === 'running'" aria-label="举例" data-tip="举例" @click="again('example')"><AppIcon name="example" :size="15" /></button>
+      <button type="button" :disabled="item.status === 'running'" aria-label="深入" data-tip="深入" data-tip-fast @click="again('deeper')"><AppIcon name="deeper" :size="16" /></button>
+      <button type="button" :disabled="item.status === 'running'" aria-label="简化" data-tip="简化" data-tip-fast @click="again('simpler')"><AppIcon name="simpler" :size="16" /></button>
+      <button type="button" :disabled="item.status === 'running'" aria-label="举例" data-tip="举例" data-tip-fast @click="again('example')"><AppIcon name="example" :size="16" /></button>
       <button type="button" class="en-close" aria-label="关闭" data-tip="关闭" @click="discard"><AppIcon name="close" :size="13" /></button>
     </p>
   </aside>

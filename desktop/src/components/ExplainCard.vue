@@ -24,7 +24,8 @@ function settle() {
   const width = element.offsetWidth, height = element.offsetHeight, gap = 14
   let left = props.card.x + gap, top = props.card.y + gap
   if (left + width > innerWidth - 8) left = Math.max(8, props.card.x - gap - width)
-  if (top + height > innerHeight - 8) top = Math.max(8, props.card.y - gap - height)
+  // 下面放不下就放到上面；上面也放不下（解释很长）就贴着窗口边，整张都露出来。
+  if (top + height > innerHeight - 8) top = props.card.y - gap - height >= 8 ? props.card.y - gap - height : Math.max(8, innerHeight - 8 - height)
   place.value = { left, top }
 }
 function remember() {
@@ -60,7 +61,15 @@ watch(host, (layer, previous) => {
 }, { flush: 'sync', immediate: true })
 // 钉住的便签记下它在屏幕上的位置（停在屏幕上的那种靠它放回原处）。
 watch(() => [place.value.left, place.value.top, props.card.pinned] as const, () => { if (props.card.pinned && !host.value) props.card.screen = { ...place.value } }, { flush: 'sync' })
+// 没手动拉过大小时，纸条的宽度跟着字数走：一两句话是窄窄一张，长解释宽一些，尽量一眼看全、不用在纸条里滚动。
+const fit = computed(() => {
+  const text = showFrom.value ? props.card.from || '' : props.card.item.text
+  let units = 0
+  for (const char of text) units += char.charCodeAt(0) > 0x2e7f ? 1 : .55
+  return Math.min(600, Math.max(300, Math.round(Math.sqrt(units * 900) / 40) * 40))
+})
 const position = computed(() => ({
+  '--ec-fit': `${fit.value}px`,
   ...(host.value ? { position: 'absolute' as const, left: `${inPage.value.left}px`, top: `${inPage.value.top}px` } : { left: `${place.value.left}px`, top: `${place.value.top}px` }),
   ...(size.value.width ? { width: `${size.value.width}px`, maxWidth: 'none' } : {}),
   ...(size.value.height ? { height: `${size.value.height}px`, maxHeight: 'none' } : {}),
@@ -131,9 +140,9 @@ watch(() => [props.card.item.text, props.card.item.status, props.card.item.reaso
         </div>
         <ExplainBody :item="card.item" />
         <p v-if="card.item.status !== 'error' || card.item.text" class="ec-actions">
-          <button type="button" class="ec-tool" :disabled="card.item.status === 'running'" aria-label="深入" data-tip="深入" @click="rerunExplain(card.item, 'deeper')"><AppIcon name="deeper" :size="14" /></button>
-          <button type="button" class="ec-tool" :disabled="card.item.status === 'running'" aria-label="简化" data-tip="简化" @click="rerunExplain(card.item, 'simpler')"><AppIcon name="simpler" :size="14" /></button>
-          <button type="button" class="ec-tool" :disabled="card.item.status === 'running'" aria-label="举例" data-tip="举例" @click="rerunExplain(card.item, 'example')"><AppIcon name="example" :size="14" /></button>
+          <button type="button" class="ec-tool" :disabled="card.item.status === 'running'" aria-label="深入" data-tip="深入" data-tip-fast @click="rerunExplain(card.item, 'deeper')"><AppIcon name="deeper" :size="16" /></button>
+          <button type="button" class="ec-tool" :disabled="card.item.status === 'running'" aria-label="简化" data-tip="简化" data-tip-fast @click="rerunExplain(card.item, 'simpler')"><AppIcon name="simpler" :size="16" /></button>
+          <button type="button" class="ec-tool" :disabled="card.item.status === 'running'" aria-label="举例" data-tip="举例" data-tip-fast @click="rerunExplain(card.item, 'example')"><AppIcon name="example" :size="16" /></button>
         </p>
       </div>
     </Transition>
@@ -143,10 +152,13 @@ watch(() => [props.card.item.text, props.card.item.status, props.card.item.reaso
 </template>
 
 <style>
-.explain-card{min-width:180px;display:flex;flex-direction:column;overflow:visible!important}
-.explain-card > :is(.st-explain,.st-text){min-height:0;overflow:auto}
+/* 初始大小跟着文字走（--ec-fit 由字数算出），高度最多到窗口那么高；真的放不下时只有正文那一块滚动，标题和按钮不动。 */
+.selection-translation.explain-card{min-width:180px;max-width:min(var(--ec-fit,380px),calc(100vw - 16px));max-height:calc(100vh - 24px);display:flex;flex-direction:column;overflow:visible!important}
+.explain-card > .st-text{min-height:0;overflow:auto}
+.explain-card > .st-explain{min-height:0;overflow:visible!important}
+:root[data-style='sketch'] .selection-translation.explain-card :is(.st-text,.st-explain){max-height:calc(100vh - 56px)}
 .explain-card .st-explain{display:flex;flex-direction:column;flex:1}
-.explain-card .explain-body{flex:1;min-height:0;overflow:auto}
+.explain-card .explain-body{flex:1;min-height:0;overflow:hidden auto}
 .explain-card.sized .st-explain{max-height:none!important}
 /* 右边、下边各一条看不见的把手，右下角一个小角标。 */
 .ec-resize{position:absolute;z-index:2;touch-action:none}
@@ -164,7 +176,7 @@ watch(() => [props.card.item.text, props.card.item.status, props.card.item.reaso
 .ec-tool{display:grid;place-items:center;flex:none;width:22px;height:22px;min-height:0;padding:0;border:0;border-radius:50%;background:none!important;box-shadow:none!important;color:var(--muted);opacity:.55;cursor:pointer;transition:opacity .15s,color .15s,rotate .2s var(--spring-snappy,ease-out),background-color .15s}
 .ec-tool:hover{opacity:1;background:color-mix(in srgb,var(--ink) 8%,transparent)!important}
 .ec-actions{display:flex;align-items:center;gap:2px;flex:none;margin:6px 0 -5px -5px!important}
-.ec-actions .ec-tool{width:24px;height:22px;border-radius:6px}
+.ec-actions .ec-tool{width:26px;height:24px;border-radius:6px;opacity:.7}
 .ec-actions .ec-tool:disabled{opacity:.25;cursor:default}
 .ec-actions .ec-tool:active:not(:disabled){scale:.9}
 :root[data-style='sketch'] .ec-actions .ec-tool{color:var(--pencil,#2b2a27)}
@@ -174,7 +186,7 @@ watch(() => [props.card.item.text, props.card.item.status, props.card.item.reaso
 .ec-pin.on{opacity:1;color:var(--accent);rotate:0deg}
 .explain-card.pinned{box-shadow:var(--shadow-3),var(--glass-edge),0 0 0 1px color-mix(in srgb,var(--accent) 35%,transparent)}
 /* 液态玻璃：圆角更大的一片玻璃，词条是标题，左上一抹强调色的光。 */
-:root:not([data-style='warm']):not([data-style='sketch']) .explain-card{max-width:min(400px,calc(100vw - 16px));padding:12px 15px 13px;background-color:color-mix(in srgb,var(--surface,#fff) 86%,transparent);border-radius:var(--r-lg,16px);background-image:radial-gradient(120% 90% at 0 0,color-mix(in srgb,var(--accent) 13%,transparent),transparent 60%),var(--popup-sheen)}
+:root:not([data-style='warm']):not([data-style='sketch']) .explain-card{padding:12px 15px 13px;background-color:color-mix(in srgb,var(--surface,#fff) 86%,transparent);border-radius:var(--r-lg,16px);background-image:radial-gradient(120% 90% at 0 0,color-mix(in srgb,var(--accent) 13%,transparent),transparent 60%),var(--popup-sheen)}
 :root:not([data-style='warm']):not([data-style='sketch']) .explain-card .st-term{color:var(--ink);font-size:.95em;font-weight:650}
 :root[data-style='sketch'] .explain-card.pinned{box-shadow:1px 2px 0 rgb(60 50 30 / .1),5px 9px 18px -8px rgb(60 50 30 / .5)}
 :root[data-style='sketch'] .ec-pin.on{color:var(--red-pencil,#c0392b)}

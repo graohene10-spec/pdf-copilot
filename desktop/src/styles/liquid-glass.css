@@ -272,7 +272,8 @@
   position: fixed;
   left: 0;
   top: 0;
-  z-index: 300;
+  /* 盖在所有浮层（解释纸条、小钟卡片、菜单）上面。 */
+  z-index: 2000;
   display: flex;
   align-items: center;
   gap: 8px;

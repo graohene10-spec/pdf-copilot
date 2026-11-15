@@ -68,8 +68,9 @@ let timer: ReturnType<typeof setTimeout> | undefined
 function arm() {
   clearTimeout(timer)
   const now = Date.now(), running = clock.mode !== 'idle' && !clock.paused
-  // 计时中每秒走几次；平时只在整分钟、或最近的闹钟到点时醒一下。
-  const next = running ? 250 : Math.min(60000 - now % 60000, ...clock.alarms.map(alarm => alarm.at - now)) + 15
+  // 计时中一秒只醒一次，正好卡在读数要变的那一刻（界面重画得越少，背景动画越顺）；平时只在整分钟、或最近的闹钟到点时醒一下。
+  const beat = clock.mode === 'down' ? (clock.mark - now) % 1000 || 1000 : 1000 - (now - clock.mark) % 1000
+  const next = Math.min(running ? Math.max(0, beat) : 60000 - now % 60000, ...clock.alarms.map(alarm => alarm.at - now)) + 15
   timer = setTimeout(tick, Math.max(50, next))
 }
 function tick() {
