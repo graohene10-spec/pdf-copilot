@@ -57,6 +57,7 @@ button span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-spac
 button small{font-size:11px;color:var(--surface-muted)}
 button.danger{color:var(--danger)}
 button:disabled{opacity:.45;cursor:default}
-hr{height:1px;margin:5px 8px;border:0;background:var(--line-soft)}
+/* 分隔线两头淡出。 */
+hr{height:1px;margin:5px 8px;border:0;background:linear-gradient(90deg,transparent,var(--line-soft) 18%,var(--line-soft) 82%,transparent)}
 .context-menu :deep(.liquid-indicator){background-color:color-mix(in srgb,var(--surface-ink) 9%,transparent);background-image:linear-gradient(180deg,rgb(255 255 255 / .22),rgb(255 255 255 / 0) 60%);box-shadow:inset 0 1px 0 rgb(255 255 255 / .35),inset 0 0 0 .5px color-mix(in srgb,var(--surface-ink) 8%,transparent)}
 </style>

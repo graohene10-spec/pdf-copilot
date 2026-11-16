@@ -233,6 +233,8 @@ watch(() => props.card.item.status, (status, previous) => { if (previous === 'ru
 :root[data-style='sketch'] .ec-rule.running{height:2px;border-top:0;background:color-mix(in srgb,var(--pencil,#2b2a27) 12%,transparent)}
 :root[data-style='sketch'] .ec-rule.running::after{background:linear-gradient(90deg,transparent,var(--red-pencil,#c0392b),transparent)}
 :root[data-style='sketch'] .explain-card::after{content:'';position:absolute;right:0;bottom:0;width:26px;height:26px;background:linear-gradient(315deg,rgb(60 50 30 / .2),transparent 52%);pointer-events:none}
+/* 写完之后这根线就收起来：它只用来表示「正在写」，写完再留着是多余的。 */
+.ec-rule:not(.running),:root[data-style] .ec-rule:not(.running){height:0;margin:5px 0;border:0;background:none}
 @media(prefers-reduced-motion:reduce){.ec-halo,.ec-sheen::after,.explain-card,.ec-spark,.ec-rule.running::after,:root[data-style='sketch'] .explain-card{animation:none!important}}
 .ec-pin{rotate:35deg}
 .ec-pin.on{opacity:1;color:var(--accent);rotate:0deg}
