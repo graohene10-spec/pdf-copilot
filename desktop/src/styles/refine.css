@@ -43,3 +43,54 @@
   border-bottom: 0;
   background: linear-gradient(90deg, var(--md-border), color-mix(in srgb, var(--md-border) 35%, transparent) 55%, transparent) left bottom / 100% 1px no-repeat;
 }
+
+/* ---- 会动的小细节：都只在有事发生时动一下，动完就停。 ---- */
+
+/* 读到哪儿了：工具栏下沿一根细线，跟着滚动走（滚动驱动，不占界面线程）。 */
+@supports (animation-timeline: scroll()) {
+  .reader-pane { timeline-scope: --reading; }
+  .reader-pane :is(.pdf-scroll, .markdown-scroll) { scroll-timeline: --reading block; }
+  .reader-pane .reader-tools::after {
+    content: ''; position: absolute; left: 18px; right: 18px; bottom: 0; height: 1.5px; border-radius: 1px; pointer-events: none;
+    background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 30%, transparent), var(--accent));
+    transform-origin: left center; transform: scaleX(0);
+    animation: reading-line linear both; animation-timeline: --reading;
+  }
+  :root:not([data-style='sketch']) .reader-pane .reader-tools::after { box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 50%, transparent); }
+  :root[data-style='sketch'] .reader-pane .reader-tools::after { background: var(--red-pencil, #c0392b); height: 2px; border-radius: 2px 5px 3px 4px; opacity: .7; }
+}
+@keyframes reading-line { to { transform: scaleX(1); } }
+
+/* 封面：鼠标移上去时一道光斜着扫过一次。 */
+:root:not([data-style='sketch']) .document-cover::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none; translate: -130% 0;
+  background: linear-gradient(105deg, transparent 38%, rgb(255 255 255 / .42) 50%, transparent 62%);
+}
+:root:not([data-style='sketch']) .document-card:hover .document-cover::after { translate: 130% 0; transition: translate .8s var(--ease-out, ease-out); }
+
+/* 收藏：星星弹一下，外面荡开一圈细线。 */
+.card-star.is-starred { animation: star-ring .55s var(--ease-out, ease-out) 1; }
+.card-star.is-starred svg { animation: star-pop .45s var(--spring-snappy, ease-out) 1; }
+@keyframes star-pop { 0% { scale: .5; rotate: -24deg; } 100% { scale: 1; rotate: 0deg; } }
+@keyframes star-ring { 0% { outline: 1.5px solid color-mix(in srgb, var(--accent) 70%, transparent); outline-offset: 0; } 100% { outline: 1.5px solid transparent; outline-offset: 9px; } }
+
+/* 提示条：底下一根细线慢慢收短，收完提示就走了。 */
+.toast-message::after {
+  content: ''; position: absolute; left: 18px; right: 18px; bottom: 3px; height: 1px; border-radius: 1px; pointer-events: none;
+  background: color-mix(in srgb, var(--accent) 70%, transparent); transform-origin: left center;
+  animation: toast-life 4.8s linear both;
+}
+@keyframes toast-life { to { transform: scaleX(0); } }
+
+/* 设置窗口：打开时标题下一根细线从左画出来。 */
+:root:not([data-style='sketch']) .dialog-header h2 {
+  padding-bottom: 6px;
+  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 20%, transparent) 70%, transparent) left bottom / 100% 1.5px no-repeat;
+  animation: title-rule .7s var(--ease-out, ease-out) .12s both;
+}
+@keyframes title-rule { from { background-size: 0% 1.5px; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .card-star.is-starred, .card-star.is-starred svg, :root:not([data-style='sketch']) .dialog-header h2 { animation: none; }
+  .toast-message::after { display: none; }
+}
