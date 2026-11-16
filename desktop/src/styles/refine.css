@@ -141,3 +141,13 @@
 :root[data-style='sketch'] .gesture-hint { border: 1.4px solid var(--pencil, #2b2a27); border-radius: 14px 18px 15px 17px; background: var(--paper, #fbf6e6); box-shadow: 2px 3px 0 color-mix(in srgb, var(--pencil, #2b2a27) 22%, transparent); -webkit-backdrop-filter: none; backdrop-filter: none; }
 :root[data-style='sketch'] .hint-mouse line { stroke: var(--red-pencil, #c0392b); }
 @media (prefers-reduced-motion: reduce) { .hint-mouse line { animation: none; } }
+
+/* 文档库下沿：卡片滚到底边时淡出，不是被一刀切断。液态玻璃的卡片要透过整页取背景，套遮罩会让玻璃失效，所以只给另外两套主题。 */
+:root:is([data-style='warm'], [data-style='sketch']) .library-view {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 44px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 44px), transparent);
+}
+
+/* 铅笔草稿的阅读进度：一根铅笔虚线打底，读过的部分用红铅笔描一道。 */
+:root[data-style='sketch'] .document-progress > div { height: 0; overflow: visible; background: none; border-radius: 0; border-top: 1.2px dashed color-mix(in srgb, var(--pencil, #2b2a27) 32%, transparent); }
+:root[data-style='sketch'] .document-progress i { height: 2.4px; margin-top: -1.8px; background: var(--red-pencil, #c0392b); border-radius: 2px 5px 3px 4px; rotate: -.5deg; transform-origin: left center; box-shadow: none; }
