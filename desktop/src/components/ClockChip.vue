@@ -176,6 +176,8 @@ watch(tab, () => void nextTick(locate))
 <style>
 /* ---- 顶栏上的小钟 ---- */
 .app-topbar .topbar-actions .icon-button.clock-chip{flex:none;width:auto;min-width:0;gap:6px;padding:0 10px;font-size:12.5px;font-weight:550;font-variant-numeric:tabular-nums;white-space:nowrap;letter-spacing:.01em}
+/* 手写体的数字是斜的，会伸出自己的格子：时间这一段不裁切，右边留一点余量。 */
+.app-topbar .topbar-actions .icon-button.clock-chip>span{overflow:visible;padding:1px 2px 0 0;line-height:1.3}
 .clock-chip small{margin-right:.3em;font-size:.82em;font-weight:500;opacity:.62}
 .clock-chip .cc-alarm{opacity:.62}
 .app-topbar .topbar-actions .icon-button.clock-chip{position:relative}
