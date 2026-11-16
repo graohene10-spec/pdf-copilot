@@ -874,7 +874,8 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
       <div ref="messageList" class="ai-messages" data-glass-still @scroll.passive="onScroll" @click="answerClick">
         <div v-if="!messages.length" class="ai-welcome">
           <AssistantMark :kind="avatar.kind" :image="avatar.image" :size="56" class="ai-welcome-mark" />
-          <h2 class="ai-welcome-lead" :lang="greeting.lang === 'zh' ? 'zh-CN' : 'en'">{{ greeting.text }}</h2>
+          <!-- 问候语一个字一个字显出来，像刚写上去的；只在打开时写一遍。 -->
+          <h2 class="ai-welcome-lead" :lang="greeting.lang === 'zh' ? 'zh-CN' : 'en'" :aria-label="greeting.text"><span v-for="(glyph, index) in Array.from(greeting.text)" :key="index" class="lead-glyph" aria-hidden="true" :style="{ '--i': Math.min(index, 60) }">{{ glyph }}</span></h2>
         </div>
         <article v-for="message in messages" :key="message.id" class="ai-message" :class="[message.note ? 'note' : message.role, { compressed: message.compressed, summary: message.summary, arrived: arrivedNote === message.id }]" :data-id="message.id">
           <div v-if="message.note" class="note-card" :data-tip="`${noteLabel(message)}：${message.content.slice(0, 300)}`">
@@ -1201,6 +1202,10 @@ button:disabled{opacity:.4;cursor:default}
 /* 问候固定用内置的 Anthropic Serif（不随阅读字体设置变化），像 Claude 的「Good afternoon」；
    古诗没有对应的西文字形，退到宋体 / 思源宋体，仍是衬线。 */
 .ai-welcome-lead{max-width:100%;margin:0;font-family:'Anthropic Serif','Source Han Serif SC','Noto Serif CJK SC','Noto Serif SC','Songti SC','STSong','SimSun',serif;font-size:27px;font-weight:400;line-height:1.35;letter-spacing:-.012em;text-wrap:balance;font-optical-sizing:auto}
+.lead-glyph{animation:lead-ink .5s var(--ease-out,ease-out) both;animation-delay:calc(.25s + var(--i) * 22ms)}
+.ai-welcome-lead:lang(zh-CN) .lead-glyph{animation-delay:calc(.25s + var(--i) * 70ms)}
+@keyframes lead-ink{from{opacity:0;filter:blur(4px)}}
+@media(prefers-reduced-motion:reduce){.lead-glyph{animation:none}}
 .ai-welcome-lead:lang(zh-CN){font-size:22px;letter-spacing:.06em;line-height:1.6}
 .ai-message{margin-bottom:18px;animation:zg-rise-in var(--dur-3) var(--ease-out) backwards}
 /* 问题和它的回答挨得近一些：问题下面的操作按钮浮在间隙里，不再单独占一行。 */
