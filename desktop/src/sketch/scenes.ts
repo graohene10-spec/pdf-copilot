@@ -1,5 +1,6 @@
 // 流形、神经网络之外的画面：生物、物理、群论、算法。每个画面自己管动画，画在同一张慢慢自转的草稿上。
 import type { Vec } from './manifolds.ts'
+import { CLAUDE_PATH } from '../components/assistant-glyphs.ts'
 
 export type Project = (x: number, y: number, z: number) => [number, number, number]
 /** size：模型里 1 个单位在画布中心是多少像素；full：整块桌面（画面的常规区域之外也能画）。 */
@@ -791,22 +792,30 @@ function racksLabel(env: Env) {
 function rsi(): Painter {
   // 星芒是 P×P 的像素画（小方块之间留缝）；大星芒由同一张图的 P×P 格方块拼成。镜头一直在拉远：
   // 拼满的大星芒缩到一格大小时，它的每块方块正好是下一层那枚星芒的一个像素。
-  const P = 19, MID = (P - 1) / 2, DOT = .8, ALPHA = .68
+  const P = 27, MID = (P - 1) / 2, DOT = .8, ALPHA = .68
   const POP = .22, MOVE = .42, T_HOLD = 1.1, T_SQUARE = 1.9, T_DENSE = 3.4, T_SOLID = 4.6
-  const RAYS = 11, CORE = .25
-  const rays = Array.from({ length: RAYS }, (_, k) => { const angle = -Math.PI / 2 + (k + (hash(k * 7.3 + 2) - .5) * .42) * TAU / RAYS; return { x: Math.cos(angle), y: Math.sin(angle), length: .7 + .3 * hash(k * 3.1 + 5) } })
+  const RAYS = 10, CORE = .22
+  const rays = Array.from({ length: RAYS }, (_, k) => { const angle = -Math.PI / 2 + (k + (hash(k * 7.3 + 2) - .5) * .5) * TAU / RAYS; return { x: Math.cos(angle), y: Math.sin(angle), length: .72 + .28 * hash(k * 3.1 + 5) } })
   const inside = (u: number, v: number) => {
-    if (Math.hypot(u, v) < CORE + .05) return true
+    if (Math.hypot(u, v) < CORE) return true
     for (const ray of rays) {
       const along = u * ray.x + v * ray.y
-      if (along > 0 && along < ray.length + .04 && Math.abs(v * ray.x - u * ray.y) < .135 - .04 * along / ray.length) return true
+      if (along > 0 && along < ray.length + .03 && Math.abs(v * ray.x - u * ray.y) < .1 - .03 * along / ray.length) return true
     }
     return false
   }
   const at = (k: number) => (k - MID) / (P / 2)
   // 能从正中一格走到的格子才算数（斜着也算），免得射线尖上留下够不着的孤格。
   const MASK = new Uint8Array(P * P)
-  { const raw = new Uint8Array(P * P); for (let j = 0; j < P; j++) for (let i = 0; i < P; i++) raw[j * P + i] = inside(at(i), at(j)) ? 1 : 0
+  { const raw = new Uint8Array(P * P)
+    // 星芒就是 Claude 的标志：把它画到小画布上，一格里盖住将近一半就算一个像素。画不了（没有画布）时退回自己描的射线。
+    try {
+      const K = 6, canvas = makeCanvas(P * K, P * K), c = canvas.getContext('2d')!
+      c.scale(P * K / 24, P * K / 24); c.fill(new Path2D(CLAUDE_PATH))
+      const data = c.getImageData(0, 0, P * K, P * K).data
+      for (let j = 0; j < P; j++) for (let i = 0; i < P; i++) { let sum = 0; for (let y = 0; y < K; y++) for (let x = 0; x < K; x++) sum += data[((j * K + y) * P * K + i * K + x) * 4 + 3]!; raw[j * P + i] = sum / (K * K * 255) > .42 ? 1 : 0 }
+      if (!raw[MID * P + MID]) throw new Error('empty')
+    } catch { for (let j = 0; j < P; j++) for (let i = 0; i < P; i++) raw[j * P + i] = inside(at(i), at(j)) ? 1 : 0 }
     const queue = [MID * P + MID]; MASK[queue[0]!] = 1
     while (queue.length) { const k = queue.pop()!, i = k % P, j = (k - i) / P
       for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const x = i + di, y = j + dj, n = y * P + x; if (x >= 0 && y >= 0 && x < P && y < P && raw[n] && !MASK[n]) { MASK[n] = 1; queue.push(n) } } } }
@@ -836,7 +845,7 @@ function rsi(): Painter {
   type Head = { from: number; to: number; start: number; pop: boolean }
   type Tile = { born: number; star: boolean; blob: Float32Array }
   let taken = new Uint8Array(P * P), tiles = new Map<number, Tile>(), heads: Head[] = [], filled = 1, reach = 0
-  let clock = 0, last = -1, next = 1.2, z = 0, speed = .004, level = 0
+  let clock = 0, last = -1, next = 1.2, z = 0, speed = .004, level = 0, settledAt = 0, born = -9
   // 每格那一团的形状各不相同，留下时算好一次。
   const leave = (k: number, star: boolean) => {
     const p1 = Math.random() * TAU, p2 = Math.random() * TAU, blob = new Float32Array(P * P)
@@ -875,30 +884,36 @@ function rsi(): Painter {
     // 自己走表：一帧最多走 0.1 秒，窗口藏起来再回来不会一下子跳过去一大段。
     const dt = last >= 0 ? clamp((env.t - last) / 1000, 0, .1) : 0
     clock += dt; last = env.t
-    const fit = Math.min(w * .62, h * .86), S0 = fit / 3, growing = filled < SLOTS || heads.length > 0
+    const fit = Math.min(w * .62, h * .86), S0 = fit / 2.3, growing = filled < SLOTS || heads.length > 0
     if (growing) { while (clock >= next) { step(); next += Math.max(.3, 1.6 / (1 + filled / 10)) } }
     let settled = !growing
     if (settled) for (const tile of tiles.values()) if (clock - tile.born < T_SOLID) { settled = false; break }
     // 镜头：长的时候慢慢拉远，刚好装下已经长出来的部分；拼满后快一些，一直拉到整个大星芒只有一格大。
-    const target = settled ? 1 : Math.min(.95, Math.log(S0 / (fit / (2 * reach + 3.5))) / Math.log(P))
+    const target = settled ? 1 : Math.min(.95, Math.log(S0 / (fit / (2 * reach + 2.8))) / Math.log(P))
     // 速度本身也慢慢变，不会忽快忽慢；只往远处走。
     speed += (Math.max(.004, settled ? .12 : (target - z) * .5) - speed) * (1 - Math.exp(-dt * 1.1))
     z += speed * dt
-    if (z >= 1) { z -= 1; seed(); level++; next = clock + .9 }
+    if (settled) settledAt ||= clock
+    if (z >= 1) { z -= 1; seed(); level++; next = clock + .9; settledAt = 0; born = clock }
     const S = S0 * P ** -z, pitch = S / P, inner = S * DOT
     const mx = left + w * .6, my = top + h * .5, cx = (k: number) => mx + (k % P - MID) * S, cy = (k: number) => my + (Math.floor(k / P) - MID) * S
     c.fillStyle = env.red
-    // 拼好的方块。
-    const solid = new Path2D(), done: number[] = [], dots = new Path2D(), coarse = pitch < .9
+    // 拼好的方块分三档深浅，像手工上的色；还在变的格子太小时不画点阵（会起网纹），按疏密画成深浅不同的一块。
+    const solid = [new Path2D(), new Path2D(), new Path2D()], soft = [new Path2D(), new Path2D(), new Path2D(), new Path2D()], done: number[] = [], dots = new Path2D(), stars = new Path2D()
+    const tiny = inner / P < 1.5, snap = inner / P < 6
     for (const [k, tile] of tiles) {
       const age = clock - tile.born
-      if (age >= T_SOLID) { solid.roundRect(cx(k) - inner / 2, cy(k) - inner / 2, inner, inner, inner * .21); done.push(k); continue }
+      if (age >= T_SOLID) { solid[k * 13 % 3]!.roundRect(cx(k) - inner / 2, cy(k) - inner / 2, inner, inner, inner * .21); done.push(k); continue }
       // 还在变的一格：一团点 → 圆角方块形的点阵 → 点变密 → 连成一块。
       const toBlob = tile.star ? smooth(age / .7) : 1, reveal = tile.star ? 9 : smooth(age / .3) * 1.5
       const toSquare = smooth((age - T_HOLD) / (T_SQUARE - T_HOLD)), even = smooth((age - T_SQUARE) / (T_DENSE - T_SQUARE)), merge = smooth((age - T_DENSE) / (T_SOLID - T_DENSE))
-      if (coarse) { const size = inner * Math.min(1, reveal); dots.rect(cx(k) - size / 2, cy(k) - size / 2, size, size); continue }
-      // 点阵就铺在成品方块那么大的范围里：点变密、连起来之后正好是成品，不会先胀开再缩回去。
-      const base = (tile.star ? DOT + (.62 - DOT) * toBlob : .62) * (1 - even) + DOT * even + (1.03 - DOT) * merge, fine = inner / P, x1 = cx(k) - inner / 2, y1 = cy(k) - inner / 2
+      const base = (tile.star ? DOT + (.62 - DOT) * toBlob : .62) * (1 - even) + DOT * even + (1.03 - DOT) * merge
+      if (tiny) {
+        const size = inner * (.74 + .26 * toSquare) * Math.min(1, reveal), cover = clamp(base * base * (.75 + .25 * even), 0, .999)
+        soft[Math.floor(cover * 4)]!.roundRect(cx(k) - size / 2, cy(k) - size / 2, size, size, size * (.5 - .29 * toSquare)); continue
+      }
+      // 点阵铺在成品方块那么大的范围里：点变密、连起来之后正好是成品。走到头的星芒从整格大小收到这个范围。
+      const fine = tile.star ? pitch + (inner / P - pitch) * toBlob : inner / P, x1 = cx(k) - fine * P / 2, y1 = cy(k) - fine * P / 2
       for (let n = 0; n < P * P; n++) {
         let field = tile.blob[n]!
         if (toBlob < 1) field = (MASK[n] ? 1 : -1) * (1 - toBlob) + field * toBlob
@@ -906,17 +921,28 @@ function rsi(): Painter {
         if (reveal < 9) field = Math.min(field, (reveal - RADIUS[n]!) / .15)
         if (field <= 0) continue
         const size = fine * base * (clamp(.35 + field, 0, 1) * (1 - even) + even), a = n % P, b = (n - a) / P
-        dots.rect(x1 + (a + .5) * fine - size / 2, y1 + (b + .5) * fine - size / 2, size, size)
+        if (snap && merge < .5) { const whole = Math.max(1, Math.round(size)); dots.rect(Math.round(x1 + (a + .5) * fine - whole / 2), Math.round(y1 + (b + .5) * fine - whole / 2), whole, whole) }
+        else dots.rect(x1 + (a + .5) * fine - size / 2, y1 + (b + .5) * fine - size / 2, size, size)
       }
     }
     // 星芒：一枚像素画，弹着滑向下一格。
     for (const head of heads) {
       const t0 = head.start + (head.pop ? POP : 0), grow = head.pop ? spring((clock - head.start) / POP * .7) : 1, p = spring((clock - t0) / MOVE)
       const x = cx(head.from) + (cx(head.to) - cx(head.from)) * p, y = cy(head.from) + (cy(head.to) - cy(head.from)) * p, step = pitch * grow, size = step * DOT
-      if (coarse) { dots.rect(x - S * .3 * grow, y - S * .3 * grow, S * .6 * grow, S * .6 * grow); continue }
-      for (const n of PIXELS) { const a = n % P, b = (n - a) / P; if (size > 5) dots.roundRect(x + (a - MID) * step - size / 2, y + (b - MID) * step - size / 2, size, size, size * .21); else dots.rect(x + (a - MID) * step - size / 2, y + (b - MID) * step - size / 2, size, size) }
+      for (const n of PIXELS) { const a = n % P, b = (n - a) / P; if (size > 5) stars.roundRect(x + (a - MID) * step - size / 2, y + (b - MID) * step - size / 2, size, size, size * .21); else stars.rect(x + (a - MID) * step - size / 2, y + (b - MID) * step - size / 2, Math.max(size, .9), Math.max(size, .9)) }
     }
-    c.globalAlpha = ALPHA * fade; c.fill(solid); c.fill(dots)
+    solid.forEach((path, tone) => { c.globalAlpha = ALPHA * (.9 + .1 * tone) * fade; c.fill(path) })
+    soft.forEach((path, step) => { c.globalAlpha = ALPHA * (.28 + .2 * step) * fade; c.fill(path) })
+    c.globalAlpha = ALPHA * fade; c.fill(dots)
+    // 星芒比方块亮一点，眼睛先看到它；刚接上一层的那枚（由方块变来）从方块的深浅慢慢亮起来。
+    c.globalAlpha = Math.min(1, ALPHA * (1 + .22 * smooth((clock - born) / 2))) * fade; c.fill(stars)
+    // 拼满的那一下：一道亮光从左上斜着扫过去，只扫一次。
+    if (settledAt && clock - settledAt < 1.8) {
+      const front = (clock - settledAt) / 1.5 * 1.3 - .15
+      c.fillStyle = '#fff'
+      for (const k of done) { const d = (k % P + Math.floor(k / P)) / (2 * P), glow = 1 - Math.abs(d - front) / .1; if (glow > 0) { c.globalAlpha = .34 * glow * fade; c.beginPath(); c.roundRect(cx(k) - inner / 2, cy(k) - inner / 2, inner, inner, inner * .21); c.fill() } }
+      c.fillStyle = env.red
+    }
     const grain = clamp((inner - 10) / 26, 0, 1)
     if (grain > 0) { c.globalAlpha = fade * grain; const sheets = texture(); for (const k of done) c.drawImage(sheets[(k * 7 + level) % 4]!, cx(k) - inner / 2, cy(k) - inner / 2, inner, inner) }
     if (env.hand) { c.globalAlpha = .4 * fade; c.fillStyle = env.ink; c.font = `18px ${env.hand}`; c.fillText(`xₙ₊₁ = f(xₙ)   n = ${level}`, mx - fit / 2, my + fit / 2 + 22) }
