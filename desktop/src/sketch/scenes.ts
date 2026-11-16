@@ -869,7 +869,8 @@ function rsi(): Painter {
   const step = () => {
     // 走到分支尽头的星芒就地化成方块。
     heads = heads.filter(head => { if (!idle(head) || around(head.to) >= 0) return true; leave(head.to, true); return false })
-    const free = heads.filter(idle), want = Math.min(9, 1 + Math.floor(filled / 9))
+    // 星芒的数量跟着已有的方块走（大约每五块多一枚），每枚各走各的：方块越多长得越快，整体是指数式的。
+    const free = heads.filter(idle), want = Math.min(48, 1 + Math.floor(filled / 5))
     if (heads.length < want || !free.length) {
       // 星芒不够多：从一块还有空邻居的方块上再冒出一枚。
       const sources = [...tiles.keys()].filter(k => around(k) >= 0)
@@ -885,7 +886,7 @@ function rsi(): Painter {
     const dt = last >= 0 ? clamp((env.t - last) / 1000, 0, .1) : 0
     clock += dt; last = env.t
     const fit = Math.min(w * .62, h * .86), S0 = fit / 2.3, growing = filled < SLOTS || heads.length > 0
-    if (growing) { while (clock >= next) { step(); next += Math.max(.3, 1.6 / (1 + filled / 10)) } }
+    if (growing) { while (clock >= next) { step(); next += Math.max(.04, 1.5 / Math.max(1, heads.length)) } }
     let settled = !growing
     if (settled) for (const tile of tiles.values()) if (clock - tile.born < T_SOLID) { settled = false; break }
     // 镜头：长的时候慢慢拉远，刚好装下已经长出来的部分；拼满后快一些，一直拉到整个大星芒只有一格大。
