@@ -886,14 +886,16 @@ function rsi(): Painter {
     const dt = last >= 0 ? clamp((env.t - last) / 1000, 0, .1) : 0
     clock += dt; last = env.t
     const fit = Math.min(w * .62, h * .86), S0 = fit / 2.3, growing = filled < SLOTS || heads.length > 0
-    if (growing) { while (clock >= next) { step(); next += Math.max(.04, 1.5 / Math.max(1, heads.length)) } }
+    if (growing) { while (clock >= next) { step(); next += Math.max(.04, 1.5 / Math.min(48, 1 + Math.floor(filled / 5))) } }
     let settled = !growing
     if (settled) for (const tile of tiles.values()) if (clock - tile.born < T_SOLID) { settled = false; break }
     // 镜头：长的时候慢慢拉远，刚好装下已经长出来的部分；拼满后快一些，一直拉到整个大星芒只有一格大。
     const target = settled ? 1 : Math.min(.95, Math.log(S0 / (fit / (2 * reach + 2.8))) / Math.log(P))
     // 速度本身也慢慢变，不会忽快忽慢；只往远处走。
-    speed += (Math.max(.004, settled ? .12 : (target - z) * .5) - speed) * (1 - Math.exp(-dt * 1.1))
+    // 还没拼完时镜头最多拉到快要一格大小为止，越接近越慢，绝不会抢在拼完之前就翻到下一层。
+    speed += (Math.max(.004 * clamp((.96 - z) / .1, 0, 1), settled ? .12 : (target - z) * .5) - speed) * (1 - Math.exp(-dt * 1.1))
     z += speed * dt
+    if (!settled) z = Math.min(z, .97)
     if (settled) settledAt ||= clock
     if (z >= 1) { z -= 1; seed(); level++; next = clock + .9; settledAt = 0; born = clock }
     const S = S0 * P ** -z, pitch = S / P, inner = S * DOT
