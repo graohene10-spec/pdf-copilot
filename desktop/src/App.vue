@@ -24,6 +24,7 @@ import { useRubberBand } from './ui/rubber-band'
 import { translator, translate, type Translation } from './ai/translate'
 import { explainCards, closeCard, closeLooseCards, explainTarget, runExplain } from './ai/explain'
 import { looksMathy, selectionImage } from './reader/selection-image'
+import { currentHint, dismissHint, hintLearned, offerHint } from './ui/hints'
 import ExplainCard from './components/ExplainCard.vue'
 import SelectionTranslation from './components/SelectionTranslation.vue'
 import { startAutoCheck, stopAutoCheck } from './ui/updater'
@@ -760,9 +761,12 @@ function autoTranslate(event: MouseEvent) {
 }
 function closeHoverTranslation() { hoverTranslation.value = undefined; hoverSource = '' }
 // 快速解释：选中文字后按鼠标中键。按下时拦住浏览器的中键滚动，松开时解释。
+// 在正文里选中了文字：提一句中键可以解释（一共只提两次，用过就不提了）。
+function hintOnSelection(event: MouseEvent) { if (event.button === 0 && (event.target as HTMLElement | null)?.closest?.('.reader-pane') && (window.getSelection()?.toString().trim().length || 0) >= 2) offerHint('explain', ['中键'], '快速解释选中的文字') }
 function middleDown(event: MouseEvent) { if (event.button === 1 && (event.target as HTMLElement | null)?.closest?.('.reader-pane') && window.getSelection()?.toString().trim()) event.preventDefault() }
 function middleClick(event: MouseEvent) {
   if (event.button !== 1) return
+  if (window.getSelection()?.toString().trim()) hintLearned('explain')
   const target = explainTarget()
   if (!target) return
   event.preventDefault()
@@ -781,6 +785,7 @@ function toggleRightCapture(id: string) {
   if (!next.delete(id)) next.add(id)
   rightCaptureDocs.value = next
   try { localStorage.setItem(RIGHT_CAPTURE_KEY, JSON.stringify([...next])) } catch { /* 存不下也照常用到关闭为止 */ }
+  if (next.has(id)) hintLearned('right-capture')
   notify(next.has(id) ? '已开启：在这份文档里按住右键拖动即可截图给阅读助手。' : '已关闭右键拖动截图。')
 }
 // 框选后是否先弹出快捷提问；关掉后截图直接进阅读助手。
@@ -1171,6 +1176,12 @@ onBeforeUnmount(() => window.removeEventListener('pointerdown', trackShift, true
 function selectedContext(value: typeof selection.value) {
   dismissCaptureQuick()
   const previous = selection.value
+  // 截了一张图：提一句右键拖动截图（这份文档没开的话），或者按住 Shift 可以再加一张。
+  if (active.value && (value?.image || value?.imagePending)) {
+    if (shiftCapture) hintLearned('shift-capture')
+    else if (!rightCaptureDocs.value.has(sourceId(active.value.id))) offerHint('right-capture', ['右键菜单'], '可开启「右键拖动截图」')
+    else offerHint('shift-capture', ['Shift'], '按住再截，上一张留着')
+  }
   if (shiftCapture && active.value && previous && (value?.image || value?.imagePending) && toRaw(previous) !== toRaw(value)) {
     const key = sourceId(active.value.id)
     if (previous.image) keepImage(key, previous.image)
@@ -1668,6 +1679,7 @@ onMounted(async () => {
   document.addEventListener('mouseup', autoTranslate)
   document.addEventListener('mousedown', middleDown)
   document.addEventListener('auxclick', middleClick)
+  document.addEventListener('mouseup', hintOnSelection)
   window.addEventListener('kaizhi:open-ai-settings', openAiSettings)
   document.addEventListener('wheel', wheel, { capture: true, passive: false })
   document.addEventListener('dragenter', dragEnter)
@@ -1690,7 +1702,7 @@ onMounted(async () => {
   void loadCovers()
   await refresh()
 })
-onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); document.removeEventListener('mousedown', middleDown); document.removeEventListener('auxclick', middleClick); window.removeEventListener('kaizhi:open-ai-settings', openAiSettings); closeLooseCards(); stopAutoCheck(); clearTimeout(enteringTimer); disposed = true; ++openEpoch; dismissCaptureQuick(); stopDropListening?.(); clearWheelZoom(); readerInstances.clear(); glassContrast?.dispose(); document.removeEventListener('keydown', keydown); document.removeEventListener('contextmenu', appContextMenu); document.removeEventListener('wheel', wheel, true); document.removeEventListener('dragenter', dragEnter); document.removeEventListener('dragover', dragOver); document.removeEventListener('dragleave', dragLeave); document.removeEventListener('drop', fileDrop); document.removeEventListener('selectionchange', selectionChanged); document.removeEventListener('scroll', dismissSelectionAction, true); document.removeEventListener('scroll', captureViewportChanged, true); window.removeEventListener('resize', dismissSelectionAction); window.removeEventListener('resize', captureViewportChanged); closeAllChats(); forgetAllPasswords(); systemTheme.removeEventListener('change', applyTheme); flushProgress(); for (const timer of indexTimers.values()) clearTimeout(timer); clearTimeout(queryTimer); clearTimeout(toastTimer) })
+onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); document.removeEventListener('mousedown', middleDown); document.removeEventListener('auxclick', middleClick); document.removeEventListener('mouseup', hintOnSelection); window.removeEventListener('kaizhi:open-ai-settings', openAiSettings); closeLooseCards(); stopAutoCheck(); clearTimeout(enteringTimer); disposed = true; ++openEpoch; dismissCaptureQuick(); stopDropListening?.(); clearWheelZoom(); readerInstances.clear(); glassContrast?.dispose(); document.removeEventListener('keydown', keydown); document.removeEventListener('contextmenu', appContextMenu); document.removeEventListener('wheel', wheel, true); document.removeEventListener('dragenter', dragEnter); document.removeEventListener('dragover', dragOver); document.removeEventListener('dragleave', dragLeave); document.removeEventListener('drop', fileDrop); document.removeEventListener('selectionchange', selectionChanged); document.removeEventListener('scroll', dismissSelectionAction, true); document.removeEventListener('scroll', captureViewportChanged, true); window.removeEventListener('resize', dismissSelectionAction); window.removeEventListener('resize', captureViewportChanged); closeAllChats(); forgetAllPasswords(); systemTheme.removeEventListener('change', applyTheme); flushProgress(); for (const timer of indexTimers.values()) clearTimeout(timer); clearTimeout(queryTimer); clearTimeout(toastTimer) })
 </script>
 
 <template>
@@ -1832,6 +1844,7 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
         <button class="notice-close" aria-label="关闭提示" @click="dismissNotice(notice.id)"><AppIcon name="close" :size="12" /></button>
       </div>
     </TransitionGroup>
+    <Transition name="hint"><button v-if="currentHint" :key="currentHint.id" type="button" class="gesture-hint" aria-live="polite" @click="dismissHint"><svg v-if="currentHint.id === 'explain'" class="hint-mouse" viewBox="0 0 14 20" aria-hidden="true"><rect x="1" y="1" width="12" height="18" rx="6" /><line x1="7" y1="4.5" x2="7" y2="8.5" /></svg><kbd v-for="key in currentHint.keys" :key="key">{{ key }}</kbd><span>{{ currentHint.text }}</span></button></Transition>
     <Transition name="toast"><div v-if="toast" class="toast-message" role="status"><span>{{ toast }}</span><button @click="toast = ''" data-tip="关闭提示" aria-label="关闭提示"><AppIcon name="close" :size="15" /></button></div></Transition>
     <Transition name="dialog">
       <div v-if="removeBatch" class="dialog-backdrop" @click.self="removeBatch = null"><section class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="remove-batch-title"><div class="dialog-icon"><AppIcon name="trash" :size="24" /></div><h2 id="remove-batch-title">移除 {{ removeBatch.length }} 份文档？</h2><p>{{ removeBatch.slice(0, 3).map(doc => `「${doc.name}」`).join('') }}{{ removeBatch.length > 3 ? ` 等 ${removeBatch.length} 份` : '' }}的阅读记录与标签会被移除，原文件仍保留在电脑上。</p><div class="dialog-actions"><button @click="removeBatch = null">取消</button><button class="danger-button" @click="removeDocuments">移除 {{ removeBatch.length }} 份</button></div></section></div>
