@@ -6,6 +6,7 @@ import './styles.css';
 import './styles/liquid-glass.css';
 import './styles/select.css';
 import './styles/themes.css';
+import './styles/refine.css';
 import { installLiquidGlass } from './ui/liquid-glass';
 import { installTooltips } from './ui/tooltip';
 import { installRefraction } from './ui/refraction';

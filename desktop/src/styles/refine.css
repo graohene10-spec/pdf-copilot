@@ -1,0 +1,45 @@
+/* 细节收口：细线、微光、轻一点的字重。只管液态玻璃和暖色两套；铅笔草稿有自己的笔触，不套这些光。
+   这里的光都是静态的或只在悬停、聚焦时出现，不会让页面持续重绘。 */
+:root:not([data-style='sketch']) {
+  --glow-line: color-mix(in srgb, var(--accent) 55%, transparent);
+  --glow-soft: color-mix(in srgb, var(--accent) 38%, transparent);
+}
+
+/* 阅读进度：一根细线，走到哪儿亮到哪儿，线头一粒光点（和计时圆环同一种画法）。 */
+:root:not([data-style='sketch']) .document-progress > div { height: 2px; overflow: visible; background: color-mix(in srgb, var(--ink) 10%, transparent); }
+:root:not([data-style='sketch']) .document-progress i { position: relative; background: var(--accent); box-shadow: 0 0 8px var(--glow-line); }
+:root:not([data-style='sketch']) .document-progress i::after { content: ''; position: absolute; right: -2.5px; top: 50%; width: 5px; height: 5px; margin-top: -2.5px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent), 0 0 10px 1px var(--glow-line); }
+:root:not([data-style='sketch']) .document-progress i[style*='width: 0%']::after { display: none; }
+:root:not([data-style='sketch']) .document-progress > span { letter-spacing: .04em; }
+
+/* 文档卡片：悬停时描一圈主色细线，底下透出一点光。 */
+:root:not([data-style='sketch']) .document-collection.grid .document-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 46%, var(--glass-outline));
+  box-shadow: var(--shadow-3), var(--glass-edge), 0 18px 38px -20px var(--glow-line);
+}
+
+/* 标题轻一点；数量只留一圈细线。 */
+:root:not([data-style='sketch']) .library-heading h1 { font-weight: 600; letter-spacing: -.3px; }
+:root:not([data-style='sketch']) .heading-count { background: none; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 42%, transparent); font-weight: 500; }
+
+/* 搜索框聚焦：细线加光晕，不用一圈粗环。 */
+:root:not([data-style='sketch']) .library-search:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 62%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent), 0 0 22px -4px var(--glow-soft), var(--shadow-1), var(--glass-edge);
+}
+
+/* 主按钮悬停：边线转成主色，带一点光。 */
+:root:not([data-style='sketch']) .primary-button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--glass-outline));
+  box-shadow: var(--glass-control-shadow), 0 0 20px -6px var(--glow-line);
+}
+
+/* 设置里的滑杆：细轨道，小一号的滑块，拖过的那段发光。 */
+:root:not([data-style='sketch']) .transparency-control input::-webkit-slider-runnable-track { height: 3px; box-shadow: 0 0 10px -2px var(--glow-soft); }
+:root:not([data-style='sketch']) .transparency-control input::-webkit-slider-thumb { width: 18px; height: 18px; margin-top: -7.5px; box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent), 0 2px 6px rgb(0 0 0 / .16), 0 0 12px -2px var(--glow-line); }
+
+/* Markdown 标题下的线：从左往右淡出，不是一根通栏的硬线。 */
+:root:not([data-style='sketch']) .markdown-paper :is(h1, h2) {
+  border-bottom: 0;
+  background: linear-gradient(90deg, var(--md-border), color-mix(in srgb, var(--md-border) 35%, transparent) 55%, transparent) left bottom / 100% 1px no-repeat;
+}
