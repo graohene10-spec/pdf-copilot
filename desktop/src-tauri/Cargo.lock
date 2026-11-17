@@ -2364,7 +2364,7 @@ dependencies = [
 
 [[package]]
 name = "phydog"
-version = "0.10.72"
+version = "0.10.73"
 dependencies = [
  "reqwest 0.12.28",
  "rusqlite",
