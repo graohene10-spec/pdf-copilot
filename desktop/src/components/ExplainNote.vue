@@ -1,21 +1,40 @@
 <script setup lang="ts">
 // Markdown 里插在段落下面的一条释义：可以留在笔记里、换个讲法，或者丢掉。
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import ExplainBody from './ExplainBody.vue'
+import ThoughtChip from './ThoughtChip.vue'
 import AppIcon from './AppIcon.vue'
 // 标题、细线、按钮的样子写在 PDF 的解释卡片里，这里共用。
 import './ExplainCard.vue'
 import { dropNote, keepNote, rerunExplain, type Explain, type ExplainMode } from '../ai/explain'
 
-const props = defineProps<{ item: Explain; kept: boolean; doc: string; line: number }>()
+const props = defineProps<{ item: Explain; kept: boolean; doc: string; line: number; size?: { width?: number; height?: number } }>()
 const emit = defineEmits<{ close: [] }>()
 // 解释写完就自动记下来，关掉文档再打开还在；不想留的点一下「已记入」取消，或者直接「关闭」。
 const saved = ref(true)
 const leaving = ref(false)
-function keep() { if (props.item.status !== 'done') return; saved.value = !saved.value; if (saved.value) keepNote(props.doc, props.line, props.item); else dropNote(props.doc, props.item.id) }
+function keep() { if (props.item.status !== 'done') return; saved.value = !saved.value; if (saved.value) keepNote(props.doc, props.line, props.item, size.value); else dropNote(props.doc, props.item.id) }
+// 大小：和 PDF 的卡片一样拖右下角调整（宽度最多到正文那么宽，高一点就只有正文滚动），记入文档时一起存下。
+const size = ref<{ width?: number; height?: number }>({ ...(props.size || {}) })
+const noteStyle = computed(() => ({ width: size.value.width ? `${size.value.width}px` : undefined, height: size.value.height ? `${size.value.height}px` : undefined }))
+function startResize(event: PointerEvent) {
+  if (event.button !== 0 || !root.value) return
+  const handle = event.currentTarget as HTMLElement, paper = root.value.closest<HTMLElement>('.markdown-paper')
+  let x = event.clientX, y = event.clientY, width = root.value.offsetWidth, height = root.value.offsetHeight
+  const widest = paper ? paper.clientWidth - 2 * parseFloat(getComputedStyle(paper).paddingLeft || '0') : innerWidth - 40
+  handle.setPointerCapture(event.pointerId); event.preventDefault(); event.stopPropagation()
+  const move = (next: PointerEvent) => {
+    width = Math.min(widest, Math.max(240, width + next.clientX - x)); height = Math.max(120, height + next.clientY - y); x = next.clientX; y = next.clientY
+    size.value = { width: Math.round(width), height: Math.round(height) }
+  }
+  const end = () => { handle.removeEventListener('pointermove', move); if (saved.value && props.item.status === 'done') keepNote(props.doc, props.line, props.item, size.value) }
+  handle.addEventListener('pointermove', move); handle.addEventListener('pointerup', end, { once: true }); handle.addEventListener('pointercancel', end, { once: true })
+}
+function resetSize() { size.value = {}; if (saved.value && props.item.status === 'done') keepNote(props.doc, props.line, props.item, {}) }
+function menu(event: MouseEvent) { window.dispatchEvent(new CustomEvent('kaizhi:explain-menu', { detail: { kind: 'note', id: props.item.id, x: event.clientX, y: event.clientY } })) }
 function again(mode: ExplainMode) { rerunExplain(props.item, mode) }
 // 留下的释义换了讲法，存的也跟着换。
-watch(() => props.item.status, status => { if (status === 'done' && saved.value) keepNote(props.doc, props.line, props.item) }, { immediate: !props.kept })
+watch(() => props.item.status, status => { if (status === 'done' && saved.value) keepNote(props.doc, props.line, props.item, size.value) }, { immediate: !props.kept })
 // 出现和关闭都带着高度一起变：下面的正文被慢慢推开、慢慢合拢，不会一下子跳。
 const root = ref<HTMLElement>()
 const still = () => matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -34,7 +53,7 @@ function discard() {
 
 <template>
   <!-- 和 PDF 里的解释卡片是同一套：词条像被荧光笔划过，标题下一道细线，追问按钮收在一枚小药丸里。 -->
-  <aside ref="root" class="explain-note" :class="{ leaving, saved }" contenteditable="false">
+  <aside ref="root" class="explain-note" :class="{ leaving, saved, sized: Boolean(size.width || size.height) }" :style="noteStyle" contenteditable="false" @contextmenu.stop.prevent="menu">
     <div class="ec-head">
       <AppIcon class="ec-spark" name="sparkle" :size="13" />
       <span class="st-term"><mark>{{ item.term.length > 60 ? item.term.slice(0, 60) + '…' : item.term }}</mark></span>
@@ -43,12 +62,13 @@ function discard() {
     </div>
     <i class="ec-rule" :class="{ running: item.status === 'running' }" aria-hidden="true"></i>
     <ExplainBody :item="item" />
-    <p class="ec-actions">
+    <div class="ec-foot"><p class="ec-actions">
       <button type="button" class="ec-tool" :disabled="item.status === 'running'" aria-label="深入" data-tip="深入" data-tip-fast @click="again('deeper')"><AppIcon name="deeper" :size="16" /></button>
       <button type="button" class="ec-tool" :disabled="item.status === 'running'" aria-label="简化" data-tip="简化" data-tip-fast @click="again('simpler')"><AppIcon name="simpler" :size="16" /></button>
       <button type="button" class="ec-tool" :disabled="item.status === 'running'" aria-label="举例" data-tip="举例" data-tip-fast @click="again('example')"><AppIcon name="example" :size="16" /></button>
       <button type="button" class="ec-tool" :disabled="item.status === 'running'" aria-label="可视化讲解" data-tip="可视化讲解（Intelligent UI）" data-tip-fast @click="again('visual')"><AppIcon name="visual" :size="16" /></button>
-    </p>
+    </p><ThoughtChip :item="item" /></div>
+    <i class="en-resize" aria-hidden="true" data-tip="拖动调整大小，双击恢复" @pointerdown="startResize" @dblclick="resetSize"></i>
   </aside>
 </template>
 
@@ -71,4 +91,9 @@ function discard() {
 :root[data-style='sketch'] .explain-note::before{content:'';position:absolute;left:38px;top:-9px;width:70px;height:18px;background:var(--tape,rgb(170 200 225 / .7));rotate:-2.5deg;clip-path:polygon(3% 10%,97% 0,100% 90%,0 100%)}
 @keyframes en-in{from{opacity:0;translate:0 -6px}}
 @media(prefers-reduced-motion:reduce){.explain-note{animation:none}}
+/* 调整大小：右下角一个小三角；设了高度后只有正文滚动。 */
+.explain-note.sized{max-width:100%;box-sizing:border-box}
+.explain-note.sized .explain-body{flex:1;min-height:0;overflow:auto}
+.en-resize{position:absolute;right:3px;bottom:3px;width:12px;height:12px;cursor:nwse-resize;opacity:.35;background:linear-gradient(135deg,transparent 50%,color-mix(in srgb,var(--ink) 55%,transparent) 50% 58%,transparent 58% 70%,color-mix(in srgb,var(--ink) 55%,transparent) 70% 78%,transparent 78%);transition:opacity .15s}
+.explain-note:hover .en-resize{opacity:.7}
 </style>

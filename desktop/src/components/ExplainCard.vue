@@ -5,6 +5,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import 'katex/dist/katex.min.css'
 import { renderMarkdown } from '../ai/render'
 import AppIcon from './AppIcon.vue'
+import { hintLearned, offerHint } from '../ui/hints'
+import ThoughtChip from './ThoughtChip.vue'
 import ExplainBody from './ExplainBody.vue'
 import { rerunExplain, type ExplainCardState } from '../ai/explain'
 
@@ -67,7 +69,7 @@ const fit = computed(() => {
   let units = 0
   for (const char of text) units += char.charCodeAt(0) > 0x2e7f ? 1 : .55
   // 带界面的讲解（图表、可调的模拟）要宽一些才摆得开。
-  if (text.includes('```ui') || (props.card.item.mode === 'visual' && !showFrom.value)) return 560
+  if (text.includes('```ui') || (props.card.item.mode === 'visual' && !showFrom.value)) return Math.min(680, innerWidth - 40)
   return Math.min(600, Math.max(300, Math.round(Math.sqrt(units * 900) / 40) * 40))
 })
 const position = computed(() => ({
@@ -76,8 +78,14 @@ const position = computed(() => ({
   ...(size.value.width ? { width: `${size.value.width}px`, maxWidth: 'none' } : {}),
   ...(size.value.height ? { height: `${size.value.height}px`, maxHeight: 'none' } : {}),
 }))
-function togglePin() { props.card.pinned = !props.card.pinned }
-function toggleFollow() { props.card.follow = props.card.follow === 'page' ? 'screen' : 'page' }
+function togglePin() {
+  props.card.pinned = !props.card.pinned
+  // 钉住之后能切换「跟着书页走 / 停在屏幕上」：没用过的话提一句（一共两次）。
+  if (props.card.pinned && props.card.anchor) offerHint('explain-layer', ['📄'], '点卡片右上角这个图标：跟着书页走 / 停在屏幕上')
+}
+function toggleFollow() { props.card.follow = props.card.follow === 'page' ? 'screen' : 'page'; hintLearned('explain-layer') }
+// 右键：交给应用的菜单（复制、换个讲法、钉住、图层、关闭），不弹浏览器自带的那个。
+function menu(event: MouseEvent) { window.dispatchEvent(new CustomEvent('kaizhi:explain-menu', { detail: { kind: 'card', id: props.card.id, x: event.clientX, y: event.clientY } })) }
 // 拖动只按指针走过的距离挪，不去量卡片的外框：草稿主题的便签是歪着贴的，量出来的外框比它实际的位置偏一点，松手时会跳一下。
 function startDrag(event: PointerEvent) {
   if (event.button !== 0 || (event.target as HTMLElement).closest('button')) return
@@ -135,7 +143,7 @@ watch(() => props.card.item.status, (status, previous) => { if (previous === 'ru
 
 <template>
   <Teleport :to="host || 'body'">
-  <div ref="box" class="selection-translation explain-card" :class="{ pinned: card.pinned, dragging, sized: Boolean(size.width || size.height), 'in-page': Boolean(host), morph: Boolean(card.from) }" role="status" aria-live="polite" :style="position" @pointerdown.stop="$event.target === box && startDrag($event)" @mousedown.stop @click.stop @dblclick.stop @contextmenu.stop>
+  <div ref="box" class="selection-translation explain-card" :class="{ pinned: card.pinned, dragging, sized: Boolean(size.width || size.height), 'in-page': Boolean(host), morph: Boolean(card.from) }" role="status" aria-live="polite" :style="position" @pointerdown.stop="$event.target === box && startDrag($event)" @mousedown.stop @click.stop @dblclick.stop @contextmenu.stop.prevent="menu">
     <Transition name="st-swap" mode="out-in" @after-enter="settle">
       <div v-if="showFrom" key="from" class="st-text" v-html="renderMarkdown(card.from || '')"></div>
       <div v-else key="explain" class="st-explain">
@@ -148,12 +156,12 @@ watch(() => props.card.item.status, (status, previous) => { if (previous === 'ru
         <!-- 标题下面一道细线；解释还在写的时候有一点光顺着它滑过去。 -->
         <i class="ec-rule" :class="{ running: card.item.status === 'running' }" aria-hidden="true"></i>
         <ExplainBody :item="card.item" />
-        <p v-if="card.item.status !== 'error' || card.item.text" class="ec-actions">
+        <div v-if="card.item.status !== 'error' || card.item.text" class="ec-foot"><p class="ec-actions">
           <button type="button" class="ec-tool" :disabled="card.item.status === 'running'" aria-label="深入" data-tip="深入" data-tip-fast @click="rerunExplain(card.item, 'deeper')"><AppIcon name="deeper" :size="16" /></button>
           <button type="button" class="ec-tool" :disabled="card.item.status === 'running'" aria-label="简化" data-tip="简化" data-tip-fast @click="rerunExplain(card.item, 'simpler')"><AppIcon name="simpler" :size="16" /></button>
           <button type="button" class="ec-tool" :disabled="card.item.status === 'running'" aria-label="举例" data-tip="举例" data-tip-fast @click="rerunExplain(card.item, 'example')"><AppIcon name="example" :size="16" /></button>
           <button type="button" class="ec-tool" :disabled="card.item.status === 'running'" aria-label="可视化讲解" data-tip="可视化讲解（Intelligent UI）" data-tip-fast @click="rerunExplain(card.item, 'visual')"><AppIcon name="visual" :size="16" /></button>
-        </p>
+        </p><ThoughtChip :item="card.item" /></div>
       </div>
     </Transition>
     <i class="ec-halo" aria-hidden="true"></i><i v-if="sheen" class="ec-sheen" aria-hidden="true"></i>

@@ -22,7 +22,7 @@ import { vLiquidSelection } from './ui/liquid-selection'
 import { useReorder } from './ui/reorder'
 import { useRubberBand } from './ui/rubber-band'
 import { translator, translate, type Translation } from './ai/translate'
-import { explainCards, closeCard, closeLooseCards, explainTarget, runExplain } from './ai/explain'
+import { explainCards, closeCard, closeLooseCards, explainTarget, runExplain, rerunExplain, shownNotes, uiEntries, uiReady, uiVersion, type Explain, type UiEntry } from './ai/explain'
 import { looksMathy, selectionImage } from './reader/selection-image'
 import { currentHint, dismissHint, hintLearned, offerHint } from './ui/hints'
 import ExplainCard from './components/ExplainCard.vue'
@@ -39,6 +39,7 @@ const UpdateCard = defineAsyncComponent(() => import('./components/UpdateCard.vu
 const ContextMenu = defineAsyncComponent(() => import('./components/ContextMenu.vue'))
 const ManifoldDoodle = defineAsyncComponent(() => import('./components/ManifoldDoodle.vue'))
 const TranslatePane = defineAsyncComponent(() => import('./components/TranslatePane.vue'))
+const UiCollection = defineAsyncComponent(() => import('./components/UiCollection.vue'))
 const { preferences, effectiveAppearance, load: loadPreferences, save: savePreferences } = useSettings()
 
 const documents = ref<Doc[]>([])
@@ -780,6 +781,46 @@ function middleClick(event: MouseEvent) {
   else runExplain(target, event.clientX, event.clientY, undefined, visual)
 }
 const openAiSettings = () => openSettings('ai')
+// ---- Intelligent UI 合集 ----
+const uiCollectionOpen = ref(false)
+const uiLoaded = ref(false)
+void uiReady.then(() => { uiLoaded.value = true })
+const uiCount = computed(() => { void uiVersion.value; return uiLoaded.value ? uiEntries().length : 0 })
+// 从合集跳回原处：打开那本书，等阅读器摆好再翻到那一页 / 那一行。
+async function jumpToUi(entry: UiEntry) {
+  const doc = documents.value.find(item => item.id === entry.doc)
+  if (!doc) { notify('这本书已经不在文档库里了。'); return }
+  uiCollectionOpen.value = false
+  await openDocument(doc)
+  for (let tries = 0; tries < 25; tries++) {
+    await new Promise(resolve => setTimeout(resolve, 120))
+    if (active.value?.id === doc.id && reader.value?.goToPage) { jump(entry.kind === 'card' ? { page: entry.page || 1 } : { line: entry.line || 1 }); return }
+  }
+}
+// 解释卡片 / Markdown 释义的右键菜单。
+function explainMenu(event: CustomEvent<{ kind: 'card' | 'note'; id: string; x: number; y: number }>) {
+  const { kind, id, x, y } = event.detail
+  const card = kind === 'card' ? explainCards.find(item => item.id === id) : undefined, note = kind === 'note' ? shownNotes.get(id) : undefined
+  const item: Explain | undefined = card?.item || note?.item
+  if (!item) return
+  const picked = window.getSelection()?.toString().trim()
+  const running = item.status === 'running'
+  const again = (mode: 'deeper' | 'simpler' | 'example' | 'visual') => () => rerunExplain(item, mode)
+  const items: MenuItem[] = [
+    { label: picked ? '复制选中的文字' : '复制解释', icon: 'copy', disabled: !picked && !item.text, action: () => { void navigator.clipboard.writeText(picked || item.text).then(() => notify('已复制')) } },
+    { label: '深入', icon: 'deeper', separator: true, disabled: running, action: again('deeper') },
+    { label: '简化', icon: 'simpler', disabled: running, action: again('simpler') },
+    { label: '举例', icon: 'example', disabled: running, action: again('example') },
+    { label: '用图解释', icon: 'visual', hint: 'Shift + 中键', disabled: running, action: again('visual') },
+  ]
+  if (card) {
+    items.push({ label: card.pinned ? '拔下图钉' : '钉住', icon: 'pin', separator: true, action: () => { card.pinned = !card.pinned } })
+    if (card.pinned && card.anchor) items.push({ label: card.follow === 'page' ? '改成停在屏幕上' : '改成跟着书页走', icon: card.follow === 'page' ? 'fullscreen' : 'doc', action: () => { card.follow = card.follow === 'page' ? 'screen' : 'page'; hintLearned('explain-layer') } })
+    items.push({ label: '关闭', icon: 'close', separator: !card.pinned, action: () => closeCard(card) })
+  }
+  if (note) items.push({ label: '删除这条释义', icon: 'trash', danger: true, separator: true, action: () => note.remove() })
+  contextMenu.value = { x, y, items }
+}
 watch(() => translator.auto, value => { if (!value) closeHoverTranslation() })
 // 右键拖动截图：按文档单独开启（给没有文字层的扫描版 PDF 用），记在本机。
 const RIGHT_CAPTURE_KEY = 'kaizhi.rightCapture.v1'
@@ -1723,6 +1764,7 @@ onMounted(async () => {
   document.addEventListener('auxclick', middleClick)
   document.addEventListener('mouseup', hintOnSelection)
   window.addEventListener('kaizhi:open-ai-settings', openAiSettings)
+  window.addEventListener('kaizhi:explain-menu', explainMenu as EventListener)
   document.addEventListener('wheel', wheel, { capture: true, passive: false })
   document.addEventListener('dragenter', dragEnter)
   document.addEventListener('dragover', dragOver)
@@ -1762,7 +1804,7 @@ async function recoverSession() {
   for (const id of ids) { const doc = documents.value.find(item => item.id === id); if (doc) await openDocument(doc) }
   notify(ids.length ? '页面刚才出错退出了，已自动恢复，文档回到原来的位置。' : '页面刚才出错退出了，已自动恢复。')
 }
-onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); document.removeEventListener('mousedown', middleDown); document.removeEventListener('auxclick', middleClick); document.removeEventListener('mouseup', hintOnSelection); window.removeEventListener('kaizhi:open-ai-settings', openAiSettings); closeLooseCards(); stopAutoCheck(); clearTimeout(enteringTimer); disposed = true; ++openEpoch; dismissCaptureQuick(); stopDropListening?.(); clearWheelZoom(); readerInstances.clear(); glassContrast?.dispose(); document.removeEventListener('keydown', keydown); document.removeEventListener('contextmenu', appContextMenu); document.removeEventListener('wheel', wheel, true); document.removeEventListener('dragenter', dragEnter); document.removeEventListener('dragover', dragOver); document.removeEventListener('dragleave', dragLeave); document.removeEventListener('drop', fileDrop); document.removeEventListener('selectionchange', selectionChanged); document.removeEventListener('scroll', dismissSelectionAction, true); document.removeEventListener('scroll', captureViewportChanged, true); window.removeEventListener('resize', dismissSelectionAction); window.removeEventListener('resize', captureViewportChanged); closeAllChats(); forgetAllPasswords(); systemTheme.removeEventListener('change', applyTheme); flushProgress(); for (const timer of indexTimers.values()) clearTimeout(timer); clearTimeout(queryTimer); clearTimeout(toastTimer) })
+onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); document.removeEventListener('mousedown', middleDown); document.removeEventListener('auxclick', middleClick); document.removeEventListener('mouseup', hintOnSelection); window.removeEventListener('kaizhi:open-ai-settings', openAiSettings); window.removeEventListener('kaizhi:explain-menu', explainMenu as EventListener); closeLooseCards(); stopAutoCheck(); clearTimeout(enteringTimer); disposed = true; ++openEpoch; dismissCaptureQuick(); stopDropListening?.(); clearWheelZoom(); readerInstances.clear(); glassContrast?.dispose(); document.removeEventListener('keydown', keydown); document.removeEventListener('contextmenu', appContextMenu); document.removeEventListener('wheel', wheel, true); document.removeEventListener('dragenter', dragEnter); document.removeEventListener('dragover', dragOver); document.removeEventListener('dragleave', dragLeave); document.removeEventListener('drop', fileDrop); document.removeEventListener('selectionchange', selectionChanged); document.removeEventListener('scroll', dismissSelectionAction, true); document.removeEventListener('scroll', captureViewportChanged, true); window.removeEventListener('resize', dismissSelectionAction); window.removeEventListener('resize', captureViewportChanged); closeAllChats(); forgetAllPasswords(); systemTheme.removeEventListener('change', applyTheme); flushProgress(); for (const timer of indexTimers.values()) clearTimeout(timer); clearTimeout(queryTimer); clearTimeout(toastTimer) })
 </script>
 
 <template>
@@ -1826,7 +1868,7 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
             <button v-if="libraryOrder.length && canArrange" class="icon-button arrange-reset" @click="resetLibraryOrder" data-tip="恢复按最近阅读排列" aria-label="恢复按最近阅读排列"><AppIcon name="clock" :size="16" /></button><button class="library-sort" data-tip="排序方式（再选一次切换升降序）" aria-label="排序方式" aria-haspopup="menu" @click="openSortMenu($event)"><AppIcon name="list" :size="15" /><span>{{ SORTS.find(item => item.key === librarySort.key)?.label }}</span><AppIcon name="down" :size="12" /></button><button v-if="librarySort.key !== 'default'" class="icon-button sort-direction" :data-tip="librarySort.descending ? '降序（点一下改为升序）' : '升序（点一下改为降序）'" :aria-label="librarySort.descending ? '降序' : '升序'" @click="chooseSort(librarySort.key)"><span aria-hidden="true">{{ librarySort.descending ? '↓' : '↑' }}</span></button><div v-liquid-selection class="view-switch"><button :class="{ selected: display === 'grid' }" @click="setDisplay('grid')" data-tip="卡片视图" aria-label="卡片视图"><AppIcon name="grid" :size="16" /></button><button :class="{ selected: display === 'list' }" @click="setDisplay('list')" data-tip="列表视图" aria-label="列表视图"><AppIcon name="list" :size="17" /></button></div>
           </div>
         </header>
-        <div class="library-summary"><div><AppIcon name="book" :size="15" /><strong>{{ documents.length }}</strong><span>份文档</span></div><span class="summary-divider"></span><div><AppIcon name="star" :size="15" /><strong>{{ starredCount }}</strong><span>份收藏</span></div><span class="summary-divider"></span><div><AppIcon name="file" :size="15" /><strong>{{ totalPages }}</strong><span>页已打开文档</span></div><span v-if="!isDesktop" class="summary-note">浏览器预览</span></div>
+        <div class="library-summary"><div><AppIcon name="book" :size="15" /><strong>{{ documents.length }}</strong><span>份文档</span></div><span class="summary-divider"></span><div><AppIcon name="star" :size="15" /><strong>{{ starredCount }}</strong><span>份收藏</span></div><span class="summary-divider"></span><div><AppIcon name="file" :size="15" /><strong>{{ totalPages }}</strong><span>页已打开文档</span></div><span v-if="!isDesktop" class="summary-note">浏览器预览</span><button type="button" class="ui-collection-open" data-tip="Intelligent UI 合集：钉住 / 记入文档的界面都在这里" @click="uiCollectionOpen = true"><AppIcon name="visual" :size="15" />Intelligent UI<strong>{{ uiCount }}</strong></button></div>
         <div v-if="query || category === 'recent'" class="library-list-heading"><span>{{ query ? `搜索「${query}」` : '按最近阅读排列' }}</span></div>
         <div v-if="loading" class="library-empty"><span class="spinner"></span><p>正在读取文档库…</p></div>
         <div v-else-if="!visibleDocuments.length" class="library-empty"><div class="empty-art"><svg viewBox="0 0 120 96" aria-hidden="true"><path class="ea-shade" d="M14 80c16-5 30-5 45 1 16-6 30-6 47-1l1 6c-17-4-31-4-47 2-16-6-30-6-45-2z" /><path class="ea-page" d="M15 22c14-6 29-6 44 2v56c-15-7-30-7-45-2z" /><path class="ea-page ea-right" d="M59 24c15-8 30-8 46-3l1 57c-16-5-31-5-47 2z" /><path class="ea-line" d="M15 22c14-6 29-6 44 2 15-8 30-8 46-3l1 57c-16-5-31-5-47 2-15-7-30-7-45-2z M59 24.500c.4 18 .2 37 .1 55.300 M24 35c8-2.500 17-2 26 1 M24 46.500c8-2.400 17-2 26 1.200 M24.500 58c7-2 14-2 21 .300 M69 36c9-3.200 18-3.400 27-1.400 M69 47.500c9-3 18-3.300 27-1.300 M69.500 59c6-2 12-2.400 18-1.500" /><path class="ea-star" d="M97 6.500c1 5 3 7.200 8 8.500-5 1.200-7 3.400-8.200 8.500-1-5-3.200-7.300-8.300-8.500 5-1.300 7.300-3.500 8.500-8.500z" /><path class="ea-line" d="M112 21.500l.4 5 M109.500 24l5.400.200 M83 4.500l.300 3.600 M81.200 6.300l3.900.100" /></svg></div><h2>{{ query ? '没有匹配的文档' : category === 'starred' ? '暂无收藏' : groupFilter ? '这个分组还是空的' : tagFilter ? '此标签下暂无文档' : '暂无文档' }}</h2><p>{{ query ? '可搜索标题、标签和已读取的文档内容。' : '点击“加入文档”添加 PDF 或 Markdown，可一次选择多个文件。' }}</p><button v-if="query" @click="query = ''; refresh()">查看全部文档</button><small>导入不会移动或修改原文件</small></div>
@@ -1910,6 +1952,7 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
       <div v-if="removeBatch" class="dialog-backdrop" @click.self="removeBatch = null"><section class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="remove-batch-title"><div class="dialog-icon"><AppIcon name="trash" :size="24" /></div><h2 id="remove-batch-title">移除 {{ removeBatch.length }} 份文档？</h2><p>{{ removeBatch.slice(0, 3).map(doc => `「${doc.name}」`).join('') }}{{ removeBatch.length > 3 ? ` 等 ${removeBatch.length} 份` : '' }}的阅读记录与标签会被移除，原文件仍保留在电脑上。</p><div class="dialog-actions"><button @click="removeBatch = null">取消</button><button class="danger-button" @click="removeDocuments">移除 {{ removeBatch.length }} 份</button></div></section></div>
       <div v-else-if="removeTarget" class="dialog-backdrop" @click.self="removeTarget = null"><section class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="remove-title"><div class="dialog-icon"><AppIcon name="trash" :size="24" /></div><h2 id="remove-title">从文档库移除？</h2><p>「{{ removeTarget.name }}」的阅读记录与标签会被移除，原文件仍保留在电脑上。</p><div class="dialog-actions"><button @click="removeTarget = null">取消</button><button class="danger-button" @click="removeDocument()">移除文档</button></div></section></div>
     </Transition>
+    <UiCollection v-if="uiCollectionOpen" :documents="documents" @close="uiCollectionOpen = false" @jump="jumpToUi" />
     <Transition name="settings-pop">
       <SettingsDialog v-if="settingsOpen" :initial-tab="settingsTab" @close="settingsOpen = false" @ai-saved="aiSettingsSaved" />
     </Transition>

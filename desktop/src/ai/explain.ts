@@ -2,7 +2,7 @@
  * 快速解释：选中一个词或一句话，按鼠标中键（或右键「解释」），用专门配的 AI 就地解释。
  * AI 只拿到解释的要求、选中的文字和它周围的一小段上下文。PDF 里弹一张卡片；Markdown 里直接插在那一段下面，可以留在笔记里。
  */
-import { createApp, reactive, shallowReactive, watch, type App } from 'vue'
+import { createApp, reactive, ref, shallowReactive, watch, type App } from 'vue'
 import { looksMathy, selectionImage } from '../reader/selection-image'
 import { IMAGE_NOTE } from './translate'
 import { complete } from './complete'
@@ -12,7 +12,7 @@ import { useSettings } from '../settings'
 import ExplainNote from '../components/ExplainNote.vue'
 
 export type ExplainMode = 'plain' | 'deeper' | 'example' | 'simpler' | 'visual'
-export type Explain = { id: string; term: string; context: string; mode: ExplainMode; text: string; reasoning: string; status: 'running' | 'done' | 'error'; error: string; startedAt: number; firstTokenAt?: number; ms: number; /** 选区的截图（PDF 里的公式以图为准）。 */ image?: string }
+export type Explain = { id: string; term: string; context: string; mode: ExplainMode; text: string; reasoning: string; status: 'running' | 'done' | 'error'; error: string; startedAt: number; firstTokenAt?: number; ms: number; /** 写完后点开了思维链。 */ chainOpen?: boolean; /** 选区的截图（PDF 里的公式以图为准）。 */ image?: string }
 export type ExplainTarget = { term: string; context: string; block?: HTMLElement; image?: string; doc?: string; page?: number; /** PDF：选区所在的那一页，图钉钉住后卡片跟着它走。 */ anchor?: HTMLElement }
 
 const MODES: Record<ExplainMode, string> = {
@@ -107,6 +107,7 @@ function saveCards() {
     if (list.length) cardStore[doc] = list; else delete cardStore[doc]
   }
   void library.setSetting(CARDS, JSON.stringify(cardStore)).catch(() => { /* 存不进去就只留在这次阅读里 */ })
+  uiVersion.value++
 }
 let saveTimer = 0
 watch(() => explainCards.map(card => [card.pinned, card.follow, card.rel?.x, card.rel?.y, card.screen?.left, card.screen?.top, card.size?.width, card.size?.height, card.item.status, card.item.text.length].join()).join('|'),
@@ -139,7 +140,7 @@ export function releaseCards(scroller: HTMLElement) {
 
 // ---- Markdown：插在段落下面的释义；留下的记在本机，下次打开还在 ----
 const NOTES_KEY = 'kaizhi.explain.notes.v1'
-type Saved = { id: string; line: number; term: string; text: string }
+type Saved = { id: string; line: number; term: string; text: string; size?: { width?: number; height?: number } }
 // 记在文档库的设置里（和分组、排列顺序一样，跟着库走），关掉应用再开还在；浏览器的本地存储只当备份，
 // 以前只存在那里的也并进来。
 const SETTING = 'explain.notes.v1'
@@ -162,6 +163,7 @@ const ready: Promise<void> = (async () => {
   if (JSON.stringify(merged) !== JSON.stringify(saved)) persist()
 })()
 function persist() {
+  uiVersion.value++
   const text = JSON.stringify(store)
   try { localStorage.setItem(NOTES_KEY, text) } catch { /* 备份存不下不要紧 */ }
   void library.setSetting(SETTING, text).catch(() => { /* 存不进文档库时至少本地有一份 */ })
@@ -173,10 +175,12 @@ function writeNotes(doc: string, change: (list: Saved[]) => Saved[]) {
   if (list.length) store[doc] = list.slice(-200); else delete store[doc]
   void ready.then(persist)
 }
-export function keepNote(doc: string, line: number, item: Explain) { writeNotes(doc, list => [...list.filter(note => note.id !== item.id), { id: item.id, line, term: item.term, text: item.text }]) }
+export function keepNote(doc: string, line: number, item: Explain, size?: { width?: number; height?: number }) { writeNotes(doc, list => { const old = list.find(note => note.id === item.id); return [...list.filter(note => note.id !== item.id), { id: item.id, line, term: item.term, text: item.text, size: size ?? old?.size }] }) }
 export function dropNote(doc: string, id: string) { writeNotes(doc, list => list.filter(note => note.id !== id)) }
 
 const mounted = new WeakMap<HTMLElement, Set<App>>()
+/** 正显示着的 Markdown 释义：右键菜单、Intelligent UI 合集要能找到它、关掉它。 */
+export const shownNotes = new Map<string, { item: Explain; doc: string; remove: () => void }>()
 function insertNote(block: HTMLElement, item: Explain, kept: boolean) {
   const paper = block.closest<HTMLElement>('.markdown-paper')
   if (!paper) return
@@ -189,7 +193,10 @@ function insertNote(block: HTMLElement, item: Explain, kept: boolean) {
   after.after(host)
   const apps = mounted.get(paper) || new Set<App>()
   mounted.set(paper, apps)
-  const app = createApp(ExplainNote, { item, kept, doc: paper.dataset.explainDoc || '', line: Number(block.dataset.sourceLine) || 1, onClose: () => { stopExplain(item); app.unmount(); apps.delete(app); host.remove() } })
+  const doc = paper.dataset.explainDoc || ''
+  const close = () => { stopExplain(item); shownNotes.delete(item.id); app.unmount(); apps.delete(app); host.remove() }
+  const app = createApp(ExplainNote, { item, kept, doc, line: Number(block.dataset.sourceLine) || 1, size: kept ? (store[doc] || []).find(note => note.id === item.id)?.size : undefined, onClose: close })
+  shownNotes.set(item.id, { item, doc, remove: () => { dropNote(doc, item.id); close() } })
   apps.add(app)
   app.mount(host)
 }
@@ -218,4 +225,33 @@ export function runExplain(target: ExplainTarget, x: number, y: number, from?: s
   if (target.block?.isConnected) { insertNote(target.block, item, false); return }
   closeLooseCards()
   explainCards.push(reactive({ id: item.id, item, x, y, pinned: false, follow: 'page', anchor: target.anchor, doc: target.doc, page: target.page, from }) as ExplainCardState)
+}
+
+// ---- Intelligent UI 合集：钉住的 PDF 卡片和记入文档的 Markdown 释义里，带 ```ui 界面的那些 ----
+export type UiEntry = { kind: 'card' | 'note'; doc: string; id: string; term: string; text: string; page?: number; line?: number }
+/** 存的东西变了就加一，合集据此刷新。 */
+export const uiVersion = ref(0)
+export const uiReady = Promise.all([cardsReady, ready])
+export function uiEntries(): UiEntry[] {
+  const out: UiEntry[] = []
+  for (const [doc, list] of Object.entries(cardStore)) for (const card of list || []) if (card.text?.includes('```ui')) out.push({ kind: 'card', doc, id: card.id, term: card.term, text: card.text, page: card.page })
+  for (const [doc, list] of Object.entries(store)) for (const note of list || []) if (note.text?.includes('```ui')) out.push({ kind: 'note', doc, id: note.id, term: note.term, text: note.text, line: note.line })
+  return out
+}
+/** 从合集里删：文档里正显示着的那张卡片 / 那条释义一起撤掉，存的记录也删掉。 */
+export function removeUiEntries(entries: UiEntry[]) {
+  let cards = false
+  for (const entry of entries) {
+    if (entry.kind === 'card') {
+      const shown = explainCards.find(card => card.id === entry.id)
+      if (shown) { shown.pinned = false; closeCard(shown) }
+      const list = (cardStore[entry.doc] || []).filter(card => card.id !== entry.id)
+      if (list.length) cardStore[entry.doc] = list; else delete cardStore[entry.doc]
+      cards = true
+    } else {
+      const shown = shownNotes.get(entry.id)
+      if (shown) shown.remove(); else dropNote(entry.doc, entry.id)
+    }
+  }
+  if (cards) { void library.setSetting(CARDS, JSON.stringify(cardStore)).catch(() => { /* 存不进去就只留在这次 */ }); uiVersion.value++ }
 }

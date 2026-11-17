@@ -73,6 +73,9 @@ function canvas(root: HTMLElement, spec: any, W: number, H: number): Canvas {
   const refit = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(() => settle(wrap)) }
   new ResizeObserver(refit).observe(wrap)
   refit()
+  // 公式字体晚到时文字会变宽：到了再排一次。
+  void document.fonts?.ready.then(refit)
+  setTimeout(refit, 450)
   const label: Canvas['label'] = (x, y, value, options = {}) => {
     const element = h('span', `iui-dl ${options.className || ''}`.trim(), text(value, 160))
     element.style.left = `${x / W * 100}%`; element.style.top = `${y / H * 100}%`
@@ -89,27 +92,31 @@ function settle(wrap: HTMLElement) {
   if (!wrap.isConnected) return
   const labels = [...wrap.querySelectorAll<HTMLElement>('.iui-dl')]
   for (const label of labels) { label.style.marginLeft = ''; label.style.marginTop = '' }
-  const box = wrap.getBoundingClientRect()
-  if (!box.width) return
+  const outer = wrap.getBoundingClientRect(), W = wrap.offsetWidth, H = wrap.offsetHeight
+  if (!outer.width || !W) return
+  // 卡片弹出时带着缩放动画：量到的屏幕坐标先除掉缩放，换成图里自己的坐标，否则一开始排出来是错的（放大一下才对）。
+  const k = outer.width / W
+  const local = (element: HTMLElement) => { const r = element.getBoundingClientRect(); return { left: (r.left - outer.left) / k, top: (r.top - outer.top) / k, width: r.width / k, height: r.height / k } }
   const free = (label: HTMLElement) => FREE.some(name => label.classList.contains(name))
-  const placed: DOMRect[] = []
+  const placed: { left: number; top: number; right: number; bottom: number }[] = []
   // 先放贴着图形的（点、节点），再放自由的说明去躲它们。
   for (const label of [...labels.filter(item => !free(item)), ...labels.filter(free)]) {
-    const r = label.getBoundingClientRect()
+    const r = local(label), right = r.left + r.width, bottom = r.top + r.height
     let dx = 0, dy = 0
-    if (r.left + dx < box.left + 2) dx = box.left + 2 - r.left
-    if (r.right + dx > box.right - 2) dx = Math.max(box.left + 2 - r.left, box.right - 2 - r.right)
+    if (r.left < 2) dx = 2 - r.left
+    else if (right > W - 2) dx = Math.max(2 - r.left, W - 2 - right)
     if (free(label)) {
       for (let round = 0; round < 6; round++) {
-        const hit = placed.find(p => r.left + dx < p.right && r.right + dx > p.left && r.top + dy < p.bottom && r.bottom + dy > p.top)
+        const hit = placed.find(p => r.left + dx < p.right && right + dx > p.left && r.top + dy < p.bottom && bottom + dy > p.top)
         if (!hit) break
         dy += hit.bottom - (r.top + dy) + 2
       }
-      if (r.bottom + dy > box.bottom + 18) dy = box.bottom + 18 - r.bottom
+      // 往下躲最多躲出图框一点点，不把说明推到图的另一头去。
+      dy = Math.min(dy, Math.max(0, H + 14 - bottom))
     }
     if (dx) label.style.marginLeft = `${dx}px`
     if (dy) label.style.marginTop = `${dy}px`
-    placed.push(new DOMRect(r.left + dx, r.top + dy, r.width, r.height))
+    placed.push({ left: r.left + dx, top: r.top + dy, right: right + dx, bottom: bottom + dy })
   }
 }
 const arrowHead = (c: Canvas, hot = false) => `url(#${c.id}-${hot ? 'h' : 'a'})`

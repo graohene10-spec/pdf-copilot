@@ -13,7 +13,7 @@ import { warmNative } from '../ai/native.mjs'
 import { useSettings } from '../settings'
 import AppIcon from './AppIcon.vue'
 import AssistantMark from './AssistantMark.vue'
-import { greetingFor, placeholderFor, thinkingVerb, spinnerFor } from '../ai/greeting'
+import { greetingFor, placeholderFor, thinkingVerb, thinkingTitle, spinnerFor } from '../ai/greeting'
 import { predictQuestion, predictionKey } from '../ai/predict'
 import { cropImageAsync } from '../reader/crop'
 const ModelPicker = defineAsyncComponent(() => import('./ModelPicker.vue'))
@@ -908,7 +908,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
           <template v-else>
             <button v-if="live(message) || message.reasoning || message.sources.length" class="thinking" :class="{ live: live(message), open: expanded.has(message.id) }" :aria-expanded="expanded.has(message.id)" @click="toggleReasoning(message.id)">
               <span class="thinking-star" aria-hidden="true">{{ live(message) ? spinner(message) : '✻' }}</span>
-              <span class="thinking-label">{{ live(message) ? `${thinkingVerb(message.id)}…` : `Thought for ${thinkingTime(message)}` }}</span>
+              <span class="thinking-label">{{ live(message) ? `${thinkingTitle(message.id, message.reasoning, message.content)}…` : `Thought for ${thinkingTime(message)}` }}</span>
               <span v-if="live(message)" class="thinking-meta">{{ elapsed(message) }}<template v-if="activityNote(message)"> · {{ activityNote(message) }}</template></span>
               <AppIcon v-if="message.reasoning || message.sources.length" class="thinking-chevron" name="down" :size="12" />
             </button>
