@@ -1534,9 +1534,15 @@ function panelResizeEnd(element: Element, cancelled = false) { if (resizingPanel
 const resizeGeneration = new WeakMap<Element, number>()
 // 收放动画期间 Markdown 正文按动画开始时的宽度定住：阅读区每一帧都在变宽变窄，正文跟着每帧重新断行是最卡的那一步。
 // 落定后放开，只重排一次。
+// 宽度从一个一直在旁边看着的 ResizeObserver 里拿，不现场去量：现场一量就逼浏览器把整页（包括助手栏里几十条带公式的回答）立刻重排一遍。
+const paperWidths = new WeakMap<Element, number>()
+const paperWatch = new ResizeObserver(entries => { for (const entry of entries) paperWidths.set(entry.target, entry.borderBoxSize?.[0]?.inlineSize ?? entry.contentRect.width) })
+const watchedPapers = new WeakSet<Element>()
 function freezeArticles(frozen: boolean) {
   for (const paper of document.querySelectorAll<HTMLElement>('.reader-pane .markdown-paper')) {
-    if (frozen) { if (!paper.style.width) { paper.style.width = `${paper.offsetWidth}px`; paper.dataset.frozen = '' } }
+    if (!watchedPapers.has(paper)) { watchedPapers.add(paper); paperWatch.observe(paper) }
+    const width = paperWidths.get(paper)
+    if (frozen) { if (!paper.style.width && width) { paper.style.width = `${width}px`; paper.dataset.frozen = '' } }
     else if ('frozen' in paper.dataset) { paper.style.removeProperty('width'); delete paper.dataset.frozen }
   }
 }
@@ -1784,6 +1790,9 @@ onMounted(async () => {
   void loadCovers()
   await refresh()
   await recoverSession()
+  // 第一次打开阅读助手不用等它的代码现加载：启动后空闲时先载好。
+  const preload = () => { void import('./components/AiPane.vue'); void import('./components/ExplainCard.vue') }
+  if ('requestIdleCallback' in window) requestIdleCallback(preload, { timeout: 4000 }); else setTimeout(preload, 2500)
 })
 // ---- 页面崩溃后的恢复 ----
 // 打开着哪些文档记在 sessionStorage：它在页面重新载入后还在，正常关掉再打开应用时是空的。
