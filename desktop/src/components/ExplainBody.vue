@@ -17,7 +17,11 @@ let ticker = 0
 watch(() => props.item.status, status => { clearInterval(ticker); if (status === 'running') { now.value = Date.now(); ticker = window.setInterval(() => { now.value = Date.now() }, 500) } }, { immediate: true })
 onBeforeUnmount(() => clearInterval(ticker))
 const elapsed = computed(() => Math.max(0, Math.floor((now.value - props.item.startedAt) / 1000)))
-const thought = computed(() => props.item.reasoning.trim().split(/\n+/).filter(Boolean).at(-1)?.slice(0, 120) || '')
+// 思维链整条留着：思考时放在一个固定高度的小窗里，新内容从底下往上滚；写完折成「思考了 N 秒」，点开看全文。
+// 以前只显示最后一行，那一行忽长忽短、时有时无，卡片跟着跳。
+const chain = computed(() => props.item.reasoning.trim().slice(-900))
+const chainOpen = ref(false)
+const thoughtFor = computed(() => props.item.firstTokenAt ? Math.max(1, Math.round((props.item.firstTokenAt - props.item.startedAt) / 1000)) : elapsed.value)
 // 解释里的 ```ui 块画成可以操作的界面（Intelligent UI）。
 const body = ref<HTMLElement>()
 watch(() => [props.item.text, props.item.status], () => { void nextTick(() => { if (body.value && props.item.text.includes('```ui')) mountIntelligentUi(body.value, { streaming: props.item.status === 'running' }) }) }, { immediate: true, flush: 'post' })
@@ -27,7 +31,9 @@ function openSettings() { window.dispatchEvent(new CustomEvent('kaizhi:open-ai-s
 <template>
   <div class="explain-body">
     <p v-if="item.status === 'running' && !item.text" class="ex-think"><AssistantMark :kind="avatar.kind" :image="avatar.image" :size="18" /><span class="ex-verb">{{ thinkingVerb(item.id) }}…</span><span class="ex-time">{{ elapsed }}s</span></p>
-    <p v-if="item.status === 'running' && !item.text && thought" class="ex-thought">{{ thought }}</p>
+    <div v-if="item.status === 'running' && !item.text && chain" class="ex-chain" aria-live="off"><p>{{ chain }}</p></div>
+    <button v-if="item.text && item.reasoning.trim()" type="button" class="ex-chain-toggle" :aria-expanded="chainOpen" @click="chainOpen = !chainOpen">✻ 思考了 {{ thoughtFor }} 秒<span aria-hidden="true">{{ chainOpen ? '▴' : '▾' }}</span></button>
+    <div v-if="item.text && chainOpen" class="ex-chain open"><p>{{ item.reasoning.trim() }}</p></div>
     <div v-if="item.text" ref="body" class="ex-text" v-html="renderMarkdown(item.text)"></div>
     <p v-if="item.status === 'error'" class="ex-error">{{ item.error || '解释失败' }}</p>
     <p v-if="item.status === 'running' && elapsed >= 10 && (item.mode === 'visual' || item.text.includes('```ui'))" class="ex-slow">Intelligent UI 比较复杂，可能会慢一些</p>
@@ -41,7 +47,12 @@ function openSettings() { window.dispatchEvent(new CustomEvent('kaizhi:open-ai-s
 .ex-think .assistant-mark{flex:none}
 .ex-verb{--shimmer-base:color-mix(in srgb,var(--muted) 72%,transparent);font-weight:600;background:linear-gradient(90deg,var(--shimmer-base) 0%,var(--shimmer-base) 38%,var(--ink) 47%,var(--ink) 53%,var(--shimmer-base) 62%,var(--shimmer-base) 100%);background-size:300% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:ex-shimmer 2.2s linear infinite}
 .ex-time{color:var(--muted);font-size:.9em;font-variant-numeric:tabular-nums}
-.ex-thought{margin-top:3px!important;color:var(--muted);font-size:.85em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* 思维链小窗：固定高度，内容贴着底边往上长，顶上淡出；不参与卡片宽度的计算。 */
+.ex-chain{display:flex;flex-direction:column;justify-content:flex-end;height:4.6em;margin-top:4px;padding-left:9px;border-left:2px solid color-mix(in srgb,var(--ink) 14%,transparent);overflow:hidden;contain:inline-size;color:var(--muted);font-size:.82em;line-height:1.55;-webkit-mask-image:linear-gradient(transparent,#000 45%);mask-image:linear-gradient(transparent,#000 45%)}
+.ex-chain p{white-space:pre-wrap;overflow-wrap:anywhere}
+.ex-chain.open{display:block;height:auto;max-height:12em;margin:2px 0 8px;overflow:auto;-webkit-mask-image:none;mask-image:none}
+.ex-chain-toggle{display:inline-flex;align-items:center;gap:5px;margin:0 0 4px;padding:0;border:0;background:none;color:var(--muted);font:inherit;font-size:.8em;cursor:pointer}
+.ex-chain-toggle:hover{color:var(--ink)}
 .ex-text p+p,.ex-text ul,.ex-text ol{margin-top:.45em}
 .ex-text ul,.ex-text ol{margin-bottom:0;padding-left:1.3em}
 .ex-text .katex-display{margin:.4em 0;overflow-x:auto;overflow-y:hidden}
