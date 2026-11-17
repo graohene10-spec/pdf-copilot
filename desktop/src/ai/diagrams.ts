@@ -73,9 +73,8 @@ function canvas(root: HTMLElement, spec: any, W: number, H: number): Canvas {
   const refit = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(() => settle(wrap)) }
   new ResizeObserver(refit).observe(wrap)
   refit()
-  // 公式字体晚到时文字会变宽：到了再排一次。
-  void document.fonts?.ready.then(refit)
-  setTimeout(refit, 450)
+  // 公式字体晚到时文字会变宽：过一会儿再排两次。不去问 document.fonts.ready——那一问会逼浏览器把整页样式立刻重算一遍。
+  setTimeout(refit, 450); setTimeout(refit, 1400)
   const label: Canvas['label'] = (x, y, value, options = {}) => {
     const element = h('span', `iui-dl ${options.className || ''}`.trim(), text(value, 160))
     element.style.left = `${x / W * 100}%`; element.style.top = `${y / H * 100}%`

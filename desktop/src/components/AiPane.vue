@@ -38,6 +38,18 @@ const ownConversation = (documentId: string, id?: string) => props.side && id ? 
 const conversationId = ref(ownConversation(props.document.id, props.conversationId))
 const state = computed(() => chatState(props.document.id, conversationId.value))
 const messages = computed(() => state.value.messages)
+// 打开助手栏时：面板先弹出来，等展开动画走完再把对话填进去——最近几条先出，更早的随后补上。
+// 以前一打开就把几十条带公式的回答全部排版，动画开头先卡一两秒，公式还在动画里被拉扯。
+const contentReady = ref(false), revealAll = ref(false)
+const shownMessages = computed(() => !contentReady.value ? [] : revealAll.value ? messages.value : messages.value.slice(-6))
+function whenSettled(done: () => void) {
+  const panel = pane.value?.closest<HTMLElement>('.ai-panel')
+  let finished = false
+  const finish = () => { if (finished) return; finished = true; panel?.removeEventListener('transitionend', onEnd); requestAnimationFrame(() => done()) }
+  const onEnd = (event: TransitionEvent) => { if (event.target === panel && event.propertyName === 'width') finish() }
+  if (panel && (panel.classList.contains('pane-enter-active') || panel.classList.contains('pane-enter-from'))) { panel.addEventListener('transitionend', onEnd); setTimeout(finish, 700) }
+  else finish()
+}
 const prompt = computed({ get: () => state.value.draft, set: value => { state.value.draft = value } })
 const busy = computed(() => Boolean(state.value.request))
 const errorText = computed(() => state.value.error ? state.value.status : '')
@@ -823,7 +835,15 @@ watch(() => [predictable.value, state.value.id, props.document.id, props.context
 }, { immediate: true })
 onMounted(() => {
   void loadConversations(props.document.id).then(() => { conversationId.value = ownConversation(props.document.id, props.conversationId) })
-  restoreScroll()
+  // 填进来之后：上次在这场对话里滚到过哪儿就回到哪儿，没有就停在最新一条。
+  // 去向在打开这一刻就定下来：填第一批时滚动会改写记下的位置，不能拿那个中间值。屏幕外的消息高度是估的，到底之后下一帧再贴一次底。
+  const saved = state.value.scrollTop
+  const place = () => { const list = messageList.value; if (!list) return; list.scrollTop = saved || list.scrollHeight; if (!saved) requestAnimationFrame(() => { list.scrollTop = list.scrollHeight; updateRail() }); else updateRail() }
+  whenSettled(() => {
+    contentReady.value = true
+    void nextTick(place)
+    setTimeout(() => { revealAll.value = true; void nextTick(place) }, 260)
+  })
   observer = new ResizeObserver(() => updateRail())
   if (messageList.value) observer.observe(messageList.value)
 })
@@ -879,7 +899,8 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
           <!-- 问候语一个字一个字显出来，像刚写上去的；只在打开时写一遍。 -->
           <h2 class="ai-welcome-lead" :lang="greeting.lang === 'zh' ? 'zh-CN' : 'en'" :aria-label="greeting.text"><span v-for="(glyph, index) in Array.from(greeting.text)" :key="index" class="lead-glyph" aria-hidden="true" :style="{ '--i': Math.min(index, 60) }">{{ glyph }}</span></h2>
         </div>
-        <article v-for="message in messages" :key="message.id" class="ai-message" :class="[message.note ? 'note' : message.role, { compressed: message.compressed, summary: message.summary, arrived: arrivedNote === message.id }]" :data-id="message.id">
+        <div v-if="!contentReady && messages.length" class="ai-loading" aria-hidden="true"><i></i><i></i><i></i></div>
+        <article v-for="message in shownMessages" :key="message.id" class="ai-message" :class="[message.note ? 'note' : message.role, { compressed: message.compressed, summary: message.summary, arrived: arrivedNote === message.id }]" :data-id="message.id">
           <div v-if="message.note" class="note-card" :data-tip="`${noteLabel(message)}：${message.content.slice(0, 300)}`">
             <AppIcon class="note-icon" :name="message.note === 'self' ? 'pin' : 'branch'" :size="11" />
             <span class="note-text">{{ message.content }}</span>
@@ -1210,7 +1231,11 @@ button:disabled{opacity:.4;cursor:default}
 @keyframes lead-ink{from{opacity:0;filter:blur(4px)}}
 @media(prefers-reduced-motion:reduce){.lead-glyph{animation:none}}
 .ai-welcome-lead:lang(zh-CN){font-size:22px;letter-spacing:.06em;line-height:1.6}
-.ai-message{margin-bottom:18px;animation:zg-rise-in var(--dur-3) var(--ease-out) backwards}
+/* 屏幕外的消息不参与排版和绘制（浏览器记得它们的实际高度）：长对话里几十条带公式的回答不再拖慢每一次重排。 */
+.ai-message{margin-bottom:18px;animation:zg-rise-in var(--dur-3) var(--ease-out) backwards;content-visibility:auto;contain-intrinsic-size:auto 260px}
+.ai-loading{display:grid;gap:10px;padding:18px 6px}
+.ai-loading i{display:block;height:10px;border-radius:5px;background:color-mix(in srgb,var(--ink) 7%,transparent)}
+.ai-loading i:nth-child(1){width:62%}.ai-loading i:nth-child(2){width:88%}.ai-loading i:nth-child(3){width:74%}
 /* 问题和它的回答挨得近一些：问题下面的操作按钮浮在间隙里，不再单独占一行。 */
 .ai-message.user{position:relative;display:flex;flex-direction:column;align-items:flex-end;gap:2px;margin-bottom:10px}
 .user-question{max-width:88%;padding:9px 14px;border-radius:var(--r-lg) var(--r-lg) var(--r-xs) var(--r-lg);background:color-mix(in srgb,var(--ink) 9%,transparent);border:1px solid var(--hairline);font-size:13.5px;line-height:1.75;white-space:pre-wrap;overflow-wrap:anywhere}
