@@ -155,7 +155,7 @@ export const DEFAULT_SHORTCUTS: Readonly<Record<ShortcutAction, string>> = Objec
 const LEGACY_GLASS: Record<string, number> = { clear: 85, balanced: 70, rich: 30, solid: 0 }
 export const MAX_GALLERY = 6
 export function defaultPreferences(): AppPreferences {
-  return { version: 3, appearance: { theme: 'system', style: 'glass', sketchAnswerFont: 'mashanzheng', manifold: defaultManifold(), libraryView: 'grid', glassTransparency: 70, glassBlur: 50, glassHighlight: 50, glassRefraction: true, glassLegibility: 'thicken', glassCompensation: 50, glassTint: 'theme', backdrop: 'mist', background: null, gallery: [], uiFont: 'system', readingFont: 'anthropic', customFonts: [] },
+  return { version: 3, appearance: { theme: 'system', style: 'sketch', sketchAnswerFont: 'mashanzheng', manifold: defaultManifold(), libraryView: 'grid', glassTransparency: 70, glassBlur: 50, glassHighlight: 50, glassRefraction: true, glassLegibility: 'thicken', glassCompensation: 50, glassTint: 'theme', backdrop: 'mist', background: null, gallery: [], uiFont: 'system', readingFont: 'anthropic', customFonts: [] },
     pdf: { initialZoom: 'fit-width', zoomStep: 15, fitOnPanelOverflow: true, openAssistantOnCapture: true, quickAskOnCapture: true, pageLayout: 'single', coverAlone: false },
     markdown: { fontSize: 17, contentWidth: 840 }, assistant: { quickPrompts: defaultQuickPrompts(), captureQuestions: defaultCaptureQuestions(), avatar: { kind: 'crab', image: null }, greeting: { style: 'mixed', custom: '' }, predictQuestions: true, predictLevel: 'deep' }, updates: { autoCheck: true, prerelease: false }, shortcuts: { ...DEFAULT_SHORTCUTS } }
 }
@@ -226,7 +226,8 @@ export function normalizePreferences(value: unknown, legacyTheme?: string | null
   defaults.updates.prerelease = updates.prerelease === true
   const theme = appearance.theme || legacyTheme
   defaults.appearance.theme = ['system', 'light', 'dark'].includes(theme) ? theme : defaults.appearance.theme
-  defaults.appearance.style = UI_STYLES.some(item => item.id === appearance.style) ? appearance.style : 'glass'
+  // 新装（还没存过外观）用铅笔草稿；存过外观但没有风格这一项的老设置仍是液态玻璃，不替老用户换样子。
+  defaults.appearance.style = UI_STYLES.some(item => item.id === appearance.style) ? appearance.style : Object.keys(appearance).length ? 'glass' : 'sketch'
   const manifold = record(appearance.manifold)
   const shapes = Array.isArray(manifold.shapes) ? [...new Set(manifold.shapes.filter((id: unknown) => typeof id === 'string' && (MANIFOLD_IDS as string[]).includes(id)))] as string[] : MANIFOLD_IDS
   const everyOld = shapes.length === LEGACY_SCENE_IDS.length && LEGACY_SCENE_IDS.every(id => shapes.includes(id))

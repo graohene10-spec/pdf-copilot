@@ -755,7 +755,10 @@ onMounted(() => {
   startWorker()
   readInk()
   start = performance.now()
-  choose(nextManifold(props.shapes, undefined))
+  // 第一次打开开智：先放 RSI；之后照常随机。
+  let first = false
+  try { first = !localStorage.getItem('kaizhi.firstScene.v1'); localStorage.setItem('kaizhi.firstScene.v1', '1') } catch { /* 存不了就照常随机 */ }
+  choose(first && props.shapes.includes('rsi') ? 'rsi' : nextManifold(props.shapes, undefined))
   resize()
   draw(performance.now())
   if (canvas.value) resizer.observe(canvas.value)
