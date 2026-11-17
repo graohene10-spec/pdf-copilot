@@ -370,6 +370,14 @@
   transform: translateY(10px) scale(.94);
 }
 
+/* 弹出、收起的那几百毫秒里窗口每帧都在缩放：身后的模糊换成轻量的那种并单独成层，落定后恢复完整材质。 */
+:is(.settings-pop-enter-active, .settings-pop-leave-active) .settings-dialog,
+:is(.dialog-enter-active, .dialog-leave-active) > .confirm-dialog {
+  -webkit-backdrop-filter: var(--glass-filter-motion) !important;
+  backdrop-filter: var(--glass-filter-motion) !important;
+  will-change: transform, opacity;
+}
+
 /* ---- 回退 ------------------------------------------------------------ */
 
 :root:is([data-glass='solid'], [data-contrast='high']) [data-glass-live]::before,

@@ -1487,6 +1487,8 @@ watch([sidebarOpen, aiOpen, detailsOpen, chromeCollapsed], () => {
 // Windows inside the workspace: only assistant windows change the documents' width when they come and go.
 function panelResizeStart(element: Element, entering: boolean) { if (element.classList.contains('ai-panel')) paneResizeStart(element, entering) }
 function panelResizeEnd(element: Element, cancelled = false) { if (resizingPanels.has(element)) paneResizeEnd(element, cancelled) }
+// 弹窗弹出、收起期间：桌面图案先停一下（它在弹窗身后每帧重画，弹窗的玻璃就得每帧重算模糊）。
+function dialogMotion(moving: boolean) { if (moving) document.documentElement.dataset.dialogMotion = ''; else delete document.documentElement.dataset.dialogMotion }
 const resizeGeneration = new WeakMap<Element, number>()
 // 收放动画期间 Markdown 正文按动画开始时的宽度定住：阅读区每一帧都在变宽变窄，正文跟着每帧重新断行是最卡的那一步。
 // 落定后放开，只重排一次。
@@ -1883,11 +1885,11 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
     </TransitionGroup>
     <Transition name="hint"><button v-if="currentHint" :key="currentHint.id" type="button" class="gesture-hint" aria-live="polite" @click="dismissHint"><svg v-if="currentHint.id === 'explain'" class="hint-mouse" viewBox="0 0 14 20" aria-hidden="true"><rect x="1" y="1" width="12" height="18" rx="6" /><line x1="7" y1="4.5" x2="7" y2="8.5" /></svg><kbd v-for="key in currentHint.keys" :key="key">{{ key }}</kbd><span>{{ currentHint.text }}</span></button></Transition>
     <Transition name="toast"><div v-if="toast" class="toast-message" role="status"><span>{{ toast }}</span><button @click="toast = ''" data-tip="关闭提示" aria-label="关闭提示"><AppIcon name="close" :size="15" /></button></div></Transition>
-    <Transition name="dialog">
+    <Transition name="dialog" @before-enter="dialogMotion(true)" @after-enter="dialogMotion(false)" @before-leave="dialogMotion(true)" @after-leave="dialogMotion(false)" @enter-cancelled="dialogMotion(false)" @leave-cancelled="dialogMotion(false)">
       <div v-if="removeBatch" class="dialog-backdrop" @click.self="removeBatch = null"><section class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="remove-batch-title"><div class="dialog-icon"><AppIcon name="trash" :size="24" /></div><h2 id="remove-batch-title">移除 {{ removeBatch.length }} 份文档？</h2><p>{{ removeBatch.slice(0, 3).map(doc => `「${doc.name}」`).join('') }}{{ removeBatch.length > 3 ? ` 等 ${removeBatch.length} 份` : '' }}的阅读记录与标签会被移除，原文件仍保留在电脑上。</p><div class="dialog-actions"><button @click="removeBatch = null">取消</button><button class="danger-button" @click="removeDocuments">移除 {{ removeBatch.length }} 份</button></div></section></div>
       <div v-else-if="removeTarget" class="dialog-backdrop" @click.self="removeTarget = null"><section class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="remove-title"><div class="dialog-icon"><AppIcon name="trash" :size="24" /></div><h2 id="remove-title">从文档库移除？</h2><p>「{{ removeTarget.name }}」的阅读记录与标签会被移除，原文件仍保留在电脑上。</p><div class="dialog-actions"><button @click="removeTarget = null">取消</button><button class="danger-button" @click="removeDocument()">移除文档</button></div></section></div>
     </Transition>
-    <Transition name="settings-pop">
+    <Transition name="settings-pop" @before-enter="dialogMotion(true)" @after-enter="dialogMotion(false)" @before-leave="dialogMotion(true)" @after-leave="dialogMotion(false)" @enter-cancelled="dialogMotion(false)" @leave-cancelled="dialogMotion(false)">
       <SettingsDialog v-if="settingsOpen" :initial-tab="settingsTab" @close="settingsOpen = false" @ai-saved="aiSettingsSaved" />
     </Transition>
   </div>
