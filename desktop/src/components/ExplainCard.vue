@@ -230,7 +230,7 @@ watch(() => props.card.item.status, (status, previous) => { if (previous === 'ru
 /* 草稿主题：词条不再用红铅笔划线，标题下只有那根分隔线（正在写时是流光）。 */
 :root[data-style='sketch'] .ec-head mark{padding:0;border-radius:0;background:none}
 :root[data-style='sketch'] .ec-spark{color:var(--red-pencil,#c0392b)}
-:root[data-style='sketch'] .ec-rule{height:0;margin:8px 0 8px;border-top:1.2px dashed color-mix(in srgb,var(--pencil,#2b2a27) 38%,transparent);background:none}
+:root[data-style='sketch'] .ec-rule{height:0;margin:8px 0 8px;border-top:1.2px solid color-mix(in srgb,var(--pencil,#2b2a27) 38%,transparent);background:none}
 :root[data-style='sketch'] .ec-rule.running{height:2px;border-top:0;background:color-mix(in srgb,var(--pencil,#2b2a27) 12%,transparent)}
 :root[data-style='sketch'] .ec-rule.running::after{background:linear-gradient(90deg,transparent,var(--red-pencil,#c0392b),transparent)}
 :root[data-style='sketch'] .explain-card::after{content:'';position:absolute;right:0;bottom:0;width:26px;height:26px;background:linear-gradient(315deg,rgb(60 50 30 / .2),transparent 52%);pointer-events:none}
