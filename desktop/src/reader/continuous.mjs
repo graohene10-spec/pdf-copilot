@@ -223,9 +223,14 @@ export class ContinuousPdfViewer extends PageWindow {
     if (this.scale === null && this.defaultSize) this.scale = this.getFitScale();
     super.layout();
     this.layoutSpread();
+    // 文字层要的缩放变量写在外层一次，所有页面继承；只有页面单位特殊（userUnit ≠ 1，很少见）的那几页单独写。
+    // 以前每次缩放给几百个页面框各写 5 个变量，一格滚轮缩放就要二三十毫秒。
+    const host = this.stack || this.container;
+    for (const [name, value] of Object.entries({ '--scale-factor': this.displayScale, '--total-scale-factor': this.displayScale, '--user-unit': 1, '--scale-round-x': '1px', '--scale-round-y': '1px' })) host.style.setProperty(name, String(value));
     for (const [index, slot] of this.slots.entries()) {
       const userUnit = this.views.get(index + 1)?.page?.userUnit || 1;
-      for (const [name, value] of Object.entries({ '--scale-factor': this.displayScale, '--total-scale-factor': this.displayScale * userUnit, '--user-unit': userUnit, '--scale-round-x': '1px', '--scale-round-y': '1px' })) slot.style.setProperty(name, value);
+      if (userUnit !== 1) { slot.style.setProperty('--total-scale-factor', String(this.displayScale * userUnit)); slot.style.setProperty('--user-unit', String(userUnit)); slot.dataset.userUnit = '' }
+      else if ('userUnit' in slot.dataset) { slot.style.removeProperty('--total-scale-factor'); slot.style.removeProperty('--user-unit'); delete slot.dataset.userUnit }
     }
   }
 
@@ -312,6 +317,8 @@ export class ContinuousPdfViewer extends PageWindow {
     const pdf = this.pdf;
     const valid = () => !this.suspended && activity === this.activity && !view.disposed && view.renderVersion === version && epoch === this.epoch && pdf === this.pdf;
     if (!valid()) return;
+    const settle = (this.zoomSettleUntil || 0) - performance.now();
+    if (settle > 0) { await new Promise(resolve => setTimeout(resolve, settle)); if (!valid()) return; }
     let buffer;
     try {
       const page = view.page || await pdf.getPage(view.number);
@@ -424,6 +431,10 @@ export class ContinuousPdfViewer extends PageWindow {
       view.slot.querySelectorAll('.citation-highlight').forEach(marker => marker.remove());
     }
     this.scale = next;
+    // 连续缩放（Ctrl + 滚轮一格接一格）：中间那些倍数不重画，先拉伸旧画面，停手一会儿再按最终倍数画清楚。
+    const now = performance.now();
+    this.zoomSettleUntil = now - (this.lastCommit || -1e9) < 400 ? now + 170 : 0;
+    this.lastCommit = now;
     this.layout();
     this.container.scrollTop = this.stack.offsetTop + this.offsets[number - 1] + fraction * this.heights[number - 1];
     this.explicitPosition = { page: number, top: this.container.scrollTop };

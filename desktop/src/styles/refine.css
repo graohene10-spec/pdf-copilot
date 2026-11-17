@@ -50,14 +50,14 @@
 @supports (animation-timeline: scroll()) {
   .reader-pane { timeline-scope: --reading; }
   .reader-pane :is(.pdf-scroll, .markdown-scroll) { scroll-timeline: --reading block; }
+  /* 低存在感：1px、淡淡的主色、两头渐隐，不发光；只在余光里看得到读到哪儿了。 */
   .reader-pane .reader-tools::after {
-    content: ''; position: absolute; left: 18px; right: 18px; bottom: 0; height: 1.5px; border-radius: 1px; pointer-events: none;
-    background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 30%, transparent), var(--accent));
-    transform-origin: left center; transform: scaleX(0);
+    content: ''; position: absolute; left: 22px; right: 22px; bottom: 0; height: 1px; border-radius: 1px; pointer-events: none;
+    background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 38%, transparent) 30%, color-mix(in srgb, var(--accent) 45%, transparent));
+    opacity: .7; transform-origin: left center; transform: scaleX(0);
     animation: reading-line linear both; animation-timeline: --reading;
   }
-  :root:not([data-style='sketch']) .reader-pane .reader-tools::after { box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 50%, transparent); }
-  :root[data-style='sketch'] .reader-pane .reader-tools::after { background: var(--red-pencil, #c0392b); height: 2px; border-radius: 2px 5px 3px 4px; opacity: .7; }
+  :root[data-style='sketch'] .reader-pane .reader-tools::after { background: color-mix(in srgb, var(--red-pencil, #c0392b) 55%, transparent); opacity: .45; }
 }
 @keyframes reading-line { to { transform: scaleX(1); } }
 
