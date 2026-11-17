@@ -2364,7 +2364,7 @@ dependencies = [
 
 [[package]]
 name = "phydog"
-version = "0.10.74"
+version = "0.10.75"
 dependencies = [
  "reqwest 0.12.28",
  "rusqlite",
@@ -2377,6 +2377,8 @@ dependencies = [
  "tauri-plugin-dialog",
  "tokio",
  "uuid",
+ "webview2-com",
+ "windows",
  "windows-sys 0.61.2",
  "zip",
 ]

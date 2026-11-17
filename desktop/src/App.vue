@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, shallowRef, computed, watch, onMounted, onBeforeUnmount, nextTick, defineAsyncComponent, toRaw, triggerRef } from 'vue'
-import { library, isDesktop, importDroppedDocuments } from './sdk'
+import { library, isDesktop, importDroppedDocuments, renderGuard } from './sdk'
 import { groups, members, groupFilter, currentGroup, loadGroups, createGroup, renameGroup, removeGroup, assignGroup } from './library/groups'
 import type { Doc } from './sdk/types'
 import AppIcon from './components/AppIcon.vue'
@@ -1738,7 +1738,25 @@ onMounted(async () => {
   await loadGroups()
   void loadCovers()
   await refresh()
+  await recoverSession()
 })
+// ---- 页面崩溃后的恢复 ----
+// 打开着哪些文档记在 sessionStorage：它在页面重新载入后还在，正常关掉再打开应用时是空的。
+// 页面进程崩溃、宿主自动重新载入后，按这份记录把文档重新打开（阅读位置本来就按文档存着）。
+const SESSION_KEY = 'kaizhi.session.v1'
+watch(() => [tabs.value.map(tab => sourceId(tab.doc.id)).join(','), active.value?.id], () => {
+  try { sessionStorage.setItem(SESSION_KEY, JSON.stringify({ tabs: [...new Set(tabs.value.map(tab => sourceId(tab.doc.id)))], active: sourceId(active.value?.id) || null })) } catch { /* 存不了就算了 */ }
+})
+async function recoverSession() {
+  const failure = await renderGuard.recovered()
+  if (!failure) return
+  let saved: { tabs?: string[]; active?: string | null } = {}
+  try { saved = JSON.parse(sessionStorage.getItem(SESSION_KEY) || '{}') } catch { /* 没有记录 */ }
+  const ids = (saved.tabs || []).filter(id => id !== saved.active)
+  if (saved.active) ids.push(saved.active)
+  for (const id of ids) { const doc = documents.value.find(item => item.id === id); if (doc) await openDocument(doc) }
+  notify(ids.length ? '页面刚才出错退出了，已自动恢复，文档回到原来的位置。' : '页面刚才出错退出了，已自动恢复。')
+}
 onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); document.removeEventListener('mousedown', middleDown); document.removeEventListener('auxclick', middleClick); document.removeEventListener('mouseup', hintOnSelection); window.removeEventListener('kaizhi:open-ai-settings', openAiSettings); closeLooseCards(); stopAutoCheck(); clearTimeout(enteringTimer); disposed = true; ++openEpoch; dismissCaptureQuick(); stopDropListening?.(); clearWheelZoom(); readerInstances.clear(); glassContrast?.dispose(); document.removeEventListener('keydown', keydown); document.removeEventListener('contextmenu', appContextMenu); document.removeEventListener('wheel', wheel, true); document.removeEventListener('dragenter', dragEnter); document.removeEventListener('dragover', dragOver); document.removeEventListener('dragleave', dragLeave); document.removeEventListener('drop', fileDrop); document.removeEventListener('selectionchange', selectionChanged); document.removeEventListener('scroll', dismissSelectionAction, true); document.removeEventListener('scroll', captureViewportChanged, true); window.removeEventListener('resize', dismissSelectionAction); window.removeEventListener('resize', captureViewportChanged); closeAllChats(); forgetAllPasswords(); systemTheme.removeEventListener('change', applyTheme); flushProgress(); for (const timer of indexTimers.values()) clearTimeout(timer); clearTimeout(queryTimer); clearTimeout(toastTimer) })
 </script>
 
