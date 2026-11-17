@@ -474,6 +474,10 @@ function failureText(item: RenderFailure) {
               <div class="greeting-preview" aria-label="问候预览"><strong :lang="greetingPreview.lang === 'zh' ? 'zh-CN' : 'en'">{{ greetingPreview.text }}</strong><button type="button" class="text-action" :disabled="saving" @click="previewSeed = Math.random()">换一句</button></div>
             </div>
           </section>
+          <section v-if="ready && tab === 'ai'" class="quick-prompts-section explain-section" aria-label="快速解释设置">
+            <div class="quick-prompts-heading"><h3>快速解释</h3></div>
+            <div class="settings-group"><label class="setting-check"><input v-model="draft.assistant.explainVisual" type="checkbox" :disabled="saving" aria-label="默认用可视化讲解" /><span>默认用可视化讲解（中键解释直接出图）</span></label></div>
+          </section>
           <section v-if="ready && tab === 'ai'" class="quick-prompts-section prediction-section" aria-label="猜你想问设置">
             <div class="quick-prompts-heading"><h3>猜你想问</h3></div>
             <div class="settings-group"><label class="setting-check"><input v-model="draft.assistant.predictQuestions" type="checkbox" :disabled="saving" aria-label="启用猜你想问" aria-describedby="predict-help" /><span>启用猜你想问</span></label><label class="setting-row"><span>问题水平</span><select v-model="draft.assistant.predictLevel" :disabled="saving || !draft.assistant.predictQuestions" aria-label="猜你想问的问题水平"><option v-for="item in PREDICT_LEVELS" :key="item.id" :value="item.id">{{ item.label }} · {{ item.note }}</option></select></label></div>

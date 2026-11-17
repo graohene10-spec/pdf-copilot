@@ -136,3 +136,14 @@
 .iui-optable td.hot{outline:1.8px solid var(--dia-hot);outline-offset:-1px;box-shadow:0 0 10px -2px color-mix(in srgb,var(--dia-hot) 55%,transparent)}
 .iui-optable tr:hover>td,.iui-optable .cross{filter:brightness(.94) saturate(1.5)}
 .iui-optable tr:hover>th:first-child{color:var(--dia-hot)}
+/* 文字太长时换行，不再一路伸出图框；仍超出的由 settle() 挪回来。 */
+.iui-dl{white-space:normal;width:max-content;max-width:min(44%,240px)}
+.iui-dl.item{max-width:30%}
+.iui-dl.set.title{max-width:40%}
+.iui-dia-legend{display:flex;flex-wrap:wrap;gap:4px 14px;margin:8px 2px 0;font-size:12px;color:var(--surface-ink,var(--ink))}
+.iui-dia-key{display:inline-flex;align-items:center;gap:6px}
+.iui-dia-key>i{flex:none;width:16px;height:10px;border:1.5px dashed var(--dia-hot);border-radius:4px}
+.iui-dl.venn-region{max-width:22%}
+.iui-dl.venn-region.tight{max-width:15%}
+.iui-dl.mark-no{display:grid;place-items:center;width:17px;height:17px;padding:0;border-radius:50%;background:var(--dia-hot);color:var(--surface,#fff);font-size:10.5px;font-weight:700;line-height:1}
+.iui-dia-key>i{display:grid;place-items:center;width:17px;height:17px;border:0;border-radius:50%;background:var(--dia-hot);color:var(--surface,#fff);font-size:10.5px;font-style:normal;font-weight:700}

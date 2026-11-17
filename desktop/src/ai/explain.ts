@@ -8,6 +8,7 @@ import { IMAGE_NOTE } from './translate'
 import { complete } from './complete'
 import { UI_INSTRUCTIONS } from './intelligent-ui'
 import { library } from '../sdk'
+import { useSettings } from '../settings'
 import ExplainNote from '../components/ExplainNote.vue'
 
 export type ExplainMode = 'plain' | 'deeper' | 'example' | 'simpler' | 'visual'
@@ -211,8 +212,9 @@ export function restoreNotes(paper: HTMLElement, doc: string) {
   })
 }
 
-export function runExplain(target: ExplainTarget, x: number, y: number, from?: string) {
-  const item = startExplain(target.term, target.context, 'plain', target.image)
+export function runExplain(target: ExplainTarget, x: number, y: number, from?: string, visual = false) {
+  // Shift + 中键，或设置里打开了「默认用可视化讲解」：直接出图。
+  const item = startExplain(target.term, target.context, visual || useSettings().preferences.value.assistant.explainVisual ? 'visual' : 'plain', target.image)
   if (target.block?.isConnected) { insertNote(target.block, item, false); return }
   closeLooseCards()
   explainCards.push(reactive({ id: item.id, item, x, y, pinned: false, follow: 'page', anchor: target.anchor, doc: target.doc, page: target.page, from }) as ExplainCardState)

@@ -18,4 +18,8 @@ export function offerHint(id: string, keys: string[], text: string) {
 }
 export function dismissHint() { clearTimeout(timer); currentHint.value = null }
 /** 用户已经自己用过这个功能：以后不再提。 */
-export function hintLearned(id: string) { if (counts[id] !== LEARNED) { counts[id] = LEARNED; save() } if (currentHint.value?.id === id) dismissHint() }
+export function hintLearned(id: string) {
+  if (counts[id] !== LEARNED) { counts[id] = LEARNED; save() }
+  // 照着刚弹出的提示做了：收起它，也不必再等间隔，下一条（比如 Shift + 中键）可以接着提。
+  if (currentHint.value?.id === id) { dismissHint(); lastAt = 0 }
+}
