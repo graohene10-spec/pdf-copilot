@@ -106,14 +106,19 @@
 /* 发送键：有字可发时透出一点光。 */
 :root:not([data-style='sketch']) .send-button:not(:disabled):not(.stop) { box-shadow: inset 0 1px 0 rgb(255 255 255 / .28), 0 0 16px -3px var(--glow-line); }
 
-/* 停止键：回答在写的时候，外面一段细弧绕着转；只有这时候转。 */
+/* 停止键：回答在写的时候，一道流光绕着它转——亮的一头在前，后面拖着渐渐淡掉的尾巴。
+   转得不匀：像被重力拉着，到顶上慢下来，落到底下最快。只有在写的时候转。 */
 .send-button.stop { position: relative; }
 .send-button.stop::after {
-  content: ''; position: absolute; inset: -3px; border-radius: 50%; pointer-events: none;
-  border: 1.5px solid transparent; border-top-color: var(--accent); border-right-color: color-mix(in srgb, var(--accent) 35%, transparent);
-  animation: stop-orbit 1s linear infinite;
+  --orbit: var(--accent);
+  content: ''; position: absolute; inset: -4px; border-radius: 50%; pointer-events: none;
+  background: conic-gradient(from 0deg, transparent 0turn, transparent .38turn, color-mix(in srgb, var(--orbit) 35%, transparent) .7turn, var(--orbit) .985turn, transparent 1turn);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2.2px), #000 calc(100% - 1.6px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2.2px), #000 calc(100% - 1.6px));
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--orbit) 70%, transparent));
+  animation: stop-orbit 1.3s cubic-bezier(.42, .16, .58, .84) infinite;
 }
-:root[data-style='sketch'] .send-button.stop::after { border-top-color: var(--red-pencil, #c0392b); border-right-color: transparent; }
+:root[data-style='sketch'] .send-button.stop::after { --orbit: var(--red-pencil, #c0392b); }
 @keyframes stop-orbit { to { rotate: 360deg; } }
 @media (prefers-reduced-motion: reduce) { .send-button.stop::after { animation: none; } }
 
