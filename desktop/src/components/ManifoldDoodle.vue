@@ -743,7 +743,7 @@ const resizer = new ResizeObserver(() => { resize(); if (!frame) draw(performanc
 // GB300 no longer pauses for interaction. Other scenes retain their old policy.
 const themeWatch = new MutationObserver(records => {
   // 拖动排列文档时也停：那一阵卡片的让位动画最怕掉帧。
-  const busy = !sketch?.offscreen && ('paneMotion' in document.documentElement.dataset || document.documentElement.classList.contains('reordering'))
+  const busy = !sketch?.offscreen && ('paneMotion' in document.documentElement.dataset || 'panelDrag' in document.documentElement.dataset || document.documentElement.classList.contains('reordering'))
   if (busy !== held) { held = busy; worker?.postMessage({ type: busy ? 'halt' : 'run' }) }
   if (records.every(record => record.attributeName === 'data-pane-motion' || record.attributeName === 'class')) return
   readInk(); if (!frame) draw(performance.now())

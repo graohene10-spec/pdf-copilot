@@ -497,6 +497,8 @@
 .reader-panes > .ai-panel:is(.pane-enter-active, .pane-leave-active) > * {
   flex-shrink: 0;
   min-width: var(--panel-width, 360px);
+  /* 内容宽度不变、只是被裁：单独成一层，画一次就够，动画期间不再每帧重画整个助手栏。 */
+  will-change: transform;
 }
 
 /* ---- 走马灯：放不下的书名、标题 -------------------------------------------- */
@@ -533,9 +535,9 @@
 /* 面板的宽度每一帧都在变，阅读区跟着让位：这时所有玻璃都停掉背景模糊（每一帧重算整片模糊最贵），
    面板内部不参与命中测试，动画落定后恢复。 */
 /* 只点名带玻璃的那几类表面：用通配符的话，打开过书之后页面里有上万个文字层节点，切换这个标记要把它们全部重算一遍样式，反而更卡。 */
-:root[data-pane-motion] :is(.app-sidebar, .ai-panel, .reader-pane, .translate-pane, .app-topbar, .pane-shell, .file-tabs, .reader-toolbar, .reading-pill, .ai-composer, .ai-header, .document-details),
-:root[data-pane-motion] :is(.app-sidebar, .ai-panel, .reader-pane, .translate-pane, .app-topbar, .pane-shell)::before,
-:root[data-pane-motion] :is(.app-sidebar, .ai-panel, .reader-pane, .translate-pane, .app-topbar, .pane-shell)::after {
+:root:is([data-pane-motion], [data-panel-drag]) :is(.app-sidebar, .ai-panel, .reader-pane, .translate-pane, .app-topbar, .pane-shell, .file-tabs, .reader-toolbar, .reading-pill, .ai-composer, .ai-header, .document-details),
+:root:is([data-pane-motion], [data-panel-drag]) :is(.app-sidebar, .ai-panel, .reader-pane, .translate-pane, .app-topbar, .pane-shell)::before,
+:root:is([data-pane-motion], [data-panel-drag]) :is(.app-sidebar, .ai-panel, .reader-pane, .translate-pane, .app-topbar, .pane-shell)::after {
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
 }
@@ -543,3 +545,5 @@
 :root[data-pane-motion] :is(.app-sidebar, .ai-panel, .reader-pane) {
   pointer-events: none;
 }
+/* 正文定住宽度期间，阅读区比它窄时只裁掉，不冒出横向滚动条。 */
+:root[data-pane-motion] .reader-pane .markdown-scroll { overflow-x: hidden; }
