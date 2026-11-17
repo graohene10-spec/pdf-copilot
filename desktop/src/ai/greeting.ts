@@ -83,3 +83,14 @@ export function spinnerFor(seed: string) {
   for (const char of seed) hash = (hash * 33 + char.charCodeAt(0)) >>> 0
   return SPINNERS[hash % SPINNERS.length]!
 }
+
+/** 思考中显示什么：模型给了思考简述（Codex、OpenAI 的推理摘要每段开头是一行加粗的小标题，比如「**Planning the answer**」）
+ * 就用最近那一行；没有就用随机的动词。正在写 Intelligent UI 的界面块时直接说出来。 */
+export function thinkingTitle(seed: string, reasoning = '', content = '') {
+  if (writingUi(content)) return '正在生成 Intelligent UI'
+  const titles = [...reasoning.matchAll(/(?:^|\n)\s*\*\*([^*\n]{2,80})\*\*/g)]
+  const title = titles.at(-1)?.[1]?.trim()
+  return title || thinkingVerb(seed)
+}
+/** 回答里有一个还没写完的 ```ui 块。 */
+export function writingUi(content = '') { return ((content.match(/```ui\b/g) || []).length > 0) && (content.match(/```/g) || []).length % 2 === 1 }

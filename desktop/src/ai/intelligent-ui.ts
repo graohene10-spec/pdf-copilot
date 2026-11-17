@@ -390,7 +390,7 @@ export function mountIntelligentUi(root: HTMLElement, options: Context & { strea
     let spec: unknown
     try { spec = JSON.parse(host.dataset.ui || '') }
     catch {
-      host.append(h('p', options.streaming ? 'iui-wait' : 'iui-error', options.streaming ? (slow ? '正在生成交互界面… Intelligent UI 比较复杂，可能会慢一些' : '正在生成交互界面…') : '这段界面描述不是合法的 JSON，无法显示。'))
+      host.append(h('p', options.streaming ? 'iui-wait' : 'iui-error', options.streaming ? (slow ? '正在生成 Intelligent UI… 它比较复杂，可能会慢一些' : '正在生成 Intelligent UI…') : '这段界面描述不是合法的 JSON，无法显示。'))
       continue
     }
     try { build(spec, host, options) }
