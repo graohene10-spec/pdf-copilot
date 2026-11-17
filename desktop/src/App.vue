@@ -903,7 +903,9 @@ function toggleAssistant() {
 // active tab shows each document's current conversation instead.
 function setPanelConversation(key: string, id: string) { const panel = aiPanels.value.find(item => item.key === key); if (panel?.doc) panel.conversation = id }
 // ---- Resizing assistant windows -------------------------------------------
-let widthDrag: { key: string; x: number; width: number; side: number } | undefined
+// 拖动时不经过 Vue：每帧只改这一块面板自己的宽度（多次 pointermove 合成一帧），松手才写回数据。
+// 改数据会让整个 App 的模板重算一遍，拖起来一顿一顿。
+let widthDrag: { key: string; x: number; width: number; side: number; element: HTMLElement | null; next: number; frame: number } | undefined
 function startWidthDrag(event: PointerEvent, key: string) {
   const panel = aiPanels.value.find(item => item.key === key)
   if (!panel) return
@@ -912,20 +914,45 @@ function startWidthDrag(event: PointerEvent, key: string) {
   // The handle on the left edge grows leftwards; on the right edge it grows rightwards.
   const side = (event.currentTarget as HTMLElement).dataset.edge === 'right' ? 1 : -1
   // 侧边对话开着时，窗口宽度里有一截属于侧栏；拖动只改主栏那一部分。
-  widthDrag = { key, x: event.clientX, width: (bounds?.width || panel.width + (panel.side || 0)) - (panel.side || 0), side }
+  widthDrag = { key, x: event.clientX, width: (bounds?.width || panel.width + (panel.side || 0)) - (panel.side || 0), side, element: element || null, next: panel.width, frame: 0 }
   ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
   document.documentElement.classList.add('resizing-panels')
+  // 拖动期间玻璃不做背景模糊（和收放动画一样），每帧重算整片模糊是最贵的。
+  document.documentElement.dataset.panelDrag = ''
   // 拖动助手宽度时，PDF 跟着手实时缩放，松手后再按最终宽度重画一次。
   if (pdfOnScreen()) for (const instance of visibleReaders()) instance.holdPanelResize?.(true)
 }
 function moveWidthDrag(event: PointerEvent) {
   if (!widthDrag) return
-  const panel = aiPanels.value.find(item => item.key === widthDrag!.key)
-  if (panel) panel.width = Math.round(Math.min(Math.max(300, window.innerWidth * .6), Math.max(300, widthDrag.width + (event.clientX - widthDrag.x) * widthDrag.side)))
+  const drag = widthDrag, panel = aiPanels.value.find(item => item.key === drag.key)
+  if (!panel) return
+  drag.next = Math.round(Math.min(Math.max(300, window.innerWidth * .6), Math.max(300, drag.width + (event.clientX - drag.x) * drag.side)))
+  if (!drag.element) { panel.width = drag.next; return }
+  drag.frame ||= requestAnimationFrame(() => {
+    drag.frame = 0
+    const total = `${drag.next + (panel.side || 0)}px`
+    drag.element!.style.width = total; drag.element!.style.setProperty('--panel-width', total)
+  })
+}
+// 双击恢复默认宽度：弹簧动画过去，不是一下子跳过去。
+function resetPanelWidth(panel: AiPanel) {
+  if (panel.width === 380) return
+  const element = document.querySelector<HTMLElement>(`[data-panel-key="${panel.key}"]`)
+  if (element && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    element.classList.add('width-springing')
+    if (pdfOnScreen()) for (const instance of visibleReaders()) instance.holdPanelResize?.(true)
+    setTimeout(() => { element.classList.remove('width-springing'); if (!resizingPanels.size) for (const instance of visibleReaders()) instance.holdPanelResize?.(false, true) }, 520)
+  }
+  panel.width = 380
 }
 function endWidthDrag() {
   if (!widthDrag) return
-  widthDrag = undefined; document.documentElement.classList.remove('resizing-panels')
+  const drag = widthDrag, panel = aiPanels.value.find(item => item.key === drag.key)
+  cancelAnimationFrame(drag.frame)
+  if (panel) panel.width = drag.next
+  // 行内宽度留着：它就是最终值，Vue 随后按 panel.width 写的也是同一个数（数没变时 Vue 不会重写，删掉反而会丢宽度）。
+  if (drag.element) { const total = `${drag.next + (panel?.side || 0)}px`; drag.element.style.width = total; drag.element.style.setProperty('--panel-width', total) }
+  widthDrag = undefined; document.documentElement.classList.remove('resizing-panels'); delete document.documentElement.dataset.panelDrag
   if (!resizingPanels.size) for (const instance of visibleReaders()) instance.holdPanelResize?.(false, false)
 }
 // 侧边对话展开 / 收起：窗口加宽或收回侧栏那一截，用弹簧动画；PDF 在动画期间跟着缩放，停下后按最终宽度重画。
@@ -1461,11 +1488,20 @@ watch([sidebarOpen, aiOpen, detailsOpen, chromeCollapsed], () => {
 function panelResizeStart(element: Element, entering: boolean) { if (element.classList.contains('ai-panel')) paneResizeStart(element, entering) }
 function panelResizeEnd(element: Element, cancelled = false) { if (resizingPanels.has(element)) paneResizeEnd(element, cancelled) }
 const resizeGeneration = new WeakMap<Element, number>()
+// 收放动画期间 Markdown 正文按动画开始时的宽度定住：阅读区每一帧都在变宽变窄，正文跟着每帧重新断行是最卡的那一步。
+// 落定后放开，只重排一次。
+function freezeArticles(frozen: boolean) {
+  for (const paper of document.querySelectorAll<HTMLElement>('.reader-pane .markdown-paper')) {
+    if (frozen) { if (!paper.style.width) { paper.style.width = `${paper.offsetWidth}px`; paper.dataset.frozen = '' } }
+    else if ('frozen' in paper.dataset) { paper.style.removeProperty('width'); delete paper.dataset.frozen }
+  }
+}
 function paneResizeStart(element: Element, entering: boolean) {
   resizeGeneration.set(element, (resizeGeneration.get(element) || 0) + 1)
   resizingPanels.set(element, entering)
   // 收放期间整个窗口的玻璃先不做背景模糊（见 motion.css）：面板每一帧都在变宽，模糊跟着重算是掉帧的主要来源。
   document.documentElement.dataset.paneMotion = ''
+  freezeArticles(true)
   if (pdfOnScreen() && !window.matchMedia('(max-width: 720px)').matches) for (const instance of visibleReaders()) instance.holdPanelResize?.(true, entering)
   // 关闭时面板留在原位做完收拢动画，阅读区在动画结束后才一次性展开，PDF 只重新适配一次。
   if (entering) restoreLeavingPanel(element)
@@ -1484,6 +1520,7 @@ function paneResizeEnd(element: Element, cancelled = false) {
   resizingPanels.delete(element)
   if (!resizingPanels.size) {
     delete document.documentElement.dataset.paneMotion
+    freezeArticles(false)
     if (pdfOnScreen()) {
       const targets = visibleReaders().filter(instance => instance.holdPanelResize)
       for (const target of targets) target.holdPanelResize(false, fitAfterPanelResize)
@@ -1816,7 +1853,7 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
             </section>
             <section v-for="id in (multiPanel ? paneIds.filter(id => !readerCache.some(entry => entry.id === id)) : [])" :key="`pending:${id}`" class="reader-pane pending" :style="{ order: panelOrder(`doc:${id}`) }"><div class="reader-overlay"><span class="spinner"></span><p>正在打开 {{ tabDoc(id)?.name }}…</p></div></section>
             <section v-for="panel in stageAi" :key="panel.key" class="ai-panel" :class="{ lifted: draggingPanel === panel.key, 'with-side': (panel.side || 0) > 0, 'side-animating': sideAnimating.has(panel.key) }" :style="{ order: panelOrder(panel.key), width: `${panel.width + (panel.side || 0)}px`, '--panel-width': `${panel.width + (panel.side || 0)}px` }" :data-panel-key="panel.key">
-              <div class="panel-resizer" :data-edge="panelOrder(panel.key) === 0 && multiPanel ? 'right' : 'left'" role="separator" aria-orientation="vertical" aria-label="拖动调整阅读助手宽度" data-tip="拖动调整宽度，双击恢复" @pointerdown.stop="startWidthDrag($event, panel.key)" @pointermove="moveWidthDrag" @pointerup="endWidthDrag" @pointercancel="endWidthDrag" @dblclick="panel.width = 380" />
+              <div class="panel-resizer" :data-edge="panelOrder(panel.key) === 0 && multiPanel ? 'right' : 'left'" role="separator" aria-orientation="vertical" aria-label="拖动调整阅读助手宽度" data-tip="拖动调整宽度，双击恢复" @pointerdown.stop="startWidthDrag($event, panel.key)" @pointermove="moveWidthDrag" @pointerup="endWidthDrag" @pointercancel="endWidthDrag" @dblclick="resetPanelWidth(panel)" />
               <AiPane v-if="aiDocument(panel)" :ref="value => bindAi(panel.key, value)" data-glass-interactive="panel" :document="aiDocument(panel)!" :context="aiContext(panel)" :conversation-id="panel.conversation" :draggable="multiPanel" :send-shortcut="preferences.shortcuts.aiSend ? shortcut('aiSend') : ''" :consume-capture="consumeSelection" @settings="openSettings('ai')" @close="closeAiPanel(panel.key)" @jump="jump" @clear-selection="clearSelection" @conversation="id => setPanelConversation(panel.key, id)" @grab="startPanelDrag($event, panel.key)" :alternatives="aiAlternatives(panel)" :library="libraryIndex" @switch-document="id => switchAiDocument(panel, id)" @open-conversation="openConversationAt" @side="width => setPanelSide(panel.key, width)" />
             </section>
           </TransitionGroup>

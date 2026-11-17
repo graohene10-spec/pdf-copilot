@@ -193,7 +193,7 @@ export function installGlassContrast(root: HTMLElement): { setBackground(dataUrl
   let classShell: HTMLElement | null = null
   let settleTimer: ReturnType<typeof setTimeout> | undefined
   let lastPaint = -Infinity
-  const MOVING = '.sidebar-enter-active,.sidebar-leave-active,.topbar-enter-active,.topbar-leave-active,.pane-enter-active,.pane-leave-active'
+  const MOVING = '.sidebar-enter-active,.sidebar-leave-active,.topbar-enter-active,.topbar-leave-active,.pane-enter-active,.pane-leave-active,.resizing-panels,.ai-panel.width-springing,.ai-panel.side-animating'
   let options: GlassOptions = { legibility: 'thicken', compensation: 50, tint: 'theme' }
   const resize = new ResizeObserver(refresh)
   const classes = new MutationObserver(refresh)

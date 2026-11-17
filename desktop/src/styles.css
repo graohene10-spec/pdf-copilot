@@ -2531,11 +2531,13 @@ kbd {
   opacity: 1;
 }
 
-.resizing-panels,
-.resizing-panels * {
+/* 只给根元素：用 `.resizing-panels *` 的话，开关这个类要把页面里上万个文字层节点都重算一遍样式，拖动一开始就卡一下。
+   拖动时指针被分隔条捕获，光标本来就跟着它。 */
+.resizing-panels {
   cursor: col-resize !important;
   user-select: none;
 }
+.ai-panel.width-springing { transition: width var(--dur-bounce) var(--spring-snappy); }
 
 /* 拖动中的窗口浮起，其余窗口稍稍退后、轻轻晃动让位。 */
 .reader-panes > .lifted {

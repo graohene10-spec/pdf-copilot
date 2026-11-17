@@ -220,7 +220,7 @@ export function installRefraction(root: HTMLElement): () => void {
   })
   // 侧栏、顶栏或面板正在弹簧伸缩时（Ctrl + B），玻璃每一帧都在变宽；这时生成位移图会让动画一顿一顿。
   // 动画期间玻璃本来就换成了轻量的模糊，等它停下再按最终尺寸生成一次。
-  const MOVING = '.sidebar-enter-active,.sidebar-leave-active,.topbar-enter-active,.topbar-leave-active,.pane-enter-active,.pane-leave-active'
+  const MOVING = '.sidebar-enter-active,.sidebar-leave-active,.topbar-enter-active,.topbar-leave-active,.pane-enter-active,.pane-leave-active,.resizing-panels,.ai-panel.width-springing,.ai-panel.side-animating'
   function later(element: HTMLElement, delay = 140) {
     clearTimeout(pending.get(element))
     pending.set(element, setTimeout(() => {

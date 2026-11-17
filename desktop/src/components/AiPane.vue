@@ -397,7 +397,13 @@ const tickPointer = ref<number | null>(null)
 const hoverTop = ref(0)
 // 每条刻度占一整格、格与格首尾相接，指针在两条之间也落在某一条上，没有点不到的空隙。
 const tickSlot = computed(() => { const room = (messageList.value?.clientHeight || 400) - 96; return Math.max(4, Math.min(10, room / Math.max(1, marks.value.length))) })
-function tickCenters() { return [...(tickColumn.value?.querySelectorAll<HTMLElement>('.rail-mark') || [])].map(tick => tick.offsetTop + tick.offsetHeight / 2) }
+// 预览卡对准某一个刻度：按屏幕上的实际位置算。刻度栏是 top:50% 再 translateY(-50%) 居中的，
+// offsetTop 不算这段位移，用它会让卡片整体往下偏半个刻度栏。
+function railTop(tick: HTMLElement) {
+  const host = tickColumn.value?.offsetParent as HTMLElement | null, box = tick.getBoundingClientRect()
+  return box.top + box.height / 2 - (host?.getBoundingClientRect().top || 0)
+}
+function tickCenters() { const column = tickColumn.value; if (!column) return []; const top = column.getBoundingClientRect().top; return [...column.querySelectorAll<HTMLElement>('.rail-mark')].map(tick => { const box = tick.getBoundingClientRect(); return box.top + box.height / 2 - top }) }
 function tickGrow(index: number) {
   if (tickPointer.value === null) return 0
   const center = tickCenters()[index]
@@ -412,7 +418,7 @@ function tickHover(event: PointerEvent) {
   let nearest = -1, best = Infinity
   centers.forEach((center, index) => { const distance = Math.abs(center - y); if (distance < best) { best = distance; nearest = index } })
   clearTimeout(previewTimer)
-  if (nearest >= 0) { hoverMark.value = marks.value[nearest]; hoverTop.value = column.offsetTop + centers[nearest] } else hoverMark.value = null
+  if (nearest >= 0) { hoverMark.value = marks.value[nearest]; const tick = column.querySelectorAll<HTMLElement>('.rail-mark')[nearest]; hoverTop.value = tick ? railTop(tick) : 0 } else hoverMark.value = null
 }
 // 离开刻度后卡片多留一会儿，指针能移到卡片上点「钉住」。
 let previewTimer: ReturnType<typeof setTimeout> | undefined
@@ -425,7 +431,7 @@ function togglePin(mark: Mark) {
   updateRail()
   hoverMark.value = marks.value.find(item => item.id === mark.id) || null
 }
-function tickFocus(mark: Mark, event: FocusEvent) { const tick = event.target as HTMLElement; hoverMark.value = mark; hoverTop.value = (tickColumn.value?.offsetTop || 0) + tick.offsetTop + tick.offsetHeight / 2 }
+function tickFocus(mark: Mark, event: FocusEvent) { const tick = event.target as HTMLElement; hoverMark.value = mark; hoverTop.value = railTop(tick) }
 // 右侧导航条代替滚动条：细滑块表示当前视口，刻度是每一轮提问。
 const thumb = ref({ top: 0, height: 1, visible: false })
 /** 每一问在列表里的位置（像素），内容变化时重算，滚动时只拿来判断当前是哪一问。 */
