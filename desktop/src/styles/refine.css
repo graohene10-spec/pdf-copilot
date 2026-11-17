@@ -157,8 +157,5 @@
 :root[data-style='sketch'] .document-progress > div { height: 0; overflow: visible; background: none; border-radius: 0; border-top: 1.2px dashed color-mix(in srgb, var(--pencil, #2b2a27) 32%, transparent); }
 :root[data-style='sketch'] .document-progress i { height: 2.4px; margin-top: -1.8px; background: var(--red-pencil, #c0392b); border-radius: 2px 5px 3px 4px; rotate: -.5deg; transform-origin: left center; box-shadow: none; }
 
-/* 文档库统计行右边：Intelligent UI 合集的入口。 */
-.library-summary .ui-collection-open{display:inline-flex;align-items:center;gap:6px;height:30px;margin-left:auto;padding:0 12px 0 10px;border:1px solid var(--glass-outline);border-radius:999px;background-color:var(--glass-2);background-image:var(--glass-sheen);box-shadow:var(--glass-control-shadow);color:var(--control-ink,var(--ink));font-size:11.5px}
-.library-summary .ui-collection-open strong{font-size:12px;font-variant-numeric:tabular-nums}
-.library-summary .ui-collection-open:hover{border-color:color-mix(in srgb,var(--accent) 45%,var(--glass-outline));box-shadow:var(--glass-control-shadow),0 0 16px -6px color-mix(in srgb,var(--accent) 55%,transparent)}
-.library-summary .summary-note + .ui-collection-open{margin-left:8px}
+/* Intelligent UI 分类：排序、卡片 / 列表切换对它没意义。 */
+.library-view.ui-mode :is(.library-sort, .view-switch, .arrange-reset){display:none}
