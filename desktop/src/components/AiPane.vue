@@ -789,7 +789,7 @@ watch(() => preferences.value.assistant.predictQuestions, enabled => {
   prediction.value = ''; dismissed = ''
 }, { flush: 'sync' })
 function predictContext() {
-  return { document: { ...props.document }, page: props.context?.page || 1, includePage: includeDocument.value, selection: selected.value.text || '', history: messages.value.filter(item => item.content && !item.failed).map(item => ({ role: item.role, content: item.content })) }
+  return { document: { ...props.document }, page: props.context?.page || 1, includePage: includeDocument.value, level: preferences.value.assistant.predictLevel, selection: selected.value.text || '', history: messages.value.filter(item => item.content && !item.failed).map(item => ({ role: item.role, content: item.content })) }
 }
 // 只有真正的上下文——已经有对话，或选中了文字——才预判；空白的新对话不猜。输入、发送、换页都会取消在途请求。
 const predictable = computed(() => !props.side && preferences.value.assistant.predictQuestions && !busy.value && !prompt.value && (Boolean(selected.value.text) || messages.value.some(item => item.content && !item.failed)))

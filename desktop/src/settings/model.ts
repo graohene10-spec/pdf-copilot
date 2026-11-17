@@ -2,6 +2,14 @@ import { MANIFOLD_IDS, LEGACY_SCENE_IDS } from '../sketch/manifolds.ts'
 import { normalizeBackground, backgroundErrors, type BackgroundImage } from './background.ts'
 import { defaultQuickPrompts, normalizeQuickPrompts, quickPromptErrors, defaultCaptureQuestions, normalizeCaptureQuestions, captureQuestionErrors, type QuickPrompt, type QuickPrompts } from './quick-prompts.ts'
 
+/** 猜你想问的问题水平：说的是问题本身有多难、往外拓展多远，不是用哪个模型来猜。 */
+export type PredictLevel = 'basic' | 'standard' | 'deep' | 'expert'
+export const PREDICT_LEVELS: { id: PredictLevel; label: string; note: string }[] = [
+  { id: 'basic', label: '基础', note: '确认有没有读懂' },
+  { id: 'standard', label: '标准', note: '弄清这一步为什么成立' },
+  { id: 'deep', label: '深入', note: '追问条件、反例和前后联系' },
+  { id: 'expert', label: '拓展', note: '推广、质疑假设、联系别的领域' },
+]
 export type ShortcutAction = 'import' | 'search' | 'find' | 'fullscreen' | 'settings' | 'sidebar' | 'ai' | 'outline' | 'capture' | 'fitWidth' | 'zoomOut' | 'zoomIn' | 'previousPage' | 'nextPage' | 'aiSend' | 'aiStop' | 'nextTab' | 'previousTab' | 'closeTab' | 'split' | 'inkPen' | 'inkHighlighter' | 'inkUnderline' | 'bookmark' | 'bookmarkPrev' | 'bookmarkNext' | 'translate'
 /** The assistant's mark on its empty screen: a built-in glyph or the user's own image (GIF/APNG/WebP animate). */
 export type AssistantAvatar = { kind: AvatarKind; image: string | null }
@@ -110,7 +118,7 @@ export interface AppPreferences {
   appearance: { theme: ThemePreference; style: UiStyle; sketchAnswerFont: string; manifold: ManifoldPreferences; libraryView: 'grid' | 'list'; glassTransparency: number; glassBlur: number; glassHighlight: number; glassRefraction: boolean; glassLegibility: GlassLegibility; glassCompensation: number; glassTint: GlassTint; backdrop: BackdropPreset; background: BackgroundImage | null; gallery: BackgroundImage[]; uiFont: string; readingFont: string; customFonts: CustomFont[] }
   pdf: { initialZoom: 'fit-width' | number; zoomStep: number; fitOnPanelOverflow: boolean; openAssistantOnCapture: boolean; quickAskOnCapture: boolean; pageLayout: 'single' | 'spread'; coverAlone: boolean }
   markdown: { fontSize: number; contentWidth: number }
-  assistant: { quickPrompts: QuickPrompts; captureQuestions: QuickPrompt[]; avatar: AssistantAvatar; greeting: AssistantGreeting; predictQuestions: boolean }
+  assistant: { quickPrompts: QuickPrompts; captureQuestions: QuickPrompt[]; avatar: AssistantAvatar; greeting: AssistantGreeting; predictQuestions: boolean; predictLevel: PredictLevel }
   updates: UpdatePreferences
   shortcuts: Record<ShortcutAction, string>
 }
@@ -149,7 +157,7 @@ export const MAX_GALLERY = 6
 export function defaultPreferences(): AppPreferences {
   return { version: 3, appearance: { theme: 'system', style: 'glass', sketchAnswerFont: 'mashanzheng', manifold: defaultManifold(), libraryView: 'grid', glassTransparency: 70, glassBlur: 50, glassHighlight: 50, glassRefraction: true, glassLegibility: 'thicken', glassCompensation: 50, glassTint: 'theme', backdrop: 'mist', background: null, gallery: [], uiFont: 'system', readingFont: 'anthropic', customFonts: [] },
     pdf: { initialZoom: 'fit-width', zoomStep: 15, fitOnPanelOverflow: true, openAssistantOnCapture: true, quickAskOnCapture: true, pageLayout: 'single', coverAlone: false },
-    markdown: { fontSize: 17, contentWidth: 840 }, assistant: { quickPrompts: defaultQuickPrompts(), captureQuestions: defaultCaptureQuestions(), avatar: { kind: 'crab', image: null }, greeting: { style: 'mixed', custom: '' }, predictQuestions: true }, updates: { autoCheck: true, prerelease: false }, shortcuts: { ...DEFAULT_SHORTCUTS } }
+    markdown: { fontSize: 17, contentWidth: 840 }, assistant: { quickPrompts: defaultQuickPrompts(), captureQuestions: defaultCaptureQuestions(), avatar: { kind: 'crab', image: null }, greeting: { style: 'mixed', custom: '' }, predictQuestions: true, predictLevel: 'deep' }, updates: { autoCheck: true, prerelease: false }, shortcuts: { ...DEFAULT_SHORTCUTS } }
 }
 const modifierOrder = ['Ctrl', 'Alt', 'Shift', 'Meta']
 const aliases: Record<string, string> = { control: 'Ctrl', ctrl: 'Ctrl', alt: 'Alt', option: 'Alt', shift: 'Shift', meta: 'Meta', cmd: 'Meta', command: 'Meta' }
@@ -212,6 +220,7 @@ export function normalizePreferences(value: unknown, legacyTheme?: string | null
   const style = GREETING_STYLES.some(item => item.id === greeting.style) ? greeting.style as GreetingStyle : 'mixed'
   defaults.assistant.greeting = { style: style === 'custom' && !custom.trim() ? 'mixed' : style, custom }
   defaults.assistant.predictQuestions = record(input.assistant).predictQuestions !== false
+  defaults.assistant.predictLevel = PREDICT_LEVELS.some(item => item.id === record(input.assistant).predictLevel) ? record(input.assistant).predictLevel as PredictLevel : 'deep'
   const updates = record(input.updates)
   defaults.updates.autoCheck = typeof updates.autoCheck === 'boolean' ? updates.autoCheck : true
   defaults.updates.prerelease = updates.prerelease === true
@@ -305,6 +314,7 @@ export function preferenceErrors(value: AppPreferences): string[] {
   else if (greeting.custom.length > MAX_GREETING_CHARS) errors.push(`自定义问候最多 ${MAX_GREETING_CHARS} 个字符。`)
   else if (greeting.style === 'custom' && !greeting.custom.trim()) errors.push('请至少写一句自定义问候，每行一句。')
   if (typeof value.assistant?.predictQuestions !== 'boolean') errors.push('问题预测选项无效。')
+  if (!PREDICT_LEVELS.some(item => item.id === value.assistant?.predictLevel)) errors.push('猜你想问的问题水平无效。')
   if (value.pdf.initialZoom !== 'fit-width') check('PDF 初始缩放', value.pdf.initialZoom, 25, 400)
   check('缩放步长', value.pdf.zoomStep, 5, 50)
   check('Markdown 字号', value.markdown.fontSize, 13, 28)

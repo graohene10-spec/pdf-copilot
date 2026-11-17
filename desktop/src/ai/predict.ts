@@ -13,6 +13,16 @@ export type PredictContext = {
   includePage?: boolean
   selection?: string
   history: { role: string; content: string }[]
+  /** 问题水平：基础 / 标准 / 深入 / 拓展（设置里选）。 */
+  level?: string
+}
+
+// 每一档要什么样的问题。说的是问题的难度和拓展性，和用哪个模型来猜无关。
+const LEVELS: Record<string, string> = {
+  basic: '问题水平：基础。问一个帮读者确认自己读懂了的问题——某个词、记号或某一句话是什么意思。',
+  standard: '问题水平：标准。问一个弄清「这一步为什么成立」的问题——推理的依据、某个条件用在了哪里。',
+  deep: '问题水平：深入。问一个有思考量的问题：某个条件去掉会怎样、有没有反例、和前文哪个结论有什么联系、这个证明的关键想法是什么。不要问「这是什么意思」「能否举个例子」「能再解释一下吗」这类泛泛的问题。',
+  expert: '问题水平：拓展。问一个超出这一页的问题：这个结论能不能推广、它的假设是否必要、换一个角度或在别的领域里对应着什么、它引出了哪个更深的问题。像一位认真的研究者会问的那样；不要问定义、不要求举例、不要让助手复述。',
 }
 
 const cache = new Map<string, string>()
@@ -57,7 +67,7 @@ export function cleanQuestion(text: string) {
 
 export function predictionKey(context: PredictContext) {
   const last = context.history.at(-1)
-  return [context.document.id, context.page, context.includePage === false ? 'no-page' : 'page', (context.selection || '').slice(0, 160), context.history.length, last?.content.length || 0].join('|')
+  return [context.level || 'deep', context.document.id, context.page, context.includePage === false ? 'no-page' : 'page', (context.selection || '').slice(0, 160), context.history.length, last?.content.length || 0].join('|')
 }
 
 export async function predictQuestion(context: PredictContext, signal: AbortSignal): Promise<string> {
@@ -72,7 +82,8 @@ export async function predictQuestion(context: PredictContext, signal: AbortSign
   signal.throwIfAborted()
   const recent = context.history.slice(-4).map(item => `${item.role === 'user' ? '读者' : '助手'}：${item.content.replace(/\s+/g, ' ').slice(0, 500)}`).join('\n')
   const prompt = [
-    '请预判这位读者接下来最可能向阅读助手提出的一个问题。只输出这个问题本身：一句话、具体、不超过 40 个字，使用读者使用的语言；不要解释、编号或引号。',
+    '请替这位读者想一个接下来值得向阅读助手提出的问题。只输出这个问题本身：一句话、具体（点名文中的对象，不要空泛）、不超过 40 个字，使用读者使用的语言；不要解释、编号或引号。',
+    LEVELS[context.level || 'deep'] || LEVELS.deep,
     `[文档] 《${context.document.title}》${context.document.kind === 'pdf' ? ` 第 ${context.page} 页` : ''}`,
     text && `[当前阅读位置的原文节选]\n${text}`,
     context.selection && `[读者选中的文字]\n${context.selection.slice(0, 800)}`,
