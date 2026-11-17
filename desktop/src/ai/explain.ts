@@ -12,7 +12,7 @@ import { useSettings } from '../settings'
 import ExplainNote from '../components/ExplainNote.vue'
 
 export type ExplainMode = 'plain' | 'deeper' | 'example' | 'simpler' | 'visual'
-export type Explain = { id: string; term: string; context: string; mode: ExplainMode; text: string; reasoning: string; status: 'running' | 'done' | 'error'; error: string; startedAt: number; ms: number; /** 选区的截图（PDF 里的公式以图为准）。 */ image?: string }
+export type Explain = { id: string; term: string; context: string; mode: ExplainMode; text: string; reasoning: string; status: 'running' | 'done' | 'error'; error: string; startedAt: number; firstTokenAt?: number; ms: number; /** 选区的截图（PDF 里的公式以图为准）。 */ image?: string }
 export type ExplainTarget = { term: string; context: string; block?: HTMLElement; image?: string; doc?: string; page?: number; /** PDF：选区所在的那一页，图钉钉住后卡片跟着它走。 */ anchor?: HTMLElement }
 
 const MODES: Record<ExplainMode, string> = {
@@ -34,10 +34,10 @@ function run(item: Explain, previous = '') {
   controllers.get(item.id)?.abort()
   const controller = new AbortController()
   controllers.set(item.id, controller)
-  Object.assign(item, { text: '', reasoning: '', status: 'running', error: '', startedAt: Date.now(), ms: 0 })
+  Object.assign(item, { text: '', reasoning: '', status: 'running', error: '', startedAt: Date.now(), firstTokenAt: undefined, ms: 0 })
   const visual = item.mode === 'visual'
   const ask = (image?: string) => complete({ kind: 'explain', visual, ...(visual ? { extraInstructions: UI_INSTRUCTIONS } : {}), messages: [{ role: 'user', content: explainPrompt(item.term, item.context, item.mode, previous) + (image ? IMAGE_NOTE : ''), ...(image ? { images: [image] } : {}) }], signal: controller.signal,
-    onDelta: (_delta, all) => { if (controllers.get(item.id) === controller) item.text = all },
+    onDelta: (_delta, all) => { if (controllers.get(item.id) === controller) { if (!item.text && all) item.firstTokenAt = Date.now(); item.text = all } },
     onReasoning: delta => { if (controllers.get(item.id) === controller) item.reasoning += delta } })
   // 模型看不了图就退回只用文字。
   void ask(item.image).catch(cause => { if (!item.image || controller.signal.aborted) throw cause; if (controllers.get(item.id) === controller) { item.text = ''; item.reasoning = '' } return ask() })

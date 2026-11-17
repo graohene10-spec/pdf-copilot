@@ -292,10 +292,6 @@ function clock(message: Message) {
   return `${at.getFullYear() === today.getFullYear() ? '' : `${at.getFullYear()}年`}${at.getMonth() + 1}月${at.getDate()}日 ${time}`
 }
 function thinkingTime(message: Message) { return seconds((message.firstTokenAt || message.finishedAt || now.value) - (message.startedAt || now.value)) }
-function lastThought(message: Message) {
-  const lines = (message.reasoning || '').trim().split(/\n+/).filter(Boolean)
-  return lines.at(-1)?.replace(/^[#*\-\s]+/, '').slice(0, 160) || ''
-}
 const expanded = ref(new Set<string>())
 function toggleReasoning(id: string) { const next = new Set(expanded.value); if (next.has(id)) next.delete(id); else next.add(id); expanded.value = next }
 const contextUsed = computed(() => conversationTokens(state.value))
@@ -916,7 +912,8 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
               <span v-if="live(message)" class="thinking-meta">{{ elapsed(message) }}<template v-if="activityNote(message)"> · {{ activityNote(message) }}</template></span>
               <AppIcon v-if="message.reasoning || message.sources.length" class="thinking-chevron" name="down" :size="12" />
             </button>
-            <p v-if="live(message) && !expanded.has(message.id) && lastThought(message)" class="thinking-direction">{{ lastThought(message) }}</p>
+            <!-- 思维链整条留着，放在固定高度的小窗里往上滚：以前只显示最后一行，一会长一会短、时有时无，回答区跟着跳。 -->
+            <div v-if="live(message) && !expanded.has(message.id) && message.reasoning?.trim()" class="thinking-direction" aria-live="off"><p>{{ message.reasoning.trim().slice(-1200) }}</p></div>
             <div v-if="message.reasoning && expanded.has(message.id)" class="reasoning-body">{{ message.reasoning }}</div>
             <!-- 参考原文收在 Thinking 里：点开思考过程时一起列出，平时不占地方。 -->
             <div v-if="message.sources.length && expanded.has(message.id)" class="source-list"><p class="source-heading">参考原文 · {{ message.sources.length }} 段</p><button v-for="source in message.sources" :key="source.sourceId" @click="jump(source)"><span>{{ source.line ? `第 ${source.line} 行` : `第 ${source.page} 页` }}</span><small>{{ source.text }}</small></button></div>
@@ -1235,7 +1232,8 @@ button:disabled{opacity:.4;cursor:default}
 .thinking-meta{font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .thinking-chevron{opacity:.55;transition:transform var(--dur-3) var(--spring-snappy)}
 .thinking.open .thinking-chevron{transform:rotate(180deg)}
-.thinking-direction{margin:-2px 0 8px 10px;padding-left:12px;border-left:2px solid var(--hairline);font-size:12px;line-height:1.6;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;animation:zg-fade-in var(--dur-2) var(--ease-out)}
+.thinking-direction{display:flex;flex-direction:column;justify-content:flex-end;height:4.8em;margin:-2px 0 8px 10px;padding-left:12px;border-left:2px solid var(--hairline);font-size:12px;line-height:1.6;color:var(--muted);overflow:hidden;contain:inline-size;-webkit-mask-image:linear-gradient(transparent,#000 45%);mask-image:linear-gradient(transparent,#000 45%);animation:zg-fade-in var(--dur-2) var(--ease-out)}
+.thinking-direction p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
 .reasoning-body{margin:0 0 10px 10px;padding:2px 0 2px 12px;border-left:2px solid var(--hairline);font-size:12px;line-height:1.75;color:var(--muted);white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow:auto}
 /* 回答正文：衬线正文（Anthropic Serif 一类），表格与代码参照 Claude 的排法。 */
 .answer-body{font-size:14.5px;line-height:1.75;overflow-wrap:anywhere;font-family:var(--font-answer, var(--font-reading));letter-spacing:.005em}
