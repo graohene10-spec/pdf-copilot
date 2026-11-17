@@ -227,14 +227,13 @@ watch(() => props.card.item.status, (status, previous) => { if (previous === 'ru
 :root[data-style='sketch'] .explain-card:not(.morph):not(.in-page){animation:ec-stick .46s var(--spring-snappy,ease-out) both}
 @keyframes ec-stick{from{opacity:0;scale:1.1;rotate:-6deg;translate:0 -14px}45%{opacity:1}}
 :root[data-style='sketch'] .ec-head .st-term{color:var(--pencil,#2b2a27);font-size:1em;font-weight:600}
-:root[data-style='sketch'] .ec-head mark{padding:0 0 .12em;border-radius:0;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='8' viewBox='0 0 48 8' preserveAspectRatio='none'%3E%3Cpath d='M2 5.4c7-3.2 12 1.6 20-.6s14-2.6 24-.4' fill='none' stroke='%23c0392b' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E") 0 100% / 100% .42em no-repeat}
+/* 草稿主题：词条不再用红铅笔划线，标题下只有那根分隔线（正在写时是流光）。 */
+:root[data-style='sketch'] .ec-head mark{padding:0;border-radius:0;background:none}
 :root[data-style='sketch'] .ec-spark{color:var(--red-pencil,#c0392b)}
 :root[data-style='sketch'] .ec-rule{height:0;margin:8px 0 8px;border-top:1.2px dashed color-mix(in srgb,var(--pencil,#2b2a27) 38%,transparent);background:none}
 :root[data-style='sketch'] .ec-rule.running{height:2px;border-top:0;background:color-mix(in srgb,var(--pencil,#2b2a27) 12%,transparent)}
 :root[data-style='sketch'] .ec-rule.running::after{background:linear-gradient(90deg,transparent,var(--red-pencil,#c0392b),transparent)}
 :root[data-style='sketch'] .explain-card::after{content:'';position:absolute;right:0;bottom:0;width:26px;height:26px;background:linear-gradient(315deg,rgb(60 50 30 / .2),transparent 52%);pointer-events:none}
-/* 写完之后这根线就收起来：它只用来表示「正在写」，写完再留着是多余的。 */
-.ec-rule:not(.running),:root[data-style] .ec-rule:not(.running){height:0;margin:5px 0;border:0;background:none}
 @media(prefers-reduced-motion:reduce){.ec-halo,.ec-sheen::after,.explain-card,.ec-spark,.ec-rule.running::after,:root[data-style='sketch'] .explain-card{animation:none!important}}
 .ec-pin{rotate:35deg}
 .ec-pin.on{opacity:1;color:var(--accent);rotate:0deg}
