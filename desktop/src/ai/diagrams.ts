@@ -23,7 +23,14 @@ function s(tag: string, attributes: Attributes = {}) {
   for (const [name, value] of Object.entries(attributes)) if (value !== undefined) element.setAttribute(name, String(value))
   return element
 }
-const text = (value: unknown, limit = 120) => String(value ?? '').slice(0, limit)
+/** 截短文字，但不把公式切成半截：切到 $...$ 中间时退回到那个 $ 之前。 */
+const text = (value: unknown, limit = 120) => {
+  const whole = String(value ?? '')
+  if (whole.length <= limit) return whole
+  let cut = whole.slice(0, limit)
+  if ((cut.match(/(?<!\\)\$/g) || []).length % 2) cut = cut.slice(0, cut.lastIndexOf('$'))
+  return cut.trimEnd() + '…'
+}
 const list = (value: unknown, limit = 40): any[] => Array.isArray(value) ? value.slice(0, limit) : []
 const num = (value: unknown, fallback = 0) => { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : fallback }
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value))
@@ -61,6 +68,11 @@ function canvas(root: HTMLElement, spec: any, W: number, H: number): Canvas {
   card.append(wrap)
   if (spec.note) card.append(h('p', 'iui-sub iui-dia-note', text(spec.note, 300)))
   root.append(card)
+  // 文字排好之后：超出图框的挪回来，自由摆放的说明（不贴着点和节点的）彼此压住了就往下错开。
+  let frame = 0
+  const refit = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(() => settle(wrap)) }
+  new ResizeObserver(refit).observe(wrap)
+  refit()
   const label: Canvas['label'] = (x, y, value, options = {}) => {
     const element = h('span', `iui-dl ${options.className || ''}`.trim(), text(value, 160))
     element.style.left = `${x / W * 100}%`; element.style.top = `${y / H * 100}%`
@@ -71,6 +83,34 @@ function canvas(root: HTMLElement, spec: any, W: number, H: number): Canvas {
     return element
   }
   return { card, wrap, svg, ink, id, W, H, label }
+}
+const FREE = ['region', 'edge', 'set', 'muted']
+function settle(wrap: HTMLElement) {
+  if (!wrap.isConnected) return
+  const labels = [...wrap.querySelectorAll<HTMLElement>('.iui-dl')]
+  for (const label of labels) { label.style.marginLeft = ''; label.style.marginTop = '' }
+  const box = wrap.getBoundingClientRect()
+  if (!box.width) return
+  const free = (label: HTMLElement) => FREE.some(name => label.classList.contains(name))
+  const placed: DOMRect[] = []
+  // 先放贴着图形的（点、节点），再放自由的说明去躲它们。
+  for (const label of [...labels.filter(item => !free(item)), ...labels.filter(free)]) {
+    const r = label.getBoundingClientRect()
+    let dx = 0, dy = 0
+    if (r.left + dx < box.left + 2) dx = box.left + 2 - r.left
+    if (r.right + dx > box.right - 2) dx = Math.max(box.left + 2 - r.left, box.right - 2 - r.right)
+    if (free(label)) {
+      for (let round = 0; round < 6; round++) {
+        const hit = placed.find(p => r.left + dx < p.right && r.right + dx > p.left && r.top + dy < p.bottom && r.bottom + dy > p.top)
+        if (!hit) break
+        dy += hit.bottom - (r.top + dy) + 2
+      }
+      if (r.bottom + dy > box.bottom + 18) dy = box.bottom + 18 - r.bottom
+    }
+    if (dx) label.style.marginLeft = `${dx}px`
+    if (dy) label.style.marginTop = `${dy}px`
+    placed.push(new DOMRect(r.left + dx, r.top + dy, r.width, r.height))
+  }
 }
 const arrowHead = (c: Canvas, hot = false) => `url(#${c.id}-${hot ? 'h' : 'a'})`
 /** 从 a 指向 b、两头各让开 gapA / gapB 的一段，bend 是向左弯的程度（0 是直线）。 */
@@ -128,7 +168,7 @@ function venn(spec: any, root: HTMLElement) {
     if (!region?.label) continue
     const inside = list(region.in ?? region.sets, 3).map(indexOf).filter((index: number) => index >= 0)
     const [x, y] = spot(inside)
-    c.label(x, y, text(region.label, 80), { className: `region${region.focus ? ' hot' : ''}`, note: region.note })
+    c.label(x, y, text(region.label, 80), { className: `region venn-region${inside.length > 1 ? ' tight' : ''}${region.focus ? ' hot' : ''}`, note: region.note })
   }
 }
 
@@ -150,34 +190,42 @@ function nest(spec: any, root: HTMLElement) {
 
 // ---- 映射（函数、同态） -------------------------------------------------------
 function map(spec: any, root: HTMLElement) {
-  const side = (value: any) => ({ label: text(value?.label, 40), items: list(value?.items, 9).map((item: any) => text(item, 30)) })
+  const side = (value: any) => ({ label: text(value?.label, 60), items: list(value?.items, 9).map((item: any) => text(item, 40)) })
   const from = side(spec.from), to = side(spec.to)
   if (!from.items.length || !to.items.length) throw new Error('映射图需要 from.items 和 to.items')
-  const rows = Math.max(from.items.length, to.items.length), c = canvas(root, spec, 560, 90 + rows * 34)
-  const LX = 150, RX = 410, top = 58, gap = 34
+  // 第一行：两边的集合名；第二行（中间）：映射名。点和箭头从第三行开始，不和标题挤在一起。
+  const rows = Math.max(from.items.length, to.items.length), named = Boolean(spec.name), top = named ? 92 : 70, gap = 36
+  const c = canvas(root, spec, 560, top + rows * gap + 18)
+  const LX = 140, RX = 420
   const ys = (count: number) => Array.from({ length: count }, (_, index) => top + (rows - count) * gap / 2 + index * gap)
-  const left = ys(from.items.length), right = ys(to.items.length), mid = top + (rows - 1) * gap / 2
-  const blob = (x: number, rx: number) => c.ink.append(s('ellipse', { class: 'iui-shape', cx: x, cy: mid, rx, ry: rows * gap / 2 + 22 }))
-  blob(LX, 78); blob(RX, 78)
-  c.label(LX, 20, from.label, { className: 'set' }); c.label(RX, 20, to.label, { className: 'set' })
-  if (spec.name) c.label(280, 20, text(spec.name, 30), { className: 'set hot' })
-  // 圈出一组点（比如核、像）。
+  const left = ys(from.items.length), right = ys(to.items.length), mid = top + (rows - 1) * gap / 2, ry = rows * gap / 2 + 18
+  c.ink.append(s('ellipse', { class: 'iui-shape', cx: LX, cy: mid, rx: 96, ry }), s('ellipse', { class: 'iui-shape', cx: RX, cy: mid, rx: 96, ry }))
+  c.label(LX, 18, from.label, { className: 'set title' }); c.label(RX, 18, to.label, { className: 'set title' })
+  if (named) c.label(280, 46, text(spec.name, 80), { className: 'set hot' })
+  // 圈出一组点（核、像……）：虚线框住，说明写在图下面的图例里，不再挤在图边上。
+  const legend: [string, string][] = []
   for (const mark of list(spec.marks, 4)) {
     const onLeft = mark.side !== 'to', names = onLeft ? from.items : to.items, ysOf = onLeft ? left : right, x = onLeft ? LX : RX
-    const hits = list(mark.items, 9).map((item: any) => names.indexOf(text(item, 30))).filter((index: number) => index >= 0)
+    const hits = list(mark.items, 9).map((item: any) => names.indexOf(text(item, 40))).filter((index: number) => index >= 0)
     if (!hits.length) continue
-    const y0 = Math.min(...hits.map((index: number) => ysOf[index]!)) - 14, y1 = Math.max(...hits.map((index: number) => ysOf[index]!)) + 14
-    c.ink.append(s('rect', { class: 'iui-shape hot dashed', x: x - 52, y: y0, width: 104, height: y1 - y0, rx: 14 }))
-    c.label(onLeft ? x - 62 : x + 62, (y0 + y1) / 2, text(mark.label, 30), { className: 'region hot', align: onLeft ? 'right' : 'left' })
+    const y0 = Math.min(...hits.map((index: number) => ysOf[index]!)) - 13, y1 = Math.max(...hits.map((index: number) => ysOf[index]!)) + 13
+    c.ink.append(s('rect', { class: 'iui-shape hot dashed', x: x - 82, y: y0, width: 164, height: y1 - y0, rx: 13 }))
+    // 框上编号，和图下的图例一一对应。
+    if (mark.label) { legend.push([String(legend.length + 1), text(mark.label, 120)]); c.label(onLeft ? x - 82 : x + 82, y0, legend.at(-1)![0], { className: 'mark-no' }) }
   }
-  from.items.forEach((item, index) => { c.ink.append(s('circle', { class: 'iui-dot-mark', cx: LX + 20, cy: left[index], r: 3.2 })); c.label(LX + 8, left[index]!, item, { align: 'right' }) })
-  to.items.forEach((item, index) => { c.ink.append(s('circle', { class: 'iui-dot-mark', cx: RX - 20, cy: right[index], r: 3.2 })); c.label(RX - 8, right[index]!, item, { align: 'left' }) })
+  from.items.forEach((item, index) => { c.ink.append(s('circle', { class: 'iui-dot-mark', cx: LX + 30, cy: left[index], r: 3.2 })); c.label(LX + 20, left[index]!, item, { align: 'right', className: 'item' }) })
+  to.items.forEach((item, index) => { c.ink.append(s('circle', { class: 'iui-dot-mark', cx: RX - 30, cy: right[index], r: 3.2 })); c.label(RX - 20, right[index]!, item, { align: 'left', className: 'item' }) })
   for (const arrow of list(spec.arrows, 30)) {
     const pair = Array.isArray(arrow) ? arrow : [arrow?.from, arrow?.to]
-    const a = from.items.indexOf(text(pair[0], 30)), b = to.items.indexOf(text(pair[1], 30))
+    const a = from.items.indexOf(text(pair[0], 40)), b = to.items.indexOf(text(pair[1], 40))
     if (a < 0 || b < 0) continue
     const hot = !Array.isArray(arrow) && arrow.focus
-    c.ink.append(s('path', { class: `iui-edge${hot ? ' hot' : ''}`, d: arrowPath(LX + 20, left[a]!, RX - 20, right[b]!, 6, 7, (right[b]! - left[a]!) * .08), 'marker-end': arrowHead(c, hot) }))
+    c.ink.append(s('path', { class: `iui-edge${hot ? ' hot' : ''}`, d: arrowPath(LX + 30, left[a]!, RX - 30, right[b]!, 6, 7, (right[b]! - left[a]!) * .08), 'marker-end': arrowHead(c, hot) }))
+  }
+  if (legend.length) {
+    const box = h('div', 'iui-dia-legend')
+    for (const [no, label] of legend) { const row = h('span', 'iui-dia-key'); row.append(h('i', '', no), h('span', '', label)); box.append(row) }
+    c.wrap.after(box)
   }
 }
 
@@ -276,7 +324,7 @@ function optable(spec: any, root: HTMLElement) {
   const values = [...new Set(cells.flat())], hue = (value: string) => values.indexOf(value)
   const focusCells = new Set(list(spec.focus, 40).map((pair: any) => `${pair?.[0]},${pair?.[1]}`))
   const table = h('table', 'iui-optable'), head = h('tr')
-  head.append(h('th', 'op', text(spec.op ?? '∘', 6)))
+  head.append(h('th', 'op', text(spec.op ?? '∘', 40)))
   for (const col of cols) head.append(h('th', '', col))
   table.append(head)
   rows.forEach((row, r) => {

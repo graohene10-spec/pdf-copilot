@@ -67,7 +67,7 @@ const fit = computed(() => {
   let units = 0
   for (const char of text) units += char.charCodeAt(0) > 0x2e7f ? 1 : .55
   // 带界面的讲解（图表、可调的模拟）要宽一些才摆得开。
-  if (text.includes('```ui')) return 560
+  if (text.includes('```ui') || (props.card.item.mode === 'visual' && !showFrom.value)) return 560
   return Math.min(600, Math.max(300, Math.round(Math.sqrt(units * 900) / 40) * 40))
 })
 const position = computed(() => ({

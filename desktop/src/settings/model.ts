@@ -118,7 +118,7 @@ export interface AppPreferences {
   appearance: { theme: ThemePreference; style: UiStyle; sketchAnswerFont: string; manifold: ManifoldPreferences; libraryView: 'grid' | 'list'; glassTransparency: number; glassBlur: number; glassHighlight: number; glassRefraction: boolean; glassLegibility: GlassLegibility; glassCompensation: number; glassTint: GlassTint; backdrop: BackdropPreset; background: BackgroundImage | null; gallery: BackgroundImage[]; uiFont: string; readingFont: string; customFonts: CustomFont[] }
   pdf: { initialZoom: 'fit-width' | number; zoomStep: number; fitOnPanelOverflow: boolean; openAssistantOnCapture: boolean; quickAskOnCapture: boolean; pageLayout: 'single' | 'spread'; coverAlone: boolean }
   markdown: { fontSize: number; contentWidth: number }
-  assistant: { quickPrompts: QuickPrompts; captureQuestions: QuickPrompt[]; avatar: AssistantAvatar; greeting: AssistantGreeting; predictQuestions: boolean; predictLevel: PredictLevel }
+  assistant: { quickPrompts: QuickPrompts; captureQuestions: QuickPrompt[]; avatar: AssistantAvatar; greeting: AssistantGreeting; predictQuestions: boolean; predictLevel: PredictLevel; explainVisual: boolean }
   updates: UpdatePreferences
   shortcuts: Record<ShortcutAction, string>
 }
@@ -157,7 +157,7 @@ export const MAX_GALLERY = 6
 export function defaultPreferences(): AppPreferences {
   return { version: 3, appearance: { theme: 'system', style: 'sketch', sketchAnswerFont: 'mashanzheng', manifold: defaultManifold(), libraryView: 'grid', glassTransparency: 70, glassBlur: 50, glassHighlight: 50, glassRefraction: true, glassLegibility: 'thicken', glassCompensation: 50, glassTint: 'theme', backdrop: 'mist', background: null, gallery: [], uiFont: 'system', readingFont: 'anthropic', customFonts: [] },
     pdf: { initialZoom: 'fit-width', zoomStep: 15, fitOnPanelOverflow: true, openAssistantOnCapture: true, quickAskOnCapture: true, pageLayout: 'single', coverAlone: false },
-    markdown: { fontSize: 17, contentWidth: 840 }, assistant: { quickPrompts: defaultQuickPrompts(), captureQuestions: defaultCaptureQuestions(), avatar: { kind: 'crab', image: null }, greeting: { style: 'mixed', custom: '' }, predictQuestions: true, predictLevel: 'deep' }, updates: { autoCheck: true, prerelease: false }, shortcuts: { ...DEFAULT_SHORTCUTS } }
+    markdown: { fontSize: 17, contentWidth: 840 }, assistant: { quickPrompts: defaultQuickPrompts(), captureQuestions: defaultCaptureQuestions(), avatar: { kind: 'crab', image: null }, greeting: { style: 'mixed', custom: '' }, predictQuestions: true, predictLevel: 'deep', explainVisual: false }, updates: { autoCheck: true, prerelease: false }, shortcuts: { ...DEFAULT_SHORTCUTS } }
 }
 const modifierOrder = ['Ctrl', 'Alt', 'Shift', 'Meta']
 const aliases: Record<string, string> = { control: 'Ctrl', ctrl: 'Ctrl', alt: 'Alt', option: 'Alt', shift: 'Shift', meta: 'Meta', cmd: 'Meta', command: 'Meta' }
@@ -220,6 +220,8 @@ export function normalizePreferences(value: unknown, legacyTheme?: string | null
   const style = GREETING_STYLES.some(item => item.id === greeting.style) ? greeting.style as GreetingStyle : 'mixed'
   defaults.assistant.greeting = { style: style === 'custom' && !custom.trim() ? 'mixed' : style, custom }
   defaults.assistant.predictQuestions = record(input.assistant).predictQuestions !== false
+  // 快速解释默认就用可视化讲解（图解）。
+  defaults.assistant.explainVisual = record(input.assistant).explainVisual === true
   defaults.assistant.predictLevel = PREDICT_LEVELS.some(item => item.id === record(input.assistant).predictLevel) ? record(input.assistant).predictLevel as PredictLevel : 'deep'
   const updates = record(input.updates)
   defaults.updates.autoCheck = typeof updates.autoCheck === 'boolean' ? updates.autoCheck : true
@@ -316,6 +318,7 @@ export function preferenceErrors(value: AppPreferences): string[] {
   else if (greeting.style === 'custom' && !greeting.custom.trim()) errors.push('请至少写一句自定义问候，每行一句。')
   if (typeof value.assistant?.predictQuestions !== 'boolean') errors.push('问题预测选项无效。')
   if (!PREDICT_LEVELS.some(item => item.id === value.assistant?.predictLevel)) errors.push('猜你想问的问题水平无效。')
+  if (typeof value.assistant?.explainVisual !== 'boolean') errors.push('快速解释选项无效。')
   if (value.pdf.initialZoom !== 'fit-width') check('PDF 初始缩放', value.pdf.initialZoom, 25, 400)
   check('缩放步长', value.pdf.zoomStep, 5, 50)
   check('Markdown 字号', value.markdown.fontSize, 13, 28)

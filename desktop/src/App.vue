@@ -770,10 +770,14 @@ function middleClick(event: MouseEvent) {
   const target = explainTarget()
   if (!target) return
   event.preventDefault()
+  // Shift + 中键：直接用图解讲。没用过的话，普通中键解释时提一句（一共两次）。
+  const visual = event.shiftKey
+  if (visual) hintLearned('visual-explain')
+  else if (!preferences.value.assistant.explainVisual) setTimeout(() => offerHint('visual-explain', ['Shift', '中键'], '直接用图解释'), 1200)
   // 翻译卡片正开着：解释卡片出现在同一个位置，内容从译文换成解释。
   const shown = hoverTranslation.value
-  if (shown) { runExplain(target, shown.x, shown.y, shown.item.result || undefined); closeHoverTranslation() }
-  else runExplain(target, event.clientX, event.clientY)
+  if (shown) { runExplain(target, shown.x, shown.y, shown.item.result || undefined, visual); closeHoverTranslation() }
+  else runExplain(target, event.clientX, event.clientY, undefined, visual)
 }
 const openAiSettings = () => openSettings('ai')
 watch(() => translator.auto, value => { if (!value) closeHoverTranslation() })
@@ -1083,6 +1087,7 @@ function appContextMenu(event: MouseEvent) {
     items.push({ label: '机翻', icon: 'translate', hint: shortcut('translate'), action: () => { void translate(text, undefined, false, { image: shot }) } })
     const explainAt = target.closest('.reader-pane') ? explainTarget() : undefined
     if (explainAt) items.push({ label: '解释', icon: 'book', hint: '鼠标中键', action: () => runExplain(explainAt, event.clientX, event.clientY) })
+    if (explainAt) items.push({ label: '用图解释', icon: 'visual', hint: 'Shift + 中键', action: () => runExplain(explainAt, event.clientX, event.clientY, undefined, true) })
     if (active.value && target.closest('.reader-pane')) items.push({ label: '问阅读助手', icon: 'sparkle', action: () => openAssistant(true) })
     if (active.value && target.closest('.reader-pane')) { const pane = target.closest<HTMLElement>('[data-pane-id]')?.dataset.paneId; items.push({ label: '在这里加书签', icon: 'star', hint: shortcut('bookmark'), action: () => addBookmarkHere(pane || active.value?.id) }) }
     if (active.value && target.closest('.reader-pane')) items.push(...captureMenuItems(target))
@@ -1899,7 +1904,7 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
         <button class="notice-close" aria-label="关闭提示" @click="dismissNotice(notice.id)"><AppIcon name="close" :size="12" /></button>
       </div>
     </TransitionGroup>
-    <Transition name="hint"><button v-if="currentHint" :key="currentHint.id" type="button" class="gesture-hint" aria-live="polite" @click="dismissHint"><svg v-if="currentHint.id === 'explain'" class="hint-mouse" viewBox="0 0 14 20" aria-hidden="true"><rect x="1" y="1" width="12" height="18" rx="6" /><line x1="7" y1="4.5" x2="7" y2="8.5" /></svg><kbd v-for="key in currentHint.keys" :key="key">{{ key }}</kbd><span>{{ currentHint.text }}</span></button></Transition>
+    <Transition name="hint"><button v-if="currentHint" :key="currentHint.id" type="button" class="gesture-hint" aria-live="polite" @click="dismissHint"><svg v-if="currentHint.id === 'explain' || currentHint.id === 'visual-explain'" class="hint-mouse" viewBox="0 0 14 20" aria-hidden="true"><rect x="1" y="1" width="12" height="18" rx="6" /><line x1="7" y1="4.5" x2="7" y2="8.5" /></svg><kbd v-for="key in currentHint.keys" :key="key">{{ key }}</kbd><span>{{ currentHint.text }}</span></button></Transition>
     <Transition name="toast"><div v-if="toast" class="toast-message" role="status"><span>{{ toast }}</span><button @click="toast = ''" data-tip="关闭提示" aria-label="关闭提示"><AppIcon name="close" :size="15" /></button></div></Transition>
     <Transition name="dialog">
       <div v-if="removeBatch" class="dialog-backdrop" @click.self="removeBatch = null"><section class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="remove-batch-title"><div class="dialog-icon"><AppIcon name="trash" :size="24" /></div><h2 id="remove-batch-title">移除 {{ removeBatch.length }} 份文档？</h2><p>{{ removeBatch.slice(0, 3).map(doc => `「${doc.name}」`).join('') }}{{ removeBatch.length > 3 ? ` 等 ${removeBatch.length} 份` : '' }}的阅读记录与标签会被移除，原文件仍保留在电脑上。</p><div class="dialog-actions"><button @click="removeBatch = null">取消</button><button class="danger-button" @click="removeDocuments">移除 {{ removeBatch.length }} 份</button></div></section></div>
