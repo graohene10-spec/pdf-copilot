@@ -4,6 +4,7 @@
  * 全部用原生 DOM 和 SVG 画，不执行模型给的任何代码：公式只走下面这个小小的表达式求值器。
  */
 import { renderMarkdown } from './render'
+import { diagramBuilders, DIAGRAM_INSTRUCTIONS } from './diagrams'
 
 // ---- 表达式求值：数字、变量、+ - * / ^、比较、三目、常用数学函数 -------------------
 type Scope = Record<string, number>
@@ -217,6 +218,7 @@ type Context = { onAction?: (prompt: string) => void }
 type Builder = (spec: any, root: HTMLElement, context: Context) => void
 
 const builders: Record<string, Builder> = {
+  ...diagramBuilders,
   stack(spec, root, context) { for (const child of list(spec.children, 12)) build(child, root, context) },
   text(spec, root) { const block = h('div', 'iui-text'); block.innerHTML = renderMarkdown(text(spec.text, 4000)); root.append(block) },
   badges(spec, root) {
@@ -406,4 +408,5 @@ export const UI_INSTRUCTIONS = [
   '- form：{"type":"form","title":"","fields":[{"name":"topic","label":"主题","kind":"text|number|date|select|radio|checkbox|textarea","options":["A","B"],"value":""}],"submit":{"label":"生成","prompt":"请按这些设置继续：主题 {topic}"}}（读者点按钮后，prompt 里的 {字段名} 换成填写的内容，作为下一个问题发给你）',
   '- badges、text：{"type":"badges","items":[{"text":"","tone":"good"}]}、{"type":"text","text":"markdown"}',
   '示例数据要说明是示例；不要编造文档里没有的真实数据。',
+  DIAGRAM_INSTRUCTIONS,
 ].join('\n')
