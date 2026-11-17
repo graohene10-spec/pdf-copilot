@@ -7,7 +7,7 @@ import { SCENES } from '../sketch/manifolds'
 import { greetingFor } from '../ai/greeting'
 import { importFontFiles, forgetFontFile, registerCustomFonts } from '../ui/custom-fonts'
 import { vLiquidSelection } from '../ui/liquid-selection'
-import { useSettings, defaultPreferences, normalizePreferences, preferenceErrors, importBackgroundImage, defaultCaptureQuestions, newCaptureQuestion, quickPromptLabelLength, limitQuickPromptLabel, QUICK_PROMPT_LABEL_LIMIT, QUICK_PROMPT_QUESTION_LIMIT, CAPTURE_QUESTION_MIN, CAPTURE_QUESTION_MAX, BACKDROPS, UI_STYLES, isGlassStyle, SKETCH_ANSWER_FONTS, AVATARS, GREETING_STYLES, GLASS_LEGIBILITY, GLASS_TINTS, MAX_GREETING_CHARS, MAX_CUSTOM_FONTS, fontChoices, MAX_AVATAR_CHARS, validAvatarImage, UI_FONTS, READING_FONTS, MAX_GALLERY, SHORTCUTS, DEFAULT_SHORTCUTS, shortcutLabel, shortcutFromEvent, shortcutFromWheelEvent, type AppPreferences, type BackdropPreset, type BackgroundImage, type ShortcutAction } from '../settings'
+import { useSettings, PREDICT_LEVELS, defaultPreferences, normalizePreferences, preferenceErrors, importBackgroundImage, defaultCaptureQuestions, newCaptureQuestion, quickPromptLabelLength, limitQuickPromptLabel, QUICK_PROMPT_LABEL_LIMIT, QUICK_PROMPT_QUESTION_LIMIT, CAPTURE_QUESTION_MIN, CAPTURE_QUESTION_MAX, BACKDROPS, UI_STYLES, isGlassStyle, SKETCH_ANSWER_FONTS, AVATARS, GREETING_STYLES, GLASS_LEGIBILITY, GLASS_TINTS, MAX_GREETING_CHARS, MAX_CUSTOM_FONTS, fontChoices, MAX_AVATAR_CHARS, validAvatarImage, UI_FONTS, READING_FONTS, MAX_GALLERY, SHORTCUTS, DEFAULT_SHORTCUTS, shortcutLabel, shortcutFromEvent, shortcutFromWheelEvent, type AppPreferences, type BackdropPreset, type BackgroundImage, type ShortcutAction } from '../settings'
 
 type Tab = 'appearance' | 'reading' | 'shortcuts' | 'ai' | 'updates'
 const props = withDefaults(defineProps<{ initialTab?: Tab }>(), { initialTab: 'appearance' })
@@ -457,7 +457,7 @@ function dialogKeydown(event: KeyboardEvent) {
           </section>
           <section v-if="ready && tab === 'ai'" class="quick-prompts-section prediction-section" aria-label="猜你想问设置">
             <div class="quick-prompts-heading"><h3>猜你想问</h3></div>
-            <div class="settings-group"><label class="setting-check"><input v-model="draft.assistant.predictQuestions" type="checkbox" :disabled="saving" aria-label="启用猜你想问" aria-describedby="predict-help" /><span>启用猜你想问</span></label></div>
+            <div class="settings-group"><label class="setting-check"><input v-model="draft.assistant.predictQuestions" type="checkbox" :disabled="saving" aria-label="启用猜你想问" aria-describedby="predict-help" /><span>启用猜你想问</span></label><label class="setting-row"><span>问题水平</span><select v-model="draft.assistant.predictLevel" :disabled="saving || !draft.assistant.predictQuestions" aria-label="猜你想问的问题水平"><option v-for="item in PREDICT_LEVELS" :key="item.id" :value="item.id">{{ item.label }} · {{ item.note }}</option></select></label></div>
             <p id="predict-help" class="settings-help">输入框为空时，根据当前页、选区和最近对话推荐下一个问题。按 Tab 或回车采用，Esc 收起。推荐使用当前服务商的小模型或最低思考强度，会消耗额度；关闭后停止推荐请求并清除已有建议。保存后生效。</p>
           </section>
           <section v-if="ready && tab === 'ai'" class="quick-prompts-section capture-questions-section" aria-label="框选快捷提问设置">
