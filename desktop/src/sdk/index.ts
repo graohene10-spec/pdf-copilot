@@ -47,3 +47,10 @@ export async function setCredential(provider: string, key: string): Promise<void
   if (isDesktop) await call('set_credential', { provider, key });
   else transientCredentials.set(provider, key);
 }
+/** 页面进程守护（只在桌面版有）：页面崩溃后的自动恢复，以及 Graphite 开关。 */
+export type RenderFailure = { at: number; kind: string; reason: string; exit_code: number; runtime: string; process: string; module: string; graphite: boolean; reloaded: boolean };
+export const renderGuard = {
+  recovered: async (): Promise<RenderFailure | null> => isDesktop ? call<RenderFailure | null>('render_recovered').catch(() => null) : null,
+  status: async (): Promise<{ graphite: boolean; failures: RenderFailure[]; log: string } | null> => isDesktop ? call<{ graphite: boolean; failures: RenderFailure[]; log: string }>('render_status').catch(() => null) : null,
+  setGraphite: (enabled: boolean) => call<void>('render_set_graphite', { enabled }),
+};

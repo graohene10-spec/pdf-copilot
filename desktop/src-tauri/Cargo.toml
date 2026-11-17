@@ -28,6 +28,9 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Security_Cryptography", "Win32_Foundation"] }
+# 与 Tauri 自带的版本一致，用来接 WebView2 的 ProcessFailed 事件。
+webview2-com = "0.39"
+windows = "0.62"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

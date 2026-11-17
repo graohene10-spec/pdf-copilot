@@ -4,6 +4,7 @@ import AppIcon from './AppIcon.vue'
 import AssistantMark from './AssistantMark.vue'
 import ManifoldDoodle from './ManifoldDoodle.vue'
 import { SCENES } from '../sketch/manifolds'
+import { renderGuard, type RenderFailure } from '../sdk'
 import { greetingFor } from '../ai/greeting'
 import { importFontFiles, forgetFontFile, registerCustomFonts } from '../ui/custom-fonts'
 import { vLiquidSelection } from '../ui/liquid-selection'
@@ -319,6 +320,18 @@ function dialogKeydown(event: KeyboardEvent) {
   }
   if (event.key === 'Escape' && !recording.value && !event.isComposing && event.keyCode !== 229 && composingLabel.value === null) { event.preventDefault(); close() }
 }
+// 渲染与排障（只在桌面版）。
+const render = ref<{ graphite: boolean; failures: RenderFailure[] } | null>(null)
+void renderGuard.status().then(value => { render.value = value })
+async function setGraphite(enabled: boolean) {
+  if (!render.value) return
+  try { await renderGuard.setGraphite(enabled); render.value = { ...render.value, graphite: enabled } } catch { /* 写不进去就保持原样 */ }
+}
+const FAILURE_KINDS: Record<string, string> = { 'render-exited': '页面进程退出', 'render-unresponsive': '页面无响应', 'gpu-exited': '显卡进程退出', 'browser-exited': '浏览器进程退出' }
+function failureText(item: RenderFailure) {
+  const time = new Date(item.at * 1000).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  return `${time} ${FAILURE_KINDS[item.kind] || item.kind}${item.reason ? `（${item.reason}）` : ''}${item.graphite ? ' · Graphite 开' : ' · Graphite 关'}${item.reloaded ? ' · 已自动恢复' : ''}`
+}
 </script>
 
 <template>
@@ -434,6 +447,12 @@ function dialogKeydown(event: KeyboardEvent) {
             <p v-if="captureError" class="settings-error" role="status">{{ captureError }}</p>
           </template>
           <UpdateSettings v-if="ready && tab === 'updates'" v-model:auto-check="draft.updates.autoCheck" v-model:prerelease="draft.updates.prerelease" :disabled="saving" />
+          <!-- 排障：Graphite 是 WebView2 的启动参数，改了重启才生效；下面是页面进程最近出过的错。 -->
+          <section v-if="ready && tab === 'updates' && render" class="quick-prompts-section render-section" aria-label="渲染与排障">
+            <div class="quick-prompts-heading"><h3>渲染与排障</h3></div>
+            <div class="settings-group"><label class="setting-check"><input :checked="render.graphite" type="checkbox" :disabled="saving" aria-label="Graphite 渲染" @change="setGraphite(($event.target as HTMLInputElement).checked)" /><span>Graphite 渲染（重启后生效）</span></label></div>
+            <p class="settings-help">{{ render.failures.length ? `页面进程最近出错 ${render.failures.length} 次，最近一次：${failureText(render.failures[0]!)}。` : '页面进程最近没有出过错。' }}</p>
+          </section>
           <AiSettings v-if="ready && aiVisited" v-show="tab === 'ai'" ref="aiSettings" embedded />
           <section v-if="ready && tab === 'ai'" class="quick-prompts-section avatar-section" aria-label="助手形象">
             <div class="quick-prompts-heading"><h3>助手形象</h3></div>

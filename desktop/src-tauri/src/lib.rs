@@ -3,6 +3,7 @@ mod db;
 mod files;
 mod http_stream;
 mod native_bridge;
+mod render_guard;
 mod updater;
 
 use db::{Document,DocumentPatch,Library,Result};
@@ -15,6 +16,8 @@ struct AppState {
     bridge: Arc<native_bridge::NativeBridge>,
     http: Arc<http_stream::HttpBridge>,
     host: PathBuf,
+    data_dir: PathBuf,
+    render: Arc<render_guard::Guard>,
 }
 
 fn main_window(window: &tauri::Window) -> Result<()> {
@@ -132,6 +135,26 @@ async fn http_start(window: tauri::Window,state: State<'_,AppState>,id: String,u
     state.http.start(id,url,method,headers,body,channel)
 }
 
+/// 页面进程刚出过错并已自动重新载入：取一次（取走就清掉），前端据此提示并恢复刚才打开的文档。
+#[tauri::command]
+fn render_recovered(window: tauri::Window, state: State<'_,AppState>) -> Result<Option<render_guard::Failure>> {
+    main_window(&window)?;
+    Ok(state.render.pending.lock().map_err(|_| "不可用")?.take())
+}
+
+/// Graphite 开关（重启后生效）和最近的页面故障记录。
+#[tauri::command]
+fn render_status(window: tauri::Window, state: State<'_,AppState>) -> Result<serde_json::Value> {
+    main_window(&window)?;
+    Ok(serde_json::json!({ "graphite": render_guard::graphite_enabled(&state.data_dir), "failures": render_guard::recent(&state.data_dir, 20), "log": render_guard::log_path(&state.data_dir).to_string_lossy() }))
+}
+
+#[tauri::command]
+fn render_set_graphite(window: tauri::Window, state: State<'_,AppState>, enabled: bool) -> Result<()> {
+    main_window(&window)?;
+    render_guard::set_graphite(&state.data_dir, enabled).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 async fn http_cancel(window: tauri::Window,state: State<'_,AppState>,id: String) -> Result<()> {
     main_window(&window)?;
@@ -154,12 +177,20 @@ pub fn run() {
                 // Development builds use the same fixed copied resource, never a caller-provided executable.
                 PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources").join("PdfCopilotHost.exe")
             };
+            let render = Arc::new(render_guard::Guard::default());
             app.manage(AppState {
                 library: Arc::new(Mutex::new(library)),
                 credentials: Arc::new(Mutex::new(credentials::Credentials::new(data_dir.join("credentials")))),
                 bridge: Arc::new(native_bridge::NativeBridge::default()),host,
                 http: Arc::new(http_stream::HttpBridge::new().map_err(std::io::Error::other)?),
+                data_dir: data_dir.clone(), render: render.clone(),
             });
+            // 主窗口在这里建（配置里 create=false）：WebView2 的启动参数要按 Graphite 开关来定。
+            let config = app.config().app.windows.iter().find(|window| window.label == "main").cloned().ok_or("缺少主窗口配置")?;
+            let graphite = render_guard::graphite_enabled(&data_dir);
+            let args = render_guard::browser_args(config.additional_browser_args.as_deref().unwrap_or(""), graphite);
+            let window = tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?.additional_browser_args(&args).build()?;
+            render_guard::watch(&window, render, data_dir, graphite);
             Ok(())
         })
         .on_window_event(|window,event| {
@@ -168,7 +199,7 @@ pub fn run() {
                 window.state::<AppState>().http.cancel_all();
             }
         })
-        .invoke_handler(tauri::generate_handler![list_documents,import_documents,read_document,update_document,remove_document,read_asset,index_document,get_setting,set_setting,get_credential,set_credential,native_connect,native_send,native_disconnect,http_start,http_cancel,
+        .invoke_handler(tauri::generate_handler![list_documents,import_documents,read_document,update_document,remove_document,read_asset,index_document,get_setting,set_setting,get_credential,set_credential,native_connect,native_send,native_disconnect,http_start,http_cancel,render_recovered,render_status,render_set_graphite,
             updater::update_status,updater::update_check,updater::update_download,updater::update_cancel,updater::update_install,updater::update_open_page])
         .run(tauri::generate_context!())
         .expect("开智启动失败");
