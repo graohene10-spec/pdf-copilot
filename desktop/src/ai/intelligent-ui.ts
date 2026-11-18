@@ -4,7 +4,7 @@
  * 全部用原生 DOM 和 SVG 画，不执行模型给的任何代码：公式只走下面这个小小的表达式求值器。
  */
 import { renderMarkdown } from './render'
-import { diagramBuilders, DIAGRAM_INSTRUCTIONS } from './diagrams'
+import { diagramBuilders, DIAGRAM_CATALOG } from './diagrams'
 
 // ---- 表达式求值：数字、变量、+ - * / ^、比较、三目、常用数学函数 -------------------
 type Scope = Record<string, number>
@@ -124,6 +124,9 @@ function frame(root: HTMLElement, title?: string, subtitle?: string) {
   root.append(card)
   return card
 }
+/** 图是按 viewBox 等比缩放的：画得窄时刻度文字跟着缩成一点点。按实际宽度把字号放回 10px 左右（最多放大到 1.8 倍，免得刻度挤在一起）。 */
+const widths = new ResizeObserver(entries => { for (const entry of entries) (entry.target as SVGElement).style.setProperty('--k', String(Math.min(1.8, Math.max(1, W / Math.max(1, entry.contentRect.width) * .9)).toFixed(2))) })
+function legible(svg: SVGSVGElement) { widths.observe(svg) }
 function tooltipFor(host: HTMLElement) {
   const tip = h('div', 'iui-tip'); tip.hidden = true; host.append(tip)
   return {
@@ -142,6 +145,7 @@ function plot(host: HTMLElement, kind: 'line' | 'scatter' | 'bar', series: Serie
   host.replaceChildren()
   const wrap = h('div', 'iui-plot'), svg = s('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img' }) as SVGSVGElement
   wrap.append(svg); host.append(wrap)
+  legible(svg)
   const tip = tooltipFor(wrap)
   const all = series.flatMap(item => item.points).filter(point => Number.isFinite(point[0]) && Number.isFinite(point[1]))
   if (!all.length) { host.append(h('p', 'iui-sub', '没有可画的数据')); return }
@@ -380,6 +384,31 @@ function build(spec: any, root: HTMLElement, context: Context) {
 }
 
 const waiting = new WeakMap<HTMLElement, number>()
+/**
+ * 一张图第一次出现时「画」出来：线条描出来、文字依次浮现，只这一遍。
+ * 回答还在写的时候整段会反复重排（界面也跟着重建），所以记下每张图第一次出现的时刻，重建时从动画的那个进度接着走，不会从头再来。
+ */
+const born = new Map<string, number>()
+const ENTRANCE = 1500
+function entrance(host: HTMLElement) {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+  const key = host.dataset.ui || '', now = performance.now()
+  if (!born.has(key)) { born.set(key, now); if (born.size > 400) born.delete(born.keys().next().value!) }
+  const age = now - born.get(key)!
+  if (age >= ENTRANCE) return
+  // 实线才描边（虚线本身就靠 dasharray 画，改成淡入）。
+  let order = 0
+  for (const shape of host.querySelectorAll<SVGGeometryElement>('.iui-shape,.iui-edge,.iui-line,.iui-span')) {
+    shape.style.setProperty('--i', String(Math.min(14, order++)))
+    if (!/\b(dashed|faint)\b/.test(shape.getAttribute('class') || '')) { shape.setAttribute('pathLength', '1'); shape.classList.add('iui-drawn') }
+  }
+  for (const [selector, cap] of [['.iui-dl', 18], ['.iui-step', 10], ['.iui-region', 6], ['.iui-bar', 16], ['.iui-dot', 24], ['.iui-slice', 10], ['.iui-metric', 8], ['.iui-optable tr', 10], ['.iui-table tbody tr', 12], ['.iui-end,.iui-dot-mark', 10]] as const)
+    host.querySelectorAll<HTMLElement>(selector).forEach((element, index) => element.style.setProperty('--i', String(Math.min(cap, index))))
+  host.style.setProperty('--iui-age', `${-Math.round(age)}ms`)
+  host.classList.add('iui-fresh')
+  // 走完就撤掉：之后拖滑块重画曲线、筛选表格都不再带入场动画。
+  setTimeout(() => { host.classList.remove('iui-fresh'); for (const shape of host.querySelectorAll('.iui-drawn')) { shape.removeAttribute('pathLength'); shape.classList.remove('iui-drawn') } }, ENTRANCE - age + 60)
+}
 /** 把回答里所有还没画的 ```ui 块画出来。streaming：回答还在写，JSON 可能没写完，先显示占位。 */
 export function mountIntelligentUi(root: HTMLElement, options: Context & { streaming?: boolean } = {}) {
   // 界面块写了超过 10 秒还没写完：告诉读者它本来就慢。
@@ -393,20 +422,40 @@ export function mountIntelligentUi(root: HTMLElement, options: Context & { strea
       host.append(h('p', options.streaming ? 'iui-wait' : 'iui-error', options.streaming ? (slow ? '正在生成 Intelligent UI… 它比较复杂，可能会慢一些' : '正在生成 Intelligent UI…') : '这段界面描述不是合法的 JSON，无法显示。'))
       continue
     }
-    try { build(spec, host, options) }
+    try { build(spec, host, options); entrance(host) }
     catch (error: any) { host.replaceChildren(h('p', 'iui-error', error?.message || '这段界面无法显示。')) }
   }
 }
 
-/** 写给模型看的说明：什么时候用、怎么写。 */
-export const UI_INSTRUCTIONS = [
-  '当交互界面比文字更清楚时（数据对比、随参数变化的公式、需要读者填写再继续的任务），可以在回答里放一个语言标记为 ui 的代码块，内容是一段 JSON，阅读器会把它画成可操作的界面；普通问题照常用文字回答，不要为了用而用。JSON 顶层是一个组件或组件数组，type 可选：',
-  '- cards：{"type":"cards","items":[{"label":"说明","value":"98.6%","badge":"正常","tone":"good|warn|bad|info","note":""}]}',
-  '- chart：{"type":"chart","kind":"line|bar|scatter|pie","title":"","x":["A","B"]或数字数组,"series":[{"name":"","data":[1,2]}],"unit":"%","xLabel":"","yLabel":""}；散点用 "series":[{"name":"","points":[[x,y]]}]；饼图用 "items":[{"label":"","value":1}]',
-  '- table：{"type":"table","title":"","columns":["项目","类别"],"rows":[["a","理论"]],"filter":"类别"}（filter 指定按哪一列做筛选标签；单元格可写成 {"text":"验证中","tone":"good"}）',
-  '- sim：{"type":"sim","title":"","params":[{"name":"L","label":"摆长 L","min":0.1,"max":5,"step":0.1,"value":1.2,"unit":"m"}],"toggles":[{"name":"damp","label":"加入衰减","value":false}],"plot":{"x":{"name":"t","min":0,"max":10,"label":"时间 t (s)"},"y":[{"name":"角位移","expr":"10*cos(sqrt(g/L)*t)*(damp?exp(-0.2*t):1)"}]},"outputs":[{"label":"周期","expr":"2*pi*sqrt(L/g)","unit":"s","digits":3}],"formula":"T=2\\\\pi\\\\sqrt{L/g}","note":""}；expr 只能用参数名、横轴变量、数字、+ - * / ^、比较、三目，以及 sin cos tan exp ln log10 sqrt abs min max pow floor ceil round 和常数 pi e',
-  '- form：{"type":"form","title":"","fields":[{"name":"topic","label":"主题","kind":"text|number|date|select|radio|checkbox|textarea","options":["A","B"],"value":""}],"submit":{"label":"生成","prompt":"请按这些设置继续：主题 {topic}"}}（读者点按钮后，prompt 里的 {字段名} 换成填写的内容，作为下一个问题发给你）',
-  '- badges、text：{"type":"badges","items":[{"text":"","tone":"good"}]}、{"type":"text","text":"markdown"}',
-  '示例数据要说明是示例；不要编造文档里没有的真实数据。',
-  DIAGRAM_INSTRUCTIONS,
-].join('\n')
+/**
+ * 写给模型看的说明。画的东西两处完全一样（同一套组件、同一个渲染器），只是侧重不同：
+ * 阅读助手里图解和可交互并重，按内容选；快速解释是一张小卡片，首选图解，可交互只是可选的补充。
+ */
+const WRITING = '写法：语言标记为 ui 的代码块，内容是一段 JSON，顶层是一个组件或组件数组，阅读器会把它画出来。图上的文字要短，公式写成 $...$；用 focus 标出最关键的那一处。示例数据要注明是示例，不要编造文档里没有的真实数据。'
+const INTERACTIVE = {
+  cards: '- cards：{"type":"cards","items":[{"label":"说明","value":"98.6%","badge":"正常","tone":"good|warn|bad|info","note":""}]}',
+  chart: '- chart：{"type":"chart","kind":"line|bar|scatter|pie","title":"","x":["A","B"]或数字数组,"series":[{"name":"","data":[1,2]}],"unit":"%","xLabel":"","yLabel":""}；散点用 "series":[{"name":"","points":[[x,y]]}]；饼图用 "items":[{"label":"","value":1}]',
+  table: '- table：{"type":"table","title":"","columns":["项目","类别"],"rows":[["a","理论"]],"filter":"类别"}（filter 指定按哪一列做筛选标签；单元格可写成 {"text":"验证中","tone":"good"}）',
+  sim: '- sim：{"type":"sim","title":"","params":[{"name":"L","label":"摆长 L","min":0.1,"max":5,"step":0.1,"value":1.2,"unit":"m"}],"toggles":[{"name":"damp","label":"加入衰减","value":false}],"plot":{"x":{"name":"t","min":0,"max":10,"label":"时间 t (s)"},"y":[{"name":"角位移","expr":"10*cos(sqrt(g/L)*t)*(damp?exp(-0.2*t):1)"}]},"outputs":[{"label":"周期","expr":"2*pi*sqrt(L/g)","unit":"s","digits":3}],"formula":"T=2\\\\pi\\\\sqrt{L/g}","note":""}；expr 只能用参数名、横轴变量、数字、+ - * / ^、比较、三目，以及 sin cos tan exp ln log10 sqrt abs min max pow floor ceil round 和常数 pi e',
+  form: '- form：{"type":"form","title":"","fields":[{"name":"topic","label":"主题","kind":"text|number|date|select|radio|checkbox|textarea","options":["A","B"],"value":""}],"submit":{"label":"生成","prompt":"请按这些设置继续：主题 {topic}"}}（读者点按钮后，prompt 里的 {字段名} 换成填写的内容，作为下一个问题发给你）',
+  badges: '- badges、text：{"type":"badges","items":[{"text":"","tone":"good"}]}、{"type":"text","text":"markdown"}',
+}
+export const UI_INSTRUCTIONS = {
+  assistant: [
+    '当一张图或一个能操作的界面比文字更清楚时，可以在回答里放 ui 代码块；普通问题照常用文字回答，不要为了用而用。',
+    WRITING,
+    '组件分两类，同等看待，按内容选：讲「是什么、怎么来的、彼此什么关系」用图解；讲「怎么变、差多少、让读者动手试」用可交互。两者都合适时可以各放一个——先用图解把结构讲清，再给一个可交互的让读者自己拨一拨。',
+    '【图解】静态示意图，讲概念的结构。先想清楚结构是什么（包含？交集？映射？推导？分类？运算？区间？），再挑最贴切的一种：',
+    ...DIAGRAM_CATALOG,
+    '【可交互】读者能动手的界面：量随参数变化用 sim，数据对比用 chart，条目多、要筛选用 table，几个关键数字用 cards，需要读者填写后再继续用 form：',
+    ...Object.values(INTERACTIVE),
+  ].join('\n'),
+  explain: [
+    '这是一张就地弹出的小卡片：用一个 ui 代码块把选中的概念画出来。',
+    WRITING,
+    '首选【图解】。先判断这个概念的结构（包含？交集？映射？推导？分类？运算？区间？），从图解目录里挑最贴切的一种，最多两种：',
+    ...DIAGRAM_CATALOG,
+    '【可交互】是可选项，只在图解讲不出来时才用，或者放在图解后面作补充：量确实随参数连续变化用 sim，有真实数据要对比用 chart 或 table。不要为了互动而做互动，不要用 form、cards。',
+    INTERACTIVE.sim, INTERACTIVE.chart, INTERACTIVE.table,
+  ].join('\n'),
+}

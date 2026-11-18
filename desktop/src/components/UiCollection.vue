@@ -100,19 +100,19 @@ onBeforeUnmount(() => document.removeEventListener('keydown', keydown, true))
 <template>
   <div class="ui-collection">
     <div class="uc-bar">
-      <span class="uc-hint">单击标题选中 · 空白处拖动框选 · Delete 删除 · 点页码跳回原处</span>
+      <span class="uc-hint">单击标题选中 · 拖动框选 · Delete 删除</span>
       <button v-if="selected.size" type="button" class="uc-remove" @click="askRemove(chosen())"><AppIcon name="trash" :size="14" />删除所选 {{ selected.size }}</button>
     </div>
-    <div v-if="confirming" class="uc-confirm" role="alertdialog">
-      <span>删除 {{ confirming.length }} 个 Intelligent UI？文档里对应的卡片 / 释义也会一起删掉。</span>
+    <Transition name="uc-confirm"><div v-if="confirming" class="uc-confirm" role="alertdialog">
+      <span>删除 {{ confirming.length }} 个？文档里对应的卡片 / 释义也会一起删掉。</span>
       <button type="button" class="uc-danger" @click="remove">删除</button><button type="button" @click="confirming = null">取消</button>
-    </div>
+    </div></Transition>
     <div ref="list" class="uc-list" @pointerdown.stop="startBand">
       <p v-if="!shown.length" class="uc-empty">{{ query ? `没有和「${query}」相关的 Intelligent UI。` : '还没有。PDF 里钉住的、Markdown 里记入文档的解释，只要带 Intelligent UI，都会收在这里。' }}</p>
       <section v-for="group in groups" :key="group.doc" class="uc-group">
         <h3><AppIcon name="book" :size="14" />{{ group.name }}<span>{{ group.list.length }}</span></h3>
-        <div class="uc-grid">
-          <article v-for="entry in group.list" :key="key(entry)" class="ui-item" :class="{ selected: selected.has(key(entry)) }" :data-key="key(entry)">
+        <TransitionGroup tag="div" class="uc-grid" name="uc-item" appear>
+          <article v-for="(entry, index) in group.list" :key="key(entry)" class="ui-item" :style="{ '--i': Math.min(index, 8) }" :class="{ selected: selected.has(key(entry)) }" :data-key="key(entry)">
             <header class="ui-item-head" @click="pick(entry, $event)">
               <span class="ui-item-term">{{ entry.term }}</span>
               <button type="button" class="ui-item-where" :data-tip="`跳到《${group.name}》${where(entry)}`" @click.stop="emit('jump', entry)">{{ where(entry) || '打开' }}<AppIcon name="arrow-up" :size="11" /></button>
@@ -120,7 +120,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', keydown, true))
             </header>
             <ExplainBody :item="itemOf(entry)" />
           </article>
-        </div>
+        </TransitionGroup>
       </section>
       <i v-if="band" class="uc-band" :style="{ left: `${band.left}px`, top: `${band.top}px`, width: `${band.width}px`, height: `${band.height}px` }"></i>
     </div>
@@ -134,6 +134,17 @@ onBeforeUnmount(() => document.removeEventListener('keydown', keydown, true))
 .uc-remove{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:999px;color:var(--danger)}
 .uc-confirm{display:flex;align-items:center;gap:10px;margin-top:8px;padding:10px 16px;border-radius:12px;background:color-mix(in srgb,var(--danger) 9%,transparent);font-size:13px}
 .uc-confirm span{flex:1}
+.uc-confirm-enter-active,.uc-confirm-leave-active{transition:opacity var(--dur-2,.18s) var(--ease-out,ease),transform var(--dur-3,.26s) var(--ease-out,ease)}
+.uc-confirm-enter-from,.uc-confirm-leave-to{opacity:0;transform:translateY(-6px)}
+/* 进来：一张张浮上来；删掉：缩一点淡出，剩下的滑过去补位。 */
+.uc-item-enter-active{transition:opacity .34s var(--ease-out,ease),transform .42s var(--ease-out,ease);transition-delay:calc(var(--i,0)*45ms)}
+.uc-item-enter-from{opacity:0;transform:translateY(12px)}
+.uc-item-leave-active{transition:opacity .2s ease,transform .24s ease}
+.uc-item-leave-to{opacity:0;transform:scale(.96)}
+.uc-item-move{transition:transform .36s var(--ease-out,ease)}
+.uc-group h3{animation:uc-head .4s var(--ease-out,ease) both}
+@keyframes uc-head{from{opacity:0;transform:translateX(-6px)}}
+@media (prefers-reduced-motion:reduce){.uc-item-enter-active,.uc-item-leave-active,.uc-item-move,.uc-confirm-enter-active,.uc-confirm-leave-active{transition:none}.uc-group h3{animation:none}}
 .uc-confirm button{height:28px;padding:0 14px;border-radius:999px}
 .uc-confirm .uc-danger{background:var(--danger);color:#fff;border-color:transparent}
 .uc-list{position:relative;min-height:calc(100vh - 260px);padding:0 0 28px;user-select:none}
@@ -144,6 +155,12 @@ onBeforeUnmount(() => document.removeEventListener('keydown', keydown, true))
 .uc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:14px;align-items:start}
 .ui-item{min-width:0;padding:10px 14px 14px;border:1px solid var(--line-soft,var(--hairline));border-radius:var(--r-lg,16px);background:var(--surface);color:var(--surface-ink,var(--ink));box-shadow:0 10px 26px -20px rgb(0 0 0 / .35);transition:border-color .15s,box-shadow .15s}
 .ui-item.selected{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent),0 0 18px -4px color-mix(in srgb,var(--accent) 45%,transparent)}
+/* 铅笔草稿：一张张贴在方格纸上的纸片，铅笔描边、略歪一点；图自己不再套一层框。 */
+:root[data-style='sketch'] .ui-item{border:1.4px solid color-mix(in srgb,var(--pencil,#2b2a27) 72%,transparent);border-radius:7px 12px 8px 13px/12px 7px 13px 8px;box-shadow:2px 3px 0 color-mix(in srgb,var(--pencil,#2b2a27) 12%,transparent)}
+:root[data-style='sketch'] .uc-grid>.ui-item:nth-child(2n){rotate:.35deg}
+:root[data-style='sketch'] .uc-grid>.ui-item:nth-child(3n+1){rotate:-.3deg}
+:root[data-style='sketch'] .ui-item-head{border-bottom:1.2px dashed color-mix(in srgb,var(--pencil,#2b2a27) 34%,transparent)}
+.ui-item .iui>.iui-card:only-child{padding:6px 0 0;border:0;background:none}
 :root[data-style='sketch'] .ui-item.selected{border-color:var(--red-pencil,#c0392b);box-shadow:0 0 0 2px color-mix(in srgb,var(--red-pencil,#c0392b) 22%,transparent)}
 .ui-item-head{display:flex;align-items:center;gap:8px;margin:0 0 6px;padding:2px 0 6px;border-bottom:1px solid var(--line-soft,var(--hairline));cursor:pointer}
 .ui-item-term{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:13px;font-weight:600}

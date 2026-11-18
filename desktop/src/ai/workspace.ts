@@ -398,7 +398,7 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
     activity('思考中')
     const output = () => { if (answer?.usage?.estimated) answer.usage.output = estimateTokens(answer.content) + estimateTokens(answer.reasoning || '') }
     const { UI_INSTRUCTIONS } = await import('./intelligent-ui')
-    const options = { ...snapshot, apiKey, signal, messages: history, extraInstructions: UI_INSTRUCTIONS,
+    const options = { ...snapshot, apiKey, signal, messages: history, extraInstructions: UI_INSTRUCTIONS.assistant,
       onDelta: (text: string) => { if (valid() && answer) { answer.firstTokenAt ||= Date.now(); answer.content += text; answer.activity = '正在回答'; output() } },
       onReasoning: (text: string) => { if (valid() && answer) { answer.reasoning = (answer.reasoning || '') + text; answer.activity = '思考中'; output() } },
       onProgress: (text: string) => activity(text.replace(/[…。]+$/, '')),

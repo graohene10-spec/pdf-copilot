@@ -20,11 +20,12 @@
 .iui-value.tone-good{color:#2f9a5c}.iui-value.tone-bad{color:var(--danger)}.iui-value.tone-warn{color:#b9790f}
 .iui-label,.iui-note{font-size:12px;color:var(--surface-muted,var(--muted))}
 .iui-plot{position:relative}
+[hidden].iui-tip{display:none}
 .iui-plot svg{display:block;width:100%;height:auto;overflow:visible}
 .iui-pie svg{max-width:240px;margin:0 auto}
 .iui-grid{stroke:color-mix(in srgb,var(--surface-ink,var(--ink)) 10%,transparent);stroke-dasharray:3 4}
 .iui-base{stroke:color-mix(in srgb,var(--surface-ink,var(--ink)) 30%,transparent)}
-.iui-axis{fill:var(--surface-muted,var(--muted));font-size:11px;font-variant-numeric:tabular-nums}
+.iui-axis{fill:var(--surface-muted,var(--muted));font-size:calc(11px*var(--k,1));font-variant-numeric:tabular-nums}
 .iui-line{fill:none;stroke-width:2.2;stroke-linejoin:round;stroke-linecap:round}
 .iui-bar,.iui-dot,.iui-slice{transition:opacity var(--dur-1,.12s)}
 .iui-bar:hover,.iui-dot:hover,.iui-slice:hover{opacity:.75}
@@ -66,7 +67,7 @@
 
 /* ---- 图解（ai/diagrams.ts）：细线、少量主色；重点描一道主色带一点光。铅笔草稿：线条手绘抖动，重点用红铅笔。 ---- */
 .iui-dia-card{--dia-line:color-mix(in srgb,var(--surface-ink,var(--ink)) 46%,transparent);--dia-faint:color-mix(in srgb,var(--surface-ink,var(--ink)) 16%,transparent);--dia-hot:var(--accent);--dia-hot-soft:color-mix(in srgb,var(--accent) 16%,transparent)}
-:root[data-style='sketch'] .iui-dia-card{--dia-line:color-mix(in srgb,var(--pencil,#2b2a27) 78%,transparent);--dia-faint:color-mix(in srgb,var(--pencil,#2b2a27) 22%,transparent);--dia-hot:var(--red-pencil,#c0392b);--dia-hot-soft:color-mix(in srgb,var(--red-pencil,#c0392b) 14%,transparent)}
+:root[data-style='sketch'] .iui-dia-card{--dia-line:color-mix(in srgb,var(--pencil,#2b2a27) 78%,transparent);--dia-faint:color-mix(in srgb,var(--pencil,#2b2a27) 32%,transparent);--dia-hot:var(--red-pencil,#c0392b);--dia-hot-soft:color-mix(in srgb,var(--red-pencil,#c0392b) 14%,transparent)}
 .iui-dia{position:relative;width:100%}
 .iui-dia>svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
 :root:not([data-style='sketch']) .iui-dia .ink{filter:none}
@@ -87,6 +88,9 @@
 .iui-dl.has-note{cursor:help;text-decoration:underline dotted color-mix(in srgb,currentColor 40%,transparent);text-underline-offset:3px}
 .iui-shape{fill:none;stroke:var(--dia-line);stroke-width:1.4}
 .iui-shape.soft{stroke:var(--dia-faint)}
+/* 草稿主题的线过一道抖动滤镜会被抹淡：描粗一点，圆和框才不会断。 */
+:root[data-style='sketch'] .iui-shape{stroke-width:1.7}
+:root[data-style='sketch'] .iui-shape.soft{stroke-width:1.9}
 .iui-shape.fill{fill:var(--dia-hot-soft)}
 .iui-shape.dashed,.iui-edge.dashed{stroke-dasharray:5 4}
 .iui-shape.hot{stroke:var(--dia-hot);stroke-width:1.8;filter:drop-shadow(0 0 4px color-mix(in srgb,var(--dia-hot) 45%,transparent))}
@@ -147,3 +151,42 @@
 .iui-dl.venn-region.tight{max-width:15%}
 .iui-dl.mark-no{display:grid;place-items:center;width:17px;height:17px;padding:0;border-radius:50%;background:var(--dia-hot);color:var(--surface,#fff);font-size:10.5px;font-weight:700;line-height:1}
 .iui-dia-key>i{display:grid;place-items:center;width:17px;height:17px;border:0;border-radius:50%;background:var(--dia-hot);color:var(--surface,#fff);font-size:10.5px;font-style:normal;font-weight:700}
+
+/* ---- 第一次出现：把图画出来（线描出来、色块和文字依次浮现），只走一遍；--iui-age 让流式重排时从原进度接着走。 ---- */
+@media (prefers-reduced-motion:no-preference){
+.iui-fresh{--at:var(--iui-age,0ms)}
+.iui-fresh .iui-drawn{stroke-dasharray:1;animation:iui-draw .72s cubic-bezier(.33,.7,.2,1) both;animation-delay:calc(var(--i,0)*60ms + var(--at))}
+.iui-fresh :is(.iui-shape,.iui-edge):not(.iui-drawn){animation:iui-fade .5s ease both;animation-delay:calc(var(--i,0)*60ms + 120ms + var(--at))}
+.iui-fresh .iui-region{animation:iui-fade .6s ease both;animation-delay:calc(var(--i,0)*90ms + 420ms + var(--at))}
+.iui-fresh .iui-dl{animation:iui-fade .42s ease both;animation-delay:calc(var(--i,0)*38ms + 260ms + var(--at))}
+.iui-fresh :is(.iui-end,.iui-dot-mark){animation:iui-fade .4s ease both;animation-delay:calc(var(--i,0)*50ms + 380ms + var(--at))}
+.iui-fresh .iui-step{animation:iui-rise .46s var(--ease-out,ease) both;animation-delay:calc(var(--i,0)*120ms + var(--at))}
+.iui-fresh .iui-step::before{transform-origin:top;animation:iui-grow .36s ease both;animation-delay:calc(var(--i,0)*120ms + 150ms + var(--at))}
+.iui-fresh .iui-flow.across .iui-step::before{transform-origin:left;animation-name:iui-grow-x}
+.iui-fresh .iui-optable tr,.iui-fresh .iui-table tbody tr{animation:iui-fade .4s ease both;animation-delay:calc(var(--i,0)*45ms + var(--at))}
+.iui-fresh .iui-metric{animation:iui-rise .44s var(--ease-out,ease) both;animation-delay:calc(var(--i,0)*70ms + var(--at))}
+.iui-fresh .iui-bar{transform-box:fill-box;transform-origin:50% 100%;animation:iui-bar .6s cubic-bezier(.25,.8,.25,1) both;animation-delay:calc(var(--i,0)*40ms + var(--at))}
+.iui-fresh .iui-dot{animation:iui-fade .35s ease both;animation-delay:calc(var(--i,0)*18ms + 420ms + var(--at))}
+.iui-fresh .iui-slice{transform-origin:120px 120px;animation:iui-slice .55s var(--ease-out,ease) both;animation-delay:calc(var(--i,0)*70ms + var(--at))}
+.iui-fresh :is(.iui-axis,.iui-grid,.iui-base,.iui-legend,.iui-xlabel){animation:iui-fade .5s ease both;animation-delay:var(--at)}
+}
+@keyframes iui-draw{from{stroke-dashoffset:1;opacity:0}18%{opacity:1}to{stroke-dashoffset:0;opacity:1}}
+@keyframes iui-fade{from{opacity:0}}
+@keyframes iui-rise{from{opacity:0;transform:translateY(7px)}}
+@keyframes iui-grow{from{transform:scaleY(0)}}
+@keyframes iui-grow-x{from{transform:scaleX(0)}}
+@keyframes iui-bar{from{transform:scaleY(0)}}
+@keyframes iui-slice{from{opacity:0;transform:scale(.9) rotate(-14deg)}}
+
+/* ---- 模拟：参数名和当前值排在一行、滑块在下面；只有「重置」时把它收到标题那一行的右上角，不单占一行。 ---- */
+.iui-param{grid-template-columns:1fr auto;align-items:baseline;gap:6px 10px;padding:10px 12px 12px}
+.iui-param strong{font-size:16px;font-weight:650;line-height:1.2}
+.iui-param input{grid-column:1/-1}
+.iui-card:has(>.iui-title) .iui-options:not(:has(.iui-check)){position:absolute;top:10px;right:12px;margin:0}
+.iui-reset{transition:color var(--dur-1,.12s),border-color var(--dur-1,.12s),background-color var(--dur-1,.12s)}
+.iui-reset:hover{color:var(--surface-ink,var(--ink));border-color:color-mix(in srgb,var(--surface-ink,var(--ink)) 34%,transparent);background:color-mix(in srgb,var(--surface-ink,var(--ink)) 5%,transparent)}
+.iui-output{padding-top:8px;border-top:1px solid var(--hairline,var(--line))}
+.iui-output strong{font-size:18px;font-weight:650}
+.iui-outputs{gap:8px;margin-top:10px}
+.iui-card>.iui-title{margin:0 0 6px!important}
+.iui-dl.set .katex{font-size:1.22em}

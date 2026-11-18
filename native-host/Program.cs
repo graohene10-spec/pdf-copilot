@@ -77,19 +77,35 @@ namespace PdfCopilot {
         private static string SafeId(Dictionary<string, object> message) {
             string id = Json.Text(message, "id"); return id.Length <= 128 ? id : "";
         }
+        // Prefer the engine bundled with the Codex desktop app (no separate CLI install needed), then a CLI on PATH.
         private static string DiscoverCodex() {
-            string bundled = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OpenAI", "Codex", "bin");
-            if (Directory.Exists(bundled)) {
-                var candidates = new List<string>();
-                foreach (string directory in Directory.GetDirectories(bundled)) { string candidate = Path.Combine(directory, "codex.exe"); if (File.Exists(candidate)) candidates.Add(candidate); }
-                candidates.Sort(delegate(string a, string b) { return File.GetLastWriteTimeUtc(b).CompareTo(File.GetLastWriteTimeUtc(a)); });
-                if (candidates.Count > 0) return candidates[0];
-            }
+            string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            string programs = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            string[] roots = new string[] {
+                Path.Combine(local, "OpenAI", "Codex"), Path.Combine(local, "Programs", "Codex"), Path.Combine(local, "Programs", "OpenAI Codex"),
+                Path.Combine(local, "Programs", "OpenAI", "Codex"), Path.Combine(programs, "OpenAI", "Codex"), Path.Combine(programs, "Codex")
+            };
+            var candidates = new List<string>();
+            foreach (string root in roots) CollectCodex(root, 0, false, candidates);
+            candidates.Sort(delegate(string a, string b) { return File.GetLastWriteTimeUtc(b).CompareTo(File.GetLastWriteTimeUtc(a)); });
+            if (candidates.Count > 0) return candidates[0];
             string path = Environment.GetEnvironmentVariable("PATH") ?? "";
             foreach (string directory in path.Split(Path.PathSeparator)) {
                 try { string candidate = Path.Combine(directory.Trim('"'), "codex.exe"); if (Path.IsPathRooted(candidate) && File.Exists(candidate)) return Path.GetFullPath(candidate); } catch { }
             }
             return null;
+        }
+        // Only accept codex.exe below a bin / resources / vendor directory: the desktop app's own window
+        // executable may also be named Codex.exe and must never be started as the command-line engine.
+        private static void CollectCodex(string directory, int depth, bool inside, List<string> found) {
+            try {
+                if (depth > 6 || found.Count >= 32 || !Directory.Exists(directory)) return;
+                if (inside) { string candidate = Path.Combine(directory, "codex.exe"); if (File.Exists(candidate)) found.Add(candidate); }
+                foreach (string child in Directory.GetDirectories(directory)) {
+                    string name = Path.GetFileName(child).ToLowerInvariant();
+                    CollectCodex(child, depth + 1, inside || name == "bin" || name == "resources" || name == "vendor", found);
+                }
+            } catch { }
         }
         private static int SelfTest() {
             try {

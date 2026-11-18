@@ -94,6 +94,11 @@ pub fn watch(window: &tauri::WebviewWindow, guard: Arc<Guard>, dir: PathBuf, gra
     use windows::core::{Interface, PWSTR};
     let _ = window.with_webview(move |webview| unsafe {
         let Ok(core) = webview.controller().CoreWebView2() else { return };
+        // 触控板两指捏合：WebView2 关着「捏合缩放」时，这个手势根本到不了页面。
+        // 打开它，页面自己接住那一串 Ctrl+滚轮来缩放文档（App.vue 的 wheel 一律 preventDefault，整个界面不会被放大）。
+        if let Ok(settings) = core.Settings() {
+            if let Ok(pinch) = settings.cast::<ICoreWebView2Settings5>() { let _ = pinch.SetIsPinchZoomEnabled(true); }
+        }
         let mut version = PWSTR::null();
         let runtime = if webview.environment().BrowserVersionString(&mut version).is_ok() { take_pwstr(version) } else { String::new() };
         let handler = ProcessFailedEventHandler::create(Box::new(move |sender: Option<ICoreWebView2>, args: Option<ICoreWebView2ProcessFailedEventArgs>| {
