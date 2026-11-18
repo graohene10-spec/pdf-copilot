@@ -59,7 +59,7 @@ export async function complete(options: CompleteOptions): Promise<string> {
   let text = '', reported: { input?: number; output?: number; reasoning?: number } | undefined
   const started = Date.now()
   try {
-    await streamChat({ ...settings, ...choice, fast: own ? settings.fast : options.fast ? false : settings.fast, apiKey, signal: options.signal, messages: options.messages, ...(options.extraInstructions ? { extraInstructions: options.extraInstructions } : {}),
+    await streamChat({ ...settings, ...choice, fast: own ? settings.fast : options.fast ? false : settings.fast, tier: own ? settings.tier : options.fast ? '' : settings.tier, apiKey, signal: options.signal, messages: options.messages, ...(options.extraInstructions ? { extraInstructions: options.extraInstructions } : {}),
       onDelta: (delta: string) => { text += delta; options.onDelta?.(delta, text) }, onReasoning: (delta: string) => options.onReasoning?.(delta),
       onUsage: (usage: { input?: number; output?: number; reasoning?: number }) => { reported = { input: (reported?.input || 0) + (usage.input || 0), output: (reported?.output || 0) + (usage.output || 0), reasoning: (reported?.reasoning || 0) + (usage.reasoning || 0) } } })
     // 刚用过的连接还在池里，不必马上再预热。

@@ -306,7 +306,14 @@ namespace PdfCopilot {
                     bool vision = Json.Get(model, "inputModalities") == null;
                     foreach (object modality in Json.Items(Json.Get(model, "inputModalities"))) if (Json.Str(modality) == "image") vision = true;
                     string name = Json.Text(model, "model"); if (name == "") name = Json.Text(model, "id");
-                    models.Add(Json.Obj("id", name, "name", Json.Text(model, "displayName"), "efforts", efforts, "defaultEffort", Json.Text(model, "defaultReasoningEffort"), "vision", vision));
+                    // Speed tiers this model offers (Fast, Ultra Fast, ...). Older Codex only lists "fast" under additionalSpeedTiers.
+                    var tiers = new List<object>();
+                    foreach (object option in Json.Items(Json.Get(model, "serviceTiers"))) {
+                        var tier = Json.Map(option); string tierId = tier == null ? "" : Json.Text(tier, "id");
+                        if (tierId != "") tiers.Add(Json.Obj("id", tierId, "name", Json.Text(tier, "name"), "description", Json.Text(tier, "description")));
+                    }
+                    if (tiers.Count == 0) foreach (object speed in Json.Items(Json.Get(model, "additionalSpeedTiers"))) if (Json.Str(speed) == "fast") tiers.Add(Json.Obj("id", "priority", "name", "Fast", "description", ""));
+                    models.Add(Json.Obj("id", name, "name", Json.Text(model, "displayName"), "efforts", efforts, "defaultEffort", Json.Text(model, "defaultReasoningEffort"), "vision", vision, "tiers", tiers, "defaultTier", Json.Text(model, "defaultServiceTier")));
                 }
                 cursor = Json.Text(result, "nextCursor"); if (cursor == "") break;
             }
@@ -373,11 +380,13 @@ namespace PdfCopilot {
                 var turnParams = Json.Obj("threadId", chat.ThreadId, "input", input, "approvalPolicy", "never", "sandboxPolicy", Json.Obj("type", "readOnly", "networkAccess", false), "environments", new object[0]);
                 if (request.Effort != "") turnParams["effort"] = request.Effort;
                 // Fast: Codex's priority service tier (the /fast toggle). Older Codex rejects the field; then retry without it.
-                if (request.Fast) turnParams["serviceTier"] = "fast";
+                // A tier id chosen from the model's list wins; "default" asks for standard speed even when the model defaults to a faster tier.
+                if (request.Tier != "") turnParams["serviceTier"] = request.Tier;
+                else if (request.Fast) turnParams["serviceTier"] = "fast";
                 Dictionary<string, object> turnResult;
                 try { turnResult = Call("turn/start", turnParams, 30000); }
                 catch (InvalidOperationException e) {
-                    if (!request.Fast || !e.Message.Contains("code -32602")) throw;
+                    if (!turnParams.ContainsKey("serviceTier") || !e.Message.Contains("code -32602")) throw;
                     turnParams.Remove("serviceTier"); turnResult = Call("turn/start", turnParams, 30000);
                 }
                 chat.TurnId = Json.Text(Json.Map(Json.Get(turnResult, "turn")), "id");

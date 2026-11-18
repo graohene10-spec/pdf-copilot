@@ -1,5 +1,8 @@
 // 书签的画面：每一枚书签是一小幅画，画风取自艺术史上的一个流派，按年代排。
 // 全是原创的几何小构图（不是哪一幅名作的复制品），静态 SVG，画一次就不再重绘。画布 96 × 40。
+import { reactive } from 'vue'
+import { library } from '../sdk'
+
 export type BookmarkArt = { id: string; name: string; era: string; svg: string }
 
 // 印象派的笔触：一把短短的色点，位置和颜色固定（同一枚书签每次看到的都一样）。
@@ -54,10 +57,56 @@ export const BOOKMARK_ARTS: BookmarkArt[] = [
 ]
 const BY_ID = new Map(BOOKMARK_ARTS.map(item => [item.id, item]))
 
+// ---- 自定义：用自己的图片当书签。图片裁成 96:40、缩到 192 × 80 存下来（几 KB 一张），最多留 12 张，各本书通用。 ----
+const CUSTOM_KEY = 'bookmark.customArts.v1'
+const CUSTOM_MAX = 12
+const CUSTOM_IMAGE = /^data:image\/(webp|jpeg|png);base64,[A-Za-z0-9+/=]+$/
+const CUSTOM_ID = /^custom:[0-9a-f-]{8,40}$/
+/** id（custom:…）→ 图片。 */
+export const customArts = reactive(new Map<string, string>())
+let customLoaded: Promise<void> | undefined
+export function loadCustomArts() {
+  customLoaded ||= (async () => {
+    try {
+      const parsed = JSON.parse(await library.getSetting(CUSTOM_KEY) || '[]')
+      if (Array.isArray(parsed)) for (const item of parsed.slice(0, CUSTOM_MAX)) if (CUSTOM_ID.test(item?.id) && typeof item.image === 'string' && item.image.length < 200_000 && CUSTOM_IMAGE.test(item.image)) customArts.set(item.id, item.image)
+    } catch { /* 没有自定义图片 */ }
+  })()
+  return customLoaded
+}
+function saveCustomArts() { void library.setSetting(CUSTOM_KEY, JSON.stringify([...customArts].map(([id, image]) => ({ id, image })))).catch(() => {}) }
+/** 把一张图片裁成书签的比例存下来，返回它的 id；图片读不了或已经存满时返回 null。 */
+export async function addCustomArt(file: Blob): Promise<string | null> {
+  await loadCustomArts()
+  if (customArts.size >= CUSTOM_MAX) return null
+  let bitmap: ImageBitmap
+  try { bitmap = await createImageBitmap(file) } catch { return null }
+  const canvas = document.createElement('canvas'); canvas.width = 192; canvas.height = 80
+  const context = canvas.getContext('2d')
+  if (!context || !bitmap.width || !bitmap.height) return null
+  // 居中裁切，铺满 96:40。
+  const scale = Math.max(canvas.width / bitmap.width, canvas.height / bitmap.height), w = canvas.width / scale, h = canvas.height / scale
+  context.drawImage(bitmap, (bitmap.width - w) / 2, (bitmap.height - h) / 2, w, h, 0, 0, canvas.width, canvas.height)
+  bitmap.close()
+  let image = canvas.toDataURL('image/webp', .86)
+  if (!image.startsWith('data:image/webp')) image = canvas.toDataURL('image/jpeg', .86)
+  if (!CUSTOM_IMAGE.test(image)) return null
+  const id = `custom:${crypto.randomUUID()}`
+  customArts.set(id, image)
+  saveCustomArts()
+  return id
+}
+export function removeCustomArt(id: string) { if (customArts.delete(id)) saveCustomArts() }
+const customArt = (id: string, image: string, index: number): BookmarkArt => ({ id, name: `自定义 ${index + 1}`, era: '我的图片', svg: `<image href="${image}" width="96" height="40" preserveAspectRatio="xMidYMid slice"/>` })
+/** 存着的自定义书签图，按加入的先后。 */
+export function customArtList(): BookmarkArt[] { return [...customArts].map(([id, image], index) => customArt(id, image, index)) }
+
 /** 一枚书签的画风：存过的用存的；老书签没存，就按它的 id 固定挑一种。 */
 export function artOf(mark: { id: string; art?: string }): BookmarkArt {
   const saved = mark.art ? BY_ID.get(mark.art) : undefined
   if (saved) return saved
+  // 自定义图片：图片还在就用它（被删掉了就退回按 id 固定挑的那一种）。
+  if (mark.art && customArts.has(mark.art)) return customArt(mark.art, customArts.get(mark.art)!, [...customArts.keys()].indexOf(mark.art))
   let hash = 0
   for (const char of mark.id) hash = (hash * 31 + char.charCodeAt(0)) >>> 0
   return BOOKMARK_ARTS[hash % BOOKMARK_ARTS.length]!
@@ -70,4 +119,4 @@ export function pickArt(existing: { id: string; art?: string }[], random = Math.
   const pool = BOOKMARK_ARTS.filter(item => (used.get(item.id) || 0) === least)
   return pool[Math.floor(random() * pool.length)]!.id
 }
-export const validArt = (id: unknown): id is string => typeof id === 'string' && BY_ID.has(id)
+export const validArt = (id: unknown): id is string => typeof id === 'string' && (BY_ID.has(id) || CUSTOM_ID.test(id))

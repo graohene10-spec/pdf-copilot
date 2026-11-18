@@ -17,7 +17,7 @@ import BookmarkRail from './components/BookmarkRail.vue'
 import ClaudeBurst from './components/ClaudeBurst.vue'
 import { nudgeGlassMotion } from './ui/glass-motion'
 import { bookmarks, loadBookmarks, addBookmark, removeBookmark, clearBookmarks, renameBookmark, restyleBookmark, neighbour, type BookmarkPosition } from './library/bookmarks'
-import { BOOKMARK_ARTS, artOf } from './library/bookmark-art'
+import { BOOKMARK_ARTS, artOf, addCustomArt, customArtList, loadCustomArts, removeCustomArt } from './library/bookmark-art'
 import { useFullscreen } from './ui/fullscreen'
 import { vLiquidSelection } from './ui/liquid-selection'
 import { useReorder } from './ui/reorder'
@@ -897,8 +897,53 @@ function chooseBookmarkArt(source: string, markId: string, x: number, y: number)
   if (!mark) return
   const current = artOf(mark).id
   void nextTick(() => {
-    contextMenu.value = { x, y, items: BOOKMARK_ARTS.map(item => ({ label: item.name, swatch: item.svg, hint: item.id === current ? `${item.era} ✓` : item.era, action: () => { restyleBookmark(source, markId, item.id); bookmarkTick.value++ } })) }
+    const pick = (item: { id: string; name: string; era: string; svg: string }, separator = false) => ({ label: item.name, swatch: item.svg, separator, hint: item.id === current ? `${item.era} ✓` : item.era, action: () => { restyleBookmark(source, markId, item.id); bookmarkTick.value++ } })
+    const custom = customArtList()
+    contextMenu.value = { x, y, items: [
+      // 自己的图片排在最前；再选一张新的，或删掉正在用的这一张。
+      ...custom.map(item => pick(item)),
+      { label: '用自己的图片…', icon: 'image', action: () => pickBookmarkImage(source, markId) },
+      ...(current.startsWith('custom:') ? [{ label: '删除这张自定义图片', icon: 'trash', danger: true, action: () => { removeCustomArt(current); bookmarkTick.value++ } }] : []),
+      ...BOOKMARK_ARTS.map((item, index) => pick(item, index === 0)),
+    ] }
   })
+}
+// 自定义书签：选一张图片，裁成书签的比例存下来（各本书通用，最多 12 张）。
+function pickBookmarkImage(source: string, markId: string) {
+  const input = document.createElement('input')
+  input.type = 'file'; input.accept = 'image/png,image/jpeg,image/webp,image/gif,image/bmp'
+  input.onchange = async () => {
+    const file = input.files?.[0]
+    if (!file) return
+    if (file.size > 40 * 1024 * 1024) { notify('这张图片太大了，换一张小一点的。'); return }
+    const id = await addCustomArt(file)
+    if (!id) { notify(customArtList().length >= 12 ? '自定义图片已经有 12 张了，先删掉一张再加。' : '这张图片读不了，换一张试试。'); return }
+    restyleBookmark(source, markId, id); bookmarkTick.value++
+  }
+  input.click()
+}
+// 侧栏里的书签汇总：每本有书签的书一组，按书里的先后排；点一枚就打开那本书、跳到那里。
+const bookmarkGroups = computed(() => {
+  void bookmarkTick.value
+  return documents.value.map(doc => ({ doc, marks: [...(bookmarks.get(doc.id) || [])]
+    .sort((a, b) => (a.position.page ?? 0) - (b.position.page ?? 0) || (a.position.fraction ?? a.position.progress ?? 0) - (b.position.fraction ?? b.position.progress ?? 0))
+    .map(mark => ({ mark, art: artOf(mark), where: mark.position.page ? `第 ${mark.position.page} 页` : `${Math.round((mark.position.progress || 0) * 100)}% 处` })) }))
+    .filter(group => group.marks.length)
+})
+const bookmarkTotal = computed(() => bookmarkGroups.value.reduce((sum, group) => sum + group.marks.length, 0))
+// 文档库读出来之后，空闲时把每本书的书签读一遍（一本一次很小的读取），侧栏才知道哪些书有书签。
+watch(() => documents.value.map(doc => doc.id).join(), () => {
+  void loadCustomArts().then(() => bookmarkTick.value++)
+  const ids = documents.value.map(doc => doc.id)
+  void (async () => { for (const id of ids) { await loadBookmarks(id); await new Promise(resolve => setTimeout(resolve, 4)) } bookmarkTick.value++ })()
+}, { immediate: true })
+async function openBookmark(doc: Doc, position: BookmarkPosition) {
+  await openDocument(doc)
+  for (let tries = 0; tries < 25; tries++) {
+    await new Promise(resolve => setTimeout(resolve, 120))
+    // 等阅读器真的把书读出来（能报出当前位置）再跳，否则这一跳落空。
+    if (active.value?.id === doc.id && reader.value?.goToBookmark && reader.value.getBookmarkPosition?.()) { reader.value.goToBookmark(position); return }
+  }
 }
 // 一次清掉整本书的书签：再确认一步，免得误点。
 function confirmClearBookmarks(source: string, count: number, x: number, y: number) {
@@ -1860,8 +1905,14 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
         <form v-if="groupEditing === 'new'" class="group-edit" @submit.prevent="commitGroup"><input v-model="groupName" maxlength="40" placeholder="分组名称，回车确定" aria-label="新分组的名称" @vue:mounted="({ el }: any) => el.focus()" @blur="commitGroup" @keydown.esc.stop="groupEditing = ''" /></form>
         <p v-else-if="!groups.length" class="tag-empty">点 + 新建，右键文档放进分组。</p>
       </nav>
-      <div class="tag-heading"><p class="sidebar-label">标签</p><AppIcon name="tag" :size="14" /></div>
-      <nav v-liquid-selection="{ radius: 'var(--r-control)' }" class="tag-nav" aria-label="文档标签"><button v-for="tag in tags" :key="tag" :class="{ selected: tagFilter === tag }" @click="chooseTag(tag)"><span class="tag-dot"></span>{{ tag }}<span>{{ documents.filter(doc => doc.tags.includes(tag)).length }}</span></button><p v-if="!tags.length" class="tag-empty">可在文档详情中添加标签。</p></nav>
+      <div class="tag-heading"><p class="sidebar-label">书签<span v-if="bookmarkTotal" class="mark-total">{{ bookmarkTotal }}</span></p><AppIcon name="bookmark" :size="14" /></div>
+      <nav class="mark-nav" aria-label="全部书签">
+        <section v-for="group in bookmarkGroups" :key="group.doc.id" class="mark-group">
+          <p class="mark-book" :data-tip="group.doc.name">{{ group.doc.name.replace(/\.(pdf|md|markdown)$/i, '') }}</p>
+          <button v-for="item in group.marks" :key="item.mark.id" type="button" class="mark-row" :data-tip="`${item.art.name} · ${item.where}`" @click="openBookmark(group.doc, item.mark.position)"><svg class="mark-art" viewBox="0 0 96 40" preserveAspectRatio="xMaxYMid slice" aria-hidden="true" v-html="item.art.svg" /><span class="mark-name">{{ item.mark.name || item.where }}</span><small v-if="item.mark.name">{{ item.where }}</small></button>
+        </section>
+        <p v-if="!bookmarkGroups.length" class="tag-empty">在书里按 {{ shortcut('bookmark') || '右键' }} 留书签，都会收在这里。</p>
+      </nav>
       <div class="sidebar-spacer"></div>
       <div v-if="effectiveAppearance.style === 'sketch'" class="sidebar-doodle" aria-hidden="true"></div>
       <div class="sidebar-bottom"><button @click="openSettings()" aria-label="设置"><AppIcon name="settings" :size="17" /><span>设置</span></button><button class="icon-button" @click="toggleTheme($event)" :data-tip="theme === 'dark' ? '切换浅色主题' : '切换深色主题'" :aria-label="theme === 'dark' ? '切换浅色主题' : '切换深色主题'"><AppIcon :name="theme === 'dark' ? 'sun' : 'moon'" :size="17" /></button></div>

@@ -94,7 +94,21 @@ export async function nativeRequest(type, signal) {
 export const getNativeModels = signal => nativeRequest('models', signal);
 export const getNativeStatus = signal => nativeRequest('status', signal);
 
-export async function streamNative({ model, effort, fast = false, messages, signal, onDelta, onReasoning, pdfTools = false, pdfVision = false, pdfLimits, onTool, extraInstructions = '' }) {
+/**
+ * Codex 的速度档：每个模型自己列出有哪些档（priority 快速、ultrafast 超快……），选的那一档这个模型没有就退回标准。
+ * 返回要随请求发给小助手的字段：模型列了档位就发档位 id（标准发 default——有的模型默认就是快速档，不说清楚会多耗额度）；
+ * 旧版 Codex 不列档位，照旧只发 fast 开关。
+ */
+// 本机模型清单（含每个模型的速度档），读到模型时由 providers.mjs 记下来。
+let knownModels = [];
+export function rememberNativeModels(models) { knownModels = Array.isArray(models) ? models : []; }
+export function codexSpeed(settings, models = knownModels) {
+  const tiers = models?.find(item => item.id === settings.model)?.tiers || [];
+  if (!tiers.length) return settings.fast ? { fast: true } : {};
+  const want = settings.tier || (settings.fast ? 'priority' : '');
+  return { tier: want && tiers.some(item => item.id === want) ? want : 'default' };
+}
+export async function streamNative({ model, effort, fast = false, tier = '', messages, signal, onDelta, onReasoning, pdfTools = false, pdfVision = false, pdfLimits, onTool, extraInstructions = '' }) {
   signal?.throwIfAborted();
   const port = await acquire();
   spare();
@@ -153,7 +167,7 @@ export async function streamNative({ model, effort, fast = false, messages, sign
     signal?.addEventListener('abort', abort, { once: true });
     if (signal?.aborted) { abort(); return; }
     const latest = messages.at(-1);
-    port.postMessage({ id, type: 'chat', model, effort, ...(fast ? { fast: true } : {}), text: latest.content + (extraInstructions ? '\n\n[工作台的文档格式与阅读说明]\n' + extraInstructions : ''),
+    port.postMessage({ id, type: 'chat', model, effort, ...codexSpeed({ model, fast, tier }), text: latest.content + (extraInstructions ? '\n\n[工作台的文档格式与阅读说明]\n' + extraInstructions : ''),
       history: messages.slice(0, -1).map(({ role, content }) => ({ role, content })),
       images: messages.flatMap(item => item.images || []), ...(pdfTools ? { pdfTools: true, pdfVision, ...(pdfLimits ? { pdfLimits } : {}) } : {}) });
   });
