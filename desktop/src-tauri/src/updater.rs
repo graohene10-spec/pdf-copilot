@@ -82,7 +82,15 @@ pub struct UpdateInfo {
 
 #[derive(Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct UpdateStatus { pub current: String, pub installed: bool }
+pub struct UpdateStatus { pub current: String, pub installed: bool, /** 上一次更新重启后版本没变：目标版本和安装过程留下的记录。 */ pub failed: Option<FailedUpdate> }
+
+#[derive(Serialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FailedUpdate { pub target: String, pub detail: String }
+
+/// What `install` leaves behind before the app quits, so the next launch can tell whether the update took.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+struct Attempt { from: String, target: String }
 
 #[derive(Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -248,7 +256,41 @@ fn update_dir() -> PathBuf { std::env::temp_dir().join(UPDATE_DIR) }
 pub fn status() -> UpdateStatus {
     let installed = cfg!(windows) && std::env::current_exe().ok()
         .and_then(|exe| exe.parent().map(|dir| dir.join("uninstall.exe").is_file())).unwrap_or(false);
-    UpdateStatus { current: env!("CARGO_PKG_VERSION").into(), installed }
+    static FAILED: std::sync::OnceLock<Option<FailedUpdate>> = std::sync::OnceLock::new();
+    let failed = FAILED.get_or_init(|| last_attempt(&update_dir(), env!("CARGO_PKG_VERSION"))).clone();
+    UpdateStatus { current: env!("CARGO_PKG_VERSION").into(), installed, failed }
+}
+
+const ATTEMPT_FILE: &str = "pending.json";
+const LOG_FILE: &str = "update.log";
+
+/// Reads (and clears) the record of the last install attempt. `Some` when this launch is still the
+/// version the update started from: the installer did not replace the program.
+fn last_attempt(dir: &Path, current: &str) -> Option<FailedUpdate> {
+    let record = dir.join(ATTEMPT_FILE);
+    let attempt: Attempt = serde_json::from_slice(&std::fs::read(&record).ok()?).ok()?;
+    let _ = std::fs::remove_file(&record);
+    if attempt.from != current || attempt.target == current { return None; }
+    // The helper's log holds only fixed words (which step ran, whether the installer reported success).
+    let log = std::fs::read_to_string(dir.join(LOG_FILE)).unwrap_or_default();
+    let detail = if log.contains("retry failed") { "安装程序两次都没能完成，多半是程序文件还被占用。" }
+        else if log.contains("ok") { "安装程序报告成功，但装到了别的位置。" }
+        else { "安装程序没有运行完。" };
+    Some(FailedUpdate { target: attempt.target, detail: detail.into() })
+}
+
+/// `OpenIntelligence_0.10.84_x64-setup.exe` → `0.10.84`.
+fn package_version(name: &str) -> Option<String> {
+    let stem = name.strip_suffix(SETUP_SUFFIX).or_else(|| name.strip_suffix(PORTABLE_SUFFIX))?;
+    let version = stem.rsplit('_').next()?;
+    semver::Version::parse(version).ok().map(|version| version.to_string())
+}
+
+/// A folder that can be written unquoted after the installer's `/D=` (NSIS takes the rest of the line as the folder):
+/// nothing `cmd` would interpret.
+fn bare_dir(dir: &Path) -> Option<String> {
+    let text = dir.to_str()?.strip_prefix(r"\\?\").unwrap_or(dir.to_str()?).to_owned();
+    (!text.is_empty() && !text.contains(['"', '%', '&', '|', '<', '>', '^', '(', ')', '!', '=', '\r', '\n']) && !text.ends_with(' ')).then_some(text)
 }
 
 struct DownloadGuard;
@@ -383,16 +425,30 @@ pub fn install(app: &tauri::AppHandle, path: &str) -> Result<()> {
     let exe = std::env::current_exe().map_err(|_| "无法确定开智的安装位置")?;
     let portable = package.to_string_lossy().ends_with(PORTABLE_SUFFIX);
     if portable == status().installed { return Err("更新包与当前版本类型不符，请重新检查更新".into()); }
+    // 随应用启动的小助手（Codex 桥接）就在安装目录里：它还开着的话安装程序换不掉那个文件。先关掉。
+    {
+        use tauri::Manager;
+        if let Some(state) = app.try_state::<crate::AppState>() { state.bridge.disconnect_all(); state.http.cancel_all(); }
+    }
+    // 记下这次要从哪个版本更新到哪个版本：重启后版本没变，就能告诉用户没装上，而不是悄悄停在旧版。
+    let log = update_dir().join(LOG_FILE);
+    let _ = std::fs::write(&log, "");
+    if let Some(target) = package.file_name().and_then(|name| name.to_str()).and_then(package_version) {
+        let attempt = Attempt { from: env!("CARGO_PKG_VERSION").into(), target };
+        if let Ok(text) = serde_json::to_vec(&attempt) { let _ = std::fs::write(update_dir().join(ATTEMPT_FILE), text); }
+    }
     if portable {
         let dir = exe.parent().ok_or("无法确定开智所在的文件夹")?;
         let launch = apply_portable(&package, dir, &exe)?;
-        relaunch(None, &launch, None)?;
+        relaunch(None, &launch, None, None, &log)?;
     } else {
         // 0.10.2 起程序叫 OpenIntelligence，安装器会装进新的英文文件夹：装好后启动新程序，再静默卸载旧的中文文件夹。
         let renamed = exe.file_name().is_some_and(|name| name != EXE_NAME);
         let target = renamed.then(|| std::env::var_os("LOCALAPPDATA").map(|base| PathBuf::from(base).join("OpenIntelligence").join(EXE_NAME))).flatten();
         let legacy = target.as_ref().and_then(|_| exe.parent().map(|dir| dir.join("uninstall.exe"))).filter(|uninstaller| uninstaller.is_file());
-        relaunch(Some(&package), target.as_deref().unwrap_or(exe.as_path()), legacy.as_deref().map(|uninstaller| (uninstaller, exe.as_path())))?;
+        // 装回正在运行的这一份所在的文件夹：否则安装程序按注册表里记的位置装，电脑上有两份开智时会更新另一份，重启的还是旧的。
+        let into = if renamed { None } else { exe.parent().and_then(bare_dir) };
+        relaunch(Some(&package), target.as_deref().unwrap_or(exe.as_path()), legacy.as_deref().map(|uninstaller| (uninstaller, exe.as_path())), into.as_deref(), &log)?;
     }
     let app = app.clone();
     std::thread::spawn(move || { std::thread::sleep(Duration::from_millis(300)); app.exit(0); });
@@ -501,7 +557,7 @@ pub fn migrate_legacy() -> bool {
     let Some(exe) = std::env::current_exe().ok() else { return false };
     let Some(dir) = exe.parent() else { return false };
     let Some((target, uninstaller)) = legacy_target(&exe, dir, std::env::var_os("LOCALAPPDATA").map(PathBuf::from)) else { return false };
-    relaunch(None, &target, uninstaller.as_deref().map(|uninstaller| (uninstaller, exe.as_path()))).is_ok()
+    relaunch(None, &target, uninstaller.as_deref().map(|uninstaller| (uninstaller, exe.as_path())), None, &update_dir().join(LOG_FILE)).is_ok()
 }
 
 /// 以 开智.exe 运行时该转去哪个新程序：安装版是 %LOCALAPPDATA%\OpenIntelligence 里的那份（附旧卸载程序），
@@ -538,27 +594,43 @@ fn remove_leftovers_in(dir: &Path, depth: usize) {
     }
 }
 
-/// In a detached `cmd`: wait ~2 s for this app to exit, run the NSIS installer
-/// silently when there is one, then start `exe`. With `legacy` (the old install's
-/// uninstaller and program), the new program is started only if the installer put it
-/// there — then the old Chinese-named install is removed silently (its uninstaller
-/// keeps the library and settings) — otherwise the old program starts as before.
-#[cfg(windows)]
-fn relaunch(setup: Option<&Path>, exe: &Path, legacy: Option<(&Path, &Path)>) -> Result<()> {
-    use std::{os::windows::process::CommandExt, process::{Command, Stdio}};
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+/// The line a detached `cmd` runs after this app is told to quit:
+/// wait ~2 s, force-end this process if it is still there (a hung exit must not leave the program file in use),
+/// run the NSIS installer silently when there is one — into `into`, the folder of the running copy — and once more
+/// after a pause if it reports failure, then start `exe`. Each step appends a fixed word to `log`.
+/// With `legacy` (the old install's uninstaller and program), the new program is started only if the installer
+/// put it there — then the old Chinese-named install is removed silently (its uninstaller keeps the library and
+/// settings) — otherwise the old program starts as before.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn relaunch_line(pid: u32, setup: Option<&Path>, exe: &Path, legacy: Option<(&Path, &Path)>, into: Option<&str>, log: &Path) -> Result<String> {
     let plain = |path: &Path| path.to_str().map(|s| s.strip_prefix(r"\\?\").unwrap_or(s).to_owned()).filter(|s| !s.contains(['"', '%', '\r', '\n']));
     let unsupported = || "安装路径包含不支持的字符，无法自动更新".to_string();
     let exe = plain(exe).ok_or_else(unsupported)?;
-    let install = match setup { Some(setup) => format!(r#"start "" /wait "{}" /S & "#, plain(setup).ok_or_else(unsupported)?), None => String::new() };
-    // `cmd /S /C "<line>"` strips exactly the outer quotes; both paths are quoted
-    // and contain no `"` or `%`, so cmd interprets nothing inside them.
+    let log = plain(log).ok_or_else(unsupported)?;
+    let install = match setup {
+        Some(setup) => {
+            let setup = plain(setup).ok_or_else(unsupported)?;
+            // `/D=` must come last and unquoted; no space may follow it before `&&`.
+            let run = format!(r#"start "" /wait "{setup}" /S{}"#, into.map(|dir| format!(" /D={dir}")).unwrap_or_default());
+            format!(r#"({run}&& echo installer ok>>"{log}" || (echo installer failed>>"{log}" & ping -n 5 127.0.0.1 >nul & ({run}&& echo retry ok>>"{log}" || echo retry failed>>"{log}"))) & "#)
+        }
+        None => String::new(),
+    };
+    // `cmd /S /C "<line>"` strips exactly the outer quotes; every path is quoted
+    // and contains no `"` or `%`, so cmd interprets nothing inside them.
     let start = match legacy {
         Some((uninstaller, old)) => format!(r#"if exist "{exe}" (start "" "{exe}" & start "" /wait "{}" /S) else (start "" "{}")"#, plain(uninstaller).ok_or_else(unsupported)?, plain(old).ok_or_else(unsupported)?),
         None => format!(r#"start "" "{exe}""#),
     };
-    let line = format!(r#"/D /S /C "ping -n 3 127.0.0.1 >nul & {install}{start}""#);
+    Ok(format!(r#"/D /S /C "ping -n 3 127.0.0.1 >nul & taskkill /F /PID {pid} >nul 2>&1 & ping -n 2 127.0.0.1 >nul & {install}{start}""#))
+}
+
+#[cfg(windows)]
+fn relaunch(setup: Option<&Path>, exe: &Path, legacy: Option<(&Path, &Path)>, into: Option<&str>, log: &Path) -> Result<()> {
+    use std::{os::windows::process::CommandExt, process::{Command, Stdio}};
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+    let line = relaunch_line(std::process::id(), setup, exe, legacy, into, log)?;
     let spawn = |flags: u32| Command::new("cmd.exe").raw_arg(&line).creation_flags(flags)
         .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
     // Breaking away keeps the helper alive if the app runs inside a job object
@@ -756,5 +828,56 @@ mod tests {
         std::fs::write(local.join("OpenIntelligence").join(EXE_NAME), b"new").unwrap();
         assert_eq!(legacy_target(&old_install.join("开智.exe"), &old_install, Some(local.clone())), Some((local.join("OpenIntelligence").join(EXE_NAME), Some(old_install.join("uninstall.exe")))));
         std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn reads_the_target_version_from_the_package_name() {
+        assert_eq!(package_version("OpenIntelligence_0.10.84_x64-setup.exe"), Some("0.10.84".into()));
+        assert_eq!(package_version("OpenIntelligence_1.0.0-beta.2_x64-portable.zip"), Some("1.0.0-beta.2".into()));
+        assert_eq!(package_version("OpenIntelligence_x64-setup.exe"), None);
+        assert_eq!(package_version("notes.txt"), None);
+    }
+
+    #[test]
+    fn only_plain_folders_follow_the_installer_dir_switch() {
+        assert_eq!(bare_dir(Path::new(r"C:\Users\a b\AppData\Local\OpenIntelligence")), Some(r"C:\Users\a b\AppData\Local\OpenIntelligence".into()));
+        assert_eq!(bare_dir(Path::new(r"C:\a&b\OpenIntelligence")), None);
+        assert_eq!(bare_dir(Path::new(r"C:\Program Files (x86)\OpenIntelligence")), None);
+        assert_eq!(bare_dir(Path::new(r"C:\100%\OpenIntelligence")), None);
+    }
+
+    #[test]
+    fn a_restart_on_the_old_version_reports_the_failed_update_once() {
+        let dir = std::env::temp_dir().join(format!("kaizhi-attempt-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let record = |from: &str, target: &str| std::fs::write(dir.join(ATTEMPT_FILE), serde_json::to_vec(&Attempt { from: from.into(), target: target.into() }).unwrap()).unwrap();
+        assert_eq!(last_attempt(&dir, "1.0.0"), None);
+        // 还是旧版：没装上。记录读一次就清掉。
+        record("1.0.0", "1.0.1");
+        assert_eq!(last_attempt(&dir, "1.0.0"), Some(FailedUpdate { target: "1.0.1".into(), detail: "安装程序没有运行完。".into() }));
+        assert_eq!(last_attempt(&dir, "1.0.0"), None);
+        // 已经是新版：装上了。
+        record("1.0.0", "1.0.1");
+        assert_eq!(last_attempt(&dir, "1.0.1"), None);
+        assert!(!dir.join(ATTEMPT_FILE).exists());
+        // 安装程序两次都失败。
+        record("1.0.0", "1.0.1");
+        std::fs::write(dir.join(LOG_FILE), "installer failed\r\nretry failed\r\n").unwrap();
+        assert!(last_attempt(&dir, "1.0.0").unwrap().detail.contains("两次"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn the_update_helper_ends_a_hung_app_installs_in_place_and_retries() {
+        let line = relaunch_line(42, Some(Path::new(r"C:\Temp\kaizhi-update\OpenIntelligence_1.0.1_x64-setup.exe")), Path::new(r"C:\Apps\OI\OpenIntelligence.exe"), None, Some(r"C:\Apps\OI"), Path::new(r"C:\Temp\kaizhi-update\update.log")).unwrap();
+        assert!(line.contains("taskkill /F /PID 42 "), "{line}");
+        let run = r#"start "" /wait "C:\Temp\kaizhi-update\OpenIntelligence_1.0.1_x64-setup.exe" /S /D=C:\Apps\OI&& echo"#;
+        assert_eq!(line.matches(run).count(), 2, "{line}");
+        assert!(line.contains(r#"echo retry failed>>"C:\Temp\kaizhi-update\update.log""#), "{line}");
+        assert!(line.ends_with(r#"& start "" "C:\Apps\OI\OpenIntelligence.exe"""#), "{line}");
+        // 免安装版没有安装程序：只等旧程序退出，再启动新程序。
+        let portable = relaunch_line(7, None, Path::new(r"C:\Apps\OI\OpenIntelligence.exe"), None, None, Path::new(r"C:\Temp\update.log")).unwrap();
+        assert!(!portable.contains("/S") || portable.starts_with("/D /S /C"), "{portable}");
+        assert!(!portable.contains("setup"), "{portable}");
+        assert!(relaunch_line(7, None, Path::new(r#"C:\a"b\OpenIntelligence.exe"#), None, None, Path::new(r"C:\Temp\update.log")).is_err());
     }
 }

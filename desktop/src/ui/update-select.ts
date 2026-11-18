@@ -23,7 +23,7 @@ export type UpdateInfo = {
   /** null: no verifiable installer, the UI links to the release page instead. */
   installer: UpdateInstaller | null
 }
-export type UpdateStatus = { current: string; installed: boolean }
+export type UpdateStatus = { current: string; installed: boolean; /** 上一次更新重启后版本没变。 */ failed?: { target: string; detail: string } | null }
 export type GithubAsset = { name: string; size?: number; browser_download_url: string }
 export type GithubRelease = {
   tag_name: string
