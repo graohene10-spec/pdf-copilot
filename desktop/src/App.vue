@@ -765,9 +765,13 @@ function closeHoverTranslation() { hoverTranslation.value = undefined; hoverSour
 // 快速解释：选中文字后按鼠标中键。按下时拦住浏览器的中键滚动，松开时解释。
 // 在正文里选中了文字：提一句中键可以解释（一共只提两次，用过就不提了）。
 // 在书里选中了文字：多半接下来要解释它。用 Codex 的话先把会话备好，中键按下去时不用再等建会话和握手。
+function prepareExplanation() {
+  void import('./ai/complete').then(module => module.prewarmExplain(Boolean(preferences.value.assistant.explainVisual)))
+}
+watch(() => active.value?.id, id => { if (id && isDesktop) prepareExplanation() })
 function prewarmOnSelection(event: MouseEvent) {
   if (event.button !== 0 || !(event.target as HTMLElement | null)?.closest?.('.reader-pane') || (window.getSelection()?.toString().trim().length || 0) < 2) return
-  void import('./ai/complete').then(module => module.prewarmExplain(Boolean(preferences.value.assistant.explainVisual)))
+  prepareExplanation()
 }
 function hintOnSelection(event: MouseEvent) { if (event.button === 0 && (event.target as HTMLElement | null)?.closest?.('.reader-pane') && (window.getSelection()?.toString().trim().length || 0) >= 2) offerHint('explain', ['中键'], '快速解释选中的文字') }
 function middleDown(event: MouseEvent) { if (event.button === 1 && (event.target as HTMLElement | null)?.closest?.('.reader-pane') && window.getSelection()?.toString().trim()) event.preventDefault() }

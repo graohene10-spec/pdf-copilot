@@ -37,23 +37,43 @@ async function openPort() {
 
 // 小助手（以及它背后的 codex app-server）冷启动要好几秒：用完的连接留着复用，空闲 20 分钟才关。
 // 小助手一次只跑一段对话，所以并发的请求各拿一条连接。
-const IDLE_MS = 20 * 60000, MAX_IDLE = 3;
+const IDLE_MS = 20 * 60000, MAX_IDLE = 3, MAX_PORTS = 4;
 const idle = [];
-async function acquire() {
-  while (idle.length) {
-    const entry = idle.pop();
+const counted = new WeakSet();
+let livePorts = 0;
+function forget(port) {
+  if (counted.delete(port)) livePorts--;
+  port.disconnect();
+}
+const pendingWarm = new Map();
+const threadKey = (model, tools, vision) => JSON.stringify([model || '', !!tools, !!tools && !!vision]);
+async function acquire(key = '') {
+  for (;;) {
+    let index = idle.findLastIndex(entry => entry.key === key);
+    if (index < 0 && key) index = idle.findLastIndex(entry => !entry.key);
+    if (index < 0 && idle.length && livePorts >= MAX_PORTS) index = 0;
+    if (index < 0) break;
+    const [entry] = idle.splice(index, 1);
     clearTimeout(entry.timer);
     if (entry.port.alive) return entry.port;
-    entry.port.disconnect();
+    forget(entry.port);
   }
-  return openPort();
+  livePorts++;
+  try { const port = await openPort(); counted.add(port); return port; }
+  catch (error) { livePorts--; throw error; }
 }
 /** 请求顺利结束：连接放回池子；出过错或已断开就关掉，下次重新起。 */
-function release(port, healthy) {
+function release(port, healthy, key = '') {
   port.reset();
-  if (!healthy || !port.alive || idle.length >= MAX_IDLE) { port.disconnect(); return; }
-  const entry = { port, timer: 0 };
-  entry.timer = setTimeout(() => { const index = idle.indexOf(entry); if (index >= 0) idle.splice(index, 1); port.disconnect(); }, IDLE_MS);
+  if (!healthy || !port.alive) { forget(port); return; }
+  if (idle.length >= MAX_IDLE) {
+    if (!key) { forget(port); return; }
+    const free = idle.findIndex(entry => !entry.key || entry.key === key);
+    const [old] = idle.splice(free < 0 ? 0 : free, 1);
+    clearTimeout(old.timer); forget(old.port);
+  }
+  const entry = { port, key, timer: 0 };
+  entry.timer = setTimeout(() => { const index = idle.indexOf(entry); if (index >= 0) idle.splice(index, 1); forget(port); }, IDLE_MS);
   idle.push(entry);
 }
 /** 提前把小助手和 Codex 拉起来（读一次登录状态），第一次提问就不用等冷启动。 */
@@ -67,8 +87,8 @@ export function warmNative() {
 /** 一条连接被对话占用后，池子里要是空了，就在后台再备一条热的：
  *  预判问题、翻译和正式提问各占一条连接，不让谁临时等小助手冷启动。 */
 function spare() {
-  if (idle.length || warming) return;
-  setTimeout(() => { if (!idle.length) void warmNative(); }, 300);
+  if (idle.length || warming || livePorts >= MAX_PORTS) return;
+  setTimeout(() => { if (!idle.length && livePorts < MAX_PORTS) void warmNative(); }, 300);
 }
 
 export async function nativeRequest(type, signal, extra = {}) {
@@ -95,11 +115,21 @@ export const getNativeModels = signal => nativeRequest('models', signal);
 /**
  * 提前把下一段会话建好。建会话时 Codex 要读模型清单、连上服务，一次快速解释 13 秒里有 10 秒花在这上面；
  * 选中文字时就先建，真正提问时只剩等模型出字。小助手那边同一种会话已经备着就什么都不做，所以多叫几次没关系。
- * 池子里最后放回去的那条连接下一次提问会先被拿走，会话就备在它上面。
+ * 预热消息带独立的请求 ID。发出后即可把同一连接交给对话，助手会接手正在准备的会话。
  */
 export function warmNativeThread({ model = '', pdfTools = false, pdfVision = false } = {}) {
   if (!globalThis.__TAURI_INTERNALS__) return Promise.resolve();
-  return nativeRequest('warm', undefined, { model, ...(pdfTools ? { pdfTools: true, pdfVision } : {}) }).catch(() => {});
+  const key = threadKey(model, pdfTools, pdfVision);
+  if (!pendingWarm.has(key)) {
+    const opening = acquire(key).then(port => {
+      try {
+        port.postMessage({ id: crypto.randomUUID(), type: 'warm', model, ...(pdfTools ? { pdfTools: true, pdfVision } : {}) });
+        release(port, true, key);
+      } catch (error) { release(port, false); throw error; }
+    }).catch(() => {}).finally(() => pendingWarm.delete(key));
+    pendingWarm.set(key, opening);
+  }
+  return pendingWarm.get(key);
 }
 export const getNativeStatus = signal => nativeRequest('status', signal);
 
@@ -112,14 +142,30 @@ export const getNativeStatus = signal => nativeRequest('status', signal);
 let knownModels = [];
 export function rememberNativeModels(models) { knownModels = Array.isArray(models) ? models : []; }
 export function codexSpeed(settings, models = knownModels) {
-  const tiers = models?.find(item => item.id === settings.model)?.tiers || [];
+  const listed = models?.find(item => item.id === settings.model);
+  // A temporary partial inventory can omit a previously selected model.
+  // Let the server resolve the stored tier on protocols that advertise tiers.
+  if (!listed && settings.tier && settings.useSavedTier) return { tier: settings.tier };
+  const tiers = listed?.tiers || [];
   if (!tiers.length) return settings.fast ? { fast: true } : {};
   const want = settings.tier || (settings.fast ? 'priority' : '');
   return { tier: want && tiers.some(item => item.id === want) ? want : 'default' };
 }
-export async function streamNative({ model, effort, fast = false, tier = '', messages, signal, onDelta, onReasoning, pdfTools = false, pdfVision = false, pdfLimits, onTool, extraInstructions = '' }) {
+// ---- 耗时记录：每次提问各阶段花了多久（只有数字、模型名和引擎版本，不含任何文档内容），留最近 12 次，设置里能看、能复制。 ----
+const TIMINGS_KEY = 'ai.codexTimings.v1';
+export function codexTimings() { try { const list = JSON.parse(localStorage.getItem(TIMINGS_KEY) || '[]'); return Array.isArray(list) ? list : []; } catch { return []; } }
+function recordTiming(entry) { try { localStorage.setItem(TIMINGS_KEY, JSON.stringify([entry, ...codexTimings()].slice(0, 12))); } catch { /* 存不下就算了 */ } }
+
+export async function streamNative({ model, effort, fast = false, tier = '', useSavedTier = false, messages, signal, onDelta, onReasoning, pdfTools = false, pdfVision = false, pdfLimits, onTool, extraInstructions = '' }) {
   signal?.throwIfAborted();
-  const port = await acquire();
+  const key = threadKey(model, pdfTools, pdfVision);
+  const began = performance.now(), waitedWarm = pendingWarm.has(key);
+  let firstAt = 0, answerAt = 0;
+  if (pendingWarm.has(key)) await pendingWarm.get(key);
+  signal?.throwIfAborted();
+  const port = await acquire(key);
+  const gotPort = performance.now();
+  const speed = codexSpeed({ model, fast, tier, useSavedTier });
   spare();
   return new Promise((resolve, reject) => {
     const id = crypto.randomUUID();
@@ -128,7 +174,7 @@ export async function streamNative({ model, effort, fast = false, tier = '', mes
     function finish(error, healthy = false) {
       if (settled) return;
       settled = true; clearTimeout(timer); signal?.removeEventListener('abort', abort);
-      if (healthy) release(port, true);
+      if (healthy) release(port, true, key);
       else if (cancelled) settle();
       else release(port, false);
       if (error) reject(error); else resolve();
@@ -151,8 +197,8 @@ export async function streamNative({ model, effort, fast = false, tier = '', mes
       if (settled) return;
       if (toolReplies.has(msg.id) && msg.ok === false) { finish(new Error(msg.error || '小助手拒绝了阅读结果。')); return; }
       if (msg.id !== id) return;
-      if (msg.event === 'delta') { received = true; onDelta?.(msg.text); }
-      if (msg.event === 'reasoning') onReasoning?.(msg.text);
+      if (msg.event === 'delta') { received = true; firstAt ||= performance.now(); answerAt ||= performance.now(); onDelta?.(msg.text); }
+      if (msg.event === 'reasoning') { firstAt ||= performance.now(); onReasoning?.(msg.text); }
       if (msg.event === 'tool') {
         if (!pdfTools || !onTool || typeof msg.callId !== 'string') { finish(new Error('小助手返回了未启用的工具请求。')); return; }
         toolQueue = toolQueue.then(async () => {
@@ -166,7 +212,12 @@ export async function streamNative({ model, effort, fast = false, tier = '', mes
           port.postMessage({ id: replyId, type: 'tool-result', targetId: id, callId: msg.callId, text: JSON.stringify(text), images: dataUrl ? [dataUrl] : [] });
         }).catch(error => { if (!settled) finish(error); });
       }
-      if (msg.event === 'done') toolQueue.then(() => finish(null, true));
+      if (msg.event === 'done') {
+        const ms = value => Math.round(value);
+        recordTiming({ at: Date.now(), model: model || '', effort: effort || '', speed: speed.tier || (speed.fast ? 'fast' : ''), tools: Boolean(pdfTools), waitedWarm,
+          portMs: ms(gotPort - began), firstMs: firstAt ? ms(firstAt - began) : -1, answerMs: answerAt ? ms(answerAt - began) : -1, totalMs: ms(performance.now() - began), bridge: msg.timing || null });
+        toolQueue.then(() => finish(null, true));
+      }
       if (msg.event === 'error' || msg.ok === false) {
         const error = new Error(msg.error || 'Codex 请求失败。');
         if (pdfTools && !received && /PDF_TOOLS_UNAVAILABLE/.test(error.message)) error.code = 'PDF_TOOLS_UNAVAILABLE';
@@ -176,7 +227,7 @@ export async function streamNative({ model, effort, fast = false, tier = '', mes
     signal?.addEventListener('abort', abort, { once: true });
     if (signal?.aborted) { abort(); return; }
     const latest = messages.at(-1);
-    port.postMessage({ id, type: 'chat', model, effort, ...codexSpeed({ model, fast, tier }), text: latest.content + (extraInstructions ? '\n\n[工作台的文档格式与阅读说明]\n' + extraInstructions : ''),
+    port.postMessage({ id, type: 'chat', model, effort, ...speed, text: latest.content + (extraInstructions ? '\n\n[工作台的文档格式与阅读说明]\n' + extraInstructions : ''),
       history: messages.slice(0, -1).map(({ role, content }) => ({ role, content })),
       images: messages.flatMap(item => item.images || []), ...(pdfTools ? { pdfTools: true, pdfVision, ...(pdfLimits ? { pdfLimits } : {}) } : {}) });
   });

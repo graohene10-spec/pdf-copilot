@@ -5,6 +5,7 @@ import { PROVIDERS, PROTOCOLS, getProvider, getNativeModels, getNativeStatus } f
 import { nativeModelInventory, registerNativeModelInventory } from '../ai/native-models'
 import { loadAiSettings, loadApiKey, saveAiSettings, saveCredential, supportsFast, TRANSLATION_DEFAULTS, EXPLAIN_DEFAULTS, VISUAL_DEFAULTS } from '../ai/settings.mjs'
 import { concreteChoice } from '../ai/translate-model'
+import { codexTimings } from '../ai/native.mjs'
 import { DOCUMENT_LIMIT_FIELDS } from '../../../extension/common/document-limits.mjs'
 import { apiOrigin } from '../../../extension/common/settings.js'
 import { normalizeRequestLimits } from '../../../extension/common/request-queue.mjs'
@@ -35,6 +36,20 @@ const edited = ref(false)
 function markEdited() { edited.value = true }
 const nativeModels = nativeModelInventory
 const codexStatus = ref('')
+// 最近几次 Codex 提问各阶段的耗时（只有数字、模型名和引擎版本）：慢的时候看得出慢在建会话、提交还是等模型。
+const timings = ref<any[]>(codexTimings())
+const seconds = (ms: number) => ms < 0 ? '—' : `${(ms / 1000).toFixed(1)} 秒`
+const timingLine = computed(() => {
+  const last = timings.value[0]
+  if (!last) return ''
+  const bridge = last.bridge || {}
+  return `最近一次 ${last.model || '默认模型'}${last.speed ? ` · ${last.speed}` : ''}：首字 ${seconds(last.answerMs)}（${bridge.prepared ? '会话已备好' : `建会话 ${seconds(bridge.threadMs ?? -1)}`}，提交到出字 ${seconds(bridge.answerMs >= 0 && bridge.turnMs >= 0 ? bridge.answerMs - bridge.turnMs : -1)}），共 ${seconds(last.totalMs)}`
+})
+const timingCopied = ref(false)
+async function copyTimings() {
+  timings.value = codexTimings()
+  try { await navigator.clipboard.writeText(JSON.stringify(timings.value, null, 1)); timingCopied.value = true; setTimeout(() => { timingCopied.value = false }, 1600) } catch { /* 剪贴板不可用 */ }
+}
 const codexReady = computed(() => nativeModels.value.length > 0)
 let disposed = false
 let modelRequest: AbortController | undefined
@@ -147,6 +162,7 @@ defineExpose({ save, hasChanges: () => edited.value })
           <p class="settings-note">沿用本机 Codex 的登录，不用填 API Key。装了 Codex 桌面版或 CLI 并登录过就行。</p>
           <button class="secondary-button" :disabled="refreshing" @click="refreshNative">{{ refreshing ? '检查中…' : '检查登录并读取模型' }}</button>
           <p v-if="codexStatus" class="settings-note">{{ codexStatus }}</p>
+          <p v-if="timingLine" class="settings-note">{{ timingLine }} <button type="button" class="text-button" @click="copyTimings">{{ timingCopied ? '已复制' : '复制最近 12 次' }}</button></p>
         </template>
         <template v-else>
           <label>API Key<input v-model="keys[item.id]" :aria-label="`${item.name} API Key`" type="password" autocomplete="off" placeholder="加密保存在本机" @input="keyEdited.add(item.id)" /></label>
