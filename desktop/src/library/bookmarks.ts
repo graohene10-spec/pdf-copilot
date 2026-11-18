@@ -3,9 +3,10 @@
 // 每本书一份，存在本机文档库的设置表里；同一本书多开的副本共用。
 import { reactive } from 'vue'
 import { library } from '../sdk'
+import { pickArt, validArt } from './bookmark-art'
 
 export type BookmarkPosition = { page?: number; fraction?: number; progress?: number }
-export type Bookmark = { id: string; name: string; position: BookmarkPosition; createdAt: number }
+export type Bookmark = { id: string; name: string; position: BookmarkPosition; createdAt: number; /** 画风（bookmark-art.ts 里的一种）。 */ art?: string }
 
 const KEY = (id: string) => `bookmarks.v1.${id}`
 const MAX = 200
@@ -25,7 +26,7 @@ function valid(value: any): value is Bookmark {
 export function loadBookmarks(id: string) {
   if (!loading.has(id)) loading.set(id, (async () => {
     let list: Bookmark[] = []
-    try { const parsed = JSON.parse(await library.getSetting(KEY(id)) || '[]'); if (Array.isArray(parsed)) list = parsed.filter(valid).slice(0, MAX).map(item => ({ ...item, name: item.name.slice(0, 40) })) }
+    try { const parsed = JSON.parse(await library.getSetting(KEY(id)) || '[]'); if (Array.isArray(parsed)) list = parsed.filter(valid).slice(0, MAX).map(item => ({ ...item, name: item.name.slice(0, 40), art: validArt(item.art) ? item.art : undefined })) }
     catch { /* 没有书签或数据损坏时从空列表开始 */ }
     if (!bookmarks.has(id)) bookmarks.set(id, list)
   })())
@@ -36,7 +37,7 @@ function save(id: string) { void library.setSetting(KEY(id), JSON.stringify(book
 export function addBookmark(id: string, position: BookmarkPosition) {
   const list = bookmarks.get(id) || []
   if (list.length >= MAX) return null
-  const mark: Bookmark = { id: crypto.randomUUID(), name: '', position, createdAt: Date.now() }
+  const mark: Bookmark = { id: crypto.randomUUID(), name: '', position, createdAt: Date.now(), art: pickArt(list) }
   bookmarks.set(id, [...list, mark])
   save(id)
   return mark
@@ -54,6 +55,12 @@ export function clearBookmarks(id: string) {
 }
 export function renameBookmark(id: string, markId: string, name: string) {
   bookmarks.set(id, (bookmarks.get(id) || []).map(mark => mark.id === markId ? { ...mark, name: name.trim().slice(0, 40) } : mark))
+  save(id)
+}
+
+export function restyleBookmark(id: string, markId: string, art: string) {
+  if (!validArt(art)) return
+  bookmarks.set(id, (bookmarks.get(id) || []).map(mark => mark.id === markId ? { ...mark, art } : mark))
   save(id)
 }
 
