@@ -47,6 +47,7 @@ const state = reactive<UpdateState>({
 })
 let installerPath: { version: string; path: string } | null = null
 let pending: Promise<boolean> | null = null
+let failureShown = false
 const busy = () => state.phase === 'downloading' || state.phase === 'installing'
 
 const visible = computed(() => !!state.info && state.dismissedVersion !== state.info.version && (
@@ -70,6 +71,13 @@ async function runCheck(manual: boolean, includePrerelease: boolean): Promise<bo
     if (manual || state.info?.version !== info.version) state.dismissedVersion = null
     state.info = info
     state.phase = installerPath?.version === info.version ? 'ready' : 'available'
+    // 上一次点了更新、重启后还是旧版：说出来并给「重试」，不要悄悄停在旧版。只提醒这一次。
+    const failed = state.status?.failed
+    if (failed && !failureShown) {
+      failureShown = true; state.dismissedVersion = null
+      state.phase = 'error'; state.errorSource = 'install'
+      state.error = `上次更新到 ${failed.target} 没有装上，现在仍是 ${state.status!.current}。${failed.detail}点「重试」再装一次。`
+    }
     return true
   } catch (error) {
     if (!quiet) { state.phase = 'error'; state.errorSource = 'check'; state.error = message(error) }

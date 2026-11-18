@@ -10,7 +10,7 @@ export const PREDICT_LEVELS: { id: PredictLevel; label: string; note: string }[]
   { id: 'deep', label: '深入', note: '追问条件、反例和前后联系' },
   { id: 'expert', label: '拓展', note: '推广、质疑假设、联系别的领域' },
 ]
-export type ShortcutAction = 'import' | 'search' | 'find' | 'fullscreen' | 'settings' | 'sidebar' | 'ai' | 'outline' | 'capture' | 'fitWidth' | 'zoomOut' | 'zoomIn' | 'previousPage' | 'nextPage' | 'aiSend' | 'aiStop' | 'nextTab' | 'previousTab' | 'closeTab' | 'split' | 'inkPen' | 'inkHighlighter' | 'inkUnderline' | 'bookmark' | 'bookmarkPrev' | 'bookmarkNext' | 'translate'
+export type ShortcutAction = 'import' | 'search' | 'find' | 'fullscreen' | 'settings' | 'sidebar' | 'chrome' | 'ai' | 'outline' | 'capture' | 'fitWidth' | 'zoomOut' | 'zoomIn' | 'previousPage' | 'nextPage' | 'aiSend' | 'aiStop' | 'nextTab' | 'previousTab' | 'closeTab' | 'split' | 'inkPen' | 'inkHighlighter' | 'inkUnderline' | 'bookmark' | 'bookmarkPrev' | 'bookmarkNext' | 'translate'
 /** The assistant's mark on its empty screen: a built-in glyph or the user's own image (GIF/APNG/WebP animate). */
 export type AssistantAvatar = { kind: AvatarKind; image: string | null }
 export type AvatarKind = 'crab' | 'claude' | 'chatgpt' | 'deepseek' | 'custom'
@@ -128,7 +128,7 @@ export const SETTINGS_KEY = 'app.preferences.v1'
 export const SHORTCUTS: { action: ShortcutAction; label: string }[] = [
   { action: 'import', label: '导入文档' }, { action: 'search', label: '搜索文档' },
   { action: 'find', label: '文档内搜索' }, { action: 'fullscreen', label: '进入 / 退出全屏' },
-  { action: 'settings', label: '打开设置' }, { action: 'sidebar', label: '显示 / 隐藏侧栏' },
+  { action: 'settings', label: '打开设置' }, { action: 'sidebar', label: '显示 / 隐藏侧栏' }, { action: 'chrome', label: '收起 / 展开顶栏与侧栏' },
   { action: 'ai', label: '显示 / 隐藏 AI 助手' }, { action: 'outline', label: '显示 / 隐藏目录' },
   { action: 'capture', label: '框选 PDF 区域' },
   { action: 'fitWidth', label: '适应宽度' }, { action: 'zoomOut', label: '缩小' },
@@ -142,7 +142,7 @@ export const SHORTCUTS: { action: ShortcutAction; label: string }[] = [
   { action: 'translate', label: '机翻选中的文字 / 打开翻译栏' },
 ]
 export const DEFAULT_SHORTCUTS: Readonly<Record<ShortcutAction, string>> = Object.freeze({
-  import: 'Ctrl+KeyO', search: 'Ctrl+KeyK', settings: 'Ctrl+Comma', sidebar: 'Ctrl+KeyB',
+  import: 'Ctrl+KeyO', search: 'Ctrl+KeyK', settings: 'Ctrl+Comma', sidebar: 'Ctrl+KeyB', chrome: 'Ctrl+Shift+KeyH',
   find: 'Ctrl+KeyF', fullscreen: 'F11',
   ai: 'Ctrl+Shift+Digit7', outline: 'Ctrl+Shift+KeyO', capture: 'Alt+Shift+KeyS', fitWidth: 'Ctrl+Digit0',
   zoomOut: 'Ctrl+WheelDown', zoomIn: 'Ctrl+WheelUp', previousPage: 'Alt+ArrowUp', nextPage: 'Alt+ArrowDown',
