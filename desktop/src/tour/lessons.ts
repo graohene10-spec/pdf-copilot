@@ -1,92 +1,546 @@
-import type { Director } from './director'
+import type { Director, Point } from './director'
 
 /* 示意界面的状态：脚本只改这里，画面跟着变。 */
+export type Look = 'glass' | 'crystal' | 'warm' | 'sketch'
+export type SlotId = 'assistant' | 'translation' | 'explain'
 export type Scene = {
-  /** 那句话已经选中了多少个字。 */
+  view: 'reader' | 'library' | 'collection'
+  /** 外观一课里临时换的风格；空着就跟随应用当前的风格。 */
+  look: '' | Look
+  dark: boolean
+  photo: boolean
+  chrome: boolean
+  ai: boolean
+  doc: 'algebra' | 'paper'
+  split: boolean
+  scroll: number
+  zoom: number
+  /** 目标句子已经选中了多少个字。 */
   selected: number
   card: 'none' | 'open' | 'pinned'
-  /** 卡片出现在书页上的位置。 */
-  cardAt: { x: number; y: number }
+  /** 卡片、译文出现在书页上的位置。 */
+  cardAt: Point
   running: boolean
-  /** 解释已经写出来的字数。 */
   words: number
   drawn: boolean
-  /** 书页往上滚了多少。 */
-  scroll: number
+  visual: boolean
+  lambda: number
+  settings: '' | 'ai' | 'look'
+  link: boolean
+  key: number
+  codex: boolean
+  slots: Record<SlotId, string>
+  menu: '' | SlotId
+  draft: string
+  asked: boolean
+  answer: number
+  quote: boolean
+  quotePop: boolean
+  side: boolean
+  sideAsk: string
+  sideAnswer: number
+  branch: boolean
+  commands: boolean
+  btw: boolean
+  btwAnswer: number
+  pop: boolean
+  column: boolean
+  auto: boolean
+  ink: '' | 'pen' | 'highlighter' | 'underline'
+  hl: number
+  pen: number
+  ul: number
+  mark: boolean
+  art: number
+  markMenu: boolean
+  files: number
+  ghost: Point | null
+  query: string
+  fileMenu: boolean
+  grouped: boolean
+  starred: boolean
+  outline: boolean
+  finding: boolean
+  find: string
+  clock: 'idle' | 'open' | 'running' | 'ringing'
+  minutes: number
 }
 
-export const freshScene = (): Scene => ({ selected: 0, card: 'none', cardAt: { x: 0, y: 0 }, running: false, words: 0, drawn: false, scroll: 0 })
+export const freshScene = (): Scene => ({
+  view: 'reader', look: '', dark: false, photo: false, chrome: true, ai: true, doc: 'algebra', split: false, scroll: 0, zoom: 1, selected: 0,
+  card: 'none', cardAt: { x: 0, y: 0 }, running: false, words: 0, drawn: false, visual: false, lambda: 2.5,
+  settings: '', link: false, key: 0, codex: false, slots: { assistant: '未选择', translation: '未选择', explain: '未选择' }, menu: '',
+  draft: '', asked: false, answer: 0, quote: false, quotePop: false, side: false, sideAsk: '', sideAnswer: 0, branch: false, commands: false, btw: false, btwAnswer: 0,
+  pop: false, column: false, auto: false, ink: '', hl: 0, pen: 0, ul: 0, mark: false, art: 0, markMenu: false,
+  files: 6, ghost: null, query: '', fileMenu: false, grouped: false, starred: false, outline: false, finding: false, find: '', clock: 'idle', minutes: 5,
+})
 
-export const SENTENCE = '若存在非零向量 v 使得 Av = λv，则称 λ 为 A 的特征值，v 为属于 λ 的特征向量。'
-export const ANSWER = '大多数向量被 A 作用后会转向。特征向量是例外：它留在原来那条直线上，只被拉长或缩短 λ 倍。'
+export const TEXT = {
+  sentence: '若存在非零向量 v 使得 Av = λv，则称 λ 为 A 的特征值，v 为属于 λ 的特征向量。',
+  answer: '大多数向量被 A 作用后会转向。特征向量是例外：它留在原来那条直线上，只被拉长或缩短 λ 倍。',
+  english: 'The dominant sequence transduction models are based on complex recurrent or convolutional neural networks that include an encoder and a decoder.',
+  chinese: '主流的序列转换模型基于复杂的循环或卷积神经网络，其中包含一个编码器和一个解码器。',
+  question: '特征值有什么用？',
+  reply: ['它指出一个变换在哪些方向上只做伸缩。找到这些方向，矩阵就能', '对角化', '，高次幂和微分方程都好算得多。'],
+  sideAsk: '对角化是什么意思？',
+  sideReply: '换一组基，让矩阵只剩对角线上的数。',
+  btwAsk: 'λ 可以是 0 吗',
+  btwReply: '可以。λ = 0 表示 A 把这个方向压成了零向量，这时 A 不可逆。',
+}
+/* 后两个所属的服务在这一课里没有连接，菜单里是灰的。 */
+export const MODELS = ['DeepSeek Flash', 'DeepSeek V4 Pro', 'GPT-5.4（未连接）', 'Claude Opus 5.5（未连接）']
+export const replyLength = TEXT.reply.join('').length
 
-export type Caption = { text: string; keys?: string[]; mouse?: boolean }
-export type Play = (stage: Director['api'], scene: Scene, say: (caption: Caption | string) => void) => Promise<void>
-export type Lesson = { id: string; title: string; note: string; play?: Play }
+export type Caption = { text: string; keys?: string[]; mouse?: boolean; top?: boolean }
+type Stage = Director['api']
+export type Play = (stage: Stage, scene: Scene, say: (caption: Caption | string) => void) => Promise<void>
+export type Lesson = { id: string; title: string; note: string; steps: number; play: Play }
+
+const ENTRY = { x: 760, y: 790 }
+
+/* 拖过目标句子把它选中。 */
+async function select(stage: Stage, scene: Scene, zoom: number, ms = 1000) {
+  const length = scene.doc === 'paper' ? TEXT.english.length : TEXT.sentence.length
+  await stage.move('.tw-a', { look: zoom })
+  stage.look('.tw-target', zoom)
+  stage.press()
+  await stage.move('.tw-b', { ms, step: k => { scene.selected = Math.round(k * length) } })
+  stage.release()
+}
+
+/* 卡片、译文弹在选区末尾下面。 */
+function below(stage: Stage, scene: Scene, width: number) {
+  const corner = stage.locate('.tw-page', [0, 0]), tip = stage.locate('.tw-b')
+  scene.cardAt = { x: Math.max(48, Math.min(tip.x - corner.x - width / 2, 552 - width)), y: tip.y - corner.y + 22 }
+}
+
+async function click(stage: Stage, target: string, at?: [number, number]) {
+  await stage.move(target, { at })
+  await stage.click()
+}
+
+const setup: Play = async (stage, scene, say) => {
+  const pick = async (slot: SlotId, option: number) => {
+    await click(stage, `.tw-slot-${slot} .tw-select`)
+    scene.menu = slot
+    await stage.wait(200)
+    await click(stage, `.tw-opt-${option}`)
+    scene.slots[slot] = MODELS[option]; scene.menu = ''
+    await stage.wait(260)
+  }
+  say('在设置的 AI 页连接服务')
+  stage.place({ x: 560, y: 790 })
+  await click(stage, '.tw-set')
+  scene.settings = 'ai'
+  await stage.wait(320)
+  stage.look('.tw-links', 1.6)
+  await click(stage, '.tw-link-deepseek')
+  scene.link = true
+  await stage.wait(240)
+
+  say('填 API Key，或者用本机 Codex 的登录')
+  await click(stage, '.tw-key')
+  await stage.tween(620, k => { scene.key = Math.round(k * 20) }, true)
+  await stage.wait(220)
+  await click(stage, '.tw-link-codex')
+  scene.codex = true
+  await stage.wait(520)
+
+  say('翻译和快速解释选响应快的模型')
+  stage.look('.tw-slots', 1.55)
+  await stage.wait(200)
+  await pick('translation', 0)
+  await pick('explain', 0)
+  await stage.wait(300)
+
+  say('阅读助手选能力强的旗舰模型')
+  await pick('assistant', 1)
+  await stage.wait(700)
+  stage.look(null, 1)
+  await stage.wait(900)
+}
 
 const explain: Play = async (stage, scene, say) => {
-  say('找到看不懂的句子')
-  await stage.wait(700)
-  stage.place({ x: 1010, y: 770 })
-  await stage.move('.tw-a', { look: 1.95, ms: 1250 })
+  say('选中看不懂的句子')
+  stage.place(ENTRY)
+  await select(stage, scene, 1.9, 1100)
+  await stage.wait(260)
+
+  say({ text: '按鼠标中键', mouse: true })
   await stage.wait(380)
-
-  say('拖动鼠标选中它')
-  stage.look('.tw-target', 1.95)
-  stage.press()
-  await stage.move('.tw-b', { ms: 1700, step: k => { scene.selected = Math.round(k * SENTENCE.length) } })
-  stage.release()
-  await stage.wait(620)
-
-  say({ text: '按一下鼠标中键', mouse: true })
-  await stage.wait(520)
   await stage.click('middle')
-  const corner = stage.locate('.tw-page', [0, 0]), tip = stage.locate('.tw-b')
-  scene.cardAt = { x: Math.max(48, Math.min(tip.x - corner.x - 150, 250)), y: tip.y - corner.y + 22 }
+  below(stage, scene, 310)
   scene.card = 'open'; scene.running = true
   await stage.wait(80)
   const card = stage.locate('.tw-card', [.5, 0])
   stage.look({ x: card.x, y: card.y + 150 }, 1.6)
-  await stage.wait(520)
+  await stage.wait(300)
 
   say('解释显示在选区旁边')
-  await stage.tween(2300, k => { scene.words = Math.round(k * ANSWER.length) }, true)
+  await stage.tween(1400, k => { scene.words = Math.round(k * TEXT.answer.length) }, true)
   scene.drawn = true
-  await stage.wait(1500)
+  await stage.wait(1300)
   scene.running = false
-  await stage.wait(500)
+
+  say('底部可以深入、简化、举例')
+  await stage.move('.tw-actions', { at: [.14, .5] })
+  await stage.move('.tw-actions', { at: [.64, .5], ms: 620 })
+  await stage.wait(260)
 
   say('点图钉固定卡片')
-  await stage.move('.tw-pin')
-  await stage.wait(160)
-  await stage.click()
+  await click(stage, '.tw-pin')
   scene.card = 'pinned'
-  await stage.wait(900)
+  await stage.wait(520)
 
-  say('固定后卡片随页面滚动')
+  say('固定的卡片随页面滚动')
   stage.look(null, 1)
-  await stage.move('.tw-page', { at: [.2, .62], ms: 1100 })
-  await stage.tween(1500, k => { scene.scroll = k * 190 })
-  await stage.wait(420)
-  await stage.tween(1300, k => { scene.scroll = 190 - k * 130 })
+  await stage.move('.tw-page', { at: [.2, .62] })
+  await stage.tween(900, k => { scene.scroll = k * 190 })
+  await stage.wait(200)
+  await stage.tween(800, k => { scene.scroll = 190 - k * 150 })
   await stage.wait(500)
-
-  say({ text: '直接用图解释', keys: ['Shift', '中键'], mouse: true })
-  await stage.wait(2200)
 }
 
-/* 教程的章节。没有 play 的还没做，列表里先占位。 */
+const visual: Play = async (stage, scene, say) => {
+  const slide = (value: number) => {
+    const track = stage.box('.tw-track')
+    scene.lambda = value
+    stage.place({ x: track.x + (value - .5) / 2.5 * track.width, y: track.y + track.height / 2 })
+  }
+  say({ text: '直接用图解释', keys: ['Shift', '中键'], mouse: true })
+  stage.place(ENTRY)
+  await select(stage, scene, 1.9, 850)
+  await stage.wait(300)
+  await stage.click('middle')
+  below(stage, scene, 310)
+  scene.visual = true; scene.card = 'open'; scene.running = true
+  await stage.wait(80)
+  const card = stage.locate('.tw-card', [.5, 0])
+  stage.look({ x: card.x, y: card.y + 160 }, 1.6)
+  await stage.tween(800, k => { scene.words = Math.round(k * TEXT.answer.length) }, true)
+  scene.drawn = true
+  await stage.wait(1200)
+  scene.running = false
+
+  say('图里的滑块可以拖动')
+  await stage.move('.tw-knob')
+  stage.press()
+  await stage.tween(700, k => slide(2.5 - k * 1.5))
+  await stage.tween(900, k => slide(1 + k * 2))
+  await stage.tween(500, k => slide(3 - k * .8))
+  stage.release()
+  await stage.wait(300)
+
+  say('固定后收进侧栏的 Intelligent UI')
+  await click(stage, '.tw-pin')
+  scene.card = 'pinned'
+  await stage.wait(300)
+  stage.look(null, 1)
+  await click(stage, '.tw-nav-ui')
+  scene.view = 'collection'
+  await stage.wait(1500)
+}
+
+const assistant: Play = async (stage, scene, say) => {
+  say({ text: '在右侧输入问题，提问时附带当前页', top: true })
+  stage.place({ x: 900, y: 790 })
+  stage.look('.tw-ask', 1.6, [.5, -1.2])
+  await click(stage, '.tw-ask')
+  await stage.type(TEXT.question, value => { scene.draft = value })
+  await click(stage, '.tw-send')
+  scene.draft = ''; scene.asked = true
+  stage.look('.tw-chat', 1.6, [.5, .18])
+  await stage.tween(1200, k => { scene.answer = Math.round(k * replyLength) }, true)
+  await stage.wait(300)
+
+  say('选中回答里的词，到附属对话里追问')
+  await stage.move('.tw-q', { at: [0, .5] })
+  stage.press()
+  await stage.move('.tw-q', { at: [1, .5], ms: 320, step: k => { scene.quote = k > .3 } })
+  stage.release()
+  scene.quotePop = true
+  await stage.wait(260)
+  await click(stage, '.tw-quote-side')
+  scene.quotePop = false; scene.side = true
+  await stage.wait(120)
+  stage.look('.tw-chat', 1.45, [.5, .2])
+  await stage.type(TEXT.sideAsk, value => { scene.sideAsk = value }, 34)
+  await stage.tween(700, k => { scene.sideAnswer = Math.round(k * TEXT.sideReply.length) }, true)
+  await stage.wait(500)
+
+  say('从任意一条回答开出分支')
+  await click(stage, '.tw-branch')
+  scene.branch = true
+  await stage.wait(900)
+
+  say({ text: '输入 / 调出指令', top: true })
+  stage.look('.tw-ask', 1.6, [.3, -1.4])
+  await click(stage, '.tw-ask')
+  scene.draft = '/'; scene.commands = true
+  await stage.wait(900)
+
+  say({ text: '/btw 顺便问一句，不写进对话记录', top: true })
+  await click(stage, '.tw-cmd-btw')
+  scene.commands = false
+  await stage.type(`/btw ${TEXT.btwAsk}`, value => { scene.draft = value }, 40)
+  await stage.wait(200)
+  scene.draft = ''; scene.btw = true
+  await stage.tween(900, k => { scene.btwAnswer = Math.round(k * TEXT.btwReply.length) }, true)
+  await stage.wait(1100)
+}
+
+const translate: Play = async (stage, scene, say) => {
+  scene.doc = 'paper'; scene.ai = false
+  say({ text: '翻译选中的文字', keys: ['Ctrl', 'T'] })
+  stage.place(ENTRY)
+  await select(stage, scene, 1.75, 1000)
+  await stage.wait(320)
+  below(stage, scene, 330)
+  scene.pop = true
+  await stage.tween(800, k => { scene.words = Math.round(k * TEXT.chinese.length) }, true)
+  await stage.wait(900)
+
+  say('顶栏的翻译图标打开翻译栏')
+  stage.look(null, 1)
+  await click(stage, '.tw-tr')
+  scene.pop = false; scene.selected = 0; scene.column = true
+  await stage.wait(1000)
+
+  say('打开自动翻译，选中就出译文')
+  await click(stage, '.tw-auto')
+  scene.auto = true
+  await stage.wait(200)
+  await select(stage, scene, 1.6, 800)
+  below(stage, scene, 330)
+  scene.pop = true
+  await stage.wait(1300)
+}
+
+const ink: Play = async (stage, scene, say) => {
+  say('点笔形按钮进入标记')
+  stage.place(ENTRY)
+  stage.look('.tw-bar', 1.6)
+  await click(stage, '.tw-inkbtn')
+  scene.ink = 'pen'
+  await stage.wait(500)
+
+  say({ text: '荧光笔涂文字', keys: ['Alt', '2'] })
+  await click(stage, '.tw-tool-highlighter')
+  scene.ink = 'highlighter'
+  await stage.move('.tw-hl', { at: [0, .55], look: 1.8 })
+  stage.look('.tw-hl', 1.8)
+  stage.press()
+  await stage.move('.tw-hl', { at: [1, .55], ms: 700, step: k => { scene.hl = k } })
+  stage.release()
+  await stage.wait(300)
+
+  say({ text: '笔可以写字、画圈', keys: ['Alt', '1'] })
+  scene.ink = 'pen'
+  const ring = stage.box('.tw-ring'), around = (k: number) => {
+    const angle = -Math.PI * .75 + k * Math.PI * 2.08
+    return { x: ring.x + ring.width / 2 + Math.cos(angle) * (ring.width / 2 + 12), y: ring.y + ring.height / 2 + Math.sin(angle) * (ring.height / 2 + 6) }
+  }
+  stage.look('.tw-ring', 1.8)
+  await stage.move(around(0))
+  stage.press()
+  await stage.tween(850, k => { scene.pen = k; stage.place(around(k)) })
+  stage.release()
+  await stage.wait(300)
+
+  say({ text: '划线工具画一条手写横线', keys: ['Alt', '3'] })
+  scene.ink = 'underline'
+  await stage.move('.tw-ul', { at: [0, 1], look: 1.8 })
+  stage.look('.tw-ul', 1.8)
+  stage.press()
+  await stage.move('.tw-ul', { at: [1, 1], ms: 650, step: k => { scene.ul = k } })
+  stage.release()
+  await stage.wait(400)
+  stage.look(null, 1)
+  await stage.wait(900)
+}
+
+const bookmark: Play = async (stage, scene, say) => {
+  say({ text: '在当前位置加书签', keys: ['Alt', 'B'] })
+  stage.place(ENTRY)
+  stage.look('.tw-ribbons', 1.7)
+  await stage.move('.tw-page', { at: [.7, .3] })
+  await stage.wait(350)
+  scene.mark = true
+  await stage.wait(900)
+
+  say('右键书签换样式，也可以用自己的图片')
+  await click(stage, '.tw-ribbon-new')
+  scene.markMenu = true
+  await stage.wait(320)
+  await click(stage, '.tw-art-2')
+  scene.art = 2; scene.markMenu = false
+  await stage.wait(800)
+
+  say('书签都列在侧栏，点一下跳转')
+  stage.look(null, 1)
+  await stage.move('.tw-page', { at: [.3, .5] })
+  await stage.tween(650, k => { scene.scroll = k * 230 })
+  await click(stage, '.tw-mark-new')
+  await stage.tween(560, k => { scene.scroll = 230 - k * 230 })
+  await stage.wait(900)
+}
+
+const library: Play = async (stage, scene, say) => {
+  scene.view = 'library'
+  say('把 PDF 或 Markdown 拖进窗口')
+  await stage.wait(60)
+  stage.look({ x: 700, y: 330 }, 1.2)
+  const from = { x: 1150, y: 120 }, to = stage.locate('.tw-file-0', [.5, .4])
+  stage.place(from); stage.show(); stage.press()
+  scene.ghost = from
+  await stage.move(to, { ms: 900, step: k => { scene.ghost = { x: from.x + (to.x - from.x) * k, y: from.y + (to.y - from.y) * k } } })
+  stage.release()
+  scene.ghost = null; scene.files = 7
+  await stage.wait(800)
+
+  say({ text: '搜索标题和正文', keys: ['Ctrl', 'K'] })
+  await click(stage, '.tw-lib-search')
+  await stage.type('特征', value => { scene.query = value }, 160)
+  await stage.wait(1000)
+  scene.query = ''
+  await stage.wait(300)
+
+  say('右键文档，放进分组或收藏')
+  stage.look('.tw-file-1', 1.7, [.7, .6])
+  await click(stage, '.tw-file-1', [.6, .4])
+  scene.fileMenu = true
+  await stage.wait(260)
+  await click(stage, '.tw-fm-group')
+  scene.grouped = true; scene.fileMenu = false
+  await stage.wait(350)
+  await click(stage, '.tw-file-1 .tw-star')
+  scene.starred = true
+  await stage.wait(700)
+  stage.look(null, 1)
+  await stage.wait(700)
+}
+
+const tabs: Play = async (stage, scene, say) => {
+  say('打开的文档排在顶栏标签里')
+  stage.place(ENTRY)
+  stage.look('.tw-t1', 1.4)
+  await click(stage, '.tw-t1')
+  scene.doc = 'paper'
+  await stage.wait(700)
+  await click(stage, '.tw-t0')
+  scene.doc = 'algebra'
+  await stage.wait(500)
+
+  say({ text: '并排阅读两份文档', keys: ['Ctrl', '\\'] })
+  stage.look(null, 1)
+  await click(stage, '.tw-split')
+  scene.ai = false; scene.split = true
+  await stage.wait(700)
+  await stage.move('.tw-page.paper', { at: [.5, .4] })
+  await stage.wait(1000)
+}
+
+const view: Play = async (stage, scene, say) => {
+  say('目录按钮列出章节')
+  stage.place(ENTRY)
+  stage.look('.tw-bar', 1.4)
+  await click(stage, '.tw-ol')
+  scene.outline = true
+  await stage.wait(260)
+  await click(stage, '.tw-ol-2')
+  await stage.tween(600, k => { scene.scroll = k * 210 })
+  scene.outline = false
+  await stage.wait(300)
+
+  say({ text: '在文档内搜索', keys: ['Ctrl', 'F'] })
+  scene.finding = true
+  await stage.wait(200)
+  await stage.type('特征值', value => { scene.find = value }, 150)
+  await stage.wait(900)
+  scene.finding = false; scene.find = ''
+
+  say({ text: '缩放页面，触控板可以两指捏合', keys: ['Ctrl', '滚轮'] })
+  stage.look(null, 1)
+  await stage.move('.tw-page', { at: [.5, .4] })
+  await stage.tween(600, k => { scene.zoom = 1 + k * .28 })
+  await stage.tween(700, k => { scene.zoom = 1.28 - k * .4 })
+  await stage.tween(500, k => { scene.zoom = .88 + k * .12 })
+
+  say({ text: '收起顶栏和侧栏', keys: ['Ctrl', 'Shift', 'H'] })
+  await stage.wait(300)
+  scene.chrome = false
+  await stage.wait(1300)
+  scene.chrome = true
+  await stage.wait(700)
+}
+
+const focus: Play = async (stage, scene, say) => {
+  say('点顶栏的时间打开计时')
+  stage.place(ENTRY)
+  stage.look('.tw-clock', 1.7, [.3, 2.4])
+  await click(stage, '.tw-clock')
+  scene.clock = 'open'
+  await stage.wait(500)
+
+  say('拨到想要的时长，开始倒计时')
+  await stage.move('.tw-wheel', { at: [.3, .7] })
+  stage.press()
+  await stage.move('.tw-wheel', { at: [.3, .2], ms: 800, step: k => { scene.minutes = 5 + Math.round(k * 4) * 5 } })
+  stage.release()
+  await click(stage, '.tw-start')
+  scene.clock = 'running'
+  await stage.wait(1200)
+
+  say('到点后响铃提醒')
+  scene.clock = 'ringing'
+  await stage.wait(1500)
+}
+
+const look: Play = async (stage, scene, say) => {
+  say('设置的外观页有四种界面风格')
+  stage.place({ x: 560, y: 790 })
+  await click(stage, '.tw-set')
+  scene.settings = 'look'
+  await stage.wait(300)
+  for (const style of ['crystal', 'warm', 'sketch', 'glass'] as Look[]) {
+    await click(stage, `.tw-style-${style}`)
+    scene.look = style
+    await stage.wait(520)
+  }
+
+  say('深色和浅色随时切换')
+  await click(stage, '.tw-dark')
+  scene.dark = true
+  await stage.wait(900)
+  await stage.click()
+  scene.dark = false
+  await stage.wait(400)
+
+  say('底板可以换预设，或用自己的图片')
+  await click(stage, '.tw-bg-2')
+  scene.photo = true
+  await stage.wait(1400)
+}
+
 export const LESSONS: Lesson[] = [
-  { id: 'explain', title: '快速解释', note: '选中文字后按中键', play: explain },
-  { id: 'visual', title: '用图解释', note: '图解、可拖的模拟、合集' },
-  { id: 'assistant', title: '阅读助手', note: '带着选区和框选提问' },
-  { id: 'translate', title: '翻译', note: '划词翻译与翻译栏' },
-  { id: 'ink', title: '标记', note: '钢笔、荧光笔、下划线' },
-  { id: 'bookmark', title: '书签', note: '艺术史书签，侧栏汇总' },
-  { id: 'library', title: '文库', note: '导入、搜索、分组、收藏' },
-  { id: 'tabs', title: '多文档', note: '标签页与并排阅读' },
-  { id: 'view', title: '阅读视图', note: '目录、搜索、缩放、收起界面' },
-  { id: 'focus', title: '计时', note: '倒计时与闹钟' },
-  { id: 'look', title: '外观', note: '四种风格、深浅色、底板' },
-  { id: 'models', title: '接入 AI', note: 'Codex 或自己的密钥' },
+  { id: 'setup', title: '接入 AI', note: '连接服务，给每个功能选模型', steps: 4, play: setup },
+  { id: 'explain', title: '快速解释', note: '选中文字后按中键', steps: 6, play: explain },
+  { id: 'visual', title: '用图解释', note: '图解、可拖的图、合集', steps: 3, play: visual },
+  { id: 'assistant', title: '阅读助手', note: '提问、附属对话、分支、指令', steps: 5, play: assistant },
+  { id: 'translate', title: '翻译', note: '划词翻译与翻译栏', steps: 3, play: translate },
+  { id: 'ink', title: '标记', note: '笔、荧光笔、划线', steps: 4, play: ink },
+  { id: 'bookmark', title: '书签', note: '艺术史书签，侧栏汇总', steps: 3, play: bookmark },
+  { id: 'library', title: '文库', note: '导入、搜索、分组、收藏', steps: 3, play: library },
+  { id: 'tabs', title: '多文档', note: '标签页与并排阅读', steps: 2, play: tabs },
+  { id: 'view', title: '阅读视图', note: '目录、搜索、缩放、收起界面', steps: 4, play: view },
+  { id: 'focus', title: '计时', note: '倒计时与提醒', steps: 3, play: focus },
+  { id: 'look', title: '外观', note: '四种风格、深浅色、底板', steps: 3, play: look },
 ]
+
+/* 看过哪些、还要不要自动弹出，记在本机。 */
+const KEY = 'tour.v1'
+export type TourMemory = { done: string[]; hidden: boolean }
+export function loadTour(): TourMemory {
+  try { const saved = JSON.parse(localStorage.getItem(KEY) || '{}'); return { done: Array.isArray(saved.done) ? saved.done.filter((id: unknown) => typeof id === 'string') : [], hidden: saved.hidden === true } } catch { return { done: [], hidden: false } }
+}
+export function saveTour(memory: TourMemory) { try { localStorage.setItem(KEY, JSON.stringify(memory)) } catch { /* 存不下就算了 */ } }
