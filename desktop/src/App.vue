@@ -764,6 +764,11 @@ function autoTranslate(event: MouseEvent) {
 function closeHoverTranslation() { hoverTranslation.value = undefined; hoverSource = '' }
 // 快速解释：选中文字后按鼠标中键。按下时拦住浏览器的中键滚动，松开时解释。
 // 在正文里选中了文字：提一句中键可以解释（一共只提两次，用过就不提了）。
+// 在书里选中了文字：多半接下来要解释它。用 Codex 的话先把会话备好，中键按下去时不用再等建会话和握手。
+function prewarmOnSelection(event: MouseEvent) {
+  if (event.button !== 0 || !(event.target as HTMLElement | null)?.closest?.('.reader-pane') || (window.getSelection()?.toString().trim().length || 0) < 2) return
+  void import('./ai/complete').then(module => module.prewarmExplain(Boolean(preferences.value.assistant.explainVisual)))
+}
 function hintOnSelection(event: MouseEvent) { if (event.button === 0 && (event.target as HTMLElement | null)?.closest?.('.reader-pane') && (window.getSelection()?.toString().trim().length || 0) >= 2) offerHint('explain', ['中键'], '快速解释选中的文字') }
 function middleDown(event: MouseEvent) { if (event.button === 1 && (event.target as HTMLElement | null)?.closest?.('.reader-pane') && window.getSelection()?.toString().trim()) event.preventDefault() }
 function middleClick(event: MouseEvent) {
@@ -1897,6 +1902,7 @@ onMounted(async () => {
   document.addEventListener('mousedown', middleDown)
   document.addEventListener('auxclick', middleClick)
   document.addEventListener('mouseup', hintOnSelection)
+  document.addEventListener('mouseup', prewarmOnSelection)
   window.addEventListener('kaizhi:open-ai-settings', openAiSettings)
   window.addEventListener('kaizhi:explain-menu', explainMenu as EventListener)
   document.addEventListener('wheel', wheel, { capture: true, passive: false })
@@ -1941,7 +1947,7 @@ async function recoverSession() {
   for (const id of ids) { const doc = documents.value.find(item => item.id === id); if (doc) await openDocument(doc) }
   notify(ids.length ? '页面刚才出错退出了，已自动恢复，文档回到原来的位置。' : '页面刚才出错退出了，已自动恢复。')
 }
-onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); document.removeEventListener('mousedown', middleDown); document.removeEventListener('auxclick', middleClick); document.removeEventListener('mouseup', hintOnSelection); window.removeEventListener('kaizhi:open-ai-settings', openAiSettings); window.removeEventListener('kaizhi:explain-menu', explainMenu as EventListener); closeLooseCards(); stopAutoCheck(); clearTimeout(enteringTimer); disposed = true; ++openEpoch; dismissCaptureQuick(); stopDropListening?.(); clearWheelZoom(); readerInstances.clear(); glassContrast?.dispose(); document.removeEventListener('keydown', keydown); document.removeEventListener('contextmenu', appContextMenu); document.removeEventListener('wheel', wheel, true); document.removeEventListener('dragenter', dragEnter); document.removeEventListener('dragover', dragOver); document.removeEventListener('dragleave', dragLeave); document.removeEventListener('drop', fileDrop); document.removeEventListener('selectionchange', selectionChanged); document.removeEventListener('scroll', dismissSelectionAction, true); document.removeEventListener('scroll', captureViewportChanged, true); window.removeEventListener('resize', dismissSelectionAction); window.removeEventListener('resize', captureViewportChanged); closeAllChats(); forgetAllPasswords(); systemTheme.removeEventListener('change', applyTheme); flushProgress(); for (const timer of indexTimers.values()) clearTimeout(timer); clearTimeout(queryTimer); clearTimeout(toastTimer) })
+onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); document.removeEventListener('mousedown', middleDown); document.removeEventListener('auxclick', middleClick); document.removeEventListener('mouseup', hintOnSelection); document.removeEventListener('mouseup', prewarmOnSelection); window.removeEventListener('kaizhi:open-ai-settings', openAiSettings); window.removeEventListener('kaizhi:explain-menu', explainMenu as EventListener); closeLooseCards(); stopAutoCheck(); clearTimeout(enteringTimer); disposed = true; ++openEpoch; dismissCaptureQuick(); stopDropListening?.(); clearWheelZoom(); readerInstances.clear(); glassContrast?.dispose(); document.removeEventListener('keydown', keydown); document.removeEventListener('contextmenu', appContextMenu); document.removeEventListener('wheel', wheel, true); document.removeEventListener('dragenter', dragEnter); document.removeEventListener('dragover', dragOver); document.removeEventListener('dragleave', dragLeave); document.removeEventListener('drop', fileDrop); document.removeEventListener('selectionchange', selectionChanged); document.removeEventListener('scroll', dismissSelectionAction, true); document.removeEventListener('scroll', captureViewportChanged, true); window.removeEventListener('resize', dismissSelectionAction); window.removeEventListener('resize', captureViewportChanged); closeAllChats(); forgetAllPasswords(); systemTheme.removeEventListener('change', applyTheme); flushProgress(); for (const timer of indexTimers.values()) clearTimeout(timer); clearTimeout(queryTimer); clearTimeout(toastTimer) })
 </script>
 
 <template>

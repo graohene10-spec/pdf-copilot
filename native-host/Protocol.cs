@@ -80,7 +80,7 @@ namespace PdfCopilot {
             foreach (string key in value.Keys) if (!allowed.Contains(key)) throw new InvalidDataException("Unsupported request field.");
             var req = new ClientRequest { Id = Json.Text(value, "id"), Type = Json.Text(value, "type"), TargetId = Json.Text(value, "targetId"), Model = Json.Text(value, "model"), Effort = Json.Text(value, "effort"), Text = Json.Text(value, "text") };
             if (req.Id.Length < 1 || req.Id.Length > 128 || req.Id.IndexOfAny(new[] { '\r', '\n', '\0' }) >= 0) throw new InvalidDataException("Invalid request ID.");
-            if (!new HashSet<string> { "status", "models", "chat", "cancel", "tool-result" }.Contains(req.Type)) throw new InvalidDataException("Unsupported message type.");
+            if (!new HashSet<string> { "status", "models", "chat", "cancel", "tool-result", "warm" }.Contains(req.Type)) throw new InvalidDataException("Unsupported message type.");
             foreach (string key in new[] { "pdfTools", "pdfVision" }) if (value.ContainsKey(key) && !(value[key] is bool)) throw new InvalidDataException("Invalid PDF capability flag.");
             req.PdfTools = Json.Get(value, "pdfTools") is bool && (bool)Json.Get(value, "pdfTools");
             req.PdfVision = Json.Get(value, "pdfVision") is bool && (bool)Json.Get(value, "pdfVision");
@@ -96,7 +96,7 @@ namespace PdfCopilot {
                 req.PdfLimits = DocumentBudget.Parse(value["pdfLimits"]);
             }
             req.CallId = Json.Text(value, "callId");
-            if (req.Type != "chat" && (value.ContainsKey("pdfTools") || value.ContainsKey("pdfVision"))) throw new InvalidDataException("PDF tools require a chat.");
+            if (req.Type != "chat" && req.Type != "warm" && (value.ContainsKey("pdfTools") || value.ContainsKey("pdfVision"))) throw new InvalidDataException("PDF tools require a chat.");
             if (req.Type == "tool-result" && (req.CallId.Length < 1 || req.CallId.Length > 128 || req.TargetId.Length < 1 || req.TargetId.Length > 128 || req.Text.Length > 100000)) throw new InvalidDataException("Invalid PDF tool response.");
             if (req.Type != "tool-result" && value.ContainsKey("callId")) throw new InvalidDataException("Unexpected tool response ID.");
             if (req.Model.Length > 160 || req.Model.IndexOfAny(new[] { '\r', '\n', '\0' }) >= 0) throw new InvalidDataException("Invalid model.");

@@ -43,6 +43,22 @@ export type CompleteOptions = { kind: UsageKind; messages: { role: 'user' | 'ass
   /** 快速解释里的可视化讲解：用「可视化讲解」那一栏选的 AI，并把 Intelligent UI 的写法告诉模型。 */
   visual?: boolean; extraInstructions?: string }
 
+/** 选中文字时调用：快速解释用的是 Codex 的话，先把下一段会话备好（见 native.mjs 的 warmNativeThread）。 */
+let prewarmedAt = 0
+export async function prewarmExplain(visual = false) {
+  const now = Date.now()
+  if (now - prewarmedAt < 8000) return
+  prewarmedAt = now
+  try {
+    const shown: any = visual ? visualSettings(loadAiSettings()) : null
+    const settings: any = shown || explainSettings(loadAiSettings())
+    if (settings.provider !== 'codex') return
+    const own = shown ? shown.visual.share === 'own' : true
+    const choice = own ? await translationChoice(settings, visual ? '可视化讲解' : '快速解释') : { model: settings.model || '' }
+    const { warmNativeThread } = await import('./native.mjs')
+    await warmNativeThread({ model: choice.model || '' })
+  } catch { /* 预热失败不影响之后的提问 */ }
+}
 export async function complete(options: CompleteOptions): Promise<string> {
   // 翻译有自己的一套（可与阅读助手共用服务商），其余沿用阅读助手的设置。
   const visual: any = options.visual ? visualSettings(loadAiSettings()) : null

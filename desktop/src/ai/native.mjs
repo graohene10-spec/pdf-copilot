@@ -71,7 +71,7 @@ function spare() {
   setTimeout(() => { if (!idle.length) void warmNative(); }, 300);
 }
 
-export async function nativeRequest(type, signal) {
+export async function nativeRequest(type, signal, extra = {}) {
   signal?.throwIfAborted();
   const port = await acquire();
   return new Promise((resolve, reject) => {
@@ -88,10 +88,19 @@ export async function nativeRequest(type, signal) {
     port.onMessage.addListener(msg => { if (msg.id === id) finish(msg.ok ? null : new Error(msg.error), msg.result, true); });
     signal?.addEventListener('abort', abort, { once: true });
     if (signal?.aborted) { abort(); return; }
-    port.postMessage({ id, type });
+    port.postMessage({ id, type, ...extra });
   });
 }
 export const getNativeModels = signal => nativeRequest('models', signal);
+/**
+ * 提前把下一段会话建好。建会话时 Codex 要读模型清单、连上服务，一次快速解释 13 秒里有 10 秒花在这上面；
+ * 选中文字时就先建，真正提问时只剩等模型出字。小助手那边同一种会话已经备着就什么都不做，所以多叫几次没关系。
+ * 池子里最后放回去的那条连接下一次提问会先被拿走，会话就备在它上面。
+ */
+export function warmNativeThread({ model = '', pdfTools = false, pdfVision = false } = {}) {
+  if (!globalThis.__TAURI_INTERNALS__) return Promise.resolve();
+  return nativeRequest('warm', undefined, { model, ...(pdfTools ? { pdfTools: true, pdfVision } : {}) }).catch(() => {});
+}
 export const getNativeStatus = signal => nativeRequest('status', signal);
 
 /**
