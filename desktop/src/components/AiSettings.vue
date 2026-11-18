@@ -43,7 +43,7 @@ const timingLine = computed(() => {
   const last = timings.value[0]
   if (!last) return ''
   const bridge = last.bridge || {}
-  return `最近一次 ${last.model || '默认模型'}${last.speed ? ` · ${last.speed}` : ''}：首字 ${seconds(last.answerMs)}（${bridge.prepared ? '会话已备好' : `建会话 ${seconds(bridge.threadMs ?? -1)}`}，提交到出字 ${seconds(bridge.answerMs >= 0 && bridge.turnMs >= 0 ? bridge.answerMs - bridge.turnMs : -1)}），共 ${seconds(last.totalMs)}`
+  return `最近一次 ${last.model || '默认模型'}${last.speed ? ` · ${last.speed}` : ''}${bridge.transport === 'http' ? ' · HTTP 直连' : ''}：首字 ${seconds(last.answerMs)}（${bridge.prepared ? '会话已备好' : `建会话 ${seconds(bridge.threadMs ?? -1)}`}，提交到出字 ${seconds(bridge.answerMs >= 0 && bridge.turnMs >= 0 ? bridge.answerMs - bridge.turnMs : -1)}），共 ${seconds(last.totalMs)}`
 })
 const timingCopied = ref(false)
 async function copyTimings() {

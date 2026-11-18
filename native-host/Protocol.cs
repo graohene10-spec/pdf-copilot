@@ -71,18 +71,22 @@ namespace PdfCopilot {
 
     internal sealed class ClientRequest {
         internal string Id, Type, TargetId, Model, Effort, Text, CallId, Tier;
-        internal bool PdfTools, PdfVision, Fast;
+        internal bool PdfTools, PdfVision, Fast, QuickExplain;
         internal DocumentBudget PdfLimits = new DocumentBudget();
         internal readonly List<object> History = new List<object>();
         internal readonly List<string> Images = new List<string>();
         internal static ClientRequest Parse(Dictionary<string, object> value) {
-            var allowed = new HashSet<string> { "id", "type", "targetId", "model", "effort", "text", "history", "images", "pdfTools", "pdfVision", "pdfLimits", "callId", "fast", "tier" };
+            var allowed = new HashSet<string> { "id", "type", "targetId", "model", "effort", "text", "history", "images", "pdfTools", "pdfVision", "pdfLimits", "callId", "fast", "tier", "quickExplain" };
             foreach (string key in value.Keys) if (!allowed.Contains(key)) throw new InvalidDataException("Unsupported request field.");
             var req = new ClientRequest { Id = Json.Text(value, "id"), Type = Json.Text(value, "type"), TargetId = Json.Text(value, "targetId"), Model = Json.Text(value, "model"), Effort = Json.Text(value, "effort"), Text = Json.Text(value, "text") };
             if (req.Id.Length < 1 || req.Id.Length > 128 || req.Id.IndexOfAny(new[] { '\r', '\n', '\0' }) >= 0) throw new InvalidDataException("Invalid request ID.");
             if (!new HashSet<string> { "status", "models", "chat", "cancel", "tool-result", "warm" }.Contains(req.Type)) throw new InvalidDataException("Unsupported message type.");
             foreach (string key in new[] { "pdfTools", "pdfVision" }) if (value.ContainsKey(key) && !(value[key] is bool)) throw new InvalidDataException("Invalid PDF capability flag.");
             req.PdfTools = Json.Get(value, "pdfTools") is bool && (bool)Json.Get(value, "pdfTools");
+            if (value.ContainsKey("quickExplain")) {
+                if (!(value["quickExplain"] is bool) || (req.Type != "warm" && req.Type != "chat") || req.PdfTools) throw new InvalidDataException("Invalid quick explanation flag.");
+                req.QuickExplain = (bool)value["quickExplain"];
+            }
             req.PdfVision = Json.Get(value, "pdfVision") is bool && (bool)Json.Get(value, "pdfVision");
             if (value.ContainsKey("fast") && (!(value["fast"] is bool) || req.Type != "chat")) throw new InvalidDataException("Invalid fast flag.");
             req.Fast = Json.Get(value, "fast") is bool && (bool)Json.Get(value, "fast");

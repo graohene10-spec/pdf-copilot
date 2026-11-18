@@ -12,13 +12,9 @@ import { nativeModelInventory, registerNativeModelInventory } from './native-mod
 /** 翻译一定用具体的模型与强度：Codex 还没读过模型列表就先读一次，不把空模型交给 Codex 的默认配置。 */
 let inventoryRequest: Promise<any[]> | undefined
 async function translationChoice(settings: any, what = '翻译', keepSavedModel = false) {
+  if (keepSavedModel && settings.provider === 'codex' && settings.model && settings.effort) return { model: settings.model, effort: settings.effort }
   const { getProvider, getNativeModels } = await import('./providers.mjs')
   let models: any[] = settings.provider === 'codex' ? nativeModelInventory.value : getProvider(settings.provider)?.models || []
-  // The user already picked these values in Settings. A cold model catalogue
-  // need not block opening the thread or replace the choice with a default.
-  if (keepSavedModel && settings.provider === 'codex' && settings.model && settings.effort && !models.some(item => item.id === settings.model)) {
-    return { model: settings.model, effort: settings.effort }
-  }
   if (settings.provider === 'codex' && !models.length) {
     inventoryRequest ??= getNativeModels().then((items: any[]) => { registerNativeModelInventory(items); return items }).finally(() => { inventoryRequest = undefined })
     models = await inventoryRequest!
@@ -66,7 +62,7 @@ export async function prewarmExplain(visual = false) {
     const own = shown ? shown.visual.share === 'own' : true
     const choice = own ? await translationChoice(settings, visual ? '可视化讲解' : '快速解释', true) : { model: settings.model || '' }
     const { warmNativeThread } = await import('./native.mjs')
-    await warmNativeThread({ model: choice.model || '' })
+    await warmNativeThread({ model: choice.model || '', quickExplain: true })
   } catch { /* 预热失败不影响之后的提问 */ }
 }
 export async function complete(options: CompleteOptions): Promise<string> {
@@ -85,7 +81,7 @@ export async function complete(options: CompleteOptions): Promise<string> {
   let text = '', reported: { input?: number; output?: number; reasoning?: number } | undefined
   const started = Date.now()
   try {
-    await streamChat({ ...settings, ...choice, useSavedTier: options.kind === 'explain' && Boolean(settings.model && settings.effort), fast: own ? settings.fast : options.fast ? false : settings.fast, tier: own ? settings.tier : options.fast ? '' : settings.tier, apiKey, signal: options.signal, messages: options.messages, ...(options.extraInstructions ? { extraInstructions: options.extraInstructions } : {}),
+    await streamChat({ ...settings, ...choice, quickExplain: options.kind === 'explain', useSavedTier: options.kind === 'explain' && Boolean(settings.model && settings.effort), fast: own ? settings.fast : options.fast ? false : settings.fast, tier: own ? settings.tier : options.fast ? '' : settings.tier, apiKey, signal: options.signal, messages: options.messages, ...(options.extraInstructions ? { extraInstructions: options.extraInstructions } : {}),
       onDelta: (delta: string) => { text += delta; options.onDelta?.(delta, text) }, onReasoning: (delta: string) => options.onReasoning?.(delta),
       onUsage: (usage: { input?: number; output?: number; reasoning?: number }) => { reported = { input: (reported?.input || 0) + (usage.input || 0), output: (reported?.output || 0) + (usage.output || 0), reasoning: (reported?.reasoning || 0) + (usage.reasoning || 0) } } })
     // 刚用过的连接还在池里，不必马上再预热。

@@ -64,9 +64,9 @@ namespace PdfCopilot {
                                 if (req.Type == "chat") {
                                     client.Chat(req); frames.Write(Json.Obj("id", req.Id, "event", "done", "timing", client.TakeTiming()));
                                     // Prepare the next conversation of the same kind right away: follow-up questions start without the set-up wait.
-                                    try { client.Warm(req.Model, req.PdfTools, req.PdfVision); } catch { }
+                                    if (!req.QuickExplain) { try { client.Warm(req.Model, req.PdfTools, req.PdfVision, false); } catch { } }
                                 }
-                                else if (req.Type == "warm") { client.Warm(req.Model, req.PdfTools, req.PdfVision); frames.Write(Json.Obj("id", req.Id, "ok", true, "result", Json.Obj())); }
+                                else if (req.Type == "warm") { client.Warm(req.Model, req.PdfTools, req.PdfVision, req.QuickExplain); frames.Write(Json.Obj("id", req.Id, "ok", true, "result", Json.Obj())); }
                                 else frames.Write(Json.Obj("id", req.Id, "ok", true, "result", req.Type == "status" ? client.Status() : client.Models()));
                             } catch (Exception e) {
                                 string error = e is InvalidOperationException || e is FileNotFoundException ? e.Message : "The Codex helper could not complete this request. Check the Codex installation and reconnect.";
