@@ -25,6 +25,7 @@ namespace PdfCopilot {
                 }
                 if (method == "initialize") result = Json.Obj("userAgent", "protocol-fixture");
                 else if (method == "initialized") continue;
+                else if (method == "config/read" && mode == "quick-custom") result = Json.Obj("config", Json.Obj("model_provider", "user-provider", "mcp_servers", Json.Obj("example", Json.Obj("enabled", true))));
                 else if (method == "config/read") result = Json.Obj("config", Json.Obj("mcp_servers", Json.Obj("example", Json.Obj("enabled", true)), "features", Json.Obj("shell_tool", false, "plugins", false), "plugins", Json.Obj("example", Json.Obj("enabled", true))));
                 else if (method == "account/read") {
                     if (mode == "status-failed") { Emit(Json.Obj("id", id, "error", Json.Obj("code", -32000, "message", "credential_must_not_be_forwarded"))); continue; }
@@ -38,12 +39,23 @@ namespace PdfCopilot {
                     foreach (string feature in CodexClient.DisabledFeatures) safe &= Json.Get(features, feature) is bool && !(bool)Json.Get(features, feature);
                     safe &= Json.Get(features, "code_mode_host") is bool && (bool)Json.Get(features, "code_mode_host");
                     safe &= Json.Get(parameters, "environments") != null && !Json.Items(Json.Get(parameters, "environments")).GetEnumerator().MoveNext();
+                    if (mode.StartsWith("quick-", StringComparison.Ordinal)) {
+                        var selected = Json.Text(parameters, "modelProvider");
+                        if (mode == "quick-http") {
+                            var provider = Json.Map(Json.Get(Json.Map(Json.Get(config, "model_providers")), selected));
+                            safe &= selected == "pdf_copilot_openai_http" && provider != null && Object.Equals(Json.Get(provider, "supports_websockets"), false)
+                                && Object.Equals(Json.Get(provider, "request_max_retries"), 0) && Object.Equals(Json.Get(provider, "stream_max_retries"), 0)
+                                && Object.Equals(Json.Get(provider, "requires_openai_auth"), true) && Json.Text(provider, "wire_api") == "responses"
+                                && Json.Text(Json.Map(Json.Get(provider, "http_headers")), "version") == "0.159.2";
+                        } else safe &= selected == "" && Json.Get(config, "model_providers") == null;
+                    }
                     if (!safe) { Emit(Json.Obj("id", id, "error", Json.Obj("code", -32000, "message", "Unsafe fixture configuration."))); continue; }
                     result = Json.Obj("thread", Json.Obj("id", "fixture-thread", "ephemeral", mode != "ephemeral-refused"), "sandbox", Json.Obj("type", mode == "sandbox-refused" ? "dangerFullAccess" : "readOnly", "networkAccess", false), "approvalPolicy", "never");
                 } else if (method == "turn/start") {
                     var sandbox = Json.Map(Json.Get(parameters, "sandboxPolicy"));
                     if (Json.Text(sandbox, "type") != "readOnly" || (bool)Json.Get(sandbox, "networkAccess")) return 5;
                     if (Json.Get(parameters, "environments") == null || Json.Items(Json.Get(parameters, "environments")).GetEnumerator().MoveNext()) return 5;
+                    if (mode.StartsWith("quick-", StringComparison.Ordinal) && (Json.Text(parameters, "effort") != "high" || Json.Text(parameters, "serviceTier") != "ultrafast")) return 5;
                     if (mode == "lost-child") return 6;
                     result = Json.Obj("turn", Json.Obj("id", "fixture-turn", "status", "inProgress"));
                     Emit(Json.Obj("id", id, "result", result));

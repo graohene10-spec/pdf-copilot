@@ -41,5 +41,17 @@ test('a click takes the matching port during warm-up despite a separate idle sta
     await assert.rejects(streamNative({model:'one',messages:[],signal:abort}), {name:'AbortError'});
     assert.equal(sent.filter(m => m.type === 'chat').length, 3);
     assert.ok(opened <= 4);
+    await warmNativeThread({model:'shared',quickExplain:true});
+    await warmNativeThread({model:'shared'});
+    await chat('shared');
+    await chat('shared', {quickExplain:true});
+    const tagged = sent.filter(m => m.model === 'shared');
+    const quick = tagged.filter(m => m.quickExplain);
+    const ordinary = tagged.filter(m => !m.quickExplain);
+    assert.deepEqual(quick.map(m => m.type), ['warm','chat']);
+    assert.deepEqual(ordinary.map(m => m.type), ['warm','chat']);
+    assert.equal(quick[0].sessionId, quick[1].sessionId);
+    assert.equal(ordinary[0].sessionId, ordinary[1].sessionId);
+    assert.notEqual(quick[0].sessionId, ordinary[0].sessionId);
   } finally { globalThis.setTimeout = original; }
 });

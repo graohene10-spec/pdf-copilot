@@ -39,8 +39,9 @@ function run(item: Explain, previous = '') {
   const ask = (image?: string) => complete({ kind: 'explain', visual, ...(visual ? { extraInstructions: UI_INSTRUCTIONS.explain } : {}), messages: [{ role: 'user', content: explainPrompt(item.term, item.context, item.mode, previous) + (image ? IMAGE_NOTE : ''), ...(image ? { images: [image] } : {}) }], signal: controller.signal,
     onDelta: (_delta, all) => { if (controllers.get(item.id) === controller) { if (!item.text && all) item.firstTokenAt = Date.now(); item.text = all } },
     onReasoning: delta => { if (controllers.get(item.id) === controller) item.reasoning += delta } })
-  // 模型看不了图就退回只用文字。
-  void ask(item.image).catch(cause => { if (!item.image || controller.signal.aborted) throw cause; if (controllers.get(item.id) === controller) { item.text = ''; item.reasoning = '' } return ask() })
+  // Each click sends one explanation. Surface image and transport errors without resubmitting the question.
+  // 唯一的例外不算重发：模型清单里写明这个模型看不了图时，请求在本地就被拦下、根本没发出去，这时去掉截图只用文字问一次。
+  void ask(item.image).catch(cause => { if (!item.image || controller.signal.aborted || !/不支持图片/.test(cause?.message || '')) throw cause; return ask() })
     .then(text => { if (controllers.get(item.id) !== controller) return; item.text = text.trim(); item.status = item.text ? 'done' : 'error'; if (!item.text) item.error = '没有得到解释' })
     .catch(cause => { if (controllers.get(item.id) !== controller || controller.signal.aborted) return; item.status = 'error'; item.error = cause?.message || String(cause) })
     .finally(() => { if (controllers.get(item.id) === controller) { controllers.delete(item.id); item.ms = Date.now() - item.startedAt } })
@@ -78,7 +79,7 @@ export function explainTarget(): ExplainTarget | undefined {
     }
   }
   const slot = element.closest<HTMLElement>('.page-slot')
-  const context = around((slot || element).textContent || term, term)
+  const context = around((slot?.querySelector('.textLayer') || element).textContent || term, term)
   return { term, context, doc: slot?.closest<HTMLElement>('.pdf-scroll')?.dataset.explainDoc, page: Number(slot?.dataset.page) || undefined, anchor: slot || undefined, image: slot && looksMathy(term + context) ? selectionImage(40, 60) : undefined }
 }
 

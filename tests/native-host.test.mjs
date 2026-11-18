@@ -114,6 +114,21 @@ test('native host streams UTF-8 and inline images in restricted ephemeral thread
   } finally { await client.close(); }
 });
 
+for (const mode of ['quick-http', 'quick-custom', 'quick-ordinary']) {
+  test(`quick explanation transport and explicit tier: ${mode}`, { skip: !supported }, async () => {
+    const client = host(mode);
+    const quickExplain = mode !== 'quick-ordinary';
+    try {
+      client.send({ id: 'warm', type: 'warm', model: 'fixture-model', quickExplain });
+      assert.equal((await client.until(m => m.id === 'warm')).ok, true);
+      client.send({ id: 'q', type: 'chat', text: 'sample', model: 'fixture-model', effort: 'high', tier: 'ultrafast', quickExplain });
+      const result = await client.until(m => m.id === 'q' && ['done', 'error'].includes(m.event));
+      assert.equal(result.event, 'done');
+      assert.equal(result.timing.prepared, true);
+    } finally { await client.close(); }
+  });
+}
+
 test('native host rejects unsupported actions and remote images before forwarding', { skip: !supported }, async () => {
   const client = host();
   try {

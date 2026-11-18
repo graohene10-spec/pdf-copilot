@@ -46,7 +46,7 @@ function forget(port) {
   port.disconnect();
 }
 const pendingWarm = new Map();
-const threadKey = (model, tools, vision) => JSON.stringify([model || '', !!tools, !!tools && !!vision]);
+const threadKey = (model, tools, vision, quickExplain) => JSON.stringify([model || '', !!tools, !!tools && !!vision, !!quickExplain]);
 async function acquire(key = '') {
   for (;;) {
     let index = idle.findLastIndex(entry => entry.key === key);
@@ -117,13 +117,13 @@ export const getNativeModels = signal => nativeRequest('models', signal);
  * 选中文字时就先建，真正提问时只剩等模型出字。小助手那边同一种会话已经备着就什么都不做，所以多叫几次没关系。
  * 预热消息带独立的请求 ID。发出后即可把同一连接交给对话，助手会接手正在准备的会话。
  */
-export function warmNativeThread({ model = '', pdfTools = false, pdfVision = false } = {}) {
+export function warmNativeThread({ model = '', pdfTools = false, pdfVision = false, quickExplain = false } = {}) {
   if (!globalThis.__TAURI_INTERNALS__) return Promise.resolve();
-  const key = threadKey(model, pdfTools, pdfVision);
+  const key = threadKey(model, pdfTools, pdfVision, quickExplain);
   if (!pendingWarm.has(key)) {
     const opening = acquire(key).then(port => {
       try {
-        port.postMessage({ id: crypto.randomUUID(), type: 'warm', model, ...(pdfTools ? { pdfTools: true, pdfVision } : {}) });
+        port.postMessage({ id: crypto.randomUUID(), type: 'warm', model, ...(quickExplain ? { quickExplain: true } : {}), ...(pdfTools ? { pdfTools: true, pdfVision } : {}) });
         release(port, true, key);
       } catch (error) { release(port, false); throw error; }
     }).catch(() => {}).finally(() => pendingWarm.delete(key));
@@ -156,9 +156,9 @@ const TIMINGS_KEY = 'ai.codexTimings.v1';
 export function codexTimings() { try { const list = JSON.parse(localStorage.getItem(TIMINGS_KEY) || '[]'); return Array.isArray(list) ? list : []; } catch { return []; } }
 function recordTiming(entry) { try { localStorage.setItem(TIMINGS_KEY, JSON.stringify([entry, ...codexTimings()].slice(0, 12))); } catch { /* 存不下就算了 */ } }
 
-export async function streamNative({ model, effort, fast = false, tier = '', useSavedTier = false, messages, signal, onDelta, onReasoning, pdfTools = false, pdfVision = false, pdfLimits, onTool, extraInstructions = '' }) {
+export async function streamNative({ model, effort, fast = false, tier = '', useSavedTier = false, quickExplain = false, messages, signal, onDelta, onReasoning, pdfTools = false, pdfVision = false, pdfLimits, onTool, extraInstructions = '' }) {
   signal?.throwIfAborted();
-  const key = threadKey(model, pdfTools, pdfVision);
+  const key = threadKey(model, pdfTools, pdfVision, quickExplain);
   const began = performance.now(), waitedWarm = pendingWarm.has(key);
   let firstAt = 0, answerAt = 0;
   if (pendingWarm.has(key)) await pendingWarm.get(key);
@@ -166,7 +166,7 @@ export async function streamNative({ model, effort, fast = false, tier = '', use
   const port = await acquire(key);
   const gotPort = performance.now();
   const speed = codexSpeed({ model, fast, tier, useSavedTier });
-  spare();
+  if (!quickExplain) spare();
   return new Promise((resolve, reject) => {
     const id = crypto.randomUUID();
     let settled = false, received = false, toolQueue = Promise.resolve();
@@ -227,7 +227,7 @@ export async function streamNative({ model, effort, fast = false, tier = '', use
     signal?.addEventListener('abort', abort, { once: true });
     if (signal?.aborted) { abort(); return; }
     const latest = messages.at(-1);
-    port.postMessage({ id, type: 'chat', model, effort, ...speed, text: latest.content + (extraInstructions ? '\n\n[工作台的文档格式与阅读说明]\n' + extraInstructions : ''),
+    port.postMessage({ id, type: 'chat', model, effort, ...(quickExplain ? { quickExplain: true } : {}), ...speed, text: latest.content + (extraInstructions ? '\n\n[工作台的文档格式与阅读说明]\n' + extraInstructions : ''),
       history: messages.slice(0, -1).map(({ role, content }) => ({ role, content })),
       images: messages.flatMap(item => item.images || []), ...(pdfTools ? { pdfTools: true, pdfVision, ...(pdfLimits ? { pdfLimits } : {}) } : {}) });
   });
