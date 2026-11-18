@@ -443,8 +443,9 @@ function dijkstra(): Painter {
   }
   return env => {
     const c = env.context
-    if (!run || env.t - run.started > run.order.length * TICK + HOLD) begin(env.t)
-    const state = run!, clock = (env.t - state.started) / TICK, count = Math.min(state.order.length, Math.floor(clock) + 1), finished = count >= state.order.length
+    // 刚开始的一两帧，帧时间戳可能比上一次画的时刻还早几毫秒：时间倒退就重新起一轮，步数至少算一步（否则会去取第 -1 个节点）。
+    if (!run || env.t < run.started || env.t - run.started > run.order.length * TICK + HOLD) begin(env.t)
+    const state = run!, clock = (env.t - state.started) / TICK, count = Math.max(1, Math.min(state.order.length, Math.floor(clock) + 1)), finished = count >= state.order.length
     const sinking = clamp((state.order.length * TICK + HOLD - (env.t - state.started)) / 800, 0, 1)
     const lift = (i: number) => state.when[i]! < 0 || state.when[i]! >= count ? 0 : state.distance[i]! * RISE * smooth((clock - state.when[i]!) / 2.5) * smooth(sinking)
     const ground = (i: number): Vec => [nodes[i]![0], FLOOR, nodes[i]![1]], raised = (i: number): Vec => [nodes[i]![0], FLOOR + lift(i), nodes[i]![1]]

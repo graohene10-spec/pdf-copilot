@@ -679,7 +679,10 @@ function tick(now: number) {
   // GB300 保持原最高目标 60 FPS；其他场景沿用原来的自适应调度。
   const interval = sketch?.offscreen ? 1000 / 60 : cost < (smoothRun ? 10 : 7) ? 1000 / 60 : cost > 16 ? 1000 / 20 : FRAME
   smoothRun = interval < 20
-  if (now - last >= interval - 2) { last = now; const began = performance.now(); draw(now); cost += (performance.now() - began - cost) * .1 }
+  if (now - last >= interval - 2) { last = now; const began = performance.now()
+    // 某个图案画的时候出了错，不能让整个背景动画就此停住：重起这个图案，下一帧接着画。
+    try { draw(now) } catch (error) { console.error(error); painter = sketch?.create() }
+    cost += (performance.now() - began - cost) * .1 }
   if (!reduced.matches && (!remote || !labelSettled || labelDirty)) frame = requestAnimationFrame(tick)
 }
 function run() { if (!disposed && !frame && !document.hidden && (!remote || !labelSettled || labelDirty)) frame = requestAnimationFrame(tick) }
