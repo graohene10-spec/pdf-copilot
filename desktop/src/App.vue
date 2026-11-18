@@ -937,6 +937,68 @@ watch(() => documents.value.map(doc => doc.id).join(), () => {
   const ids = documents.value.map(doc => doc.id)
   void (async () => { for (const id of ids) { await loadBookmarks(id); await new Promise(resolve => setTimeout(resolve, 4)) } bookmarkTick.value++ })()
 }, { immediate: true })
+// 侧栏书签的选中与删除：按住左键拖出一个框（或 Ctrl + 单击）选中，Delete 删除；右键一枚可以换画风、删除。
+const pickedMarks = ref(new Set<string>())
+const markNav = ref<HTMLElement>()
+const markBand = ref<{ left: number; top: number; width: number; height: number } | null>(null)
+const markKey = (doc: string, id: string) => `${doc}:${id}`
+let markDragged = false
+function markPointerDown(event: PointerEvent) {
+  const host = markNav.value
+  if (event.button !== 0 || !host) return
+  const origin = () => { const box = host.getBoundingClientRect(); return { x: box.left - host.scrollLeft, y: box.top - host.scrollTop } }
+  const from = origin(), startX = event.clientX - from.x, startY = event.clientY - from.y, sx = event.clientX, sy = event.clientY
+  const keep = event.ctrlKey || event.metaKey ? new Set(pickedMarks.value) : new Set<string>()
+  markDragged = false
+  const move = (next: PointerEvent) => {
+    // 拖出 5 像素才算框选；没拖就是普通的点击（打开那枚书签）。
+    if (!markDragged && Math.hypot(next.clientX - sx, next.clientY - sy) < 5) return
+    markDragged = true
+    const at = origin(), x = next.clientX - at.x, y = next.clientY - at.y
+    const band = { left: Math.min(x, startX), top: Math.min(y, startY), width: Math.abs(x - startX), height: Math.abs(y - startY) }
+    markBand.value = band
+    const hit = new Set(keep)
+    for (const row of host.querySelectorAll<HTMLElement>('.mark-row')) {
+      const r = row.getBoundingClientRect(), left = r.left - at.x, top = r.top - at.y
+      if (left < band.left + band.width && left + r.width > band.left && top < band.top + band.height && top + r.height > band.top) hit.add(row.dataset.key!)
+    }
+    pickedMarks.value = hit
+  }
+  const end = () => { markBand.value = null; window.removeEventListener('pointermove', move); if (markDragged) host.focus({ preventScroll: true }) }
+  window.addEventListener('pointermove', move)
+  window.addEventListener('pointerup', end, { once: true }); window.addEventListener('pointercancel', end, { once: true })
+}
+function markClick(doc: Doc, mark: { id: string; position: BookmarkPosition }, event: MouseEvent) {
+  // 刚拖完框松手时落在某一行上的那一下不算点击。
+  if (markDragged) { markDragged = false; return }
+  const key = markKey(doc.id, mark.id)
+  if (event.ctrlKey || event.metaKey) { const next = new Set(pickedMarks.value); if (next.has(key)) next.delete(key); else next.add(key); pickedMarks.value = next; markNav.value?.focus({ preventScroll: true }); return }
+  pickedMarks.value = new Set()
+  void openBookmark(doc, mark.position)
+}
+function removeMarks(keys: string[]) {
+  for (const key of keys) { const at = key.lastIndexOf(':'); removeBookmark(key.slice(0, at), key.slice(at + 1)) }
+  pickedMarks.value = new Set(); bookmarkTick.value++
+  if (keys.length > 1) notify(`已删除 ${keys.length} 个书签`)
+}
+function markKeydown(event: KeyboardEvent) {
+  if ((event.key === 'Delete' || event.key === 'Backspace') && pickedMarks.value.size) { event.preventDefault(); removeMarks([...pickedMarks.value]) }
+  else if (event.key === 'Escape' && pickedMarks.value.size) { event.stopPropagation(); pickedMarks.value = new Set() }
+  else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') { event.preventDefault(); pickedMarks.value = new Set(bookmarkGroups.value.flatMap(group => group.marks.map(item => markKey(group.doc.id, item.mark.id)))) }
+}
+function markMenu(doc: Doc, mark: { id: string; position: BookmarkPosition }, event: MouseEvent) {
+  const key = markKey(doc.id, mark.id), x = event.clientX, y = event.clientY
+  // 右键的这一枚不在选中的里面：只管它自己。
+  if (!pickedMarks.value.has(key)) pickedMarks.value = new Set([key])
+  const many = pickedMarks.value.size > 1
+  contextMenu.value = { x, y, items: [
+    ...(many ? [] : [
+      { label: '打开', icon: 'book', action: () => { pickedMarks.value = new Set(); void openBookmark(doc, mark.position) } },
+      { label: '换画风…', icon: 'image', action: () => chooseBookmarkArt(doc.id, mark.id, x, y) },
+    ]),
+    { label: many ? `删除所选 ${pickedMarks.value.size} 个书签` : '删除书签', icon: 'trash', danger: true, separator: !many, action: () => removeMarks([...pickedMarks.value]) },
+  ] }
+}
 async function openBookmark(doc: Doc, position: BookmarkPosition) {
   await openDocument(doc)
   for (let tries = 0; tries < 25; tries++) {
@@ -1906,11 +1968,12 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
         <p v-else-if="!groups.length" class="tag-empty">点 + 新建，右键文档放进分组。</p>
       </nav>
       <div class="tag-heading"><p class="sidebar-label">书签<span v-if="bookmarkTotal" class="mark-total">{{ bookmarkTotal }}</span></p><AppIcon name="bookmark" :size="14" /></div>
-      <nav class="mark-nav" aria-label="全部书签">
+      <nav ref="markNav" class="mark-nav" tabindex="-1" aria-label="全部书签" @pointerdown="markPointerDown" @keydown="markKeydown">
         <section v-for="group in bookmarkGroups" :key="group.doc.id" class="mark-group">
           <p class="mark-book" :data-tip="group.doc.name">{{ group.doc.name.replace(/\.(pdf|md|markdown)$/i, '') }}</p>
-          <button v-for="item in group.marks" :key="item.mark.id" type="button" class="mark-row" :data-tip="`${item.art.name} · ${item.where}`" @click="openBookmark(group.doc, item.mark.position)"><svg class="mark-art" viewBox="0 0 96 40" preserveAspectRatio="xMaxYMid slice" aria-hidden="true" v-html="item.art.svg" /><span class="mark-name">{{ item.mark.name || item.where }}</span><small v-if="item.mark.name">{{ item.where }}</small></button>
+          <button v-for="item in group.marks" :key="item.mark.id" type="button" class="mark-row" :class="{ picked: pickedMarks.has(markKey(group.doc.id, item.mark.id)) }" :data-key="markKey(group.doc.id, item.mark.id)" :data-tip="`${item.art.name} · ${item.where}`" @click="markClick(group.doc, item.mark, $event)" @contextmenu.prevent.stop="markMenu(group.doc, item.mark, $event)"><svg class="mark-art" viewBox="0 0 96 40" preserveAspectRatio="xMaxYMid slice" aria-hidden="true" v-html="item.art.svg" /><span class="mark-name">{{ item.mark.name || item.where }}</span><small v-if="item.mark.name">{{ item.where }}</small></button>
         </section>
+        <i v-if="markBand" class="mark-band" :style="{ left: `${markBand.left}px`, top: `${markBand.top}px`, width: `${markBand.width}px`, height: `${markBand.height}px` }"></i>
         <p v-if="!bookmarkGroups.length" class="tag-empty">在书里按 {{ shortcut('bookmark') || '右键' }} 留书签，都会收在这里。</p>
       </nav>
       <div class="sidebar-spacer"></div>
