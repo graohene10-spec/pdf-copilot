@@ -35,6 +35,7 @@ const PdfReader = defineAsyncComponent(() => import('./components/PdfReader.vue'
 const MarkdownReader = defineAsyncComponent(() => import('./components/MarkdownReader.vue'))
 const AiPane = defineAsyncComponent(() => import('./components/AiPane.vue'))
 const SettingsDialog = defineAsyncComponent(() => import('./components/SettingsDialog.vue'))
+const TourPlayer = defineAsyncComponent(() => import('./components/TourPlayer.vue'))
 const SplitPicker = defineAsyncComponent(() => import('./components/SplitPicker.vue'))
 const UpdateCard = defineAsyncComponent(() => import('./components/UpdateCard.vue'))
 const ContextMenu = defineAsyncComponent(() => import('./components/ContextMenu.vue'))
@@ -169,6 +170,7 @@ const captureQuickBusy = computed(() => Boolean(captureQuick.value && (captureQu
 const captureQuickStatus = computed(() => captureQuick.value?.status || (captureQuick.value && chatState(sourceId(captureQuick.value.documentId)).request ? '这份文档已有问题正在处理，可点继续查看。' : ''))
 const reader = ref<any>()
 const settingsOpen = ref(false)
+const tourOpen = ref(false)
 const settingsTab = ref<'appearance' | 'reading' | 'shortcuts' | 'ai' | 'updates'>('appearance')
 const fitRequest = ref(0)
 const query = ref('')
@@ -1773,6 +1775,7 @@ watch(reader, value => {
 watch(search, value => {
   if (value && focusSearchPending) { value.focus(); focusSearchPending = false }
 })
+watch(tourOpen, () => nudgeGlassMotion(560))
 watch(settingsOpen, value => { nudgeGlassMotion(560); if (!value && captureQuick.value) monitorCaptureQuick() })
 watch(() => preferences.value.pdf.quickAskOnCapture, value => { if (!value) dismissCaptureQuick() })
 
@@ -2026,7 +2029,7 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
       </nav>
       <div class="sidebar-spacer"></div>
       <div v-if="effectiveAppearance.style === 'sketch'" class="sidebar-doodle" aria-hidden="true"></div>
-      <div class="sidebar-bottom"><button @click="openSettings()" aria-label="设置"><AppIcon name="settings" :size="17" /><span>设置</span></button><button class="icon-button" @click="toggleTheme($event)" :data-tip="theme === 'dark' ? '切换浅色主题' : '切换深色主题'" :aria-label="theme === 'dark' ? '切换浅色主题' : '切换深色主题'"><AppIcon :name="theme === 'dark' ? 'sun' : 'moon'" :size="17" /></button></div>
+      <div class="sidebar-bottom"><button @click="openSettings()" aria-label="设置"><AppIcon name="settings" :size="17" /><span>设置</span></button><button class="icon-button tour-open" @click="tourOpen = true" data-tip="使用教程" aria-label="使用教程"><AppIcon name="play" :size="16" /></button><button class="icon-button" @click="toggleTheme($event)" :data-tip="theme === 'dark' ? '切换浅色主题' : '切换深色主题'" :aria-label="theme === 'dark' ? '切换浅色主题' : '切换深色主题'"><AppIcon :name="theme === 'dark' ? 'sun' : 'moon'" :size="17" /></button></div>
     </aside>
     </Transition>
 
@@ -2151,5 +2154,6 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
     <Transition name="settings-pop">
       <SettingsDialog v-if="settingsOpen" :initial-tab="settingsTab" @close="settingsOpen = false" @ai-saved="aiSettingsSaved" />
     </Transition>
+    <Transition name="settings-pop"><TourPlayer v-if="tourOpen" @close="tourOpen = false" /></Transition>
   </div>
 </template>

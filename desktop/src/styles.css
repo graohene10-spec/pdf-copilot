@@ -732,6 +732,8 @@ kbd {
   padding: 0;
 }
 
+.sidebar-bottom .tour-open { margin-left: auto; }
+
 .sidebar-bottom button:hover:not(:disabled) {
   background-color: var(--control-hover);
   color: var(--control-ink);
