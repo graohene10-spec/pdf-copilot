@@ -23,6 +23,7 @@ import { vLiquidSelection } from './ui/liquid-selection'
 import { useReorder } from './ui/reorder'
 import { useRubberBand } from './ui/rubber-band'
 import { translator, translate, type Translation } from './ai/translate'
+import { loadTour } from './tour/lessons'
 import { explainCards, closeCard, closeLooseCards, explainTarget, runExplain, rerunExplain, shownNotes, uiEntries, uiReady, uiVersion, type Explain, type UiEntry } from './ai/explain'
 import { looksMathy, selectionImage } from './reader/selection-image'
 import { currentHint, dismissHint, hintLearned, offerHint } from './ui/hints'
@@ -1776,6 +1777,10 @@ watch(search, value => {
   if (value && focusSearchPending) { value.focus(); focusSearchPending = false }
 })
 watch(tourOpen, () => nudgeGlassMotion(560))
+// 教程每次启动自动弹出，直到在教程里勾上「不再自动弹出」。
+let tourTimer: ReturnType<typeof setTimeout> | undefined
+onMounted(() => { if (!loadTour().hidden) tourTimer = setTimeout(() => { if (!settingsOpen.value) tourOpen.value = true }, 1400) })
+onBeforeUnmount(() => clearTimeout(tourTimer))
 watch(settingsOpen, value => { nudgeGlassMotion(560); if (!value && captureQuick.value) monitorCaptureQuick() })
 watch(() => preferences.value.pdf.quickAskOnCapture, value => { if (!value) dismissCaptureQuick() })
 

@@ -63,7 +63,7 @@ export function createDirector(parts: { viewport: () => HTMLElement | null; worl
       job.step?.(k)
       if (k >= 1) { jobs = jobs.filter(item => item !== job); job.done() }
     }
-    damp(camera.x, .62, dt); damp(camera.y, .62, dt); damp(camera.zoom, .7, dt)
+    damp(camera.x, .4, dt); damp(camera.y, .4, dt); damp(camera.zoom, .46, dt)
     paint()
   }
 
@@ -93,6 +93,15 @@ export function createDirector(parts: { viewport: () => HTMLElement | null; worl
     wait: (ms: number) => schedule(ms),
     tween: (ms: number, step: (k: number) => void, linear = false) => schedule(ms, k => step(linear ? k : glide(k))),
     locate,
+    /* 画布里某个元素的外框（世界坐标）。 */
+    box(target: string) {
+      const a = locate(target, [0, 0]), b = locate(target, [1, 1])
+      return { x: a.x, y: a.y, width: b.x - a.x, height: b.y - a.y }
+    },
+    /* 一个字一个字敲出来。 */
+    type(text: string, write: (value: string) => void, each = 48) {
+      return schedule(Math.max(1, text.length * each), k => write(text.slice(0, Math.round(k * text.length))))
+    },
     /* 镜头看向某处；zoom 省略时保持当前远近。 */
     look(target: Target | null, zoom?: number, at?: [number, number]) {
       const point = target ? locate(target, at) : { x: WORLD.width / 2, y: WORLD.height / 2 }
@@ -110,7 +119,7 @@ export function createDirector(parts: { viewport: () => HTMLElement | null; worl
       const mid = { x: (from.x + to.x) / 2 + (far ? -dy / far : 0) * bend, y: (from.y + to.y) / 2 + (far ? dx / far : 0) * bend }
       if (options.look) api.look(to, options.look)
       pointer.shown = true
-      return schedule(options.ms ?? Math.min(1150, 380 + far * 1.15), raw => {
+      return schedule(options.ms ?? Math.min(760, 240 + far * .8), raw => {
         const k = glide(raw), rest = 1 - k
         pointer.x = rest * rest * from.x + 2 * rest * k * mid.x + k * k * to.x
         pointer.y = rest * rest * from.y + 2 * rest * k * mid.y + k * k * to.y
@@ -121,9 +130,9 @@ export function createDirector(parts: { viewport: () => HTMLElement | null; worl
     release() { pointer.down = false },
     async click(kind: 'left' | 'middle' = 'left') {
       pointer.down = true; ripple(kind)
-      await schedule(150)
+      await schedule(110)
       pointer.down = false
-      await schedule(120)
+      await schedule(90)
     },
   }
 
