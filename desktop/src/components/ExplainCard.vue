@@ -30,8 +30,11 @@ function settle() {
   if (top + height > innerHeight - 8) top = props.card.y - gap - height >= 8 ? props.card.y - gap - height : Math.max(8, innerHeight - 8 - height)
   place.value = { left, top }
 }
+// 跟着书页走的卡片和书页绑在一起：贴上去那一刻记下这一页的宽度，之后页面放大多少，卡片（连同里面的字和图）就放大多少。
+const scale = ref(1)
 function remember() {
   const rect = props.card.anchor?.getBoundingClientRect()
+  if (rect?.width) props.card.base = rect.width
   if (rect?.width) props.card.rel = { x: (place.value.left - rect.left) / rect.width, y: (place.value.top - rect.top) / rect.height }
 }
 // 跟着书页走时，卡片就放进书页的滚动层里（和页面同一层）：滚动、缩放由浏览器带着走，完全跟手，
@@ -43,6 +46,9 @@ function locate() {
   if (!anchor?.isConnected || !layer) return
   const slot = anchor.getBoundingClientRect(), base = layer.getBoundingClientRect()
   if (!slot.width) return
+  // 以前钉下的卡片没记过宽度：按现在的大小算起。
+  if (!props.card.base) props.card.base = slot.width
+  scale.value = slot.width / props.card.base
   inPage.value = { left: slot.left - base.left - layer.clientLeft + layer.scrollLeft + relative().x * slot.width, top: slot.top - base.top - layer.clientTop + layer.scrollTop + relative().y * slot.height }
 }
 let observer: ResizeObserver | undefined, first = true
@@ -74,7 +80,7 @@ const fit = computed(() => {
 })
 const position = computed(() => ({
   '--ec-fit': `${fit.value}px`,
-  ...(host.value ? { position: 'absolute' as const, left: `${inPage.value.left}px`, top: `${inPage.value.top}px` } : { left: `${place.value.left}px`, top: `${place.value.top}px` }),
+  ...(host.value ? { position: 'absolute' as const, left: `${inPage.value.left}px`, top: `${inPage.value.top}px`, ...(Math.abs(scale.value - 1) > .002 ? { transform: `scale(${scale.value.toFixed(4)})`, transformOrigin: '0 0' } : {}) } : { left: `${place.value.left}px`, top: `${place.value.top}px` }),
   ...(size.value.width ? { width: `${size.value.width}px`, maxWidth: 'none' } : {}),
   ...(size.value.height ? { height: `${size.value.height}px`, maxHeight: 'none' } : {}),
 }))
@@ -118,8 +124,10 @@ function startResize(event: PointerEvent, edge: 'e' | 's' | 'se') {
   let x = event.clientX, y = event.clientY, width = size.value.width ?? box.value.offsetWidth, height = size.value.height ?? box.value.offsetHeight
   handle.setPointerCapture(event.pointerId); dragging.value = true; event.preventDefault(); event.stopPropagation()
   const move = (next: PointerEvent) => {
-    if (edge !== 's') width = Math.min(innerWidth - 24, Math.max(180, width + next.clientX - x))
-    if (edge !== 'e') height = Math.min(innerHeight - 24, Math.max(72, height + next.clientY - y))
+    // 卡片跟着书页缩放时，鼠标走的距离要换算回卡片自己的尺寸。
+    const k = host.value ? scale.value || 1 : 1
+    if (edge !== 's') width = Math.min((innerWidth - 24) / Math.min(1, k), Math.max(180, width + (next.clientX - x) / k))
+    if (edge !== 'e') height = Math.min((innerHeight - 24) / Math.min(1, k), Math.max(72, height + (next.clientY - y) / k))
     x = next.clientX; y = next.clientY
     size.value = { width: edge === 's' ? size.value.width : width, height: edge === 'e' ? size.value.height : height }
   }

@@ -87,6 +87,8 @@ export function explainTarget(): ExplainTarget | undefined {
 export type ExplainCardState = { id: string; item: Explain; x: number; y: number; pinned: boolean; follow: 'page' | 'screen'; anchor?: HTMLElement
   /** 所属的文档和页码；钉住之后的位置（相对那一页的比例 / 屏幕上的坐标）和改过的大小——钉住的便签靠这些存下来、下次打开放回原处。 */
   doc?: string; page?: number; rel?: { x: number; y: number }; screen?: { left: number; top: number }; size?: { width?: number; height?: number }
+  /** 贴到书页上那一刻这一页有多宽（像素）。之后页面缩放到多宽，卡片就按比例跟着放大缩小。 */
+  base?: number
   /** 从翻译卡片变过来时，先显示的译文。 */ from?: string }
 export const explainCards = shallowReactive<ExplainCardState[]>([])
 export function closeCard(card: ExplainCardState) { stopExplain(card.item); const at = explainCards.indexOf(card); if (at >= 0) explainCards.splice(at, 1) }
@@ -94,7 +96,7 @@ export function closeLooseCards() { for (const card of [...explainCards]) if (!c
 
 // 钉住的便签不会自己消失：记在文档库的设置里，关掉文档、关掉应用再打开都放回原处；只有拔下图钉才没。
 const CARDS = 'explain.cards.v1'
-type SavedCard = { id: string; term: string; text: string; page?: number; follow: 'page' | 'screen'; rel?: { x: number; y: number }; screen?: { left: number; top: number }; size?: { width?: number; height?: number } }
+type SavedCard = { id: string; term: string; text: string; page?: number; follow: 'page' | 'screen'; rel?: { x: number; y: number }; screen?: { left: number; top: number }; size?: { width?: number; height?: number }; base?: number }
 let cardStore: Record<string, SavedCard[]> = {}
 const openDocs = new Map<string, number>()
 const cardsReady: Promise<void> = (async () => {
@@ -103,14 +105,14 @@ const cardsReady: Promise<void> = (async () => {
 function saveCards() {
   for (const doc of openDocs.keys()) {
     const list = explainCards.filter(card => card.doc === doc && card.pinned && card.item.status === 'done' && card.item.text)
-      .map(card => ({ id: card.id, term: card.item.term, text: card.item.text, page: card.page, follow: card.follow, rel: card.rel, screen: card.screen, size: card.size }))
+      .map(card => ({ id: card.id, term: card.item.term, text: card.item.text, page: card.page, follow: card.follow, rel: card.rel, screen: card.screen, size: card.size, base: card.base }))
     if (list.length) cardStore[doc] = list; else delete cardStore[doc]
   }
   void library.setSetting(CARDS, JSON.stringify(cardStore)).catch(() => { /* 存不进去就只留在这次阅读里 */ })
   uiVersion.value++
 }
 let saveTimer = 0
-watch(() => explainCards.map(card => [card.pinned, card.follow, card.rel?.x, card.rel?.y, card.screen?.left, card.screen?.top, card.size?.width, card.size?.height, card.item.status, card.item.text.length].join()).join('|'),
+watch(() => explainCards.map(card => [card.pinned, card.follow, card.rel?.x, card.rel?.y, card.screen?.left, card.screen?.top, card.size?.width, card.size?.height, card.base, card.item.status, card.item.text.length].join()).join('|'),
   () => { clearTimeout(saveTimer); saveTimer = window.setTimeout(() => { void cardsReady.then(saveCards) }, 300) })
 /** PDF 打开、页面摆好之后调用：把这份文档钉住的便签放回去。 */
 export function restoreCards(scroller: HTMLElement, doc: string) {
@@ -122,7 +124,7 @@ export function restoreCards(scroller: HTMLElement, doc: string) {
       if (!scroller.isConnected || explainCards.some(card => card.id === saved.id)) continue
       const anchor = saved.page ? scroller.querySelector<HTMLElement>(`.page-slot[data-page="${saved.page}"]`) || undefined : undefined
       const item = reactive<Explain>({ id: saved.id, term: saved.term, context: '', mode: 'plain', text: saved.text, reasoning: '', status: 'done', error: '', startedAt: 0, ms: 0 })
-      explainCards.push(reactive({ id: saved.id, item, x: saved.screen?.left ?? 80, y: saved.screen?.top ?? 120, pinned: true, follow: anchor ? saved.follow : 'screen', anchor, doc, page: saved.page, rel: saved.rel, screen: saved.screen, size: saved.size }) as ExplainCardState)
+      explainCards.push(reactive({ id: saved.id, item, x: saved.screen?.left ?? 80, y: saved.screen?.top ?? 120, pinned: true, follow: anchor ? saved.follow : 'screen', anchor, doc, page: saved.page, rel: saved.rel, screen: saved.screen, size: saved.size, base: Number(saved.base) > 0 ? Number(saved.base) : undefined }) as ExplainCardState)
     }
   })
 }
