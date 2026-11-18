@@ -10,6 +10,10 @@ namespace PdfCopilot {
     internal sealed class ChatState {
         internal string Id, ThreadId, TurnId, Error;
         internal bool Cancelled;
+        // Where the wait went, for the reader's diagnostics: milliseconds since the bridge received the question.
+        internal readonly System.Diagnostics.Stopwatch Clock = System.Diagnostics.Stopwatch.StartNew();
+        internal long ThreadMs = -1, TurnMs = -1, FirstMs = -1, AnswerMs = -1;
+        internal bool Prepared;
         internal bool PdfTools, PdfVision;
         internal int ToolCalls, ToolCharacters, ToolImages;
         internal int ToolImageCharacters;
@@ -199,6 +203,8 @@ namespace PdfCopilot {
                 if (chat.Finished.WaitOne(0)) return;
                 if (method == "item/agentMessage/delta" || method == "item/reasoning/summaryTextDelta") {
                     string text = Json.Text(parameters, "delta");
+                    if (chat.FirstMs < 0) chat.FirstMs = chat.Clock.ElapsedMilliseconds;
+                    if (chat.AnswerMs < 0 && method == "item/agentMessage/delta") chat.AnswerMs = chat.Clock.ElapsedMilliseconds;
                     for (int at = 0; at < text.Length; at += 32768) frames.Write(Json.Obj("id", chat.Id, "event", method == "item/agentMessage/delta" ? "delta" : "reasoning", "text", text.Substring(at, Math.Min(32768, text.Length - at))));
                 } else if (method == "item/started") {
                     string kind = Json.Text(Json.Map(Json.Get(parameters, "item")), "type");
@@ -387,6 +393,9 @@ namespace PdfCopilot {
                 return id;
             }
         }
+        // Stage timings of the conversation that just ended (numbers and the engine version only).
+        private Dictionary<string, object> lastTiming;
+        internal Dictionary<string, object> TakeTiming() { var timing = lastTiming; lastTiming = null; return timing; }
         internal void PrepareChat(string id) {
             lock (chatLock) {
                 if (activeChat != null) throw new InvalidOperationException("A Codex conversation is already running. Cancel it before starting another.");
@@ -406,6 +415,7 @@ namespace PdfCopilot {
                 string ready = TakeSpare(SpareKey(request.Model, request.PdfTools, request.PdfVision));
                 if (ready != null) { chat.ThreadId = ready; usedSpare = true; }
                 else chat.ThreadId = StartThread(request);
+                chat.Prepared = usedSpare; chat.ThreadMs = chat.Clock.ElapsedMilliseconds;
                 if (chat.ThreadId == "") throw new IOException("Codex returned no conversation ID.");
                 if (chat.Cancelled) { chat.Finished.Set(); return; }
                 var text = new StringBuilder();
@@ -434,10 +444,12 @@ namespace PdfCopilot {
                     }
                 }
                 chat.TurnId = Json.Text(Json.Map(Json.Get(turnResult, "turn")), "id");
+                chat.TurnMs = chat.Clock.ElapsedMilliseconds;
                 if (chat.Cancelled) Interrupt(chat);
                 if (!chat.Finished.WaitOne(15 * 60 * 1000)) { chat.Error = "The Codex response timed out."; Interrupt(chat); }
                 if (chat.Error != null && !chat.Cancelled) throw new InvalidOperationException(chat.Error);
             } finally {
+                lastTiming = Json.Obj("prepared", chat.Prepared, "threadMs", chat.ThreadMs, "turnMs", chat.TurnMs, "firstMs", chat.FirstMs, "answerMs", chat.AnswerMs, "totalMs", chat.Clock.ElapsedMilliseconds, "engine", version ?? "");
                 ClearDocumentCalls(chat);
                 // Best-effort unload, with process teardown on any protocol failure.
                 if (chat.ThreadId != null && initialized && process != null && !process.HasExited) {

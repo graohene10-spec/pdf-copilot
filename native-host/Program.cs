@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 
 namespace PdfCopilot {
@@ -60,7 +62,7 @@ namespace PdfCopilot {
                             var req = (ClientRequest)state;
                             try {
                                 if (req.Type == "chat") {
-                                    client.Chat(req); frames.Write(Json.Obj("id", req.Id, "event", "done"));
+                                    client.Chat(req); frames.Write(Json.Obj("id", req.Id, "event", "done", "timing", client.TakeTiming()));
                                     // Prepare the next conversation of the same kind right away: follow-up questions start without the set-up wait.
                                     try { client.Warm(req.Model, req.PdfTools, req.PdfVision); } catch { }
                                 }
@@ -95,6 +97,11 @@ namespace PdfCopilot {
             var candidates = new List<string>();
             foreach (string root in roots) CollectCodex(root, 0, false, candidates);
             candidates.Sort(delegate(string a, string b) { return File.GetLastWriteTimeUtc(b).CompareTo(File.GetLastWriteTimeUtc(a)); });
+            // Explorer-launched applications do not inherit Codex Desktop's private PATH.
+            foreach (string engine in PackagedEngines()) {
+                candidates.RemoveAll(delegate(string seen) { return String.Equals(seen, engine, StringComparison.OrdinalIgnoreCase); });
+                candidates.Insert(0, engine);
+            }
             string path = Environment.GetEnvironmentVariable("PATH") ?? "";
             foreach (string directory in path.Split(Path.PathSeparator)) {
                 try {
@@ -124,6 +131,33 @@ namespace PdfCopilot {
                     return CodexVersion.TryParse(child.StandardOutput.ReadToEnd().Trim(), out parsed) ? parsed : null;
                 }
             } catch { return null; }
+        }
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+        private static extern int GetPackagesByPackageFamily(string family, ref uint count, IntPtr names, ref uint length, IntPtr buffer);
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+        private static extern int GetPackagePathByFullName(string fullName, ref uint length, StringBuilder path);
+        private static List<string> PackagedEngines() {
+            var paths = new List<string>();
+            const string family = "OpenAI.Codex_2p2nqsd0c76g0";
+            uint count = 0, length = 0;
+            IntPtr names = IntPtr.Zero, buffer = IntPtr.Zero;
+            try {
+                if (GetPackagesByPackageFamily(family, ref count, names, ref length, buffer) != 122) return paths;
+                names = Marshal.AllocHGlobal(checked((int)count * IntPtr.Size));
+                buffer = Marshal.AllocHGlobal(checked((int)length * 2));
+                if (GetPackagesByPackageFamily(family, ref count, names, ref length, buffer) != 0) return paths;
+                for (int i = 0; i < count; i++) {
+                    string fullName = Marshal.PtrToStringUni(Marshal.ReadIntPtr(names, i * IntPtr.Size));
+                    uint size = 0;
+                    if (GetPackagePathByFullName(fullName, ref size, null) != 122) continue;
+                    var path = new StringBuilder(checked((int)size));
+                    if (GetPackagePathByFullName(fullName, ref size, path) != 0) continue;
+                    string engine = Path.Combine(path.ToString(), "app", "resources", "codex.exe");
+                    if (File.Exists(engine)) paths.Add(engine);
+                }
+            } catch { /* Older Windows versions, or any failure to read the package list: use the regular candidates. */ }
+            finally { if (buffer != IntPtr.Zero) Marshal.FreeHGlobal(buffer); if (names != IntPtr.Zero) Marshal.FreeHGlobal(names); }
+            return paths;
         }
         // Only accept codex.exe below a bin / resources / vendor directory: the desktop app's own window
         // executable may also be named Codex.exe and must never be started as the command-line engine.
