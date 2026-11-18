@@ -184,5 +184,10 @@
 .mark-nav{position:relative;outline:none;user-select:none}
 .mark-row.picked{background:color-mix(in srgb,var(--accent) 16%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 40%,transparent)}
 :root[data-style='sketch'] .mark-row.picked{background:color-mix(in srgb,var(--red-pencil,#c0392b) 10%,transparent);box-shadow:inset 0 0 0 1.4px color-mix(in srgb,var(--red-pencil,#c0392b) 60%,transparent)}
-.mark-band{position:absolute;z-index:2;border:1px solid var(--accent);border-radius:5px;background:color-mix(in srgb,var(--accent) 10%,transparent);pointer-events:none}
+.mark-band{position:fixed;z-index:60;border:1px solid var(--accent);border-radius:5px;background:color-mix(in srgb,var(--accent) 10%,transparent);pointer-events:none}
 :root[data-style='sketch'] .mark-band{border:1.4px dashed var(--red-pencil,#c0392b);background:color-mix(in srgb,var(--red-pencil,#c0392b) 6%,transparent)}
+/* 整条侧栏都能框选：书签和分组一起选。 */
+.app-sidebar{outline:none}
+.app-sidebar:has(.mark-row,[data-group-id]){user-select:none}
+.group-nav button.picked{background:color-mix(in srgb,var(--accent) 16%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 40%,transparent)}
+:root[data-style='sketch'] .group-nav button.picked{background:color-mix(in srgb,var(--red-pencil,#c0392b) 10%,transparent);box-shadow:inset 0 0 0 1.4px color-mix(in srgb,var(--red-pencil,#c0392b) 60%,transparent)}

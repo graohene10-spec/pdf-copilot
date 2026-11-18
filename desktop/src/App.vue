@@ -944,41 +944,72 @@ watch(() => documents.value.map(doc => doc.id).join(), () => {
 }, { immediate: true })
 // 侧栏书签的选中与删除：按住左键拖出一个框（或 Ctrl + 单击）选中，Delete 删除；右键一枚可以换画风、删除。
 const pickedMarks = ref(new Set<string>())
-const markNav = ref<HTMLElement>()
 const markBand = ref<{ left: number; top: number; width: number; height: number } | null>(null)
 const markKey = (doc: string, id: string) => `${doc}:${id}`
 let markDragged = false
-function markPointerDown(event: PointerEvent) {
-  const host = markNav.value
+// 分组也能这样选：框选 / Ctrl + 单击，Delete 删除（书留在文档库）。
+const pickedGroups = ref(new Set<string>())
+const sidebarEl = ref<HTMLElement>()
+const clearSidePicks = () => { if (pickedMarks.value.size) pickedMarks.value = new Set(); if (pickedGroups.value.size) pickedGroups.value = new Set() }
+// 整条侧栏都是操作区：在侧栏任何空白处（一直到边缘）按下左键拖动就是框选，框到的书签和分组都选上；
+// 在空白处单击一下取消选中。侧栏里别的按钮（加入文档、分类、设置……）照常点。
+function sidePointerDown(event: PointerEvent) {
+  const host = sidebarEl.value, target = event.target as HTMLElement
   if (event.button !== 0 || !host) return
-  const origin = () => { const box = host.getBoundingClientRect(); return { x: box.left - host.scrollLeft, y: box.top - host.scrollTop } }
-  const from = origin(), startX = event.clientX - from.x, startY = event.clientY - from.y, sx = event.clientX, sy = event.clientY
-  const keep = event.ctrlKey || event.metaKey ? new Set(pickedMarks.value) : new Set<string>()
+  const row = target.closest<HTMLElement>('.mark-row, [data-group-id]')
+  if (!row && target.closest('button, a, input, textarea, select, form')) return
+  const sx = event.clientX, sy = event.clientY
+  const additive = event.ctrlKey || event.metaKey
+  const keepMarks = additive ? new Set(pickedMarks.value) : new Set<string>(), keepGroups = additive ? new Set(pickedGroups.value) : new Set<string>()
   markDragged = false
   const move = (next: PointerEvent) => {
-    // 拖出 5 像素才算框选；没拖就是普通的点击（打开那枚书签）。
+    // 拖出 5 像素才算框选；没拖就是普通的点击。
     if (!markDragged && Math.hypot(next.clientX - sx, next.clientY - sy) < 5) return
     markDragged = true
-    const at = origin(), x = next.clientX - at.x, y = next.clientY - at.y
-    const band = { left: Math.min(x, startX), top: Math.min(y, startY), width: Math.abs(x - startX), height: Math.abs(y - startY) }
+    const bounds = host.getBoundingClientRect()
+    const x = Math.min(bounds.right, Math.max(bounds.left, next.clientX)), y = Math.min(bounds.bottom, Math.max(bounds.top, next.clientY))
+    const band = { left: Math.min(x, sx), top: Math.min(y, sy), width: Math.abs(x - sx), height: Math.abs(y - sy) }
     markBand.value = band
-    const hit = new Set(keep)
-    for (const row of host.querySelectorAll<HTMLElement>('.mark-row')) {
-      const r = row.getBoundingClientRect(), left = r.left - at.x, top = r.top - at.y
-      if (left < band.left + band.width && left + r.width > band.left && top < band.top + band.height && top + r.height > band.top) hit.add(row.dataset.key!)
-    }
-    pickedMarks.value = hit
+    const inside = (element: HTMLElement) => { const r = element.getBoundingClientRect(); return r.left < band.left + band.width && r.right > band.left && r.top < band.top + band.height && r.bottom > band.top }
+    const marks = new Set(keepMarks), folders = new Set(keepGroups)
+    for (const item of host.querySelectorAll<HTMLElement>('.mark-row')) if (inside(item)) marks.add(item.dataset.key!)
+    for (const item of host.querySelectorAll<HTMLElement>('[data-group-id]')) if (inside(item)) folders.add(item.dataset.groupId!)
+    pickedMarks.value = marks; pickedGroups.value = folders
   }
-  const end = () => { markBand.value = null; window.removeEventListener('pointermove', move); if (markDragged) host.focus({ preventScroll: true }) }
+  const end = () => {
+    markBand.value = null; window.removeEventListener('pointermove', move)
+    if (markDragged) { host.focus({ preventScroll: true }); if (!row) markDragged = false }
+    // 在空白处点了一下：取消选中。
+    else if (!row) clearSidePicks()
+  }
   window.addEventListener('pointermove', move)
   window.addEventListener('pointerup', end, { once: true }); window.addEventListener('pointercancel', end, { once: true })
+}
+// 点到侧栏外面也取消选中（右键菜单除外）。
+function sideOutside(event: PointerEvent) {
+  const target = event.target as HTMLElement | null
+  // 侧栏和窗口边缘之间那一条空隙也算侧栏的操作区：从那里按下去同样能拖框。
+  const side = sidebarEl.value?.getBoundingClientRect()
+  if (side && target?.classList?.contains('app-shell') && event.clientX <= side.right) { sidePointerDown(event); return }
+  if (!pickedMarks.value.size && !pickedGroups.value.size) return
+  if (!target?.closest?.('.app-sidebar, .context-menu')) clearSidePicks()
+}
+function groupClick(id: string, event: MouseEvent) {
+  if (markDragged) { markDragged = false; return }
+  if (event.ctrlKey || event.metaKey) { const next = new Set(pickedGroups.value); if (next.has(id)) next.delete(id); else next.add(id); pickedGroups.value = next; sidebarEl.value?.focus({ preventScroll: true }); return }
+  clearSidePicks()
+  chooseGroup(id)
+}
+function removeGroups(ids: string[]) {
+  pickedGroups.value = new Set()
+  void Promise.all(ids.map(id => removeGroup(id))).then(() => { if (ids.length > 1) notify(`已删除 ${ids.length} 个分组，书都还在文档库里`) }).catch(error => notify(reason(error)))
 }
 function markClick(doc: Doc, mark: { id: string; position: BookmarkPosition }, event: MouseEvent) {
   // 刚拖完框松手时落在某一行上的那一下不算点击。
   if (markDragged) { markDragged = false; return }
   const key = markKey(doc.id, mark.id)
-  if (event.ctrlKey || event.metaKey) { const next = new Set(pickedMarks.value); if (next.has(key)) next.delete(key); else next.add(key); pickedMarks.value = next; markNav.value?.focus({ preventScroll: true }); return }
-  pickedMarks.value = new Set()
+  if (event.ctrlKey || event.metaKey) { const next = new Set(pickedMarks.value); if (next.has(key)) next.delete(key); else next.add(key); pickedMarks.value = next; sidebarEl.value?.focus({ preventScroll: true }); return }
+  clearSidePicks()
   void openBookmark(doc, mark.position)
 }
 function removeMarks(keys: string[]) {
@@ -986,10 +1017,11 @@ function removeMarks(keys: string[]) {
   pickedMarks.value = new Set(); bookmarkTick.value++
   if (keys.length > 1) notify(`已删除 ${keys.length} 个书签`)
 }
-function markKeydown(event: KeyboardEvent) {
-  if ((event.key === 'Delete' || event.key === 'Backspace') && pickedMarks.value.size) { event.preventDefault(); removeMarks([...pickedMarks.value]) }
-  else if (event.key === 'Escape' && pickedMarks.value.size) { event.stopPropagation(); pickedMarks.value = new Set() }
-  else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') { event.preventDefault(); pickedMarks.value = new Set(bookmarkGroups.value.flatMap(group => group.marks.map(item => markKey(group.doc.id, item.mark.id)))) }
+function sideKeydown(event: KeyboardEvent) {
+  if ((event.target as HTMLElement).closest('input, textarea, select')) return
+  const marks = [...pickedMarks.value], folders = [...pickedGroups.value]
+  if ((event.key === 'Delete' || event.key === 'Backspace') && (marks.length || folders.length)) { event.preventDefault(); if (marks.length) removeMarks(marks); if (folders.length) removeGroups(folders) }
+  else if (event.key === 'Escape' && (marks.length || folders.length)) { event.stopPropagation(); clearSidePicks() }
 }
 function markMenu(doc: Doc, mark: { id: string; position: BookmarkPosition }, event: MouseEvent) {
   const key = markKey(doc.id, mark.id), x = event.clientX, y = event.clientY
@@ -1256,8 +1288,13 @@ function appContextMenu(event: MouseEvent) {
   } else if (target.closest('[data-group-id]')) {
     const id = target.closest<HTMLElement>('[data-group-id]')!.dataset.groupId!, group = groups.value.find(item => item.id === id)
     if (!group) return
-    items.push({ label: '重命名', icon: 'edit', action: () => editGroup(id, group.name) })
-    items.push({ label: '删除分组', icon: 'trash', danger: true, hint: '书留在文档库', action: () => { void removeGroup(id).catch(error => notify(reason(error))) } })
+    // 右键的这个分组在选中的几个里面：一起删。
+    if (pickedGroups.value.has(id) && pickedGroups.value.size > 1) items.push({ label: `删除所选 ${pickedGroups.value.size} 个分组`, icon: 'trash', danger: true, hint: '书留在文档库', action: () => removeGroups([...pickedGroups.value]) })
+    else {
+      clearSidePicks()
+      items.push({ label: '重命名', icon: 'edit', action: () => editGroup(id, group.name) })
+      items.push({ label: '删除分组', icon: 'trash', danger: true, hint: '书留在文档库', action: () => { void removeGroup(id).catch(error => notify(reason(error))) } })
+    }
   } else if (!active.value && target.closest('.document-card')) {
     const card = target.closest<HTMLElement>('.document-card')!
     const doc = visibleDocuments.value.find(item => item.id === card.dataset.reorderId)
@@ -1903,6 +1940,7 @@ onMounted(async () => {
   document.addEventListener('auxclick', middleClick)
   document.addEventListener('mouseup', hintOnSelection)
   document.addEventListener('mouseup', prewarmOnSelection)
+  document.addEventListener('pointerdown', sideOutside, true)
   window.addEventListener('kaizhi:open-ai-settings', openAiSettings)
   window.addEventListener('kaizhi:explain-menu', explainMenu as EventListener)
   document.addEventListener('wheel', wheel, { capture: true, passive: false })
@@ -1947,15 +1985,16 @@ async function recoverSession() {
   for (const id of ids) { const doc = documents.value.find(item => item.id === id); if (doc) await openDocument(doc) }
   notify(ids.length ? '页面刚才出错退出了，已自动恢复，文档回到原来的位置。' : '页面刚才出错退出了，已自动恢复。')
 }
-onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); document.removeEventListener('mousedown', middleDown); document.removeEventListener('auxclick', middleClick); document.removeEventListener('mouseup', hintOnSelection); document.removeEventListener('mouseup', prewarmOnSelection); window.removeEventListener('kaizhi:open-ai-settings', openAiSettings); window.removeEventListener('kaizhi:explain-menu', explainMenu as EventListener); closeLooseCards(); stopAutoCheck(); clearTimeout(enteringTimer); disposed = true; ++openEpoch; dismissCaptureQuick(); stopDropListening?.(); clearWheelZoom(); readerInstances.clear(); glassContrast?.dispose(); document.removeEventListener('keydown', keydown); document.removeEventListener('contextmenu', appContextMenu); document.removeEventListener('wheel', wheel, true); document.removeEventListener('dragenter', dragEnter); document.removeEventListener('dragover', dragOver); document.removeEventListener('dragleave', dragLeave); document.removeEventListener('drop', fileDrop); document.removeEventListener('selectionchange', selectionChanged); document.removeEventListener('scroll', dismissSelectionAction, true); document.removeEventListener('scroll', captureViewportChanged, true); window.removeEventListener('resize', dismissSelectionAction); window.removeEventListener('resize', captureViewportChanged); closeAllChats(); forgetAllPasswords(); systemTheme.removeEventListener('change', applyTheme); flushProgress(); for (const timer of indexTimers.values()) clearTimeout(timer); clearTimeout(queryTimer); clearTimeout(toastTimer) })
+onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); document.removeEventListener('mousedown', middleDown); document.removeEventListener('auxclick', middleClick); document.removeEventListener('mouseup', hintOnSelection); document.removeEventListener('mouseup', prewarmOnSelection); document.removeEventListener('pointerdown', sideOutside, true); window.removeEventListener('kaizhi:open-ai-settings', openAiSettings); window.removeEventListener('kaizhi:explain-menu', explainMenu as EventListener); closeLooseCards(); stopAutoCheck(); clearTimeout(enteringTimer); disposed = true; ++openEpoch; dismissCaptureQuick(); stopDropListening?.(); clearWheelZoom(); readerInstances.clear(); glassContrast?.dispose(); document.removeEventListener('keydown', keydown); document.removeEventListener('contextmenu', appContextMenu); document.removeEventListener('wheel', wheel, true); document.removeEventListener('dragenter', dragEnter); document.removeEventListener('dragover', dragOver); document.removeEventListener('dragleave', dragLeave); document.removeEventListener('drop', fileDrop); document.removeEventListener('selectionchange', selectionChanged); document.removeEventListener('scroll', dismissSelectionAction, true); document.removeEventListener('scroll', captureViewportChanged, true); window.removeEventListener('resize', dismissSelectionAction); window.removeEventListener('resize', captureViewportChanged); closeAllChats(); forgetAllPasswords(); systemTheme.removeEventListener('change', applyTheme); flushProgress(); for (const timer of indexTimers.values()) clearTimeout(timer); clearTimeout(queryTimer); clearTimeout(toastTimer) })
 </script>
 
 <template>
   <div class="app-shell" :class="{ 'sidebar-collapsed': !sidebarOpen, 'has-reader': active, 'chrome-collapsed': chromeCollapsed }">
+    <i v-if="markBand" class="mark-band" :style="{ left: `${markBand.left}px`, top: `${markBand.top}px`, width: `${markBand.width}px`, height: `${markBand.height}px` }"></i>
     <ManifoldDoodle v-if="manifoldVisible" :shapes="effectiveAppearance.manifold.shapes" />
     <Transition name="chrome-tag"><button v-if="chromeCollapsed" class="chrome-tag" data-tip="展开顶栏与侧栏" :data-tip-key="tipKey('chrome')" aria-label="展开顶栏与侧栏" @click="expandChrome"><AppIcon name="chevron-right" :size="14" /></button></Transition>
     <Transition name="sidebar" @before-enter="paneResizeStart($event, true)" @before-leave="paneResizeStart($event, false)" @after-enter="paneResizeEnd" @after-leave="paneResizeEnd" @enter-cancelled="paneResizeEnd($event, true)" @leave-cancelled="paneResizeEnd($event, true)">
-    <aside class="app-sidebar" v-if="sidebarOpen" data-glass-interactive="panel">
+    <aside ref="sidebarEl" class="app-sidebar" v-if="sidebarOpen" tabindex="-1" data-glass-interactive="panel" @pointerdown="sidePointerDown" @keydown="sideKeydown">
       <button class="brand" @click="chooseCategory('all')" aria-label="返回文档库"><span class="brand-symbol"><svg width="26" height="26" viewBox="200 130 624 700" aria-hidden="true"><path d="M220 418c118-52 214-44 278 22v372c-66-56-162-66-278-24z" fill="#fff" /><path d="M804 418c-118-52-214-44-278 22v372c66-56 162-66 278-24z" fill="#fff" fill-opacity=".62" /><path d="M512 150c11 92 41 122 133 133-92 11-122 41-133 133-11-92-41-122-133-133 92-11 122-41 133-133z" fill="#fff" /></svg></span><span>开智</span></button>
       <button class="import-button" data-tip="加入 PDF / Markdown 文档" :data-tip-key="tipKey('import')" @click="importDocuments" :disabled="importing" aria-label="加入文档"><AppIcon name="plus" :size="18" />{{ importing ? '正在导入…' : '加入文档' }}<kbd v-if="preferences.shortcuts.import">{{ shortcut('import') }}</kbd></button>
       <nav v-liquid-selection="{ radius: 'var(--r-control)' }" class="workspace-nav" aria-label="文档分类">
@@ -1968,18 +2007,17 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
       <nav v-liquid-selection="{ radius: 'var(--r-control)' }" class="tag-nav group-nav" aria-label="文档分组">
         <template v-for="group in groups" :key="group.id">
           <form v-if="groupEditing === group.id" class="group-edit" @submit.prevent="commitGroup"><input v-model="groupName" maxlength="40" aria-label="分组名称" @vue:mounted="({ el }: any) => { el.focus(); el.select() }" @blur="commitGroup" @keydown.esc.stop="groupEditing = ''" /></form>
-          <button v-else :class="{ selected: groupFilter === group.id }" :data-group-id="group.id" @click="chooseGroup(group.id)" @dblclick="editGroup(group.id, group.name)"><AppIcon name="folder" :size="16" />{{ group.name }}<span>{{ groupCount(group.id) }}</span></button>
+          <button v-else :class="{ selected: groupFilter === group.id, picked: pickedGroups.has(group.id) }" :data-group-id="group.id" @click="groupClick(group.id, $event)" @dblclick="editGroup(group.id, group.name)"><AppIcon name="folder" :size="16" />{{ group.name }}<span>{{ groupCount(group.id) }}</span></button>
         </template>
         <form v-if="groupEditing === 'new'" class="group-edit" @submit.prevent="commitGroup"><input v-model="groupName" maxlength="40" placeholder="分组名称，回车确定" aria-label="新分组的名称" @vue:mounted="({ el }: any) => el.focus()" @blur="commitGroup" @keydown.esc.stop="groupEditing = ''" /></form>
         <p v-else-if="!groups.length" class="tag-empty">点 + 新建，右键文档放进分组。</p>
       </nav>
       <div class="tag-heading"><p class="sidebar-label">书签<span v-if="bookmarkTotal" class="mark-total">{{ bookmarkTotal }}</span></p><AppIcon name="bookmark" :size="14" /></div>
-      <nav ref="markNav" class="mark-nav" tabindex="-1" aria-label="全部书签" @pointerdown="markPointerDown" @keydown="markKeydown">
+      <nav class="mark-nav" aria-label="全部书签">
         <section v-for="group in bookmarkGroups" :key="group.doc.id" class="mark-group">
           <p class="mark-book" :data-tip="group.doc.name">{{ group.doc.name.replace(/\.(pdf|md|markdown)$/i, '') }}</p>
           <button v-for="item in group.marks" :key="item.mark.id" type="button" class="mark-row" :class="{ picked: pickedMarks.has(markKey(group.doc.id, item.mark.id)) }" :data-key="markKey(group.doc.id, item.mark.id)" :data-tip="`${item.art.name} · ${item.where}`" @click="markClick(group.doc, item.mark, $event)" @contextmenu.prevent.stop="markMenu(group.doc, item.mark, $event)"><svg class="mark-art" viewBox="0 0 96 40" preserveAspectRatio="xMaxYMid slice" aria-hidden="true" v-html="item.art.svg" /><span class="mark-name">{{ item.mark.name || item.where }}</span><small v-if="item.mark.name">{{ item.where }}</small></button>
         </section>
-        <i v-if="markBand" class="mark-band" :style="{ left: `${markBand.left}px`, top: `${markBand.top}px`, width: `${markBand.width}px`, height: `${markBand.height}px` }"></i>
         <p v-if="!bookmarkGroups.length" class="tag-empty">在书里按 {{ shortcut('bookmark') || '右键' }} 留书签，都会收在这里。</p>
       </nav>
       <div class="sidebar-spacer"></div>
