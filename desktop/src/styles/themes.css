@@ -1340,41 +1340,11 @@
   mask-image: none;
 }
 
-/* 书签：夹在书页边上的一条红色小纸签，手写书签名写在黄色便签上。 */
-:root[data-style='sketch'] .bookmark-hit {
-  height: 14px;
-  padding: 0 3px;
-  border: 1.5px solid var(--pencil);
-  border-radius: 2px 5px 4px 2px;
-  background: var(--red-pencil);
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-  box-shadow: 1.5px 2px 0 rgb(60 50 30 / .22);
-  rotate: -3deg;
-}
-
-:root[data-style='sketch'] .bookmark-hit:is(:hover, :focus-visible) {
-  border-color: var(--pencil);
-  background: var(--red-pencil);
-  box-shadow: 2px 3px 0 rgb(60 50 30 / .28);
-  rotate: 0deg;
-}
-
-:root[data-style='sketch'] .bookmark-tick { width: 10px; height: 2px; background: #fffdf8; }
-:root[data-style='sketch'] .bookmark.named .bookmark-hit { height: 24px; background: var(--sticky); }
-:root[data-style='sketch'] .bookmark.named .bookmark-tick { background: var(--red-pencil); }
-:root[data-style='sketch'] .bookmark-label { color: var(--pencil); font: 400 14px/22px var(--font-ui); }
+/* 书签：夹在书页边上的小画签（画面见 library/bookmark-art.ts），略歪一点，指上去摆正；手写书签名写在黄色便签上。 */
+:root[data-style='sketch'] .bookmark-art { rotate: -3deg; transition: width var(--dur-3) var(--ease-out), height var(--dur-3) var(--ease-out), rotate var(--dur-2) var(--ease-out); }
+:root[data-style='sketch'] .bookmark-hit:is(:hover, :focus-visible) .bookmark-art { rotate: 0deg; }
+:root[data-style='sketch'] .bookmark-label { height: 22px; border: 1.5px solid var(--pencil); border-radius: 2px 5px 4px 2px; background: var(--sticky); -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: 1.5px 2px 0 rgb(60 50 30 / .22); color: var(--pencil); font: 400 14px/20px var(--font-ui); rotate: -1.5deg; }
 :root[data-style='sketch'] .bookmark-field { border: 1.5px solid var(--pencil); border-radius: 3px; background: var(--paper); box-shadow: 2px 3px 0 rgb(60 50 30 / .2); font-family: var(--font-hand-input); }
-
-:root[data-style='warm'] .bookmark-hit {
-  border-color: rgb(61 46 30 / .3);
-  background: #faf9f5;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-  box-shadow: 0 1px 3px rgb(61 46 30 / .25);
-}
-
-:root[data-style='warm'] .bookmark-tick { background: var(--accent); }
 
 /* ---- 回答里的代码、表格、图示、引用 ------------------------------------------
    跟着风格换外观，但正文可读性优先：代码始终用等宽字、深色字压在浅底上，公式不换字体。 */

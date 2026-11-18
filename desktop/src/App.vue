@@ -16,7 +16,8 @@ import { restoreLeavingPanel } from './ui/panel-transition'
 import BookmarkRail from './components/BookmarkRail.vue'
 import ClaudeBurst from './components/ClaudeBurst.vue'
 import { nudgeGlassMotion } from './ui/glass-motion'
-import { bookmarks, loadBookmarks, addBookmark, removeBookmark, clearBookmarks, renameBookmark, neighbour, type BookmarkPosition } from './library/bookmarks'
+import { bookmarks, loadBookmarks, addBookmark, removeBookmark, clearBookmarks, renameBookmark, restyleBookmark, neighbour, type BookmarkPosition } from './library/bookmarks'
+import { BOOKMARK_ARTS, artOf } from './library/bookmark-art'
 import { useFullscreen } from './ui/fullscreen'
 import { vLiquidSelection } from './ui/liquid-selection'
 import { useReorder } from './ui/reorder'
@@ -850,7 +851,7 @@ watch(() => paneIds.value.join(), () => { for (const id of paneIds.value) void l
 function paneBookmarks(id: string) {
   void bookmarkTick.value
   const instance = readerInstances.get(id), doc = tabDoc(id)
-  return (bookmarks.get(sourceId(id)) || []).map(mark => ({ id: mark.id, name: mark.name, ratio: instance?.bookmarkRatio?.(mark.position) ?? 0, hint: mark.position.page ? `第 ${mark.position.page} 页` : `${Math.round((mark.position.progress || 0) * 100)}% 处` }))
+  return (bookmarks.get(sourceId(id)) || []).map(mark => ({ id: mark.id, name: mark.name, art: artOf(mark), ratio: instance?.bookmarkRatio?.(mark.position) ?? 0, hint: mark.position.page ? `第 ${mark.position.page} 页` : `${Math.round((mark.position.progress || 0) * 100)}% 处` }))
     .filter(() => !!doc)
 }
 function addBookmarkHere(id = active.value?.id) {
@@ -885,9 +886,19 @@ function bookmarkMenu(id: string, markId: string, event: MouseEvent) {
   const x = event.clientX, y = event.clientY
   contextMenu.value = { x, y, items: [
     { label: '命名…', icon: 'edit', action: () => { editingBookmark.value = markId } },
+    { label: '换画风…', icon: 'image', action: () => chooseBookmarkArt(source, markId, x, y) },
     { label: '删除书签', icon: 'trash', danger: true, separator: true, action: () => { removeBookmark(source, markId); bookmarkTick.value++ } },
     ...(count > 1 ? [{ label: `删除全部 ${count} 个书签…`, icon: 'trash', danger: true, action: () => confirmClearBookmarks(source, count, x, y) }] : []),
   ] }
+}
+// 换画风：列出艺术史上的各个流派（按年代），当前那种打勾。
+function chooseBookmarkArt(source: string, markId: string, x: number, y: number) {
+  const mark = bookmarks.get(source)?.find(item => item.id === markId)
+  if (!mark) return
+  const current = artOf(mark).id
+  void nextTick(() => {
+    contextMenu.value = { x, y, items: BOOKMARK_ARTS.map(item => ({ label: item.name, swatch: item.svg, hint: item.id === current ? `${item.era} ✓` : item.era, action: () => { restyleBookmark(source, markId, item.id); bookmarkTick.value++ } })) }
+  })
 }
 // 一次清掉整本书的书签：再确认一步，免得误点。
 function confirmClearBookmarks(source: string, count: number, x: number, y: number) {

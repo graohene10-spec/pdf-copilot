@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import AppIcon from './AppIcon.vue'
 import { vLiquidSelection } from '../ui/liquid-selection'
 
-type Item = { label: string; icon?: string; action: () => void; danger?: boolean; disabled?: boolean; separator?: boolean; hint?: string }
+type Item = { label: string; icon?: string; action: () => void; danger?: boolean; disabled?: boolean; separator?: boolean; hint?: string; /** 图标位置换成一小幅画（96 × 40 的 SVG 内容，应用自己的图案，不是用户输入）。 */ swatch?: string }
 const props = defineProps<{ x: number; y: number; items: Item[] }>()
 const emit = defineEmits<{ close: [] }>()
 const menu = ref<HTMLElement>()
@@ -39,7 +39,7 @@ onBeforeUnmount(() => { document.removeEventListener('pointerdown', outside, tru
   <div ref="menu" v-liquid-selection="{ selector: '.current', radius: 'var(--r-sm)' }" class="context-menu" data-glass-interactive="panel" role="menu" :style="style" @keydown="keydown" @contextmenu.prevent @pointerleave="current = -1">
     <template v-for="(item, index) in items" :key="index">
       <hr v-if="item.separator" />
-      <button type="button" role="menuitem" :class="{ danger: item.danger, current: current === index && !item.disabled }" :disabled="item.disabled" @click="run(item)" @pointerenter="current = index" @focus="current = index"><AppIcon v-if="item.icon" :name="item.icon" :size="15" /><i v-else class="icon-space" aria-hidden="true" /><span>{{ item.label }}</span><small v-if="item.hint">{{ item.hint }}</small></button>
+      <button type="button" role="menuitem" :class="{ danger: item.danger, current: current === index && !item.disabled }" :disabled="item.disabled" @click="run(item)" @pointerenter="current = index" @focus="current = index"><svg v-if="item.swatch" class="menu-swatch" viewBox="0 0 96 40" aria-hidden="true" v-html="item.swatch" /><AppIcon v-else-if="item.icon" :name="item.icon" :size="15" /><i v-else class="icon-space" aria-hidden="true" /><span>{{ item.label }}</span><small v-if="item.hint">{{ item.hint }}</small></button>
     </template>
   </div>
 </template>
@@ -53,6 +53,7 @@ button:focus-visible{outline:none}
 .context-menu:not(.has-indicator) button:hover:not(:disabled){background:color-mix(in srgb,var(--surface-ink) 8%,transparent)}
 button svg{flex-shrink:0;color:var(--surface-muted)}
 .icon-space{flex:0 0 15px}
+.menu-swatch{flex:0 0 36px;width:36px;height:15px;border-radius:2px;box-shadow:0 0 0 1px rgb(0 0 0 / .18)}
 button span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 button small{font-size:11px;color:var(--surface-muted)}
 button.danger{color:var(--danger)}
