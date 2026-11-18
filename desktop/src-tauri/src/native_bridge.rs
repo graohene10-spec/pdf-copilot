@@ -47,7 +47,7 @@ impl NativeBridge {
 
     pub fn send(&self, id: &str, message: Value) -> Result<()> {
         let request_type = message.get("type").and_then(Value::as_str).ok_or("Codex 请求类型无效")?;
-        if !["status","models","chat","tool-result","cancel"].contains(&request_type) { return Err("不允许此 Codex 请求类型".into()); }
+        if !["status","models","chat","tool-result","cancel","warm"].contains(&request_type) { return Err("不允许此 Codex 请求类型".into()); }
         let data = serde_json::to_vec(&message).map_err(|e| e.to_string())?;
         if data.is_empty() || data.len() > MAX_INPUT { return Err("Codex 请求超过大小限制".into()); }
         let mut sessions = self.sessions.lock().map_err(|_| "Codex 会话状态不可用")?;

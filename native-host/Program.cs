@@ -59,7 +59,12 @@ namespace PdfCopilot {
                         ThreadPool.QueueUserWorkItem(delegate(object state) {
                             var req = (ClientRequest)state;
                             try {
-                                if (req.Type == "chat") { client.Chat(req); frames.Write(Json.Obj("id", req.Id, "event", "done")); }
+                                if (req.Type == "chat") {
+                                    client.Chat(req); frames.Write(Json.Obj("id", req.Id, "event", "done"));
+                                    // Prepare the next conversation of the same kind right away: follow-up questions start without the set-up wait.
+                                    try { client.Warm(req.Model, req.PdfTools, req.PdfVision); } catch { }
+                                }
+                                else if (req.Type == "warm") { client.Warm(req.Model, req.PdfTools, req.PdfVision); frames.Write(Json.Obj("id", req.Id, "ok", true, "result", Json.Obj())); }
                                 else frames.Write(Json.Obj("id", req.Id, "ok", true, "result", req.Type == "status" ? client.Status() : client.Models()));
                             } catch (Exception e) {
                                 string error = e is InvalidOperationException || e is FileNotFoundException ? e.Message : "The Codex helper could not complete this request. Check the Codex installation and reconnect.";
@@ -77,7 +82,9 @@ namespace PdfCopilot {
         private static string SafeId(Dictionary<string, object> message) {
             string id = Json.Text(message, "id"); return id.Length <= 128 ? id : "";
         }
-        // Prefer the engine bundled with the Codex desktop app (no separate CLI install needed), then a CLI on PATH.
+        // Candidates: the engine bundled with the Codex desktop app, then every codex.exe on PATH. The newest version wins.
+        // Codex keeps on-disk caches (the model list among them) that an older engine cannot read once a newer one has
+        // written them, so an older engine refetches on every conversation; the newest installed one is the one that wrote them.
         private static string DiscoverCodex() {
             string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
             string programs = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
@@ -88,12 +95,35 @@ namespace PdfCopilot {
             var candidates = new List<string>();
             foreach (string root in roots) CollectCodex(root, 0, false, candidates);
             candidates.Sort(delegate(string a, string b) { return File.GetLastWriteTimeUtc(b).CompareTo(File.GetLastWriteTimeUtc(a)); });
-            if (candidates.Count > 0) return candidates[0];
             string path = Environment.GetEnvironmentVariable("PATH") ?? "";
             foreach (string directory in path.Split(Path.PathSeparator)) {
-                try { string candidate = Path.Combine(directory.Trim('"'), "codex.exe"); if (Path.IsPathRooted(candidate) && File.Exists(candidate)) return Path.GetFullPath(candidate); } catch { }
+                try {
+                    string candidate = Path.Combine(directory.Trim('"'), "codex.exe");
+                    if (!Path.IsPathRooted(candidate) || !File.Exists(candidate)) continue;
+                    candidate = Path.GetFullPath(candidate);
+                    bool known = false;
+                    foreach (string seen in candidates) if (String.Equals(seen, candidate, StringComparison.OrdinalIgnoreCase)) known = true;
+                    if (!known) candidates.Add(candidate);
+                } catch { }
             }
-            return null;
+            string best = null; Version bestVersion = null; int probed = 0;
+            foreach (string candidate in candidates) {
+                if (probed++ >= 5) break;
+                Version found = ProbeVersion(candidate);
+                if (found != null && (bestVersion == null || found > bestVersion)) { best = candidate; bestVersion = found; }
+            }
+            if (best != null) return best;
+            return candidates.Count > 0 ? candidates[0] : null;
+        }
+        private static Version ProbeVersion(string path) {
+            try {
+                var info = new System.Diagnostics.ProcessStartInfo(path, "--version") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+                using (var child = System.Diagnostics.Process.Start(info)) {
+                    if (!child.WaitForExit(4000)) { try { child.Kill(); } catch { } return null; }
+                    Version parsed;
+                    return CodexVersion.TryParse(child.StandardOutput.ReadToEnd().Trim(), out parsed) ? parsed : null;
+                }
+            } catch { return null; }
         }
         // Only accept codex.exe below a bin / resources / vendor directory: the desktop app's own window
         // executable may also be named Codex.exe and must never be started as the command-line engine.

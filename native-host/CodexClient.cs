@@ -344,6 +344,49 @@ namespace PdfCopilot {
             var thread = VerifyThreadSafety(result);
             Call("thread/unsubscribe", Json.Obj("threadId", Json.Text(thread, "id")), 5000);
         }
+        private string StartThread(ClientRequest request) {
+            Dictionary<string, object> started;
+            try { started = Call("thread/start", StartParameters(request.Model, request.PdfTools, request.PdfVision), 30000); }
+            catch (InvalidOperationException e) {
+                if (request.PdfTools && (e.Message.Contains("code -32602") || e.Message.Contains("code -32601"))) throw new InvalidOperationException("PDF_TOOLS_UNAVAILABLE: This Codex protocol requires compatible PDF reading mode.");
+                throw;
+            }
+            return Json.Text(VerifyThreadSafety(started), "id");
+        }
+        // The next conversation, created ahead of time. Creating a thread makes Codex load its model list and open its
+        // connection to the service, which took ~10 s of a 13 s quick explanation; done early, the question itself only waits for the model.
+        private const int SpareSeconds = 240;
+        private readonly object spareLock = new object();
+        private string spareThread, spareKey;
+        private DateTime spareAt;
+        private static string SpareKey(string model, bool pdfTools, bool vision) { return model + "|" + (pdfTools ? "1" : "0") + (vision ? "1" : "0"); }
+        internal void Warm(string model, bool pdfTools, bool vision) {
+            string key = SpareKey(model, pdfTools, vision);
+            lock (spareLock) {
+                if (disposed) return;
+                if (spareThread != null && spareKey == key && (DateTime.UtcNow - spareAt).TotalSeconds < SpareSeconds) return;
+                DropSpare();
+                EnsureStarted();
+                string id = Json.Text(VerifyThreadSafety(Call("thread/start", StartParameters(model, pdfTools, vision), 30000)), "id");
+                if (id == "") return;
+                spareThread = id; spareKey = key; spareAt = DateTime.UtcNow;
+            }
+        }
+        // Caller holds spareLock.
+        private void DropSpare() {
+            if (spareThread == null) return;
+            string id = spareThread; spareThread = null; spareKey = null;
+            try { if (initialized && process != null && !process.HasExited) Call("thread/unsubscribe", Json.Obj("threadId", id), 5000); } catch { }
+        }
+        // Waits for a preparation in flight, then hands over the prepared conversation if it fits this request.
+        private string TakeSpare(string key) {
+            lock (spareLock) {
+                if (spareThread == null) return null;
+                if (spareKey != key || (DateTime.UtcNow - spareAt).TotalSeconds >= SpareSeconds) { DropSpare(); return null; }
+                string id = spareThread; spareThread = null; spareKey = null;
+                return id;
+            }
+        }
         internal void PrepareChat(string id) {
             lock (chatLock) {
                 if (activeChat != null) throw new InvalidOperationException("A Codex conversation is already running. Cancel it before starting another.");
@@ -358,14 +401,11 @@ namespace PdfCopilot {
                 EnsureStarted();
                 if (chat.Cancelled) { chat.Finished.Set(); return; }
                 chat.PdfTools = request.PdfTools; chat.PdfVision = request.PdfVision; chat.Limits = request.PdfLimits;
-                Dictionary<string, object> started;
-                try { started = Call("thread/start", StartParameters(request.Model, request.PdfTools, request.PdfVision), 30000); }
-                catch (InvalidOperationException e) {
-                    if (request.PdfTools && (e.Message.Contains("code -32602") || e.Message.Contains("code -32601"))) throw new InvalidOperationException("PDF_TOOLS_UNAVAILABLE: This Codex protocol requires compatible PDF reading mode.");
-                    throw;
-                }
-                var thread = VerifyThreadSafety(started);
-                chat.ThreadId = Json.Text(thread, "id");
+                // A conversation prepared ahead of time (see Warm) skips thread creation and the connection set-up that follows it.
+                bool usedSpare = false;
+                string ready = TakeSpare(SpareKey(request.Model, request.PdfTools, request.PdfVision));
+                if (ready != null) { chat.ThreadId = ready; usedSpare = true; }
+                else chat.ThreadId = StartThread(request);
                 if (chat.ThreadId == "") throw new IOException("Codex returned no conversation ID.");
                 if (chat.Cancelled) { chat.Finished.Set(); return; }
                 var text = new StringBuilder();
@@ -383,11 +423,15 @@ namespace PdfCopilot {
                 // A tier id chosen from the model's list wins; "default" asks for standard speed even when the model defaults to a faster tier.
                 if (request.Tier != "") turnParams["serviceTier"] = request.Tier;
                 else if (request.Fast) turnParams["serviceTier"] = "fast";
-                Dictionary<string, object> turnResult;
-                try { turnResult = Call("turn/start", turnParams, 30000); }
-                catch (InvalidOperationException e) {
-                    if (!turnParams.ContainsKey("serviceTier") || !e.Message.Contains("code -32602")) throw;
-                    turnParams.Remove("serviceTier"); turnResult = Call("turn/start", turnParams, 30000);
+                Dictionary<string, object> turnResult = null;
+                while (turnResult == null) {
+                    try { turnResult = Call("turn/start", turnParams, 30000); }
+                    catch (InvalidOperationException e) {
+                        if (turnParams.ContainsKey("serviceTier") && e.Message.Contains("code -32602")) { turnParams.Remove("serviceTier"); continue; }
+                        // The prepared conversation is gone (Codex unloaded it): start a fresh one, once.
+                        if (!usedSpare) throw;
+                        usedSpare = false; chat.ThreadId = StartThread(request); turnParams["threadId"] = chat.ThreadId;
+                    }
                 }
                 chat.TurnId = Json.Text(Json.Map(Json.Get(turnResult, "turn")), "id");
                 if (chat.Cancelled) Interrupt(chat);
@@ -420,6 +464,7 @@ namespace PdfCopilot {
         }
         private void StopProcess() {
             initialized = false;
+            spareThread = null; spareKey = null;
             try { ProcessJob owned = Interlocked.Exchange(ref job, null); if (owned != null) owned.Dispose(); }
             catch { }
             try { if (process != null && !process.HasExited) process.Kill(); }
