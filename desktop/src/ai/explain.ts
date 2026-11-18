@@ -21,7 +21,7 @@ const MODES: Record<ExplainMode, string> = {
   example: '举一个具体的小例子把它讲明白（数字、图景或类比都可以），例子要贴合这段上下文。不超过 200 字。',
   simpler: '说得再浅一点：假设读者没有学过这个领域，用日常的话讲，不用术语。不超过 120 字。',
   // 可视化讲解：必须给出一个 ui 代码块（Intelligent UI），写法随请求一起告诉模型。
-  visual: '用一张图把它讲明白：先用一两句话点题，然后必须给出一个语言标记为 ui 的代码块。先判断这个概念的结构，从系统说明的图解目录里挑最贴切的一种（最多两种）——集合关系用 venn 或 nest，函数 / 同态用 map，交换关系或概念网用 graph，证明步骤用 flow，分类用 tree，有限运算用 optable，置换用 cycle，区间用 axis，按两个性质分类用 quadrant；只有量确实随参数连续变化时才用 sim，有真实数据对比时才用 chart 或 table；不要用 form、cards。图里是示意的就注明「示例」。图外的文字不超过 80 字。',
+  visual: '用一张图把它讲明白：先用一两句话点题，然后必须给出一个 ui 代码块。优先用图解——集合关系用 venn 或 nest，函数 / 同态用 map，交换关系或概念网用 graph，证明步骤用 flow，分类用 tree，有限运算用 optable，置换用 cycle，区间用 axis，按两个性质分类用 quadrant。可交互的是可选项：只有量确实随参数连续变化时才用 sim，有真实数据对比时才用 chart 或 table，可以单独用，也可以跟在图解后面。图里是示意的就注明「示例」。图外的文字不超过 80 字。',
 }
 export function explainPrompt(term: string, context: string, mode: ExplainMode, previous = '') {
   return `解释下面这段文字里「${term}」的意思。${MODES[mode]}\n用简体中文，直接开始解释，不要寒暄、不要复述原文；公式写成 $...$。`
@@ -36,7 +36,7 @@ function run(item: Explain, previous = '') {
   controllers.set(item.id, controller)
   Object.assign(item, { text: '', reasoning: '', status: 'running', error: '', startedAt: Date.now(), firstTokenAt: undefined, ms: 0 })
   const visual = item.mode === 'visual'
-  const ask = (image?: string) => complete({ kind: 'explain', visual, ...(visual ? { extraInstructions: UI_INSTRUCTIONS } : {}), messages: [{ role: 'user', content: explainPrompt(item.term, item.context, item.mode, previous) + (image ? IMAGE_NOTE : ''), ...(image ? { images: [image] } : {}) }], signal: controller.signal,
+  const ask = (image?: string) => complete({ kind: 'explain', visual, ...(visual ? { extraInstructions: UI_INSTRUCTIONS.explain } : {}), messages: [{ role: 'user', content: explainPrompt(item.term, item.context, item.mode, previous) + (image ? IMAGE_NOTE : ''), ...(image ? { images: [image] } : {}) }], signal: controller.signal,
     onDelta: (_delta, all) => { if (controllers.get(item.id) === controller) { if (!item.text && all) item.firstTokenAt = Date.now(); item.text = all } },
     onReasoning: delta => { if (controllers.get(item.id) === controller) item.reasoning += delta } })
   // 模型看不了图就退回只用文字。

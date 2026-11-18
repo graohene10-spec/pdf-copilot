@@ -210,7 +210,10 @@ function chooseBackdrop(id: BackdropPreset) {
   if (saving.value) return
   previewScene(() => { restoreBackground(); draft.value.appearance.backdrop = id })
 }
-function switchTab(value: Tab) { tab.value = value; if (value === 'ai') aiVisited.value = true; recording.value = null; captureError.value = ''; composingLabel.value = null; status.value = '' }
+const content = ref<HTMLElement>()
+// 换一页：内容轻轻浮上来，不是硬切。
+function settleTab() { void nextTick(() => { const element = content.value; if (!element || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return; element.scrollTop = 0; element.animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }], { duration: 240, easing: 'cubic-bezier(.22,.9,.28,1)' }) }) }
+function switchTab(value: Tab) { if (value !== tab.value) settleTab(); tab.value = value; if (value === 'ai') aiVisited.value = true; recording.value = null; captureError.value = ''; composingLabel.value = null; status.value = '' }
 type PromptList = 'quickPrompts' | 'captureQuestions'
 function editQuickPromptLabel(event: Event, index: number, list: PromptList = 'quickPrompts') {
   if (saving.value) return
@@ -341,7 +344,7 @@ function failureText(item: RenderFailure) {
       <header class="dialog-header"><h2 id="settings-title">设置</h2><button class="settings-close" :disabled="saving" @click="close" aria-label="关闭设置"><AppIcon name="close" :size="18" /></button></header>
       <div class="settings-body">
         <nav v-liquid-selection class="settings-tabs" aria-label="设置分类"><button v-for="item in tabs" :key="item.id" :class="{ selected: tab === item.id }" @click="switchTab(item.id)" :aria-current="tab === item.id ? 'page' : undefined"><AppIcon :name="item.icon" :size="17" />{{ item.label }}</button></nav>
-        <div class="settings-content">
+        <div ref="content" class="settings-content">
           <p v-if="!ready" class="settings-help">{{ status || '正在读取设置…' }}</p>
           <template v-else-if="tab === 'appearance'">
             <h3>外观</h3>

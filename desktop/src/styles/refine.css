@@ -158,4 +158,4 @@
 :root[data-style='sketch'] .document-progress i { height: 2.4px; margin-top: -1.8px; background: var(--red-pencil, #c0392b); border-radius: 2px 5px 3px 4px; rotate: -.5deg; transform-origin: left center; box-shadow: none; }
 
 /* Intelligent UI 分类：排序、卡片 / 列表切换对它没意义。 */
-.library-view.ui-mode :is(.library-sort, .view-switch, .arrange-reset){display:none}
+.library-view.ui-mode :is(.library-sort, .view-switch, .arrange-reset, .library-summary){display:none}

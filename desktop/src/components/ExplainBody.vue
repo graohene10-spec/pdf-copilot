@@ -52,7 +52,7 @@ function openSettings() { window.dispatchEvent(new CustomEvent('kaizhi:open-ai-s
 /* 思维链小窗：固定高度，内容贴着底边往上长，顶上淡出；不参与卡片宽度的计算。 */
 .ex-chain{display:flex;flex-direction:column;justify-content:flex-end;height:4.6em;margin-top:4px;padding-left:9px;border-left:2px solid color-mix(in srgb,var(--ink) 14%,transparent);overflow:hidden;contain:inline-size;color:var(--muted);font-size:.82em;line-height:1.55;-webkit-mask-image:linear-gradient(transparent,#000 45%);mask-image:linear-gradient(transparent,#000 45%)}
 .ex-chain p{white-space:pre-wrap;overflow-wrap:anywhere}
-.ex-chain.open{display:block;height:auto;max-height:12em;margin:10px 0 0;overflow:auto;-webkit-mask-image:none;mask-image:none}
+.ex-chain.open{animation:chain-open .28s var(--ease-out,ease) both;display:block;height:auto;max-height:12em;margin:10px 0 0;overflow:auto;-webkit-mask-image:none;mask-image:none}
 .ex-text p+p,.ex-text ul,.ex-text ol{margin-top:.45em}
 .ex-text ul,.ex-text ol{margin-bottom:0;padding-left:1.3em}
 .ex-text .katex-display{margin:.4em 0;overflow-x:auto;overflow-y:hidden}
@@ -61,4 +61,6 @@ function openSettings() { window.dispatchEvent(new CustomEvent('kaizhi:open-ai-s
 .ex-slow button{padding:0;border:0;background:none;color:var(--accent);font:inherit;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
 @keyframes ex-shimmer{from{background-position:100% 0}to{background-position:0% 0}}
 @media(prefers-reduced-motion:reduce){.ex-verb{animation:none}}
+@keyframes chain-open{from{opacity:0;transform:translateY(-5px);max-height:0}}
+@media(prefers-reduced-motion:reduce){.ex-chain.open{animation:none}}
 </style>

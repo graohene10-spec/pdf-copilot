@@ -199,6 +199,13 @@ function map(spec: any, root: HTMLElement) {
   const side = (value: any) => ({ label: text(value?.label, 60), items: list(value?.items, 9).map((item: any) => text(item, 40)) })
   const from = side(spec.from), to = side(spec.to)
   if (!from.items.length || !to.items.length) throw new Error('映射图需要 from.items 和 to.items')
+  // 被同一个框圈住的点先排到一起：否则框从第一个拉到最后一个，会把中间不相干的点也圈进去（核是 {e, c}，图上却像 {e, a, b, c}）。
+  const marks = list(spec.marks, 4)
+  const gather = (items: string[], onLeft: boolean) => {
+    const rank = (item: string) => { const at = marks.findIndex((mark: any) => (mark?.side !== 'to') === onLeft && list(mark?.items, 9).some((name: any) => text(name, 40) === item)); return at < 0 ? marks.length : at }
+    return items.map((item, index) => ({ item, index, rank: rank(item) })).sort((a, b) => a.rank - b.rank || a.index - b.index).map(entry => entry.item)
+  }
+  from.items = gather(from.items, true); to.items = gather(to.items, false)
   // 第一行：两边的集合名；第二行（中间）：映射名。点和箭头从第三行开始，不和标题挤在一起。
   const rows = Math.max(from.items.length, to.items.length), named = Boolean(spec.name), top = named ? 92 : 70, gap = 36
   const c = canvas(root, spec, 560, top + rows * gap + 18)
@@ -210,8 +217,8 @@ function map(spec: any, root: HTMLElement) {
   if (named) c.label(280, 46, text(spec.name, 80), { className: 'set hot' })
   // 圈出一组点（核、像……）：虚线框住，说明写在图下面的图例里，不再挤在图边上。
   const legend: [string, string][] = []
-  for (const mark of list(spec.marks, 4)) {
-    const onLeft = mark.side !== 'to', names = onLeft ? from.items : to.items, ysOf = onLeft ? left : right, x = onLeft ? LX : RX
+  for (const mark of marks) {
+    const onLeft = mark?.side !== 'to', names = onLeft ? from.items : to.items, ysOf = onLeft ? left : right, x = onLeft ? LX : RX
     const hits = list(mark.items, 9).map((item: any) => names.indexOf(text(item, 40))).filter((index: number) => index >= 0)
     if (!hits.length) continue
     const y0 = Math.min(...hits.map((index: number) => ysOf[index]!)) - 13, y1 = Math.max(...hits.map((index: number) => ysOf[index]!)) + 13
@@ -440,8 +447,5 @@ export const DIAGRAM_SKILLS: { type: string; name: string; when: string; json: s
   { type: 'quadrant', name: '象限图', when: '用两个性质把一批对象分成四类', json: '{"type":"quadrant","x":{"label":"阶","low":"有限","high":"无限"},"y":{"label":"交换性","low":"不交换","high":"交换"},"items":[{"label":"$\\\\mathbb{Z}_6$","q":"tl"},{"label":"$\\\\mathbb{Z}$","q":"tr"},{"label":"$S_3$","q":"bl"},{"label":"$GL_2(\\\\mathbb{R})$","q":"br"}]}（q：tl 左上 / tr 右上 / bl 左下 / br 右下）' },
 ]
 
-export const DIAGRAM_INSTRUCTIONS = [
-  '讲概念时优先用图解：先想清楚这个概念的结构是什么（包含？交集？映射？推导？分类？运算？区间？），再从下面的图解目录里挑最贴切的一种（最多两种），放进语言标记为 ui 的代码块。图上的文字要短，公式写成 $...$；用 focus 标出最关键的那一处。不要为了互动而做互动。',
-  '图解目录：',
-  ...DIAGRAM_SKILLS.map(item => `- ${item.type}（${item.name}）——适合：${item.when}。写法：${item.json}`),
-].join('\n')
+/** 图解目录的每一行（什么时候用哪一种由 intelligent-ui 里的两份说明各自交代）。 */
+export const DIAGRAM_CATALOG = DIAGRAM_SKILLS.map(item => `- ${item.type}（${item.name}）——适合：${item.when}。写法：${item.json}`)

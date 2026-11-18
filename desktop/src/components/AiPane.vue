@@ -1174,6 +1174,10 @@ button:disabled{opacity:.4;cursor:default}
 .note-card:hover .note-remove,.note-remove:focus-visible{opacity:1}
 .note-remove:hover{background:color-mix(in srgb,var(--ink) 9%,transparent);color:var(--ink)}
 .ai-message.note.arrived .note-card{animation:note-arrive 1.1s var(--ease-out)}
+/* 点开思考过程 / 参考原文：从上往下展开一点，不是啪地出现。 */
+.reasoning-body,.source-list{animation:reason-open .28s var(--ease-out) both}
+@keyframes reason-open{from{opacity:0;transform:translateY(-5px)}}
+@media(prefers-reduced-motion:reduce){.reasoning-body,.source-list{animation:none}}
 @keyframes note-arrive{0%{background:color-mix(in srgb,var(--accent) 26%,transparent);scale:.96}30%{scale:1.02}100%{scale:1}}
 .ai-pane :deep(.note-flyer){position:absolute;left:0;top:0;z-index:60;max-width:240px;padding:6px 10px;border-radius:8px;background:var(--surface);color:var(--surface-ink);font-size:12px;line-height:1.45;box-shadow:0 10px 26px -10px rgb(0 0 0 / .45);border-left:3px solid var(--accent);pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* 主栏与侧栏之间就是一道细线；指针靠近时线变粗，可以左右拖。 */
@@ -1346,6 +1350,8 @@ button:disabled{opacity:.4;cursor:default}
 .composer-field:hover .composer-resize::after,.composer-resize:active::after{opacity:1}
 textarea{box-sizing:border-box;display:block;width:100%;min-height:52px;max-height:none;padding:12px 14px 4px;resize:none;border:0;border-radius:var(--r-lg) var(--r-lg) 0 0;background:transparent;box-shadow:none;color:var(--ink);font:inherit;font-family:var(--font-ui);font-size:13.5px;line-height:1.65;outline:none}
 textarea:hover:not(:focus),textarea:focus{background:transparent;border:0;box-shadow:none}
+/* 占位的句子长了会被输入框的高度拦腰截断：空着的时候让最下面一行淡出去。 */
+textarea:placeholder-shown{-webkit-mask-image:linear-gradient(180deg,#000 calc(100% - 26px),transparent calc(100% - 4px));mask-image:linear-gradient(180deg,#000 calc(100% - 26px),transparent calc(100% - 4px))}
 textarea::placeholder{color:var(--muted);font-family:'Anthropic Serif','Source Han Serif SC','Noto Serif CJK SC','Songti SC','SimSun',var(--font-ui);letter-spacing:.02em}
 .prompt-box{position:relative}
 /* 预判的问题：与占位语同位置的一行淡字，末尾是按键提示。 */

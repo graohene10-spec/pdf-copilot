@@ -36,6 +36,8 @@
   box-sizing: border-box;
 }
 
+/* 触屏上两指捏合不放大整个界面（触控板的捏合由页面自己接成文档缩放）。 */
+html { touch-action: pan-x pan-y; }
 body {
   margin: 0;
   overflow: hidden;

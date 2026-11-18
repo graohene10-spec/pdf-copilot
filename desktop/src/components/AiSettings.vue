@@ -48,11 +48,13 @@ async function refreshNative() {
   refreshing.value = true; codexStatus.value = '正在检查本机 Codex…'
   try {
     const info: any = await getNativeStatus(request.signal)
-    if (!info.compatible || !info.loggedIn) throw new Error(info.diagnostic || (info.loggedIn === false ? 'Codex 尚未登录。请先在 Codex 中登录。' : '未找到可用 Codex。'))
+    if (!info.compatible || !info.loggedIn) throw new Error(info.diagnostic || (info.loggedIn === false ? 'Codex 尚未登录。请先在 Codex 中登录。' : '未找到可用 Codex。请先安装 Codex 桌面版或 CLI。'))
     const list: any[] = await getNativeModels(request.signal)
     if (disposed || request.signal.aborted) return
     registerNativeModelInventory(list)
-    codexStatus.value = `Codex ${info.version} · 已登录 · ${list.length} 个模型`
+    // 用的是 Codex 桌面版自带的那份，还是单独装的 CLI：看它在哪。
+    const desktopApp = /[\\/](OpenAI[\\/]Codex|Programs[\\/][^\\/]*Codex)[\\/]/i.test(String(info.path || ''))
+    codexStatus.value = `Codex ${desktopApp ? '桌面版' : 'CLI'} ${String(info.version || '').replace(/^codex-cli\s*/i, '')} · 已登录 · ${list.length} 个模型`
     for (const slot of slots) if (slot.target.provider === 'codex') settle(slot)
   } catch (cause: any) { if (!disposed && !request.signal.aborted) codexStatus.value = cause?.message || String(cause) }
   finally { if (modelRequest === request) { modelRequest = undefined; refreshing.value = false } }
@@ -137,7 +139,7 @@ defineExpose({ save, hasChanges: () => edited.value })
       <details v-for="item in (PROVIDERS as any[])" :key="item.id" class="link" :class="{ on: connected(item.id) }">
         <summary><i class="link-dot" aria-hidden="true"></i><b>{{ item.name }}</b><small>{{ item.id === 'codex' ? (codexReady ? '已登录' : '未检查') : keys[item.id] ? '已填密钥' : local(item.id) ? '本机服务' : '未连接' }}</small></summary>
         <template v-if="item.id === 'codex'">
-          <p class="settings-note">沿用本机 Codex 的登录，不用填 API Key。需要已安装并登录 Codex CLI。</p>
+          <p class="settings-note">沿用本机 Codex 的登录，不用填 API Key。装了 Codex 桌面版或 CLI 并登录过就行。</p>
           <button class="secondary-button" :disabled="refreshing" @click="refreshNative">{{ refreshing ? '检查中…' : '检查登录并读取模型' }}</button>
           <p v-if="codexStatus" class="settings-note">{{ codexStatus }}</p>
         </template>

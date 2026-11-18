@@ -1708,14 +1708,25 @@ function applyWheelZoom() {
   if (!action || !active.value || !reader.value || settingsOpen.value || removeTarget.value) return
   wheelTime = performance.now(); reader.value[action]?.(wheelPoint)
 }
+// 触控板（两指捏合、按住 Ctrl 两指滑）到页面里是一串很小的 Ctrl+滚轮：攒够一档再缩放一次，手指张开多少就放大多少，不会一捏就飞出去。
+const PINCH_STEP = 8
+let pinch = 0, pinchAt = 0
 function wheel(event: WheelEvent) {
   if (captureQuick.value && !settingsOpen.value) { event.preventDefault(); return }
-  if (!active.value || !reader.value || settingsOpen.value || removeTarget.value) return
-  if (!(event.target instanceof Element) || !event.target.closest('.reading-main')) return
-  const action = matchWheelShortcut(event, preferences.value)
-  if (!action) return
+  const inReader = active.value && reader.value && !settingsOpen.value && !removeTarget.value && event.target instanceof Element && event.target.closest('.reading-main')
+  const action = inReader ? matchWheelShortcut(event, preferences.value) : null
+  // 捏合手势一律由页面自己接住：不处理的话浏览器会把整个界面放大。
+  if (event.ctrlKey && event.cancelable) event.preventDefault()
+  if (!action || !active.value) return
   event.preventDefault()
-  const pane = event.target.closest<HTMLElement>('[data-pane-id]')?.dataset.paneId
+  if (Math.abs(event.deltaY) < 40) {
+    const now = performance.now()
+    if (now - pinchAt > 400 || pinch * event.deltaY < 0) pinch = 0
+    pinchAt = now; pinch += event.deltaY
+    if (Math.abs(pinch) < PINCH_STEP) return
+    pinch = 0
+  }
+  const pane = (event.target as Element).closest<HTMLElement>('[data-pane-id]')?.dataset.paneId
   if (pane && pane !== active.value.id) focusPane(pane)
   wheelAction = action
   wheelPoint = { x: event.clientX, y: event.clientY }
