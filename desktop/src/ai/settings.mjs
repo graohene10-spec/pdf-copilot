@@ -31,11 +31,11 @@ export async function saveAiSettings(settings, apiKey) {
 }
 // The composer's quick picker changes only the model and effort. Credentials
 // and every other field keep their stored values.
-export function saveModelChoice(model, effort, fast) {
+export function saveModelChoice(model, effort, fast, tier) {
   let stored = {};
   try { stored = JSON.parse(localStorage.getItem(storageKey) || '{}'); } catch {}
   delete stored.apiKey;
-  localStorage.setItem(storageKey, JSON.stringify({ ...stored, model, effort, ...(fast === undefined ? {} : { fast: Boolean(fast) }) }));
+  localStorage.setItem(storageKey, JSON.stringify({ ...stored, model, effort, ...(fast === undefined ? {} : { fast: Boolean(fast) }), ...(tier === undefined ? {} : { tier: String(tier) }) }));
 }
 /** 支持 Fast（优先通道）的服务商：Codex 本机登录与 OpenAI API。 */
 export const supportsFast = provider => provider === 'codex' || provider === 'openai';
@@ -47,7 +47,7 @@ export const TRANSLATION_DEFAULTS = Object.freeze({ share: true, provider: 'deep
 export function translationSettings(main = loadAiSettings()) {
   const own = { ...TRANSLATION_DEFAULTS, ...(main.translation || {}) };
   const connection = own.share ? { provider: main.provider, baseUrl: main.baseUrl, protocol: main.protocol } : { provider: own.provider, baseUrl: own.baseUrl, protocol: own.protocol };
-  return { ...main, ...connection, model: own.model, effort: own.effort, fast: Boolean(own.fast) && supportsFast(connection.provider), translation: own };
+  return { ...main, ...connection, model: own.model, effort: own.effort, fast: Boolean(own.fast) && supportsFast(connection.provider), tier: own.tier || '', translation: own };
 }
 /**
  * 快速解释用的 AI：服务商可以跟阅读助手一样（assistant）、跟翻译一样（translation），或者自己单独一家（own）；
@@ -58,7 +58,7 @@ export function explainSettings(main = loadAiSettings()) {
   const own = { ...EXPLAIN_DEFAULTS, ...(main.explain || {}) };
   const from = own.share === 'own' ? own : own.share === 'translation' ? translationSettings(main) : main;
   const connection = { provider: from.provider, baseUrl: from.baseUrl, protocol: from.protocol };
-  return { ...main, ...connection, model: own.model, effort: own.effort, fast: Boolean(own.fast) && supportsFast(connection.provider), explain: own };
+  return { ...main, ...connection, model: own.model, effort: own.effort, fast: Boolean(own.fast) && supportsFast(connection.provider), tier: own.tier || '', explain: own };
 }
 /**
  * 快速解释里的「可视化讲解」（Intelligent UI）用的 AI：默认跟阅读助手一样（服务、模型、强度都跟着走），也可以单独选一家。
@@ -67,7 +67,7 @@ export const VISUAL_DEFAULTS = Object.freeze({ share: 'assistant', provider: 'de
 export function visualSettings(main = loadAiSettings()) {
   const own = { ...VISUAL_DEFAULTS, ...(main.visual || {}) };
   if (own.share !== 'own') return { ...main, visual: own };
-  return { ...main, provider: own.provider, baseUrl: own.baseUrl, protocol: own.protocol, model: own.model, effort: own.effort, fast: Boolean(own.fast) && supportsFast(own.provider), visual: own };
+  return { ...main, provider: own.provider, baseUrl: own.baseUrl, protocol: own.protocol, model: own.model, effort: own.effort, fast: Boolean(own.fast) && supportsFast(own.provider), tier: own.tier || '', visual: own };
 }
 /** 翻译窗口里改模型 / 强度 / Fast：只动 translation 这一块。 */
 export function saveTranslationChoice(patch) {

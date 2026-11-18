@@ -529,7 +529,7 @@ const composerField = ref<HTMLElement>()
 const pickerLoading = ref(false)
 const pickerError = ref('')
 let pickerRequest: AbortController | undefined
-const pickerModels = computed<{ id: string; name: string; efforts?: string[]; defaultEffort?: string }[]>(() => {
+const pickerModels = computed<{ id: string; name: string; efforts?: string[]; defaultEffort?: string; tiers?: { id: string; name?: string; description?: string }[] }[]>(() => {
   const list: any[] = settings.value.provider === 'codex' ? nativeModelInventory.value : getProvider(settings.value.provider)?.models || []
   const current = settings.value.model || ''
   const extra = settings.value.provider === 'codex' && !list.some(item => !item.id) ? [{ id: '', name: '模型默认' }] : []
@@ -537,9 +537,17 @@ const pickerModels = computed<{ id: string; name: string; efforts?: string[]; de
   return [...extra, ...custom, ...list]
 })
 const modelLabel = computed(() => pickerModels.value.find(item => item.id === (settings.value.model || ''))?.name || settings.value.model || '默认模型')
-function commitChoice(model: string, effort: string, fast?: boolean) { saveModelChoice(model, effort, fast); settings.value = loadAiSettings() }
+function commitChoice(model: string, effort: string, fast?: boolean, tier?: string) { saveModelChoice(model, effort, fast, tier); settings.value = loadAiSettings() }
 const fastChoice = computed(() => supportsFast(settings.value.provider) ? Boolean(settings.value.fast) : undefined)
-function chooseFast(value: boolean) { commitChoice(settings.value.model || '', settings.value.effort || '', value) }
+function chooseFast(value: boolean) { commitChoice(settings.value.model || '', settings.value.effort || '', value, value ? 'priority' : '') }
+// Codex 的速度档（标准 / 快速 / 超快，按当前模型有的来）：选了哪一档就记哪一档，发请求时再按模型核对。
+function chooseTier(id: string) { commitChoice(settings.value.model || '', settings.value.effort || '', id !== '', id) }
+const tierChoice = computed(() => {
+  const tiers = pickerModels.value.find(item => item.id === (settings.value.model || ''))?.tiers || []
+  const want = (settings.value as any).tier || (settings.value.fast ? 'priority' : '')
+  return tiers.some(item => item.id === want) ? want : ''
+})
+const speedy = computed(() => settings.value.provider === 'codex' && pickerModels.value.find(item => item.id === (settings.value.model || ''))?.tiers?.length ? tierChoice.value !== '' : Boolean(fastChoice.value))
 // Codex：面板一出现就把小助手拉起来，第一次提问不用等冷启动。
 onMounted(() => { if (!props.side && settings.value.provider === 'codex') void warmNative() })
 function chooseModel(id: string) {
@@ -1027,14 +1035,14 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
           <span class="composer-space" />
           <span class="context-ring" :data-tip="`上下文约 ${count(contextUsed)} / ${count(contextLimit)} tokens`" aria-hidden="true" :style="{ '--ratio': contextRatio }"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5" /><circle class="ring-value" cx="10" cy="10" r="7.5" pathLength="100" /></svg></span>
           <div ref="pickerHost" class="model-picker-host">
-            <button type="button" class="model-picker" :disabled="busy" :aria-expanded="pickerOpen" :aria-controls="`model-drawer-${state.id}`" aria-label="选择模型与思考强度" data-tip="模型与思考强度" @click="pickerOpen = !pickerOpen"><span class="picker-model">{{ modelLabel }}</span><span class="picker-effort">{{ EFFORT_LABELS[settings.effort || ''] || settings.effort }}</span><AppIcon v-if="fastChoice" name="bolt" :size="11" class="picker-fast" /><AppIcon name="down" :size="12" class="picker-chevron" /></button>
+            <button type="button" class="model-picker" :disabled="busy" :aria-expanded="pickerOpen" :aria-controls="`model-drawer-${state.id}`" aria-label="选择模型与思考强度" data-tip="模型与思考强度" @click="pickerOpen = !pickerOpen"><span class="picker-model">{{ modelLabel }}</span><span class="picker-effort">{{ EFFORT_LABELS[settings.effort || ''] || settings.effort }}</span><AppIcon v-if="speedy" name="bolt" :size="11" class="picker-fast" /><AppIcon name="down" :size="12" class="picker-chevron" /></button>
           </div>
           <button v-if="busy" class="send-button stop" aria-label="停止" data-tip="停止回答" @click="stop"><span class="stop-square" /></button>
           <button v-else class="send-button" :disabled="!prompt.trim()" aria-label="发送" data-tip="发送" :data-tip-key="sendShortcut || 'Enter'" @click="send()"><AppIcon name="arrow-up" :size="17" /></button>
         </div>
         <!-- 点模型按钮时，输入栏下沿顺势拉长，露出模型与思考强度；再点一次或按 Esc 收回。 -->
         <div :id="`model-drawer-${state.id}`" class="composer-drawer" :class="{ open: pickerOpen }" :inert="!pickerOpen || undefined">
-          <ModelPicker v-if="drawerMounted" :model="settings.model || ''" :effort="settings.effort || ''" :models="pickerModels" :loading="pickerLoading" :error="pickerError" :can-refresh="settings.provider === 'codex'" :fast="fastChoice" @model="chooseModel" @effort="chooseEffort" @fast="chooseFast" @refresh="refreshPickerModels" @close="closePicker" />
+          <ModelPicker v-if="drawerMounted" :model="settings.model || ''" :effort="settings.effort || ''" :models="pickerModels" :loading="pickerLoading" :error="pickerError" :can-refresh="settings.provider === 'codex'" :fast="fastChoice" :tier="tierChoice" @model="chooseModel" @effort="chooseEffort" @fast="chooseFast" @tier="chooseTier" @refresh="refreshPickerModels" @close="closePicker" />
         </div>
       </div>
     </div>

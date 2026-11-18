@@ -70,13 +70,13 @@ namespace PdfCopilot {
     }
 
     internal sealed class ClientRequest {
-        internal string Id, Type, TargetId, Model, Effort, Text, CallId;
+        internal string Id, Type, TargetId, Model, Effort, Text, CallId, Tier;
         internal bool PdfTools, PdfVision, Fast;
         internal DocumentBudget PdfLimits = new DocumentBudget();
         internal readonly List<object> History = new List<object>();
         internal readonly List<string> Images = new List<string>();
         internal static ClientRequest Parse(Dictionary<string, object> value) {
-            var allowed = new HashSet<string> { "id", "type", "targetId", "model", "effort", "text", "history", "images", "pdfTools", "pdfVision", "pdfLimits", "callId", "fast" };
+            var allowed = new HashSet<string> { "id", "type", "targetId", "model", "effort", "text", "history", "images", "pdfTools", "pdfVision", "pdfLimits", "callId", "fast", "tier" };
             foreach (string key in value.Keys) if (!allowed.Contains(key)) throw new InvalidDataException("Unsupported request field.");
             var req = new ClientRequest { Id = Json.Text(value, "id"), Type = Json.Text(value, "type"), TargetId = Json.Text(value, "targetId"), Model = Json.Text(value, "model"), Effort = Json.Text(value, "effort"), Text = Json.Text(value, "text") };
             if (req.Id.Length < 1 || req.Id.Length > 128 || req.Id.IndexOfAny(new[] { '\r', '\n', '\0' }) >= 0) throw new InvalidDataException("Invalid request ID.");
@@ -86,6 +86,11 @@ namespace PdfCopilot {
             req.PdfVision = Json.Get(value, "pdfVision") is bool && (bool)Json.Get(value, "pdfVision");
             if (value.ContainsKey("fast") && (!(value["fast"] is bool) || req.Type != "chat")) throw new InvalidDataException("Invalid fast flag.");
             req.Fast = Json.Get(value, "fast") is bool && (bool)Json.Get(value, "fast");
+            // Speed tier: an id from the model's own serviceTiers list ("priority", "ultrafast", ...) or "default" for standard speed.
+            if (value.ContainsKey("tier") && (!(value["tier"] is string) || req.Type != "chat")) throw new InvalidDataException("Invalid speed tier.");
+            req.Tier = Json.Text(value, "tier");
+            if (req.Tier.Length > 32) throw new InvalidDataException("Invalid speed tier.");
+            foreach (char c in req.Tier) if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-')) throw new InvalidDataException("Invalid speed tier.");
             if (value.ContainsKey("pdfLimits")) {
                 if (req.Type != "chat" || !req.PdfTools) throw new InvalidDataException("PDF resource limits require a PDF chat.");
                 req.PdfLimits = DocumentBudget.Parse(value["pdfLimits"]);

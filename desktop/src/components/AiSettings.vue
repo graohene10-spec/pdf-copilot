@@ -74,6 +74,11 @@ const modelsOf = (id: string): any[] => id === 'codex' ? nativeModels.value : (g
 const effortsOf = (slot: Slot): string[] => (modelsOf(slot.target.provider).find(item => item.id === slot.target.model)?.efforts || (slot.target.provider === 'kimi' || slot.target.provider === 'qwen' ? [] : ['none', 'low', 'medium', 'high'])).filter(Boolean)
 const EFFORT: Record<string, string> = { none: '不思考', low: '低', medium: '中', high: '高', xhigh: '很高', max: '最高', minimal: '极低', ultra: '极高' }
 /** 模型空着、或思考强度不是这个模型支持的：补成一个具体的选择。阅读助手取模型自己的默认强度，其余取最低档（要快）。 */
+// Codex 的速度档：每个模型自己列出有哪些（有的没有超快，有的一档都没有）；选的那档这个模型没有就按标准。
+const TIER: Record<string, string> = { priority: '快速（约 1.5 倍，用量更多）', fast: '快速（约 1.5 倍，用量更多）', ultrafast: '超快（最快，用量最多）', flex: '省额度（慢一些）' }
+const tiersOf = (slot: Slot): any[] => slot.target.provider === 'codex' ? modelsOf('codex').find(item => item.id === slot.target.model)?.tiers || [] : []
+const tierOf = (slot: Slot) => { const want = slot.target.tier || (slot.target.fast ? 'priority' : ''); return tiersOf(slot).some(item => item.id === want) ? want : '' }
+function setTier(slot: Slot, id: string) { slot.target.tier = id; slot.target.fast = id !== '' }
 function settle(slot: Slot) {
   const target = slot.target, info: any = getProvider(target.provider), list = modelsOf(target.provider).filter(item => item.id)
   if (!list.length) return
@@ -164,7 +169,8 @@ defineExpose({ save, hasChanges: () => edited.value })
           <label>模型<select v-if="slot.target.provider === 'codex'" v-model="slot.target.model" :aria-label="`${slot.label}模型`" :disabled="refreshing" @change="settle(slot)"><option v-if="slot.target.model && !modelsOf('codex').some(item => item.id === slot.target.model)" :value="slot.target.model">{{ slot.target.model }}</option><option v-for="item in modelsOf('codex').filter(item => item.id)" :key="item.id" :value="item.id">{{ item.name || item.id }}</option></select><input v-else v-model="slot.target.model" :aria-label="`${slot.label}模型`" :list="`models-${slot.id}`" placeholder="模型名称" @change="settle(slot)" /></label>
           <datalist :id="`models-${slot.id}`"><option v-for="item in modelsOf(slot.target.provider)" :key="item.id" :value="item.id">{{ item.name }}</option></datalist>
           <label v-if="effortsOf(slot).length">思考强度<select v-model="slot.target.effort" :aria-label="`${slot.label}思考强度`"><option v-if="slot.id === 'assistant'" value="">模型默认</option><option v-for="item in effortsOf(slot)" :key="item" :value="item">{{ EFFORT[item] || item }}</option></select></label>
-          <label v-if="supportsFast(slot.target.provider)" class="check"><input v-model="slot.target.fast" type="checkbox" /> Fast：更快出字，额度消耗更多</label>
+          <label v-if="tiersOf(slot).length">速度<select :value="tierOf(slot)" :aria-label="`${slot.label}响应速度`" @change="setTier(slot, ($event.target as HTMLSelectElement).value)"><option value="">标准</option><option v-for="item in tiersOf(slot)" :key="item.id" :value="item.id">{{ TIER[item.id] || item.name || item.id }}</option></select></label>
+          <label v-else-if="supportsFast(slot.target.provider)" class="check"><input v-model="slot.target.fast" type="checkbox" /> Fast：更快出字，额度消耗更多</label>
         </template>
       </div>
     </div>

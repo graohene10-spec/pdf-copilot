@@ -159,3 +159,18 @@
 
 /* Intelligent UI 分类：排序、卡片 / 列表切换对它没意义。 */
 .library-view.ui-mode :is(.library-sort, .view-switch, .arrange-reset, .library-summary){display:none}
+
+/* 侧栏的书签汇总：每本有书签的书一组，一行一枚——左边是那枚书签的小画，右边是名字或页码；点一下打开那本书跳过去。 */
+.mark-total{margin-left:6px;font-weight:500;letter-spacing:0;opacity:.7}
+.mark-nav{display:flex;flex-direction:column;gap:2px;min-height:0;max-height:34vh;overflow:auto;padding:0 4px 6px;scrollbar-width:thin;-webkit-mask-image:linear-gradient(180deg,#000 calc(100% - 14px),transparent);mask-image:linear-gradient(180deg,#000 calc(100% - 14px),transparent)}
+.mark-group{display:flex;flex-direction:column;gap:1px}
+.mark-group+.mark-group{margin-top:8px}
+.mark-book{margin:0 8px 3px;overflow:hidden;color:var(--muted);font-size:11.5px;white-space:nowrap;text-overflow:ellipsis}
+.mark-row{display:flex;align-items:center;gap:9px;width:100%;min-height:28px;padding:3px 8px;border:0;border-radius:var(--r-control,8px);background:none;box-shadow:none;color:var(--ink);font:inherit;font-size:12.5px;text-align:left;cursor:pointer;transition:background-color var(--dur-1) var(--ease-soft)}
+.mark-row:hover,.mark-row:focus-visible{outline:none;background:color-mix(in srgb,var(--ink) 7%,transparent)}
+.mark-art{flex:0 0 auto;width:30px;height:13px;clip-path:polygon(0 0,100% 0,100% 100%,0 100%,5px 50%);filter:drop-shadow(0 1px 1px rgb(0 0 0 / .3));transition:translate var(--dur-2) var(--ease-out)}
+.mark-row:hover .mark-art{translate:2px 0}
+.mark-name{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.mark-row small{flex:0 0 auto;color:var(--muted);font-size:11px}
+:root[data-style='sketch'] .mark-art{rotate:-3deg}
+:root[data-style='sketch'] .mark-row:hover{background:color-mix(in srgb,var(--pencil,#2b2a27) 8%,transparent)}
