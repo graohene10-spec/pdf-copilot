@@ -208,9 +208,7 @@ function keydown(event: KeyboardEvent) {
   } else if (event.key === 'Delete' && picked.size) { event.preventDefault(); doomed.value = [...picked] }
   else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') { event.preventDefault(); for (const root of roots.value) for (const talk of root.list) picked.add(key(root.id, talk.id)) }
 }
-// ---- 样子：每本书一张按书名定色的小封面；父子之间是量出来的曲线 ----
-const hue = (title: string) => { let sum = 7; for (const char of title) sum = (sum * 31 + char.codePointAt(0)!) % 360; return sum }
-const initial = (title: string) => (title.trim().match(/[\p{L}\p{N}]/u)?.[0] || '书').toUpperCase()
+// ---- 样子：根节点是细线圆环里的一枚图标；父子之间是量出来的曲线 ----
 const memoryOf = (root: { list: ChatState[] }) => root.list.reduce((sum, talk) => sum + itemsOf(talk.id).length, 0)
 // 记忆是「概念：掌握得怎样」一行：拆开，概念深一点，掌握情况淡一点。
 const parts = (item: string) => { const at = item.search(/[：:]/); return at > 0 ? [item.slice(0, at), item.slice(at + 1).trim()] : [item, ''] }
@@ -247,10 +245,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', capture, true))
       <p v-if="!ready" class="cm-empty">正在读取…</p>
       <p v-else-if="!roots.length" class="cm-empty">还没有对话。</p>
       <div class="cm-forest">
-        <div v-for="(root, order) in roots" :key="root.id" class="cm-book" :class="{ gone: root.gone, drop: dropId === root.id }" :data-book="root.id" :style="{ '--hue': hue(root.title), '--i': order }">
+        <div v-for="(root, order) in roots" :key="root.id" class="cm-book" :class="{ gone: root.gone, drop: dropId === root.id }" :data-book="root.id" :style="{ '--i': order }">
           <div class="cm-root" :data-root="root.id" @contextmenu.prevent.stop="rootMenu(root, $event)">
             <button type="button" class="cm-root-open" :data-tip="root.gone ? '这本书已从文档库移除，对话和记忆仍然保留' : '打开这本书'" @click="openRoot(root)">
-              <span class="cm-cover" :class="root.kind === 'pdf' ? 'book' : 'sheet'" aria-hidden="true"><b>{{ initial(root.title) }}</b></span>
+              <span class="cm-seal" aria-hidden="true"><AppIcon :name="root.kind === 'pdf' ? 'book' : 'doc'" :size="16" /></span>
               <span class="cm-text"><span class="cm-title">{{ root.title }}</span><small>{{ root.list.length }} 段对话<template v-if="memoryOf(root)"> · {{ memoryOf(root) }} 条记忆</template><em v-if="root.gone">已移除</em></small></span>
             </button>
           </div>
@@ -332,25 +330,22 @@ onBeforeUnmount(() => window.removeEventListener('keydown', capture, true))
 .cm-empty{margin:80px 0;color:var(--muted);font-size:13px}
 .cm-forest{display:flex;flex-direction:column;align-items:flex-start;gap:26px;width:max-content;min-width:100%}
 .cm-book{display:flex;align-items:center;margin-left:-14px;padding:12px 22px 12px 14px;border-radius:22px;transition:background-color .2s var(--ease-out)}
-.cm-book.drop{background:color-mix(in srgb,var(--cm-tone) 9%,transparent)}
+.cm-book.drop{background:color-mix(in srgb,var(--cm-tone) 5%,transparent)}
 
-/* 根：一本书，一张按书名定色的小封面。书很长时它跟着滚动留在视野里。 */
+/* 根：一本书。书很长时它跟着滚动留在视野里。 */
 .cm-root{position:sticky;top:10px;bottom:10px;z-index:1;flex:none;width:248px;border-radius:14px;animation:cm-node .5s var(--ease-out) both;animation-delay:calc(var(--i,0) * 70ms)}
-.cm-root-open{display:flex;align-items:center;justify-content:flex-start;gap:14px;width:100%;min-height:64px;padding:6px 8px 6px 6px;border:0;border-radius:14px;background:none;box-shadow:none;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
-.cm-cover{position:relative;display:grid;place-items:center;flex:none;width:40px;height:54px;border-radius:3px 6px 6px 3px;background:linear-gradient(155deg,hsl(var(--hue) 36% 60%),hsl(calc(var(--hue) + 26) 34% 42%));box-shadow:inset 4px 0 0 rgb(0 0 0 / .16),inset 5px 0 0 rgb(255 255 255 / .16),0 1px 1px rgb(0 0 0 / .14),0 12px 20px -12px hsl(var(--hue) 40% 30% / .7);color:#fff;transition:translate .28s var(--ease-spring),rotate .28s var(--ease-spring)}
-.cm-cover b{padding-left:4px;font:600 19px/1 Georgia,'Songti SC','Source Han Serif SC','Noto Serif CJK SC',SimSun,serif;text-shadow:0 1px 2px rgb(0 0 0 / .25)}
-.cm-cover.sheet{border-radius:3px;box-shadow:0 1px 1px rgb(0 0 0 / .14),0 12px 20px -12px hsl(var(--hue) 40% 30% / .7);clip-path:polygon(0 0,calc(100% - 11px) 0,100% 11px,100% 100%,0 100%)}
-.cm-cover.sheet b{padding:0}
-.cm-cover.sheet::after{content:'';position:absolute;right:0;top:0;width:11px;height:11px;background:rgb(255 255 255 / .38)}
-.cm-root-open:hover .cm-cover,.cm-book.drop .cm-cover{translate:0 -3px;rotate:-4deg}
+.cm-root-open{display:flex;align-items:center;justify-content:flex-start;gap:13px;width:100%;min-height:54px;padding:6px 8px 6px 6px;border:0;border-radius:14px;background:none;box-shadow:none;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
+.cm-seal{display:grid;place-items:center;flex:none;width:38px;height:38px;border:1px solid color-mix(in srgb,var(--ink) 30%,transparent);border-radius:50%;color:var(--secondary);transition:border-color .2s var(--ease-out),color .2s var(--ease-out),background-color .2s var(--ease-out)}
+.cm-root-open:hover .cm-seal{border-color:var(--ink);color:var(--ink)}
+.cm-book.drop .cm-seal{border-color:var(--cm-tone);background:color-mix(in srgb,var(--cm-tone) 10%,transparent);color:var(--cm-tone)}
 .cm-text{flex:1;min-width:0;display:grid;gap:5px}
 .cm-title{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .cm-root .cm-title{display:-webkit-box;white-space:normal;-webkit-box-orient:vertical;-webkit-line-clamp:2;font-size:14.5px;font-weight:640;line-height:1.3;overflow-wrap:anywhere}
 .cm-text small{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:11.5px;white-space:nowrap}
 .cm-text em{padding:0 7px;border:1px solid var(--cm-line);border-radius:999px;font-size:10.5px;font-style:normal}
-/* 书已经不在文档库里：根节点压一层斜纹阴影，封面褪色。 */
+/* 书已经不在文档库里：根节点压一层斜纹阴影。 */
 .cm-book.gone .cm-root{background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--ink) 12%,transparent) 0 5px,color-mix(in srgb,var(--ink) 3%,transparent) 5px 11px)}
-.cm-book.gone .cm-cover{filter:grayscale(1) opacity(.55)}
+.cm-book.gone .cm-seal{border-style:dashed;color:var(--muted)}
 .cm-book.gone .cm-title{color:var(--muted)}
 
 .cm-act{display:grid;place-items:center;flex:none;width:28px;height:28px;padding:0;border:0;border-radius:999px;background:none;box-shadow:none;color:var(--muted);cursor:pointer}
@@ -393,8 +388,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', capture, true))
 .cm-warn{color:var(--danger,#b3261e)}
 .cm-other{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 15px;border:1px dashed color-mix(in srgb,var(--ink) 34%,transparent);border-radius:999px;color:var(--ink);transition:border-color .16s,background-color .16s}
 .cm-other.on{border-color:color-mix(in srgb,var(--cm-tone) 75%,transparent);background:color-mix(in srgb,var(--cm-tone) 12%,transparent)}
-.cm-ghost{position:fixed;z-index:9;padding:5px 12px;border-radius:999px;background:var(--ink);color:var(--canvas);font-size:12px;opacity:.7;pointer-events:none;white-space:nowrap;transition:background-color .16s,opacity .16s}
-.cm-ghost.ok{background:var(--cm-tone);color:#fff;opacity:1}
+.cm-ghost{position:fixed;z-index:9;padding:4px 11px;border-radius:999px;background:var(--ink);color:var(--canvas);font-size:11.5px;letter-spacing:.04em;opacity:.5;pointer-events:none;white-space:nowrap;transition:background-color .16s,opacity .16s}
+.cm-ghost.ok{opacity:.92}
 .cm-button{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 14px;border:1px solid var(--glass-outline,var(--separator));border-radius:999px;background:color-mix(in srgb,var(--ink) 4%,transparent);box-shadow:none;color:var(--ink);font:inherit;font-size:12.5px;cursor:pointer}
 .cm-button:hover{background:color-mix(in srgb,var(--ink) 9%,transparent)}
 .cm-button.danger{border-color:color-mix(in srgb,var(--danger,#b3261e) 45%,transparent);color:var(--danger,#b3261e)}
@@ -419,16 +414,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', capture, true))
 .cm-bar-enter-from,.cm-bar-leave-to{opacity:0;translate:-50% 14px}
 @media (prefers-reduced-motion:reduce){.cm-page,.cm-root,.cm-kid,.cm-links :deep(path){animation:none}}
 
-/* 草稿风格：铅笔线、纸色封面、红铅笔做强调。 */
+/* 草稿风格：铅笔线，红铅笔只做强调。 */
 :root[data-style='sketch'] .cm-page{--cm-line:color-mix(in srgb,var(--pencil,#2b2a27) 52%,transparent);--cm-tone:var(--red-pencil,#c0392b);background:var(--canvas);backdrop-filter:none}
-:root[data-style='sketch'] .cm-cover{border:1.4px solid var(--pencil,#2b2a27);background:repeating-linear-gradient(135deg,transparent 0 4px,hsl(var(--hue) 46% 50% / .16) 4px 5.5px),color-mix(in srgb,hsl(var(--hue) 50% 60%) 30%,var(--surface));box-shadow:2.5px 3px 0 color-mix(in srgb,var(--pencil,#2b2a27) 22%,transparent);color:var(--pencil,#2b2a27);rotate:-2deg}
-:root[data-style='sketch'] .cm-cover b{font-family:inherit;text-shadow:none}
-:root[data-style='sketch'] .cm-cover.book::before{content:'';position:absolute;left:5px;top:0;bottom:0;border-left:1.2px solid var(--pencil,#2b2a27)}
-:root[data-style='sketch'] .cm-cover.sheet::after{background:var(--canvas);border-left:1.4px solid var(--pencil,#2b2a27);border-bottom:1.4px solid var(--pencil,#2b2a27)}
-:root[data-style='sketch'] .cm-root-open:hover .cm-cover,:root[data-style='sketch'] .cm-book.drop .cm-cover{rotate:-6deg}
-:root[data-style='sketch'] .cm-talk{border:1.3px solid color-mix(in srgb,var(--pencil,#2b2a27) 62%,transparent);border-radius:14px 11px 15px 10px / 11px 15px 10px 14px;box-shadow:none}
-:root[data-style='sketch'] .cm-talk:nth-child(even){border-radius:10px 15px 11px 14px / 14px 10px 15px 11px}
-:root[data-style='sketch'] .cm-talk.picked{box-shadow:2px 2.5px 0 color-mix(in srgb,var(--cm-tone) 35%,transparent)}
+:root[data-style='sketch'] .cm-seal{border-width:1.3px;border-color:color-mix(in srgb,var(--pencil,#2b2a27) 70%,transparent)}
+:root[data-style='sketch'] .cm-root-open:hover{background:none}
+:root[data-style='sketch'] .cm-talk{border:1.2px solid color-mix(in srgb,var(--pencil,#2b2a27) 55%,transparent);box-shadow:none}
+:root[data-style='sketch'] .cm-talk.picked{box-shadow:0 0 0 3px color-mix(in srgb,var(--cm-tone) 14%,transparent)}
 :root[data-style='sketch'] .cm-links :deep(path){stroke-width:1.2}
 :root[data-style='sketch'] .cm-knob{border-width:1.3px}
 </style>
