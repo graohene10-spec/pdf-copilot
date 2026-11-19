@@ -3,7 +3,7 @@
 import { reactive } from 'vue'
 import { library } from '../sdk'
 
-export type BookmarkArt = { id: string; name: string; era: string; svg: string }
+export type BookmarkArt = { id: string; name: string; era: string; svg: string; /** 这幅画的代表色：书签翻走以后，右侧只留一条这个颜色的细线。 */ tint?: string }
 
 // 印象派的笔触：一把短短的色点，位置和颜色固定（同一枚书签每次看到的都一样）。
 function dabs() {
@@ -63,6 +63,12 @@ const CUSTOM_MAX = 12
 const CUSTOM_IMAGE = /^data:image\/(webp|jpeg|png);base64,[A-Za-z0-9+/=]+$/
 const CUSTOM_ID = /^custom:[0-9a-f-]{8,40}$/
 /** id（custom:…）→ 图片。 */
+const TINTS: Record<string, string> = {
+  classical: '#cf7a45', renaissance: '#7a5230', ukiyoe: '#2f5f8f', ink: '#5a5650', impressionism: '#8fb4cb', nouveau: '#5c6b3a', cubism: '#a8683e', suprematism: '#d1332a',
+  constructivism: '#8c1d18', destijl: '#f0c829', bauhaus: '#2752a6', deco: '#d4a94a', colorfield: '#e2622a', pop: '#1f6fd1', op: '#2a2a2a',
+}
+for (const art of BOOKMARK_ARTS) art.tint = TINTS[art.id]
+
 export const customArts = reactive(new Map<string, string>())
 let customLoaded: Promise<void> | undefined
 export function loadCustomArts() {
@@ -97,7 +103,29 @@ export async function addCustomArt(file: Blob): Promise<string | null> {
   return id
 }
 export function removeCustomArt(id: string) { if (customArts.delete(id)) saveCustomArts() }
-const customArt = (id: string, image: string, index: number): BookmarkArt => ({ id, name: `自定义 ${index + 1}`, era: '我的图片', svg: `<image href="${image}" width="96" height="40" preserveAspectRatio="xMidYMid slice"/>` })
+// 自定义图片的代表色：把图缩成几个像素取平均，算一次记住。
+const customTints = reactive(new Map<string, string>())
+function tintOfImage(id: string, image: string) {
+  const known = customTints.get(id)
+  if (known !== undefined) return known || undefined
+  customTints.set(id, '')
+  const picture = new Image()
+  picture.onload = () => {
+    try {
+      const canvas = document.createElement('canvas'); canvas.width = 6; canvas.height = 3
+      const pen = canvas.getContext('2d')!
+      pen.drawImage(picture, 0, 0, 6, 3)
+      const data = pen.getImageData(0, 0, 6, 3).data
+      let r = 0, g = 0, b = 0
+      for (let index = 0; index < data.length; index += 4) { r += data[index]!; g += data[index + 1]!; b += data[index + 2]! }
+      const count = data.length / 4, hex = (value: number) => Math.round(value / count).toString(16).padStart(2, '0')
+      customTints.set(id, `#${hex(r)}${hex(g)}${hex(b)}`)
+    } catch { /* 取不到颜色就用默认色 */ }
+  }
+  picture.src = image
+  return undefined
+}
+const customArt = (id: string, image: string, index: number): BookmarkArt => ({ id, name: `自定义 ${index + 1}`, era: '我的图片', svg: `<image href="${image}" width="96" height="40" preserveAspectRatio="xMidYMid slice"/>`, tint: tintOfImage(id, image) })
 /** 存着的自定义书签图，按加入的先后。 */
 export function customArtList(): BookmarkArt[] { return [...customArts].map(([id, image], index) => customArt(id, image, index)) }
 

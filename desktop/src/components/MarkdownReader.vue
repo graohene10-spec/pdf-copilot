@@ -258,6 +258,14 @@ function toggleInk() { if (raw.value) raw.value = false; ink.toggle() }
 // ---- 书签：位置就是整篇的滚动比例 ----
 function getBookmarkPosition() { return active && rendered ? { progress: Math.max(0, Math.min(1, getViewState().progress)) } : undefined }
 function bookmarkRatio(position: { progress?: number }) { return Math.max(0, Math.min(1, position.progress ?? 0)) }
+/** 书签那个位置现在看不看得见：看得见就给出它在窗口里的纵坐标和纸的右边（视口坐标）。 */
+function bookmarkSpot(position: { progress?: number }) {
+  const view = scroll.value
+  if (!active || !view || raw.value) return null
+  const top = Math.max(0, view.scrollHeight - view.clientHeight) * (position.progress ?? 0) - view.scrollTop
+  if (top < -6 || top > view.clientHeight - 24 || !body.value) return null
+  return { x: body.value.getBoundingClientRect().right, y: view.getBoundingClientRect().top + top }
+}
 function goToBookmark(position: { progress?: number }) {
   const view = scroll.value
   if (!active || !view) return
@@ -386,7 +394,7 @@ async function resume() {
 }
 onActivated(resume)
 onDeactivated(suspend)
-defineExpose({ goToPage, goToHeading, isSuspended: () => !active, zoomIn, zoomOut, resetZoom, getZoom: () => zoom.value, toggleOutline, nextPage, previousPage, focusSearch, clearSearch, toggleCapture, cancelCapture, getCaptureFrame, getCaptureElements, clearSelection, toggleInk, exitInk: ink.exit, pickInk: ink.pick, getPage: () => currentLine, getFontSize: () => displayFontSize.value, getViewState, getBookmarkPosition, bookmarkRatio, goToBookmark, suspend, resume, getCacheStats: () => ({ suspended: !active, pages: 0, pixels: 0 }) })
+defineExpose({ bookmarkSpot, goToPage, goToHeading, isSuspended: () => !active, zoomIn, zoomOut, resetZoom, getZoom: () => zoom.value, toggleOutline, nextPage, previousPage, focusSearch, clearSearch, toggleCapture, cancelCapture, getCaptureFrame, getCaptureElements, clearSelection, toggleInk, exitInk: ink.exit, pickInk: ink.pick, getPage: () => currentLine, getFontSize: () => displayFontSize.value, getViewState, getBookmarkPosition, bookmarkRatio, goToBookmark, suspend, resume, getCacheStats: () => ({ suspended: !active, pages: 0, pixels: 0 }) })
 </script>
 
 <template>

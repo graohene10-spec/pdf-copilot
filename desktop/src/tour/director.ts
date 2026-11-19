@@ -32,23 +32,35 @@ export type Director = ReturnType<typeof createDirector>
 export function createDirector(parts: { viewport: () => HTMLElement | null; world: () => HTMLElement | null; cursor: () => HTMLElement | null; ripples: () => HTMLElement | null }) {
   const camera = { x: axis(WORLD.width / 2), y: axis(WORLD.height / 2), zoom: axis(1) }
   const pointer = { x: WORLD.width * .62, y: WORLD.height + 40, down: false, shown: false }
-  let jobs: Job[] = [], frame = 0, last = 0, paused = false, run = 0, base = 1
+  let jobs: Job[] = [], frame = 0, last = 0, paused = false, run = 0, base = 1, shown = ''
+  // 画布按「最近的镜头」的清晰度排一次版（density），之后镜头推拉只是合成层的缩放，不用每帧重画文字。
+  let view = { width: WORLD.width, height: WORLD.height }, density = 1, world: HTMLElement | null = null, cursor: HTMLElement | null = null
 
-  const size = () => { const box = parts.viewport(); return { width: box?.clientWidth || WORLD.width, height: box?.clientHeight || WORLD.height } }
+  function resize() {
+    const box = parts.viewport()
+    world = parts.world(); cursor = parts.cursor()
+    if (box?.clientWidth) view = { width: box.clientWidth, height: box.clientHeight }
+    base = Math.min(view.width / WORLD.width, view.height / WORLD.height)
+    const next = Math.round(Math.min(1.6, Math.max(.7, base * 2.2)) * 20) / 20
+    if (world && next !== density) { density = next; world.style.zoom = String(density) }
+    else if (world && !world.style.zoom) world.style.zoom = String(density)
+  }
+  /* 窗口小的时候近景再推近一些，字才看得清；全景不变。 */
+  const boost = (zoom: number) => 1 + (zoom - 1) * Math.min(1.6, Math.max(1, .66 / base))
 
   function paint() {
-    const world = parts.world(), cursor = parts.cursor(), view = size()
-    base = Math.min(view.width / WORLD.width, view.height / WORLD.height)
+    if (!world || !cursor) resize()
     const scale = base * camera.zoom.now, halfW = view.width / scale / 2, halfH = view.height / scale / 2
     // 镜头不看到画布外面。
     const cx = Math.min(Math.max(camera.x.now, halfW), Math.max(halfW, WORLD.width - halfW))
     const cy = Math.min(Math.max(camera.y.now, halfH), Math.max(halfH, WORLD.height - halfH))
     const left = view.width / 2 - cx * scale, top = view.height / 2 - cy * scale
-    if (world) world.style.transform = `translate(${left.toFixed(2)}px, ${top.toFixed(2)}px) scale(${scale.toFixed(4)})`
+    if (world) world.style.transform = `translate3d(${left.toFixed(2)}px, ${top.toFixed(2)}px, 0) scale(${(scale / density).toFixed(4)})`
     if (cursor) {
-      const grow = (1 + (camera.zoom.now - 1) * .3) * (pointer.down ? .86 : 1)
-      cursor.style.transform = `translate(${(left + pointer.x * scale).toFixed(2)}px, ${(top + pointer.y * scale).toFixed(2)}px) scale(${grow.toFixed(3)})`
-      cursor.style.opacity = pointer.shown ? '1' : '0'
+      const grow = (1 + (camera.zoom.now - 1) * .2) * (pointer.down ? .86 : 1)
+      cursor.style.transform = `translate3d(${(left + pointer.x * scale).toFixed(2)}px, ${(top + pointer.y * scale).toFixed(2)}px, 0) scale(${grow.toFixed(3)})`
+      const opacity = pointer.shown ? '1' : '0'
+      if (opacity !== shown) cursor.style.opacity = shown = opacity
     }
     return { left, top, scale }
   }
@@ -74,7 +86,7 @@ export function createDirector(parts: { viewport: () => HTMLElement | null; worl
   /* 画布里某个元素（或它内部按比例取的一点）的世界坐标。 */
   function locate(target: Target, at: [number, number] = [.5, .5]): Point {
     if (typeof target !== 'string') return target
-    const world = parts.world(), node = world?.querySelector<HTMLElement>(target)
+    const node = world?.querySelector<HTMLElement>(target)
     if (!world || !node) return { x: pointer.x, y: pointer.y }
     const frameBox = world.getBoundingClientRect(), box = node.getBoundingClientRect(), scale = frameBox.width / WORLD.width || 1
     return { x: (box.left - frameBox.left + box.width * at[0]) / scale, y: (box.top - frameBox.top + box.height * at[1]) / scale }
@@ -106,7 +118,7 @@ export function createDirector(parts: { viewport: () => HTMLElement | null; worl
     look(target: Target | null, zoom?: number, at?: [number, number]) {
       const point = target ? locate(target, at) : { x: WORLD.width / 2, y: WORLD.height / 2 }
       camera.x.goal = point.x; camera.y.goal = point.y
-      if (zoom) camera.zoom.goal = zoom
+      if (zoom) camera.zoom.goal = zoom > 1 ? boost(zoom) : zoom
     },
     show() { pointer.shown = true },
     hide() { pointer.shown = false },
@@ -145,14 +157,16 @@ export function createDirector(parts: { viewport: () => HTMLElement | null; worl
       jobs = []
       camera.x = axis(WORLD.width / 2); camera.y = axis(WORLD.height / 2); camera.zoom = axis(1)
       Object.assign(pointer, { x: WORLD.width * .62, y: WORLD.height + 40, down: false, shown: false })
-      paused = false
+      paused = false; shown = ''
+      resize()
       if (!frame) { last = performance.now(); frame = requestAnimationFrame(tick) }
       paint()
       try { await script(api); return mine === run } catch (reason) { if (reason !== CANCEL) throw reason; return false }
     },
     pause(value: boolean) { paused = value },
     get paused() { return paused },
-    repaint: paint,
+    /* 窗口大小变了：重新量一次再画。 */
+    repaint() { resize(); paint() },
     stop() {
       ++run
       for (const job of jobs) job.fail(CANCEL)

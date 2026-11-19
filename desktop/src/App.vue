@@ -904,24 +904,25 @@ function bookmarkMenu(id: string, markId: string, event: MouseEvent) {
   ] }
 }
 // 换画风：列出艺术史上的各个流派（按年代），当前那种打勾。
-function chooseBookmarkArt(source: string, markId: string, x: number, y: number) {
+function chooseBookmarkArt(source: string, target: string | string[], x: number, y: number) {
+  const ids = Array.isArray(target) ? target : [target], markId = ids[0]
   const mark = bookmarks.get(source)?.find(item => item.id === markId)
   if (!mark) return
-  const current = artOf(mark).id
+  const current = ids.length > 1 ? '' : artOf(mark).id
   void nextTick(() => {
-    const pick = (item: { id: string; name: string; era: string; svg: string }, separator = false) => ({ label: item.name, swatch: item.svg, separator, hint: item.id === current ? `${item.era} ✓` : item.era, action: () => { restyleBookmark(source, markId, item.id); bookmarkTick.value++ } })
+    const pick = (item: { id: string; name: string; era: string; svg: string }, separator = false) => ({ label: item.name, swatch: item.svg, separator, hint: item.id === current ? `${item.era} ✓` : item.era, action: () => { for (const id of ids) restyleBookmark(source, id, item.id); bookmarkTick.value++ } })
     const custom = customArtList()
     contextMenu.value = { x, y, items: [
       // 自己的图片排在最前；再选一张新的，或删掉正在用的这一张。
       ...custom.map(item => pick(item)),
-      { label: '用自己的图片…', icon: 'image', action: () => pickBookmarkImage(source, markId) },
+      { label: '用自己的图片…', icon: 'image', action: () => pickBookmarkImage(source, ids) },
       ...(current.startsWith('custom:') ? [{ label: '删除这张自定义图片', icon: 'trash', danger: true, action: () => { removeCustomArt(current); bookmarkTick.value++ } }] : []),
       ...BOOKMARK_ARTS.map((item, index) => pick(item, index === 0)),
     ] }
   })
 }
 // 自定义书签：选一张图片，裁成书签的比例存下来（各本书通用，最多 12 张）。
-function pickBookmarkImage(source: string, markId: string) {
+function pickBookmarkImage(source: string, target: string | string[]) {
   const input = document.createElement('input')
   input.type = 'file'; input.accept = 'image/png,image/jpeg,image/webp,image/gif,image/bmp'
   input.onchange = async () => {
@@ -930,7 +931,8 @@ function pickBookmarkImage(source: string, markId: string) {
     if (file.size > 40 * 1024 * 1024) { notify('这张图片太大了，换一张小一点的。'); return }
     const id = await addCustomArt(file)
     if (!id) { notify(customArtList().length >= 12 ? '自定义图片已经有 12 张了，先删掉一张再加。' : '这张图片读不了，换一张试试。'); return }
-    restyleBookmark(source, markId, id); bookmarkTick.value++
+    for (const markId of [target].flat()) restyleBookmark(source, markId, id)
+    bookmarkTick.value++
   }
   input.click()
 }
@@ -1061,6 +1063,19 @@ function confirmClearBookmarks(source: string, count: number, x: number, y: numb
   })
 }
 function deleteBookmark(id: string, markId: string) { removeBookmark(sourceId(id), markId); bookmarkTick.value++ }
+function deleteBookmarks(id: string, markIds: string[]) { for (const markId of markIds) removeBookmark(sourceId(id), markId); bookmarkTick.value++ }
+/** 书签的位置现在看得见时，给出它夹在页边上的地方（视口坐标）。 */
+function bookmarkSpot(id: string, markId: string) {
+  const mark = bookmarks.get(sourceId(id))?.find(item => item.id === markId)
+  return mark ? readerInstances.get(id)?.bookmarkSpot?.(mark.position) ?? null : null
+}
+function bookmarkBatchMenu(id: string, markIds: string[], event: MouseEvent) {
+  const source = sourceId(id), x = event.clientX, y = event.clientY
+  contextMenu.value = { x, y, items: [
+    { label: `所选 ${markIds.length} 个换画风…`, icon: 'image', action: () => chooseBookmarkArt(source, markIds, x, y) },
+    { label: `删除所选 ${markIds.length} 个书签`, icon: 'trash', danger: true, separator: true, action: () => deleteBookmarks(id, markIds) },
+  ] }
+}
 function finishRename(id: string, markId: string, name: string) {
   if (editingBookmark.value !== markId) return
   editingBookmark.value = null
@@ -1776,10 +1791,9 @@ watch(reader, value => {
 watch(search, value => {
   if (value && focusSearchPending) { value.focus(); focusSearchPending = false }
 })
-watch(tourOpen, () => nudgeGlassMotion(560))
-// 教程每次启动自动弹出，直到在教程里勾上「不再自动弹出」。
+// 教程每次启动在右下角自动弹出，直到在教程的章节表里勾上「启动时不再自动弹出」。
 let tourTimer: ReturnType<typeof setTimeout> | undefined
-onMounted(() => { if (!loadTour().hidden) tourTimer = setTimeout(() => { if (!settingsOpen.value) tourOpen.value = true }, 1400) })
+onMounted(() => { if (!loadTour().hidden) tourTimer = setTimeout(() => { tourOpen.value = true }, 1400) })
 onBeforeUnmount(() => clearTimeout(tourTimer))
 watch(settingsOpen, value => { nudgeGlassMotion(560); if (!value && captureQuick.value) monitorCaptureQuick() })
 watch(() => preferences.value.pdf.quickAskOnCapture, value => { if (!value) dismissCaptureQuick() })
@@ -2034,7 +2048,7 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
       </nav>
       <div class="sidebar-spacer"></div>
       <div v-if="effectiveAppearance.style === 'sketch'" class="sidebar-doodle" aria-hidden="true"></div>
-      <div class="sidebar-bottom"><button @click="openSettings()" aria-label="设置"><AppIcon name="settings" :size="17" /><span>设置</span></button><button class="icon-button tour-open" @click="tourOpen = true" data-tip="使用教程" aria-label="使用教程"><AppIcon name="play" :size="16" /></button><button class="icon-button" @click="toggleTheme($event)" :data-tip="theme === 'dark' ? '切换浅色主题' : '切换深色主题'" :aria-label="theme === 'dark' ? '切换浅色主题' : '切换深色主题'"><AppIcon :name="theme === 'dark' ? 'sun' : 'moon'" :size="17" /></button></div>
+      <div class="sidebar-bottom"><button @click="openSettings()" aria-label="设置"><AppIcon name="settings" :size="17" /><span>设置</span></button><button class="tour-open" @click="tourOpen = true" aria-label="使用教程"><AppIcon name="play" :size="15" /><span>教程</span></button><button class="icon-button" @click="toggleTheme($event)" :data-tip="theme === 'dark' ? '切换浅色主题' : '切换深色主题'" :aria-label="theme === 'dark' ? '切换浅色主题' : '切换深色主题'"><AppIcon :name="theme === 'dark' ? 'sun' : 'moon'" :size="17" /></button></div>
     </aside>
     </Transition>
 
@@ -2113,7 +2127,7 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
               <KeepAlive>
                 <component v-if="paneVisible(entry.id)" :is="entry.doc.kind === 'pdf' ? PdfReader : MarkdownReader" :ref="value => bindReader(entry.id, value)" :key="entry.id" :data="entry.bytes" :document-id="sourceId(entry.id)" :initial-page="entry.doc.page || 1" :initial-progress="entry.doc.progress || 0" :sidebar-fit-enabled="preferences.pdf.fitOnPanelOverflow" :initial-zoom="preferences.pdf.initialZoom === 'fit-width' ? 'fit' : preferences.pdf.initialZoom / 100" :zoom-step="preferences.pdf.zoomStep / 100" :fit-request="fitRequest" :font-size="preferences.markdown.fontSize" :content-width="preferences.markdown.contentWidth" :find-shortcut="preferences.shortcuts.find ? shortcut('find') : ''" :shortcuts="tipKeys" :initial-view="entry.view" :page-layout="preferences.pdf.pageLayout" :cover-alone="preferences.pdf.coverAlone" :right-capture="rightCaptureDocs.has(sourceId(entry.id))" v-on="entry.events" @page-layout="setPageLayout" />
               </KeepAlive>
-              <BookmarkRail v-if="paneVisible(entry.id)" :marks="paneBookmarks(entry.id)" :editing="editingBookmark" @jump="markId => jumpBookmark(entry.id, markId)" @menu="(markId, event) => bookmarkMenu(entry.id, markId, event)" @rename="(markId, name) => finishRename(entry.id, markId, name)" @remove="markId => deleteBookmark(entry.id, markId)" @cancel="editingBookmark = null" />
+              <BookmarkRail v-if="paneVisible(entry.id)" :marks="paneBookmarks(entry.id)" :editing="editingBookmark" :spot="markId => bookmarkSpot(entry.id, markId)" @jump="markId => jumpBookmark(entry.id, markId)" @menu="(markId, event) => bookmarkMenu(entry.id, markId, event)" @batch="(ids, event) => bookmarkBatchMenu(entry.id, ids, event)" @remove-many="ids => deleteBookmarks(entry.id, ids)" @rename="(markId, name) => finishRename(entry.id, markId, name)" @remove="markId => deleteBookmark(entry.id, markId)" @cancel="editingBookmark = null" />
               <div v-if="tabDoc(entry.id)" class="reading-pill" :class="{ awake: splitView }" :data-tip="splitView ? entry.doc.name : undefined" role="status" :aria-label="`阅读位置自动保存 · ${tabDoc(entry.id)!.kind === 'pdf' ? `第 ${tabDoc(entry.id)!.page || 1} / ${tabDoc(entry.id)!.pageCount || '—'} 页 · ` : ''}已读 ${progressPercent(tabDoc(entry.id)!)}%`">
                 <svg class="pill-ring" viewBox="0 0 24 24" aria-hidden="true"><circle class="pill-ring-track" cx="12" cy="12" r="9" /><circle class="pill-ring-value" cx="12" cy="12" r="9" pathLength="100" :style="{ strokeDashoffset: 100 - progressPercent(tabDoc(entry.id)!) }" /></svg>
                 <span class="pill-text" aria-hidden="true"><span v-if="tabDoc(entry.id)!.kind === 'pdf'" class="pill-page"><b :key="tabDoc(entry.id)!.page || 1">{{ tabDoc(entry.id)!.page || 1 }}</b><i>/</i>{{ tabDoc(entry.id)!.pageCount || '—' }}</span><span v-else class="pill-page"><b :key="progressPercent(tabDoc(entry.id)!)">{{ progressPercent(tabDoc(entry.id)!) }}</b><i>%</i></span></span>
@@ -2159,6 +2173,6 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
     <Transition name="settings-pop">
       <SettingsDialog v-if="settingsOpen" :initial-tab="settingsTab" @close="settingsOpen = false" @ai-saved="aiSettingsSaved" />
     </Transition>
-    <Transition name="settings-pop"><TourPlayer v-if="tourOpen" @close="tourOpen = false" /></Transition>
+    <Transition name="tour-pip"><TourPlayer v-if="tourOpen" @close="tourOpen = false" /></Transition>
   </div>
 </template>
