@@ -1,8 +1,8 @@
 <script setup lang="ts">
 // AI 设置分两步：先把要用的服务连上（各家的 API Key、本机 Codex 的登录），再给每个功能挑一个模型。
 import { ref, reactive, computed, onBeforeUnmount } from 'vue'
-import { PROVIDERS, PROTOCOLS, getProvider, getNativeModels, getNativeStatus } from '../ai/providers.mjs'
-import { nativeModelInventory, registerNativeModelInventory } from '../ai/native-models'
+import { PROVIDERS, PROTOCOLS, getProvider } from '../ai/providers.mjs'
+import { nativeModelInventory, codexCheck, checkCodex } from '../ai/native-models'
 import { loadAiSettings, loadApiKey, saveAiSettings, saveCredential, supportsFast, TRANSLATION_DEFAULTS, EXPLAIN_DEFAULTS, VISUAL_DEFAULTS, ASK_DEFAULTS } from '../ai/settings.mjs'
 import { concreteChoice } from '../ai/translate-model'
 import { codexTimings } from '../ai/native.mjs'
@@ -31,12 +31,12 @@ const keyEdited = new Set<string>()
 const status = ref('')
 const error = ref(false)
 const saving = ref(false)
-const refreshing = ref(false)
+const refreshing = computed(() => codexCheck.state === 'checking')
 const keysLoading = ref(true)
 const edited = ref(false)
 function markEdited() { edited.value = true }
 const nativeModels = nativeModelInventory
-const codexStatus = ref('')
+const codexStatus = computed(() => codexCheck.text)
 // 最近几次 Codex 提问各阶段的耗时（只有数字、模型名和引擎版本）：慢的时候看得出慢在建会话、提交还是等模型。
 const timings = ref<any[]>(codexTimings())
 const seconds = (ms: number) => ms < 0 ? '—' : `${(ms / 1000).toFixed(1)} 秒`
@@ -53,29 +53,15 @@ async function copyTimings() {
 }
 const codexReady = computed(() => nativeModels.value.length > 0)
 let disposed = false
-let modelRequest: AbortController | undefined
 void Promise.all((PROVIDERS as any[]).filter(item => item.id !== 'codex').map(async item => { try { const value = await loadApiKey(item.id); if (!keyEdited.has(item.id)) keys[item.id] = value || '' } catch { keys[item.id] ||= '' } })).finally(() => { keysLoading.value = false })
 const local = (id: string) => id === 'custom' && /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/i.test(connections[id]?.baseUrl || '')
 const connected = (id: string) => id === 'codex' ? codexReady.value : Boolean(keys[id]) || local(id)
+// 检查是全应用共用的一件事（启动时已经自动跑过一次）；这里只管查完后把用 Codex 的那几格落到实际的模型上。
 async function refreshNative() {
-  if (refreshing.value || disposed) return
-  const request = new AbortController()
-  modelRequest = request
-  refreshing.value = true; codexStatus.value = '正在检查本机 Codex…'
-  try {
-    const info: any = await getNativeStatus(request.signal)
-    if (!info.compatible || !info.loggedIn) throw new Error(info.diagnostic || (info.loggedIn === false ? 'Codex 尚未登录。请先在 Codex 中登录。' : '未找到可用 Codex。请先安装 Codex 桌面版或 CLI。'))
-    const list: any[] = await getNativeModels(request.signal)
-    if (disposed || request.signal.aborted) return
-    registerNativeModelInventory(list)
-    // 用的是 Codex 桌面版自带的那份，还是单独装的 CLI：看它在哪。
-    const desktopApp = /[\\/](OpenAI[\\/]Codex|Programs[\\/][^\\/]*Codex)[\\/]/i.test(String(info.path || ''))
-    codexStatus.value = `Codex ${desktopApp ? '桌面版' : 'CLI'} ${String(info.version || '').replace(/^codex-cli\s*/i, '')} · 已登录 · ${list.length} 个模型`
-    for (const slot of slots) if (slot.target.provider === 'codex') settle(slot)
-  } catch (cause: any) { if (!disposed && !request.signal.aborted) codexStatus.value = cause?.message || String(cause) }
-  finally { if (modelRequest === request) { modelRequest = undefined; refreshing.value = false } }
+  if (disposed) return
+  if (await checkCodex() && !disposed) for (const slot of slots) if (slot.target.provider === 'codex') settle(slot)
 }
-onBeforeUnmount(() => { disposed = true; modelRequest?.abort() })
+onBeforeUnmount(() => { disposed = true })
 
 // ---- 每个功能用哪个模型 ----
 type Slot = { id: string; label: string; note: string; target: any; follow?: boolean }
@@ -115,7 +101,8 @@ function chooseProvider(slot: Slot, value: string) {
   settle(slot)
 }
 for (const slot of slots) if (!following(slot)) settle(slot)
-if (slots.some(slot => !following(slot) && slot.target.provider === 'codex') && !nativeModels.value.length && (globalThis as any).__TAURI_INTERNALS__) void refreshNative()
+// 打开设置时还没有 Codex 的模型名单（启动时的检查还在跑，或者没跑过）：接着查，不用手点。
+if (!nativeModels.value.length && (globalThis as any).__TAURI_INTERNALS__) void refreshNative()
 
 const requestFields = [
   { key: 'concurrent', label: '同时运行的提问', min: 1, max: 4 },
@@ -159,7 +146,7 @@ defineExpose({ save, hasChanges: () => edited.value })
     <h4 class="step"><i>1</i>连接服务<small>填 API Key，或用本机 Codex 的登录</small></h4>
     <div class="links">
       <details v-for="item in (PROVIDERS as any[])" :key="item.id" class="link" :class="{ on: connected(item.id) }">
-        <summary><i class="link-dot" aria-hidden="true"></i><b>{{ item.name }}</b><small>{{ item.id === 'codex' ? (codexReady ? '已登录' : '未检查') : keys[item.id] ? '已填密钥' : local(item.id) ? '本机服务' : '未连接' }}</small></summary>
+        <summary><i class="link-dot" aria-hidden="true"></i><b>{{ item.name }}</b><small>{{ item.id === 'codex' ? (codexReady ? '已登录' : refreshing ? '检查中…' : codexCheck.state === 'failed' ? '未连上' : '未检查') : keys[item.id] ? '已填密钥' : local(item.id) ? '本机服务' : '未连接' }}</small></summary>
         <template v-if="item.id === 'codex'">
           <p class="settings-note">沿用本机 Codex 的登录，不用填 API Key。装了 Codex 桌面版或 CLI 并登录过就行。</p>
           <button class="secondary-button" :disabled="refreshing" @click="refreshNative">{{ refreshing ? '检查中…' : '检查登录并读取模型' }}</button>

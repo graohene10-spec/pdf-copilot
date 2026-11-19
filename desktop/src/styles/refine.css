@@ -172,7 +172,9 @@
 .mark-art{flex:0 0 auto;width:30px;height:13px;clip-path:polygon(0 0,100% 0,100% 100%,0 100%,5px 50%);filter:drop-shadow(0 1px 1px rgb(0 0 0 / .3));transition:translate var(--dur-2) var(--ease-out)}
 .mark-row:hover .mark-art{translate:2px 0}
 .mark-name{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-.mark-row small{flex:0 0 auto;color:var(--muted);font-size:11px}
+/* 页数紧跟书签，占固定一栏；名称在它右边，各行左对齐。 */
+.mark-row small{flex:0 0 auto;min-width:5.2em;color:var(--ink);font-size:12.5px;font-variant-numeric:tabular-nums}
+.mark-name{color:var(--secondary)}
 :root[data-style='sketch'] .mark-art{rotate:-3deg}
 :root[data-style='sketch'] .mark-row:hover{background:color-mix(in srgb,var(--pencil,#2b2a27) 8%,transparent)}
 .mark-nav::-webkit-scrollbar{width:6px}

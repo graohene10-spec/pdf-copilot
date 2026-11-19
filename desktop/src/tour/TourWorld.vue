@@ -277,7 +277,7 @@ const files = computed(() => {
     </div></Transition>
     <Transition name="tw-pop"><div v-if="scene.ctx" class="tw-menu tw-ctx" :style="{ left: `${scene.ctx.x + 4}px`, top: `${scene.ctx.y + 4}px` }">
       <span><AppIcon name="split" :size="13" />并排阅读…</span><span><AppIcon name="fullscreen" :size="13" />进入全屏</span>
-      <span class="tw-ctx-right line"><AppIcon name="crop" :size="13" />开启右键拖动截图</span><span><AppIcon name="sparkle" :size="13" />关闭框选快捷提问</span>
+      <span class="tw-ctx-right line"><AppIcon name="crop" :size="13" />{{ scene.rightOn ? '关闭' : '开启' }}右键拖动截图</span><span class="tw-ctx-quick"><AppIcon name="sparkle" :size="13" />{{ scene.quickOff ? '开启' : '关闭' }}框选快捷提问</span>
       <span class="line"><AppIcon name="settings" :size="13" />设置</span>
     </div></Transition>
     </div>

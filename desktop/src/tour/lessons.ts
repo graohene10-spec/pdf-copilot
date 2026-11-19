@@ -73,6 +73,7 @@ export type Scene = {
   quick: boolean
   ctx: Point | null
   rightOn: boolean
+  quickOff: boolean
   shots: number
   kept: number
   /** 解释卡片上的自由提问：标题变成输入框、问的那句话、回答写了多少字。 */
@@ -93,7 +94,7 @@ export const freshScene = (): Scene => ({
   draft: '', asked: false, answer: 0, quote: false, quotePop: false, side: false, sideAsk: '', sideAnswer: 0, branch: false, commands: false, btw: false, btwAnswer: 0,
   pop: false, column: false, auto: false, ink: '', hl: 0, pen: 0, ul: 0, mark: false, art: 0, markMenu: false,
   files: 6, ghost: null, query: '', fileMenu: false, grouped: false, starred: false, outline: false, finding: false, find: '', clock: 'idle', minutes: 5, follow: 'page', hold: 0, desk: 0,
-  crop: false, frame: null, quick: false, ctx: null, rightOn: false, shots: 0, kept: 0, shotSent: false, shotAnswer: 0, asking: false, cardDraft: '', cardAsk: false, cardAnswer: 0,
+  crop: false, frame: null, quick: false, ctx: null, rightOn: false, quickOff: false, shots: 0, kept: 0, shotSent: false, shotAnswer: 0, asking: false, cardDraft: '', cardAsk: false, cardAnswer: 0,
 })
 
 export const TEXT = {
@@ -339,72 +340,102 @@ const assistant: Play = async (stage, scene, say) => {
   await stage.wait(1100)
 }
 
-/* 在页面上拖出一个框；右键拖动时不用先点「框选」。 */
+/* 在页面上拖出一个框；右键拖动时不用先点「框选」。关掉快捷提问后不弹气泡，图直接进输入框。 */
 async function frame(stage: Stage, scene: Scene, target: string, pad: [number, number]) {
   const box = stage.box(target), from = { x: box.x - pad[0], y: box.y - pad[1] }, to = { x: box.x + box.width + pad[0], y: box.y + box.height + pad[1] }
-  await stage.move(from)
+  await stage.move(from, { ms: 700 })
+  await stage.wait(220)
   stage.press()
   scene.frame = { ...from, width: 0, height: 0 }
-  await stage.move(to, { ms: 560, step: k => { scene.frame = { ...from, width: (to.x - from.x) * k, height: (to.y - from.y) * k } } })
+  await stage.move(to, { ms: 900, step: k => { scene.frame = { ...from, width: (to.x - from.x) * k, height: (to.y - from.y) * k } } })
+  await stage.wait(160)
   stage.release()
-  scene.crop = false; scene.shots += 1; scene.quick = true
+  scene.crop = false; scene.shots += 1; scene.quick = !scene.quickOff
+  if (scene.quickOff) { await stage.wait(420); scene.frame = null }
+}
+/* 在文档里右键，点菜单里的一项。 */
+async function menu(stage: Stage, scene: Scene, item: string) {
+  await stage.move('.tw-ul', { at: [.7, 2.4], ms: 700 })
+  await stage.wait(200)
+  await stage.click('right')
+  scene.ctx = stage.locate('.tw-ul', [.7, 2.4])
+  await stage.wait(900)
+  await stage.move(item, { ms: 620 })
+  await stage.wait(260)
+  await stage.click()
+  await stage.wait(160)
+  scene.ctx = null
 }
 
 const capture: Play = async (stage, scene, say) => {
   say({ text: '点「框选」，在页面上拖出一块', keys: ['Alt', 'Shift', 'S'] })
   stage.place(ENTRY)
   stage.look('.tw-bar', 1.5, [.5, 4])
+  await stage.wait(500)
   await click(stage, '.tw-cropbtn')
   scene.crop = true
-  await stage.wait(260)
+  await stage.wait(500)
   await frame(stage, scene, '.tw-ring', [16, 8])
   stage.look('.tw-ring', 1.5, [1.1, .5])
-  await stage.wait(800)
+  await stage.wait(1500)
 
   say('点气泡直接提问；点「自己提问」，图进输入框')
+  await stage.wait(900)
   await click(stage, '.tw-quick-own')
   scene.quick = false; scene.frame = null
   stage.look('.tw-ask', 1.6, [.5, -1.1])
-  await stage.wait(700)
+  await stage.wait(1500)
 
   say({ text: '再截一张会换掉这张；左键点一下固定住它', mouse: 'left', top: true })
+  await stage.wait(700)
   await click(stage, '.tw-shot-0')
   scene.kept = 1
-  await stage.wait(900)
+  await stage.wait(1600)
 
   say('第二种截法：在文档里右键，开启「右键拖动截图」')
   stage.look({ x: 600, y: 520 }, 1.4)
   await stage.move('.tw-page', { at: [.5, .5] })
-  await stage.tween(520, k => { scene.scroll = k * 120 })
-  await stage.move('.tw-ul', { at: [.7, 2.4] })
-  await stage.click('right')
-  scene.ctx = stage.locate('.tw-ul', [.7, 2.4])
-  await stage.wait(360)
-  await click(stage, '.tw-ctx-right')
-  scene.ctx = null; scene.rightOn = true
-  await stage.wait(300)
+  await stage.tween(620, k => { scene.scroll = k * 120 })
+  await menu(stage, scene, '.tw-ctx-right')
+  scene.rightOn = true
+  await stage.wait(700)
 
   say({ text: '之后按住右键拖动就是截图', mouse: 'right' })
   await frame(stage, scene, '.tw-ul', [10, 7])
-  await stage.wait(650)
+  await stage.wait(1400)
   say({ text: '收起气泡，图留在输入框', keys: ['Esc'] })
-  await stage.wait(700)
+  await stage.wait(1100)
   scene.quick = false; scene.frame = null
   stage.look({ x: 800, y: 480 }, 1.15)
-  await stage.wait(800)
+  await stage.wait(1400)
 
   say({ text: '按住再截，上一张自动固定', keys: ['Shift'], mouse: 'right' })
-  await stage.tween(420, k => { scene.scroll = 120 - k * 120 })
+  await stage.tween(520, k => { scene.scroll = 120 - k * 120 })
   await frame(stage, scene, '.tw-target', [8, 5])
   scene.kept = 2
-  await stage.wait(1000)
+  await stage.wait(1700)
 
   say('点一个气泡，输入框里的图一起发出去')
+  await stage.wait(600)
   await click(stage, '.tw-bubble-0')
   scene.quick = false; scene.frame = null; scene.shots = 0; scene.kept = 0; scene.shotSent = true
   stage.look('.tw-chat', 1.5, [.5, .2])
-  await stage.tween(1100, k => { scene.shotAnswer = Math.round(k * TEXT.shotReply.length) }, true)
-  await stage.wait(1100)
+  await stage.tween(1300, k => { scene.shotAnswer = Math.round(k * TEXT.shotReply.length) }, true)
+  await stage.wait(1600)
+
+  say('不想要气泡：右键，关闭「框选快捷提问」')
+  stage.look({ x: 600, y: 520 }, 1.4)
+  await stage.tween(620, k => { scene.scroll = k * 120 })
+  await menu(stage, scene, '.tw-ctx-quick')
+  scene.quickOff = true
+  await stage.wait(700)
+
+  say({ text: '之后右键一拖，图直接进输入框，不弹气泡', mouse: 'right' })
+  await frame(stage, scene, '.tw-ul', [10, 7])
+  stage.look({ x: 800, y: 480 }, 1.15)
+  await stage.wait(900)
+  stage.look('.tw-ask', 1.6, [.5, -1.1])
+  await stage.wait(2000)
 }
 
 const translate: Play = async (stage, scene, say) => {
@@ -661,7 +692,7 @@ export const LESSONS: Lesson[] = [
   { id: 'explain', title: '快速解释', note: '选中文字后按中键', steps: 8, play: explain },
   { id: 'visual', title: '用图解释', note: '图解、可拖的图、合集', steps: 3, play: visual },
   { id: 'assistant', title: '阅读助手', note: '提问、附属对话、分支、指令', steps: 5, play: assistant },
-  { id: 'capture', title: '截图提问', note: '框选、右键拖动、固定多张', steps: 7, play: capture },
+  { id: 'capture', title: '截图提问', note: '框选、右键拖动、固定多张', steps: 9, play: capture },
   { id: 'translate', title: '翻译', note: '划词翻译与翻译栏', steps: 3, play: translate },
   { id: 'ink', title: '标记', note: 'Alt + 1 / 2 / 3 直接拿起工具', steps: 4, play: ink },
   { id: 'bookmark', title: '书签', note: '夹在页边，Ctrl + ↑ ↓ 跳转', steps: 5, play: bookmark },
