@@ -332,7 +332,7 @@ function titleFrom(question: string) {
 }
 
 // selectionOnly: a quick capture question sends just the question and the selected region.
-type SendOptions = { conversationId?: string; includeDocument?: boolean; includeSelection?: boolean; selectionOnly?: boolean; images?: string[]; attachments?: string[]; excerpts?: Excerpt[] }
+type SendOptions = { /** 重新回答：新的问答换掉这个问题和它原来的回答，前后的对话不动。 */ replace?: string; conversationId?: string; includeDocument?: boolean; includeSelection?: boolean; selectionOnly?: boolean; images?: string[]; attachments?: string[]; excerpts?: Excerpt[] }
 export async function sendChat(descriptor: { id: string; title: string; kind: string }, source: any, onSettings: () => void, onAccepted?: () => void, explicitQuestion?: string, sendOptions: SendOptions = {}) {
   const state = chatState(descriptor.id, sendOptions.conversationId), question = (explicitQuestion ?? state.draft).trim()
   if (!question || state.request) return
@@ -373,7 +373,9 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
     const wireContent = sendOptions.selectionOnly
       ? `${question}${excerptText(excerpts)}${selection.text ? '\n\n[用户选中的内容]\n' + selection.text : ''}${selection.image ? '\n\n[附图是用户在文档里框选的区域，问题针对它]' : ''}${attached.length ? `\n\n[用户附上了 ${attached.length} 张图片]` : ''}`
       : `${question}${excerptText(excerpts)}\n\n[用户当前阅读的文档]\n${descriptor.title}${descriptor.kind === 'pdf' ? ` · 物理 PDF 第 ${context.page} 页` : ' · Markdown 文档'}${selection.text ? '\n\n[用户选中的内容]\n' + selection.text : ''}${attached.length ? `\n\n[用户附上了 ${attached.length} 张图片]` : ''}${state.sideOf ? '\n\n[这是挂在主对话旁边的附属对话（侧边对话）]' : ''}`
-    const history = boundedHistory([...(state.inherited || []).map(item => ({ role: item.role, content: `[主对话里的内容（开启附属对话时）]\n${item.content}` })), ...state.messages.filter(message => !message.failed && !message.compressed).map(message => message.summary || message.note ? { role: 'user', content: wireText(message) } : ({ role: message.role, content: wireText(message) + (message.sources.length ? '\n[此前查到的相关位置]\n' + JSON.stringify(message.sources.slice(0, 8).map(item => ({ sourceId: item.sourceId, page: item.page, line: item.line, text: item.text.slice(0, 400) }))) : '') })), { ...user, content: wireContent }])
+    // 重新回答中间的某一问：只把它之前的对话带给模型。
+    const before = sendOptions.replace ? state.messages.findIndex(message => message.id === sendOptions.replace) : -1
+    const history = boundedHistory([...(state.inherited || []).map(item => ({ role: item.role, content: `[主对话里的内容（开启附属对话时）]\n${item.content}` })), ...(before < 0 ? state.messages : state.messages.slice(0, before)).filter(message => !message.failed && !message.compressed).map(message => message.summary || message.note ? { role: 'user', content: wireText(message) } : ({ role: message.role, content: wireText(message) + (message.sources.length ? '\n[此前查到的相关位置]\n' + JSON.stringify(message.sources.slice(0, 8).map(item => ({ sourceId: item.sourceId, page: item.page, line: item.line, text: item.text.slice(0, 400) }))) : '') })), { ...user, content: wireContent }])
     // The scheduler reports the first queue position before the answer bubble exists.
     let waiting = ''
     ticket = scheduler.acquire({ owner: `${descriptor.id}:${state.id}`, provider: snapshot.provider, signal, onState: (value: any) => {
@@ -384,8 +386,14 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
     } })
     const startedAt = Date.now()
     if (pendingExcerpts.length) state.excerpts = (state.excerpts || []).filter(item => !pendingExcerpts.includes(item.id))
-    state.messages.push(user, { id: crypto.randomUUID(), role: 'assistant', content: '', reasoning: '', sources: [], startedAt, activity: waiting || '准备上下文', usage: { estimated: true, input: estimateTokens(history.map(item => item.content).join('\n')) } })
-    answer = state.messages.at(-1)!
+    const fresh: Message = { id: crypto.randomUUID(), role: 'assistant', content: '', reasoning: '', sources: [], startedAt, activity: waiting || '准备上下文', usage: { estimated: true, input: estimateTokens(history.map(item => item.content).join('\n')) } }
+    // 原来那一问在哪：从它到下一个问题之前（它的回答）整段换掉；找不到就照常接在最后。
+    let at = sendOptions.replace ? state.messages.findIndex(message => message.id === sendOptions.replace) : -1, end = at + 1
+    while (at >= 0 && end < state.messages.length && !(state.messages[end].role === 'user' && !state.messages[end].note)) end++
+    if (at < 0) at = end = state.messages.length
+    state.messages.splice(at, end - at, user, fresh)
+    const asked = state.messages[at]
+    answer = state.messages[at + 1]
     if (!state.title) state.title = titleFrom(question)
     state.updatedAt = startedAt
     if (entry.activeId !== state.id && !sendOptions.conversationId) entry.activeId = state.id
@@ -424,7 +432,7 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
           activity('查看当前页')
           const page = await documentSession.document.tool('pdf_view', { page: documentSession.seed.info.currentPage, block_id: null })
           signal.throwIfAborted()
-          history.at(-1)!.images = [page.dataUrl]; user.images = [page.dataUrl]; state.messages.at(-2)!.images = [page.dataUrl]
+          history.at(-1)!.images = [page.dataUrl]; user.images = [page.dataUrl]; asked.images = [page.dataUrl]
         } else if (documentSession.seed.seed.noTextPages?.length) throw new Error('当前页没有文字层，所选模型不支持图片。请切换图片模型或手动提供文字。')
       }
       let retained = 0
@@ -463,15 +471,14 @@ export function resendQuestion(descriptor: { id: string; title: string; kind: st
   const user = state.messages[index]
   if (!user || user.role !== 'user' || !question.trim()) return
   const lastUser = state.messages.map(message => message.role === 'user' && !message.note ? 'user' : '').lastIndexOf('user')
-  let target = state
-  if (index === lastUser) {
-    if (state.request) return
-    state.messages.splice(index)
-    state.status = ''; state.error = false
-  } else target = branchConversation(descriptor.id, state.id, index > 0 ? state.messages[index - 1].id : null)
+  // 原样重新生成：就在原处换掉那条回答，后面的对话留着。改了问题再问中间的一问，后面的对话已经对不上，才另开分支。
+  const inPlace = index === lastUser || question.trim() === user.content.trim()
+  if (inPlace && state.request) return
+  const target = inPlace ? state : branchConversation(descriptor.id, state.id, index > 0 ? state.messages[index - 1].id : null)
+  if (inPlace) { state.status = ''; state.error = false }
   const ask = user.ask
   void sendChat(descriptor, { page: ask?.page || 1, selection: ask?.text ? { text: ask.text, page: ask.page } : {} }, onSettings, undefined, question.trim(), {
-    conversationId: target.id, includeDocument: ask?.includeDocument ?? target.includeDocument, includeSelection: Boolean(ask?.text), selectionOnly: ask?.selectionOnly, images: user.images?.length ? [user.images[0]!] : undefined, attachments: user.images?.slice(1), excerpts: user.excerpts || [],
+    conversationId: target.id, replace: inPlace ? user.id : undefined, includeDocument: ask?.includeDocument ?? target.includeDocument, includeSelection: Boolean(ask?.text), selectionOnly: ask?.selectionOnly, images: user.images?.length ? [user.images[0]!] : undefined, attachments: user.images?.slice(1), excerpts: user.excerpts || [],
   })
   return target.id
 }

@@ -247,7 +247,8 @@ const editor = ref<HTMLTextAreaElement[]>([])
 function startEdit(message: Message) { editing.value = message.id; editText.value = message.content; void nextTick(() => { const field = editor.value[0]; field?.focus(); field?.setSelectionRange(field.value.length, field.value.length) }) }
 function cancelEdit() { editing.value = null }
 function resend(message: Message, question: string) {
-  follow = true
+  // 重新回答最后一问才跟到底部；换的是中间某一条时，画面留在原处。
+  follow = message.id === lastQuestionId.value
   const id = resendQuestion({ ...props.document }, state.value.id, message.id, question, () => emit('settings'))
   if (id && id !== state.value.id) useConversation(id)
 }
@@ -292,7 +293,8 @@ function spinner(message: Message) { const frames = spinnerFor(message.id); retu
 // 进度里只保留有信息量的状态（排队、读文档、查原文）；「思考中 / 正在回答」由英文动词表达。
 const GENERIC_ACTIVITY = /^(思考中|正在回答|准备上下文|AI 思考中)$/
 function activityNote(message: Message) { const text = message.activity || ''; return GENERIC_ACTIVITY.test(text) ? '' : text }
-const live = (message: Message) => Boolean(busy.value && message === messages.value.at(-1) && message.role === 'assistant' && !message.finishedAt)
+// 正在写的那条通常是最后一条；重新生成中间某一条时，是那条还没写完、正有进度的回答。
+const live = (message: Message) => Boolean(busy.value && message.role === 'assistant' && !message.finishedAt && (message === messages.value.at(-1) || (message.startedAt && message.activity)))
 // 用时按整秒走，小数位跳得太快反而分心。
 function seconds(ms: number) { return ms < 60000 ? `${Math.max(0, Math.floor(ms / 1000))}s` : `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s` }
 function count(value?: number) { return !value ? '0' : value < 1000 ? String(value) : `${(value / 1000).toFixed(value < 10000 ? 1 : 0)}k` }
@@ -949,7 +951,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
             <div v-if="message.content" v-answer="message" class="answer-body" />
             <div v-if="!live(message)" class="answer-meta">
               <button v-if="message.content" class="meta-button" aria-label="复制回答" data-tip="复制回答" @click="copy(message.content)"><AppIcon name="copy" :size="13" /></button>
-              <button v-if="!side || isLastAnswer(message)" class="meta-button" :disabled="busy && isLastAnswer(message)" aria-label="重新生成" :data-tip="isLastAnswer(message) ? '重新生成' : '在新分支中重新生成'" @click="regenerate(message)"><AppIcon name="retry" :size="13" /></button>
+              <button v-if="!side || isLastAnswer(message)" class="meta-button" :disabled="busy" aria-label="重新生成" data-tip="重新生成" @click="regenerate(message)"><AppIcon name="retry" :size="13" /></button>
               <button v-if="!side" class="meta-button" aria-label="从这里分支" data-tip="从这里开一个分支对话" @click="branchFrom(message)"><AppIcon name="branch" :size="13" /></button>
               <span v-if="message.stopped" class="meta-flag">已停止</span>
 
@@ -1249,7 +1251,7 @@ button:disabled{opacity:.4;cursor:default}
 .ai-loading i{display:block;height:10px;border-radius:5px;background:color-mix(in srgb,var(--ink) 7%,transparent)}
 .ai-loading i:nth-child(1){width:62%}.ai-loading i:nth-child(2){width:88%}.ai-loading i:nth-child(3){width:74%}
 /* 问题和它的回答挨得近一些：问题下面的操作按钮浮在间隙里，不再单独占一行。 */
-.ai-message.user{position:relative;display:flex;flex-direction:column;align-items:flex-end;gap:2px;margin-bottom:10px}
+.ai-message.user{content-visibility:visible;position:relative;display:flex;flex-direction:column;align-items:flex-end;gap:2px;margin-bottom:10px}
 .user-question{max-width:88%;padding:9px 14px;border-radius:var(--r-lg) var(--r-lg) var(--r-xs) var(--r-lg);background:color-mix(in srgb,var(--ink) 9%,transparent);border:1px solid var(--hairline);font-size:13.5px;line-height:1.75;white-space:pre-wrap;overflow-wrap:anywhere}
 .question-actions{position:absolute;right:0;top:100%;z-index:2;display:flex;gap:2px;opacity:0;pointer-events:none;transition:opacity var(--dur-2) var(--ease-out)}
 .ai-message.user:hover .question-actions,.question-actions:focus-within{pointer-events:auto}

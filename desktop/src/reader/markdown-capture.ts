@@ -1,7 +1,8 @@
 // 框选 Markdown 的一块区域交给阅读助手：区域里的原文（公式取 LaTeX 源码）加一张截图。
 //
 // Markdown 不是画在画布上的，截图靠把相交的段落连同计算后的样式、用到的网页字体和本地图片
-// 一起克隆进 SVG <foreignObject>，再画到画布上。网络图片取不到像素，换成同样大小的灰底占位。
+// 一起克隆进 SVG <foreignObject>，再画到画布上。网络图片另外取一次原图嵌进去（桌面版走本机的网络通道，
+// 不受跨域限制）；实在取不到的，换成同样大小的灰底占位。
 import { cropImageAsync } from './crop'
 
 export interface Box { left: number; top: number; width: number; height: number }
@@ -107,14 +108,57 @@ function inlineStyles(source: Element, clone: Element, families: Set<string>) {
   for (let index = 0; index < sources.length && index < clones.length; index++) inlineStyles(sources[index], clones[index], families)
 }
 
-async function inlineImages(clone: HTMLElement, sources: HTMLImageElement[]) {
+/* 网络图片：页面里能显示，但像素读不回来，只能把原图再取一次。 */
+const remoteData = new Map<string, Promise<string>>()
+const REMOTE_LIMIT = 12 * 1024 * 1024
+function imageMime(bytes: Uint8Array, declared: string | null) {
+  const head = (...values: number[]) => values.every((value, index) => bytes[index] === value)
+  if (head(0x89, 0x50, 0x4e, 0x47)) return 'image/png'
+  if (head(0xff, 0xd8, 0xff)) return 'image/jpeg'
+  if (head(0x47, 0x49, 0x46, 0x38)) return 'image/gif'
+  if (head(0x52, 0x49, 0x46, 0x46) && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) return 'image/webp'
+  if (head(0x42, 0x4d)) return 'image/bmp'
+  const type = (declared || '').split(';')[0].trim().toLowerCase()
+  return /^image\/(avif|svg\+xml|x-icon|vnd\.microsoft\.icon)$/.test(type) ? type : ''
+}
+function remoteImage(url: string) {
+  let cached = remoteData.get(url)
+  if (!cached) {
+    cached = (async () => {
+      const { transportFetch } = await import('../ai/transport.mjs')
+      const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 8000)
+      try {
+        const response: Response = await transportFetch(url, { signal: controller.signal, mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer' })
+        if (!response.ok) throw new Error(String(response.status))
+        const bytes = new Uint8Array(await response.arrayBuffer())
+        const mime = bytes.length <= REMOTE_LIMIT ? imageMime(bytes, response.headers.get('content-type')) : ''
+        if (!mime) throw new Error('not an image')
+        return await blobToDataUrl(new Blob([bytes], { type: mime }))
+      } finally { clearTimeout(timer) }
+    })()
+    cached.catch(() => remoteData.delete(url))
+    // 只留最近的几十张，免得长文档截多了占内存。
+    if (remoteData.size >= 40) remoteData.delete(remoteData.keys().next().value!)
+    remoteData.set(url, cached)
+  }
+  return cached
+}
+
+async function inlineImages(clone: HTMLElement, sources: HTMLImageElement[], zoom: number) {
   const images = [...clone.querySelectorAll('img')]
   await Promise.all(images.map(async (image, index) => {
-    const src = sources[index]?.currentSrc || image.getAttribute('src') || ''
+    const source = sources[index], src = source?.currentSrc || image.getAttribute('src') || ''
+    image.removeAttribute('srcset'); image.removeAttribute('loading')
+    // 尺寸按页面上实际显示的写死：换了地址或取不到图，版面都不动。
+    const box = source?.getBoundingClientRect()
+    if (box?.width && box.height) { image.style.width = `${box.width / zoom}px`; image.style.height = `${box.height / zoom}px` }
     const local = src.startsWith('blob:') || src.startsWith('data:') || (src && new URL(src, location.href).origin === location.origin)
-    if (local) { try { image.setAttribute('src', src.startsWith('data:') ? src : await dataUrl(src)); return } catch { /* fall through to the placeholder */ } }
-    // Network images cannot be read back into a canvas; keep their space.
-    image.removeAttribute('src'); image.removeAttribute('srcset')
+    try {
+      if (local) { image.setAttribute('src', src.startsWith('data:') ? src : await dataUrl(src)); return }
+      if (/^https?:/i.test(src)) { image.setAttribute('src', await remoteImage(src)); return }
+    } catch { /* fall through to the placeholder */ }
+    image.removeAttribute('src'); image.setAttribute('alt', '')
+    image.style.display = 'inline-block'
     image.style.background = 'repeating-linear-gradient(45deg, rgb(128 128 128 / .14) 0 8px, rgb(128 128 128 / .22) 8px 16px)'
   }))
 }
@@ -147,7 +191,7 @@ export async function captureRegion(article: HTMLElement, region: Box, zoom = 1)
     images.push(...block.querySelectorAll('img'))
     stage.append(clone)
   }
-  await inlineImages(stage, images)
+  await inlineImages(stage, images, zoom)
   const fonts = await fontCss(families)
   const markup = new XMLSerializer().serializeToString(stage)
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><foreignObject x="0" y="0" width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml"><style>${fonts.replace(/<\//g, '<\\/')}</style>${markup.replace(/^<div xmlns="http:\/\/www\.w3\.org\/1999\/xhtml"/, '<div')}</div></foreignObject></svg>`

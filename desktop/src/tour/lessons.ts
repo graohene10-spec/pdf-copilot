@@ -348,7 +348,7 @@ const capture: Play = async (stage, scene, say) => {
   stage.look('.tw-ask', 1.6, [.5, -1.1])
   await stage.wait(700)
 
-  say({ text: '刚截的图是虚线框，左键点一下才留住', mouse: 'left', top: true })
+  say({ text: '再截一张会换掉这张；左键点一下固定住它', mouse: 'left', top: true })
   await click(stage, '.tw-shot-0')
   scene.kept = 1
   await stage.wait(900)
@@ -374,13 +374,13 @@ const capture: Play = async (stage, scene, say) => {
   stage.look({ x: 800, y: 480 }, 1.15)
   await stage.wait(800)
 
-  say({ text: '按住再截，上一张自动留住', keys: ['Shift'], mouse: 'right' })
+  say({ text: '按住再截，上一张自动固定', keys: ['Shift'], mouse: 'right' })
   await stage.tween(420, k => { scene.scroll = 120 - k * 120 })
   await frame(stage, scene, '.tw-target', [8, 5])
   scene.kept = 2
   await stage.wait(1000)
 
-  say('点一个气泡，留住的图一起发出去')
+  say('点一个气泡，输入框里的图一起发出去')
   await click(stage, '.tw-bubble-0')
   scene.quick = false; scene.frame = null; scene.shots = 0; scene.kept = 0; scene.shotSent = true
   stage.look('.tw-chat', 1.5, [.5, .2])
@@ -642,7 +642,7 @@ export const LESSONS: Lesson[] = [
   { id: 'explain', title: '快速解释', note: '选中文字后按中键', steps: 7, play: explain },
   { id: 'visual', title: '用图解释', note: '图解、可拖的图、合集', steps: 3, play: visual },
   { id: 'assistant', title: '阅读助手', note: '提问、附属对话、分支、指令', steps: 5, play: assistant },
-  { id: 'capture', title: '截图提问', note: '框选、右键拖动、留住多张', steps: 7, play: capture },
+  { id: 'capture', title: '截图提问', note: '框选、右键拖动、固定多张', steps: 7, play: capture },
   { id: 'translate', title: '翻译', note: '划词翻译与翻译栏', steps: 3, play: translate },
   { id: 'ink', title: '标记', note: 'Alt + 1 / 2 / 3 直接拿起工具', steps: 4, play: ink },
   { id: 'bookmark', title: '书签', note: '夹在页边，Ctrl + ↑ ↓ 跳转', steps: 5, play: bookmark },
