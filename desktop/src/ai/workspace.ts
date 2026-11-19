@@ -3,6 +3,7 @@ import { loadAiSettings, loadApiKey } from './settings.mjs'
 import { RequestScheduler } from './request-scheduler.mjs'
 import { library } from '../sdk'
 import { recordUsage } from './usage'
+import { forgetConversation, memorize, memoryInstructions, memoryReady, retagMemory } from './memory'
 
 export type Usage = { input?: number; output?: number; reasoning?: number; estimated: boolean }
 export type Message = {
@@ -34,6 +35,8 @@ export type ChatState = {
   inherited?: { role: 'user' | 'assistant'; content: string }[]
   /** 输入框里还没发出去的摘录。 */
   excerpts?: Excerpt[]
+  /** 这段对话记不记进「记忆」（读者学过什么）。默认记；false 是读者关掉了。 */
+  memory?: boolean
 }
 type DocumentChats = { list: ChatState[]; activeId: string; loaded: boolean; loading?: Promise<void> }
 
@@ -146,11 +149,14 @@ export function removeMessage(documentId: string, conversationId: string, messag
 export function activeConversationId(documentId: string) { return chats(documentId).activeId }
 export function selectConversation(documentId: string, conversationId: string) {
   const entry = chats(documentId)
-  if (entry.list.some(item => item.id === conversationId)) entry.activeId = conversationId
+  if (!entry.list.some(item => item.id === conversationId)) return
+  if (entry.activeId !== conversationId) flushMemory(documentId, entry.activeId)
+  entry.activeId = conversationId
 }
 /** Start a fresh conversation, reusing an untouched empty one. */
 export function newConversation(documentId: string): ChatState {
   const entry = chats(documentId)
+  flushMemory(documentId, entry.activeId)
   const empty = entry.list.find(item => !item.sideOf && !item.messages.length && !item.request)
   if (empty) { entry.activeId = empty.id; empty.updatedAt = Date.now(); return empty }
   const conversation = blank(documentId)
@@ -166,7 +172,86 @@ export function deleteConversation(documentId: string, conversationId: string) {
   entry.list = entry.list.filter(item => item !== conversation && item.sideOf !== conversationId)
   if (!entry.list.some(item => !item.sideOf)) entry.list.push(blank(documentId))
   if (entry.activeId === conversationId) entry.activeId = entry.list.filter(item => !item.sideOf).sort((a, b) => b.updatedAt - a.updatedAt)[0]!.id
+  // 对话删了，它记下的东西也一起忘掉。
+  clearTimeout(memoryTimers.get(conversationId)); memoryTimers.delete(conversationId)
+  forgetConversation(conversationId)
   schedulePersist(documentId)
+}
+export function renameConversation(documentId: string, conversationId: string, title: string) {
+  const conversation = chats(documentId).list.find(item => item.id === conversationId)
+  const next = title.replace(/\s+/g, ' ').trim().slice(0, 60)
+  if (!conversation || !next) return
+  conversation.title = next
+  retagMemory(conversationId, { title: next })
+  schedulePersist(documentId)
+}
+/** 这段对话记不记进记忆。关掉时把已经记下的也忘掉。 */
+export function setConversationMemory(documentId: string, conversationId: string, on: boolean) {
+  const conversation = chats(documentId).list.find(item => item.id === conversationId)
+  if (!conversation) return
+  conversation.memory = on ? undefined : false
+  if (!on) { clearTimeout(memoryTimers.get(conversationId)); memoryTimers.delete(conversationId); forgetConversation(conversationId) }
+  else scheduleMemory(conversation, 1500)
+  schedulePersist(documentId)
+}
+/** 把一段对话（连同它的附属对话）挪到另一本书名下。正在回答的不能挪。 */
+export async function moveConversation(fromId: string, conversationId: string, to: { id: string; title: string; kind: string }): Promise<boolean> {
+  if (fromId === to.id) return false
+  await Promise.all([loadConversations(fromId), loadConversations(to.id)])
+  const from = chats(fromId), target = chats(to.id)
+  const moved = from.list.filter(item => item.id === conversationId || item.sideOf === conversationId)
+  if (!moved.some(item => item.id === conversationId) || moved.some(item => item.request)) return false
+  from.list = from.list.filter(item => !moved.includes(item))
+  if (!from.list.some(item => !item.sideOf)) from.list.push(blank(fromId))
+  if (!from.list.some(item => item.id === from.activeId)) from.activeId = from.list.filter(item => !item.sideOf).sort((a, b) => b.updatedAt - a.updatedAt)[0]!.id
+  for (const item of moved) { item.documentId = to.id; target.list.push(item) }
+  rememberBook(to)
+  retagMemory(conversationId, { documentId: to.id, documentTitle: to.title })
+  flushPersist(fromId); flushPersist(to.id)
+  return true
+}
+
+// ---- 有对话的书：书从文档库移除以后，对话和记忆还在，靠这份名单认得它们原来属于哪本书 ----
+const BOOKS_KEY = 'ai.conversations.books.v1'
+export type BookRecord = { title: string; kind: string; at: number }
+export const conversationBooks = reactive<Record<string, BookRecord>>({})
+export const booksReady: Promise<void> = (async () => {
+  try {
+    const value = JSON.parse(await library.getSetting(BOOKS_KEY) || '{}')
+    for (const [id, book] of Object.entries<any>(value || {})) if (book && typeof book.title === 'string' && !conversationBooks[id]) conversationBooks[id] = { title: book.title, kind: String(book.kind || 'pdf'), at: Number(book.at) || 0 }
+  } catch { /* 没有名单 */ }
+})()
+let booksTimer: ReturnType<typeof setTimeout> | undefined
+function saveBooks() { clearTimeout(booksTimer); booksTimer = setTimeout(() => { void booksReady.then(() => library.setSetting(BOOKS_KEY, JSON.stringify(conversationBooks))).catch(() => {}) }, 400) }
+export function rememberBook(descriptor: { id: string; title: string; kind: string }) {
+  const known = conversationBooks[descriptor.id]
+  if (known && known.title === descriptor.title && known.kind === descriptor.kind) return
+  conversationBooks[descriptor.id] = { title: descriptor.title, kind: descriptor.kind, at: known?.at || Date.now() }
+  saveBooks()
+}
+export function forgetBook(documentId: string) { if (conversationBooks[documentId]) { delete conversationBooks[documentId]; saveBooks() } }
+
+// ---- 记忆：对话告一段落后，整理出读者学了什么 ----
+const memoryTimers = new Map<string, ReturnType<typeof setTimeout>>()
+function runMemory(conversation: ChatState) {
+  if (conversation.sideOf || conversation.memory === false || conversation.request) return
+  const turns = conversation.messages.filter(message => !message.note && !message.summary && message.content && !(message.failed && message.role === 'assistant')).map(message => ({ role: message.role, content: message.content }))
+  void memorize(conversation, conversationBooks[conversation.documentId]?.title || '', turns)
+}
+/** 答完之后过一会儿再整理：接着追问的话，等这一串问完一起整理。 */
+function scheduleMemory(conversation: ChatState, delay = 40000) {
+  if (conversation.sideOf || conversation.memory === false) return
+  clearTimeout(memoryTimers.get(conversation.id))
+  memoryTimers.set(conversation.id, setTimeout(() => { memoryTimers.delete(conversation.id); runMemory(conversation) }, delay))
+}
+/** 离开一段对话（换一段、新开一段、关掉）时，等着整理的马上整理。 */
+function flushMemory(documentId: string, conversationId?: string) {
+  for (const conversation of documents.get(documentId)?.list || []) {
+    if (conversationId && conversation.id !== conversationId) continue
+    if (!memoryTimers.has(conversation.id)) continue
+    clearTimeout(memoryTimers.get(conversation.id)); memoryTimers.delete(conversation.id)
+    runMemory(conversation)
+  }
 }
 /** Copy a conversation up to (and including) one message into a new conversation and show it. */
 export function branchConversation(documentId: string, conversationId: string, uptoMessageId: string | null): ChatState {
@@ -243,6 +328,7 @@ export function closeChat(documentId: string) {
   const entry = documents.get(documentId)
   if (!entry) return
   for (const item of entry.list) item.request?.controller.abort()
+  flushMemory(documentId)
   flushPersist(documentId)
   documents.delete(documentId)
 }
@@ -255,7 +341,7 @@ function serialize(entry: DocumentChats) {
   const kept = new Set(mains.map(item => item.id))
   const sides = entry.list.filter(item => item.sideOf && kept.has(item.sideOf) && item.messages.length)
   return JSON.stringify({ activeId: entry.activeId, list: [...mains, ...sides].map(item => ({
-    id: item.id, title: item.title, createdAt: item.createdAt, updatedAt: item.updatedAt, branchOf: item.branchOf, sideOf: item.sideOf, inherited: item.inherited,
+    id: item.id, title: item.title, createdAt: item.createdAt, updatedAt: item.updatedAt, branchOf: item.branchOf, sideOf: item.sideOf, inherited: item.inherited, memory: item.memory,
     messages: item.messages.filter(message => !message.failed || message.content).slice(-MAX_MESSAGES).map(({ images: _images, activity: _activity, ...message }) => ({ ...message, content: message.content.slice(0, 60000), reasoning: message.reasoning?.slice(0, 20000), sources: message.sources.slice(0, 24).map(source => ({ ...source, text: String(source.text || '').slice(0, 600) })) })),
   })) })
 }
@@ -286,7 +372,7 @@ export function loadConversations(documentId: string): Promise<void> {
       for (const item of Array.isArray(stored?.list) ? stored.list : []) {
         if (!item || typeof item.id !== 'string' || known.has(item.id) || !Array.isArray(item.messages)) continue
         const conversation = blank(documentId)
-        Object.assign(conversation, { id: item.id, title: String(item.title || ''), sideOf: typeof item.sideOf === 'string' ? item.sideOf : undefined, inherited: Array.isArray(item.inherited) ? item.inherited.filter((entry: any) => entry && typeof entry.content === 'string' && (entry.role === 'user' || entry.role === 'assistant')) : undefined, branchOf: item.branchOf && typeof item.branchOf.conversationId === 'string' ? { conversationId: item.branchOf.conversationId, title: String(item.branchOf.title || '') } : undefined, createdAt: Number(item.createdAt) || Date.now(), updatedAt: Number(item.updatedAt) || Date.now(),
+        Object.assign(conversation, { id: item.id, title: String(item.title || ''), memory: item.memory === false ? false : undefined, sideOf: typeof item.sideOf === 'string' ? item.sideOf : undefined, inherited: Array.isArray(item.inherited) ? item.inherited.filter((entry: any) => entry && typeof entry.content === 'string' && (entry.role === 'user' || entry.role === 'assistant')) : undefined, branchOf: item.branchOf && typeof item.branchOf.conversationId === 'string' ? { conversationId: item.branchOf.conversationId, title: String(item.branchOf.title || '') } : undefined, createdAt: Number(item.createdAt) || Date.now(), updatedAt: Number(item.updatedAt) || Date.now(),
           messages: item.messages.filter((message: any) => message && (message.role === 'user' || message.role === 'assistant')).map((message: any) => ({ ...message, content: String(message.content || ''), sources: Array.isArray(message.sources) ? message.sources : [] })) })
         entry.list.push(conversation)
       }
@@ -395,6 +481,7 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
     const asked = state.messages[at]
     answer = state.messages[at + 1]
     if (!state.title) state.title = titleFrom(question)
+    rememberBook(descriptor)
     state.updatedAt = startedAt
     if (entry.activeId !== state.id && !sendOptions.conversationId) entry.activeId = state.id
     // Immediate suggestions are independent of the user's unfinished question.
@@ -406,7 +493,10 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
     activity('思考中')
     const output = () => { if (answer?.usage?.estimated) answer.usage.output = estimateTokens(answer.content) + estimateTokens(answer.reasoning || '') }
     const { UI_INSTRUCTIONS } = await import('./intelligent-ui')
-    const options = { ...snapshot, apiKey, signal, messages: history, extraInstructions: UI_INSTRUCTIONS.assistant,
+    // 读者的学习记录（记忆）：只给主对话和它的附属对话，用来定讲解的深浅。
+    await memoryReady()
+    const remembered = memoryInstructions({ id: state.sideOf || state.id, documentId: descriptor.id })
+    const options = { ...snapshot, apiKey, signal, messages: history, extraInstructions: UI_INSTRUCTIONS.assistant + (remembered ? '\n\n' + remembered : ''),
       onDelta: (text: string) => { if (valid() && answer) { answer.firstTokenAt ||= Date.now(); answer.content += text; answer.activity = '正在回答'; output() } },
       onReasoning: (text: string) => { if (valid() && answer) { answer.reasoning = (answer.reasoning || '') + text; answer.activity = '思考中'; output() } },
       onProgress: (text: string) => activity(text.replace(/[…。]+$/, '')),
@@ -440,7 +530,7 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
       activity('思考中')
       await streamDocumentChat(options, documentSession.document, documentSession.seed)
     } else await streamChat(options)
-    if (valid()) { state.status = ''; noticeFinished(state, descriptor.title) }
+    if (valid()) { state.status = ''; noticeFinished(state, descriptor.title); scheduleMemory(state) }
   } catch (error: any) {
     if (answer) { answer.failed = true; answer.stopped = signal.aborted }
     if (state.request === request && entry.list.includes(state)) {

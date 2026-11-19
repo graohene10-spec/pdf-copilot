@@ -3,7 +3,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, defineAsync
 import 'katex/dist/katex.min.css'
 import { getProvider, getNativeModels, getNativeStatus } from '../ai/providers.mjs'
 import { nativeModelInventory, registerNativeModelInventory } from '../ai/native-models'
-import { adoptTurns, addExcerpt, removeExcerpt, removeMessage, compressConversation, sideConversation, chatState, sendChat, stopChat, configureRequests, taskSummary, conversations, activeConversationId, selectConversation, newConversation, deleteConversation, loadConversations, conversationTokens, contextWindow, branchConversation, resendQuestion, watchConversation, allConversations, pinMessage, MAX_ATTACHMENTS, pendingImages, setPendingImages, keepImage, type Message, type ChatState } from '../ai/workspace'
+import { setConversationMemory, adoptTurns, addExcerpt, removeExcerpt, removeMessage, compressConversation, sideConversation, chatState, sendChat, stopChat, configureRequests, taskSummary, conversations, activeConversationId, selectConversation, newConversation, deleteConversation, loadConversations, conversationTokens, contextWindow, branchConversation, resendQuestion, watchConversation, allConversations, pinMessage, MAX_ATTACHMENTS, pendingImages, setPendingImages, keepImage, type Message, type ChatState } from '../ai/workspace'
 import { renderMarkdown, renderDiagrams } from '../ai/render'
 import { mountIntelligentUi } from '../ai/intelligent-ui'
 import { nudgeGlassMotion } from '../ui/glass-motion'
@@ -28,7 +28,7 @@ const props = defineProps<{ document: { id: string; title: string; kind: string 
   side?: boolean; mainTitle?: string
   /** 外层窗口刚放进附属对话输入框的摘录，用来闪一下。 */
   arrived?: string }>()
-const emit = defineEmits<{ jump: [value: { page: number; rect?: any; line?: number }]; close: []; settings: []; error: [value: string]; clearSelection: []; conversation: [id: string]; grab: [event: PointerEvent]; switchDocument: [id: string]; openConversation: [value: { documentId: string; conversationId: string }]
+const emit = defineEmits<{ jump: [value: { page: number; rect?: any; line?: number }]; close: []; settings: []; error: [value: string]; clearSelection: []; conversation: [id: string]; manage: []; grab: [event: PointerEvent]; switchDocument: [id: string]; openConversation: [value: { documentId: string; conversationId: string }]
   /** 侧边对话打开 / 收起：整个助手窗口要加宽（或收回）的像素数，0 表示收起。 */
   side: [width: number] }>()
 const settings = ref<any>(loadAiSettings())
@@ -882,7 +882,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
         <button class="conversation-title" :aria-expanded="historyOpen" aria-label="对话记录" data-tip="对话记录" @click="historyOpen = !historyOpen"><span class="title-text">{{ title }}</span><small>{{ document.title }}</small></button>
         <Transition name="history-pop">
           <div v-if="historyOpen" class="history-menu" role="dialog" aria-label="对话记录">
-            <button class="history-new" @click="startConversation"><AppIcon name="compose" :size="15" />新对话</button>
+            <div class="history-top"><button class="history-new" @click="startConversation"><AppIcon name="compose" :size="15" />新对话</button><button class="history-new history-manage" data-tip="管理全部对话和记忆" @click="historyOpen = false; emit('manage')"><AppIcon name="list" :size="15" />管理</button></div>
             <div v-if="alternatives?.length" class="history-switch"><p class="history-label">助手正在读</p><button v-marquee class="current" aria-current="true" tabindex="-1"><span class="marquee-text">{{ document.title }}</span></button><button v-for="item in alternatives" :key="item.id" v-marquee @click="historyOpen = false; emit('switchDocument', item.id)"><span class="marquee-text">改读 {{ item.title }}</span></button></div>
             <div class="history-scope" role="tablist" aria-label="对话范围"><button role="tab" :aria-selected="historyScope === 'document'" @click="historyScope = 'document'">这份文档</button><button role="tab" :aria-selected="historyScope === 'all'" @click="showAll">全部文档</button></div>
             <div v-if="historyScope === 'all'" class="history-list">
@@ -912,6 +912,8 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
         <div v-if="!messages.length" class="ai-welcome">
           <AssistantMark :kind="avatar.kind" :image="avatar.image" :size="56" class="ai-welcome-mark" />
           <!-- 问候语一个字一个字显出来，像刚写上去的；只在打开时写一遍。 -->
+          <!-- 新对话记不记进记忆：默认记，在这里点一下关掉。 -->
+          <button v-if="!side" type="button" class="memory-chip" :class="{ off: state.memory === false }" role="switch" :aria-checked="state.memory !== false" data-tip="记忆只记你学过什么，用来调整讲解的深浅；删除对话时一起忘掉" @click="setConversationMemory(document.id, state.id, state.memory === false)"><AppIcon name="memory" :size="13" />{{ state.memory === false ? '这段对话不记入记忆' : '这段对话记入记忆' }}</button>
           <h2 class="ai-welcome-lead" :lang="greeting.lang === 'zh' ? 'zh-CN' : 'en'" :aria-label="greeting.text"><span v-for="(glyph, index) in Array.from(greeting.text)" :key="index" class="lead-glyph" aria-hidden="true" :style="{ '--i': Math.min(index, 60) }">{{ glyph }}</span></h2>
         </div>
         <div v-if="!contentReady && messages.length" class="ai-loading" aria-hidden="true"><i></i><i></i><i></i></div>
@@ -1117,6 +1119,9 @@ button:disabled{opacity:.4;cursor:default}
 .history-menu{--ink:var(--surface-ink);--control-ink:var(--surface-ink);--secondary:var(--surface-secondary);--muted:var(--surface-muted);background:var(--surface);border:1px solid var(--line-soft);box-shadow:0 18px 44px -18px rgb(0 0 0 / .36),0 2px 6px rgb(0 0 0 / .08);color:var(--ink)}
 .history-menu{position:absolute;left:0;top:calc(100% + 6px);z-index:30;width:min(300px,calc(100vw - 40px));max-height:min(420px,60vh);display:flex;flex-direction:column;padding:6px;border-radius:var(--r-lg);transform-origin:20px 0}
 .history-new{display:flex;align-items:center;gap:8px;height:36px;padding:0 12px;border:0;border-radius:var(--r-control);background:color-mix(in srgb,var(--ink) 6%,transparent);box-shadow:none;font-size:13px;font-weight:600}
+.history-top{display:flex;gap:6px}
+.history-top .history-new{flex:1}
+.history-top .history-manage{flex:none}
 .history-new:hover{background:color-mix(in srgb,var(--ink) 10%,transparent)}
 .history-label{margin:12px 10px 6px;font-size:11px;font-weight:600;color:var(--muted)}
 .history-scope{display:grid;grid-template-columns:1fr 1fr;gap:2px;margin:8px 0 4px;padding:2px;border-radius:var(--r-control);background:color-mix(in srgb,var(--ink) 6%,transparent)}
@@ -1247,6 +1252,11 @@ button:disabled{opacity:.4;cursor:default}
 .rail-pop-leave-active{transition:opacity var(--dur-1) var(--ease-out)}
 .rail-pop-enter-from,.rail-pop-leave-to{opacity:0;translate:6px 0}
 .ai-welcome{display:flex;flex-direction:column;align-items:center;text-align:center;padding:8vh 6px 8px;animation:zg-rise-in var(--dur-bounce) var(--spring-snappy) both}
+.memory-chip{order:3;display:inline-flex;align-items:center;gap:6px;height:26px;margin-top:16px;padding:0 11px 0 9px;border:1px solid var(--hairline);border-radius:999px;background:none;box-shadow:none;color:var(--secondary);font:inherit;font-size:11.5px;cursor:pointer;transition:color var(--dur-2) var(--ease-out),border-color var(--dur-2) var(--ease-out),opacity var(--dur-2) var(--ease-out)}
+.memory-chip svg{color:var(--accent)}
+.memory-chip.off{color:var(--muted);border-style:dashed}
+.memory-chip.off svg{color:var(--muted);opacity:.6}
+.memory-chip:hover{border-color:color-mix(in srgb,var(--ink) 30%,transparent);color:var(--ink)}
 .ai-welcome-mark{margin-bottom:16px;animation:zg-pop-in var(--dur-bounce) var(--spring-bouncy) both}
 /* 问候固定用内置的 Anthropic Serif（不随阅读字体设置变化），像 Claude 的「Good afternoon」；
    古诗没有对应的西文字形，退到宋体 / 思源宋体，仍是衬线。 */
