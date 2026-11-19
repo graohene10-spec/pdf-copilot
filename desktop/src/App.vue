@@ -1075,7 +1075,7 @@ function bookmarkPlace(id: string, markId: string) {
 }
 // 拖动书签松手：竖向换成它标记的位置，横向是贴右边、贴左边（掉头）还是自己摆的比例。
 function moveBookmark(id: string, markId: string, to: { top: number; left: number; dock: 'right' | 'left' | 'free'; flip: boolean }) {
-  const instance = readerInstances.get(id), position: BookmarkPosition | undefined = instance?.bookmarkAt?.(to.top)
+  const instance = readerInstances.get(id), position: BookmarkPosition | undefined = instance?.bookmarkAt?.(to.top, to.left, to.dock)
   if (!position) return
   let x: number | undefined
   if (to.dock === 'free') { const at = instance.bookmarkPlace?.(position); if (at && at.left > at.edge) x = Math.round((to.left - at.edge) / (at.left - at.edge) * 1000) / 1000 }

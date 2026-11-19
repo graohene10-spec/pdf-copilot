@@ -711,27 +711,42 @@ function bookmarkRatio(position: { page?: number; fraction?: number }) {
   const top = viewer.stack.offsetTop + viewer.offsets[index] + fraction * viewer.heights[index]
   return Math.max(0, Math.min(1, top / Math.max(1, container.value.scrollHeight)))
 }
-/** 书签在书页这一层里的位置：挂在滚动内容里（host），坐标相对它的左上角；left 是那一页的右边。书签跟书页一起滚，滚到工具栏下面就被挡住。 */
+/** 书签在书页这一层里的位置：挂在滚动内容里（host），坐标相对它的左上角；left / edge 是书的右边和左边（双页时是这一行两页合起来的外沿）。书签跟书页一起滚，滚到工具栏下面就被挡住。 */
 function bookmarkPlace(position: { page?: number; fraction?: number }) {
   const index = Math.max(0, (position.page || 1) - 1), view = container.value
   if (!active || !viewer?.pdf || !view || viewer.offsets?.[index] === undefined) return null
   const slot = view.querySelector<HTMLElement>(`.page-slot[data-page="${index + 1}"]`)
   if (!slot) return null
-  const stack = viewer.stack as HTMLElement
+  const stack = viewer.stack as HTMLElement, row = bookmarkRow(index + 1, slot)
+  const base = -view.getBoundingClientRect().left - view.clientLeft + view.scrollLeft
   return {
     host: view, scroller: view, shift: 0,
     top: stack.offsetTop + viewer.offsets[index] + (position.fraction || 0) * viewer.heights[index],
-    left: slot.getBoundingClientRect().right - view.getBoundingClientRect().left - view.clientLeft + view.scrollLeft,
-    edge: slot.getBoundingClientRect().left - view.getBoundingClientRect().left - view.clientLeft + view.scrollLeft,
+    left: row[row.length - 1]!.getBoundingClientRect().right + base,
+    edge: row[0]!.getBoundingClientRect().left + base,
     width: Math.max(view.clientWidth, stack.offsetLeft + stack.offsetWidth + 30), height: stack.offsetTop + stack.offsetHeight + 24,
   }
 }
-/** 反过来：书页这一层里的一个高度，对应哪一页的什么位置（拖动书签时用）。 */
-function bookmarkAt(top: number) {
-  if (!active || !viewer?.pdf || !container.value || !viewer.offsets?.length) return undefined
+// 和这一页并排的那几页（单页时只有它自己），从左到右。
+function bookmarkRow(number: number, own: HTMLElement): HTMLElement[] {
+  const row = (viewer.rowSlots?.(number) || []).filter((item: HTMLElement | undefined) => item?.isConnected) as HTMLElement[]
+  return row.length ? row : [own]
+}
+/** 反过来：书页这一层里的一个位置，对应哪一页的什么地方（拖动书签时用）。双页时看横向落在哪一页；贴边的归靠边的那一页。 */
+function bookmarkAt(top: number, left?: number, dock?: 'right' | 'left' | 'free') {
+  const view = container.value
+  if (!active || !viewer?.pdf || !view || !viewer.offsets?.length) return undefined
   const y = top - viewer.stack.offsetTop
   let index = 0
   while (index < viewer.offsets.length - 1 && viewer.offsets[index + 1] <= y) index++
+  const row = (viewer.rowSlots?.(index + 1) || []) as HTMLElement[]
+  if (row.length > 1) {
+    const base = -view.getBoundingClientRect().left - view.clientLeft + view.scrollLeft
+    const gap = (slot: HTMLElement) => { const box = slot.getBoundingClientRect(), from = box.left + base, to = box.right + base; return left === undefined ? 0 : Math.max(0, from - left, left - to) }
+    const chosen = dock === 'left' ? row[0]! : dock === 'right' ? row[row.length - 1]! : row.reduce((best, slot) => gap(slot) < gap(best) ? slot : best)
+    const number = Number(chosen.dataset.page)
+    if (number >= 1 && viewer.offsets[number - 1] !== undefined) index = number - 1
+  }
   return { page: index + 1, fraction: Math.max(-0.5, Math.min(1.5, (y - viewer.offsets[index]) / Math.max(1, viewer.heights[index]))) }
 }
 function goToBookmark(position: { page?: number; fraction?: number }) {
