@@ -31,6 +31,7 @@ function openSettings() { window.dispatchEvent(new CustomEvent('kaizhi:open-ai-s
 
 <template>
   <div class="explain-body">
+    <p v-if="item.question" class="ex-question">{{ item.question }}</p>
     <p v-if="thinking && !item.text" class="ex-think"><AssistantMark :kind="avatar.kind" :image="avatar.image" :size="18" /><span class="ex-verb">{{ title }}…</span><span class="ex-time">{{ elapsed }}s</span></p>
     <div v-if="item.status === 'running' && !item.text && chain" class="ex-chain" aria-live="off"><p>{{ chain }}</p></div>
     <div v-if="item.text" ref="body" class="ex-text" v-html="renderMarkdown(item.text)"></div>

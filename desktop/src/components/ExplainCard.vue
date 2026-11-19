@@ -8,11 +8,15 @@ import AppIcon from './AppIcon.vue'
 import { hintLearned, offerHint } from '../ui/hints'
 import ThoughtChip from './ThoughtChip.vue'
 import ExplainBody from './ExplainBody.vue'
-import { rerunExplain, type ExplainCardState } from '../ai/explain'
+import ExplainTitle from './ExplainTitle.vue'
+import { askExplain, rerunExplain, type ExplainCardState } from '../ai/explain'
 
 const props = defineProps<{ card: ExplainCardState }>()
 const emit = defineEmits<{ close: [] }>()
 const box = ref<HTMLElement>()
+// 双击标题那一行（按钮除外）：自己问一句。拖动卡片时指针被这一行抓着，双击事件落在这一行上而不是词条上。
+const title = ref<{ begin: () => void }>()
+function startAsk(event: MouseEvent) { if (!(event.target as HTMLElement).closest('button, input')) title.value?.begin() }
 const place = ref(props.card.pinned && props.card.screen ? { ...props.card.screen } : { left: props.card.x, top: props.card.y })
 const dragging = ref(false)
 // 从翻译卡片变过来：先显示译文，挂上去之后换成解释。
@@ -94,7 +98,7 @@ function toggleFollow() { props.card.follow = props.card.follow === 'page' ? 'sc
 function menu(event: MouseEvent) { window.dispatchEvent(new CustomEvent('kaizhi:explain-menu', { detail: { kind: 'card', id: props.card.id, x: event.clientX, y: event.clientY } })) }
 // 拖动只按指针走过的距离挪，不去量卡片的外框：草稿主题的便签是歪着贴的，量出来的外框比它实际的位置偏一点，松手时会跳一下。
 function startDrag(event: PointerEvent) {
-  if (event.button !== 0 || (event.target as HTMLElement).closest('button')) return
+  if (event.button !== 0 || (event.target as HTMLElement).closest('button, input')) return
   const handle = event.currentTarget as HTMLElement
   let x = event.clientX, y = event.clientY
   handle.setPointerCapture(event.pointerId); dragging.value = true; event.preventDefault()
@@ -155,9 +159,9 @@ watch(() => props.card.item.status, (status, previous) => { if (previous === 'ru
     <Transition name="st-swap" mode="out-in" @after-enter="settle">
       <div v-if="showFrom" key="from" class="st-text" v-html="renderMarkdown(card.from || '')"></div>
       <div v-else key="explain" class="st-explain">
-        <div class="ec-head" @pointerdown.stop="startDrag">
+        <div class="ec-head" @pointerdown.stop="startDrag" @dblclick.stop="startAsk">
           <AppIcon class="ec-spark" name="sparkle" :size="13" />
-          <span class="st-term"><mark>{{ card.item.term.length > 48 ? card.item.term.slice(0, 48) + '…' : card.item.term }}</mark></span>
+          <ExplainTitle ref="title" :item="card.item" :limit="48" @ask="askExplain(card.item, $event)" />
           <button v-if="card.pinned && card.anchor" type="button" class="ec-tool" :aria-label="card.follow === 'page' ? '跟着书页走' : '停在屏幕上'" :data-tip="card.follow === 'page' ? '现在跟着书页走，点一下改成停在屏幕上' : '现在停在屏幕上，点一下改成跟着书页走'" @click="toggleFollow"><AppIcon :name="card.follow === 'page' ? 'doc' : 'fullscreen'" :size="13" /></button>
           <button type="button" class="ec-tool ec-pin" :class="{ on: card.pinned }" :aria-pressed="card.pinned" :aria-label="card.pinned ? '拔下图钉' : '钉住'" :data-tip="card.pinned ? '拔下图钉（之后点别处就消失）' : '钉住：不会自己消失，可以拖动'" @click="togglePin"><AppIcon name="pin" :size="13" /></button>
         </div>
@@ -213,6 +217,15 @@ watch(() => props.card.item.status, (status, previous) => { if (previous === 'ru
 /* 跟着书页走时压在工具栏的毛边（z-index 4）下面、书页上面。 */
 .explain-card.in-page{z-index:3;animation:none}
 .explain-card.dragging{transition:none;cursor:grabbing;user-select:none}
+/* 双击标题后的提问框：一行，回车发送。 */
+.ec-ask{flex:1;min-width:0;height:1.95em;padding:0 .55em;border:1px solid color-mix(in srgb,var(--accent) 55%,transparent);border-radius:.55em;background:color-mix(in srgb,var(--surface,#fff) 60%,transparent);color:var(--ink);font:inherit;font-size:.92em;outline:0!important;box-shadow:none!important;cursor:text;user-select:text}
+.ec-ask::placeholder{color:var(--muted)}
+.explain-card:has(.ec-ask){min-width:min(320px,calc(100vw - 16px))}
+:root[data-style='warm'] .ec-ask{border:0;border-bottom:1px solid var(--accent);border-radius:0;background:none;padding:0 .1em}
+:root[data-style='sketch'] .ec-ask{border:0;border-bottom:1.5px solid var(--pencil,#2b2a27);border-radius:0;background:none;padding:0 .1em;color:var(--pencil,#2b2a27)}
+/* 问过的那句话留在回答上面。 */
+.ex-question{margin:0 0 .5em!important;padding-left:.6em;border-left:2px solid color-mix(in srgb,var(--accent) 60%,transparent);color:var(--muted);font-size:.9em;line-height:1.5;overflow-wrap:anywhere}
+:root[data-style='sketch'] .ex-question{border-left-color:var(--red-pencil,#c0392b)}
 .ec-head{display:flex;align-items:center;gap:5px;margin:-3px -5px 0 0;cursor:grab;touch-action:none}
 .ec-head .st-term{flex:1;min-width:0;margin:0!important;color:var(--ink);font-size:.95em;font-weight:650}
 /* 词条像被荧光笔划过一道。 */

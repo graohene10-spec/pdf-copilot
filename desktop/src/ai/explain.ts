@@ -11,11 +11,11 @@ import { library } from '../sdk'
 import { useSettings } from '../settings'
 import ExplainNote from '../components/ExplainNote.vue'
 
-export type ExplainMode = 'plain' | 'deeper' | 'example' | 'simpler' | 'visual'
-export type Explain = { id: string; term: string; context: string; mode: ExplainMode; text: string; reasoning: string; status: 'running' | 'done' | 'error'; error: string; startedAt: number; firstTokenAt?: number; ms: number; /** 写完后点开了思维链。 */ chainOpen?: boolean; /** 选区的截图（PDF 里的公式以图为准）。 */ image?: string }
+export type ExplainMode = 'plain' | 'deeper' | 'example' | 'simpler' | 'visual' | 'ask'
+export type Explain = { id: string; term: string; context: string; mode: ExplainMode; text: string; reasoning: string; status: 'running' | 'done' | 'error'; error: string; startedAt: number; firstTokenAt?: number; ms: number; /** 写完后点开了思维链。 */ chainOpen?: boolean; /** 选区的截图（PDF 里的公式以图为准）。 */ image?: string; /** 自由提问（双击标题）问的那句话；卡片上现在是它的回答。 */ question?: string }
 export type ExplainTarget = { term: string; context: string; block?: HTMLElement; image?: string; doc?: string; page?: number; /** PDF：选区所在的那一页，图钉钉住后卡片跟着它走。 */ anchor?: HTMLElement }
 
-const MODES: Record<ExplainMode, string> = {
+const MODES: Record<Exclude<ExplainMode, 'ask'>, string> = {
   plain: '先用一句话说清它是什么，再用两三句讲它在这段上下文里的意思和作用。不超过 150 字。',
   deeper: '讲得更深入一些：给出准确的定义、来由或推导要点，以及它和上下文里其他概念的关系。不超过 300 字。',
   example: '举一个具体的小例子把它讲明白（数字、图景或类比都可以），例子要贴合这段上下文。不超过 200 字。',
@@ -23,7 +23,13 @@ const MODES: Record<ExplainMode, string> = {
   // 可视化讲解：必须给出一个 ui 代码块（Intelligent UI），写法随请求一起告诉模型。
   visual: '用一张图把它讲明白：先用一两句话点题，然后必须给出一个 ui 代码块。优先用图解——集合关系用 venn 或 nest，函数 / 同态用 map，交换关系或概念网用 graph，证明步骤用 flow，分类用 tree，有限运算用 optable，置换用 cycle，区间用 axis，按两个性质分类用 quadrant。可交互的是可选项：只有量确实随参数连续变化时才用 sim，有真实数据对比时才用 chart 或 table，可以单独用，也可以跟在图解后面。图里是示意的就注明「示例」。图外的文字不超过 80 字。',
 }
-export function explainPrompt(term: string, context: string, mode: ExplainMode, previous = '') {
+/** 自由提问：读者就选中的内容自己问一句。 */
+export function askPrompt(term: string, context: string, question: string, previous = '') {
+  return `读者在读下面这段文字，选中了「${term}」，就它提了一个问题。直接回答这个问题：先给结论，再讲必要的理由，能短则短，一般不超过 300 字。\n用简体中文，不要寒暄、不要复述原文和问题；公式写成 $...$。\n\n问题：${question}`
+    + (previous ? `\n\n卡片上刚才的内容（读者已经看过，可以承接）：\n${previous.slice(0, 800)}` : '')
+    + (context ? `\n\n上下文：\n"""\n${context}\n"""` : '')
+}
+export function explainPrompt(term: string, context: string, mode: Exclude<ExplainMode, 'ask'>, previous = '') {
   return `解释下面这段文字里「${term}」的意思。${MODES[mode]}\n用简体中文，直接开始解释，不要寒暄、不要复述原文；公式写成 $...$。`
     + (previous && mode !== 'plain' ? `\n\n刚才的解释（不要重复它）：\n${previous.slice(0, 600)}` : '')
     + `\n\n上下文：\n"""\n${context}\n"""`
@@ -36,7 +42,8 @@ function run(item: Explain, previous = '') {
   controllers.set(item.id, controller)
   Object.assign(item, { text: '', reasoning: '', status: 'running', error: '', startedAt: Date.now(), firstTokenAt: undefined, ms: 0 })
   const visual = item.mode === 'visual'
-  const ask = (image?: string) => complete({ kind: 'explain', visual, ...(visual ? { extraInstructions: UI_INSTRUCTIONS.explain } : {}), messages: [{ role: 'user', content: explainPrompt(item.term, item.context, item.mode, previous) + (image ? IMAGE_NOTE : ''), ...(image ? { images: [image] } : {}) }], signal: controller.signal,
+  const prompt = item.mode === 'ask' ? askPrompt(item.term, item.context, item.question || '', previous) : explainPrompt(item.term, item.context, item.mode, previous)
+  const ask = (image?: string) => complete({ kind: 'explain', visual, ask: item.mode === 'ask', ...(visual ? { extraInstructions: UI_INSTRUCTIONS.explain } : {}), messages: [{ role: 'user', content: prompt + (image ? IMAGE_NOTE : ''), ...(image ? { images: [image] } : {}) }], signal: controller.signal,
     onDelta: (_delta, all) => { if (controllers.get(item.id) === controller) { if (!item.text && all) item.firstTokenAt = Date.now(); item.text = all } },
     onReasoning: delta => { if (controllers.get(item.id) === controller) item.reasoning += delta } })
   // Each click sends one explanation. Surface image and transport errors without resubmitting the question.
@@ -51,7 +58,9 @@ export function startExplain(term: string, context: string, mode: ExplainMode = 
   run(item)
   return item
 }
-export function rerunExplain(item: Explain, mode: ExplainMode) { const previous = item.text; item.mode = mode; run(item, previous) }
+export function rerunExplain(item: Explain, mode: Exclude<ExplainMode, 'ask'>) { const previous = item.text; item.mode = mode; item.question = undefined; run(item, previous) }
+/** 双击卡片标题问的一句话：回答写在同一张卡片上。 */
+export function askExplain(item: Explain, question: string) { const previous = item.text; item.mode = 'ask'; item.question = question.trim().slice(0, 400); run(item, previous) }
 export function stopExplain(item: Explain) { controllers.get(item.id)?.abort(); controllers.delete(item.id); if (item.status === 'running') { item.status = 'error'; item.error = '已停止' } }
 
 const squeeze = (text: string) => text.replace(/\s+/g, ' ').trim()
@@ -97,7 +106,7 @@ export function closeLooseCards() { for (const card of [...explainCards]) if (!c
 
 // 钉住的便签不会自己消失：记在文档库的设置里，关掉文档、关掉应用再打开都放回原处；只有拔下图钉才没。
 const CARDS = 'explain.cards.v1'
-type SavedCard = { id: string; term: string; text: string; page?: number; follow: 'page' | 'screen'; rel?: { x: number; y: number }; screen?: { left: number; top: number }; size?: { width?: number; height?: number }; base?: number }
+type SavedCard = { id: string; term: string; text: string; question?: string; page?: number; follow: 'page' | 'screen'; rel?: { x: number; y: number }; screen?: { left: number; top: number }; size?: { width?: number; height?: number }; base?: number }
 let cardStore: Record<string, SavedCard[]> = {}
 const openDocs = new Map<string, number>()
 const cardsReady: Promise<void> = (async () => {
@@ -106,7 +115,7 @@ const cardsReady: Promise<void> = (async () => {
 function saveCards() {
   for (const doc of openDocs.keys()) {
     const list = explainCards.filter(card => card.doc === doc && card.pinned && card.item.status === 'done' && card.item.text)
-      .map(card => ({ id: card.id, term: card.item.term, text: card.item.text, page: card.page, follow: card.follow, rel: card.rel, screen: card.screen, size: card.size, base: card.base }))
+      .map(card => ({ id: card.id, term: card.item.term, text: card.item.text, question: card.item.question, page: card.page, follow: card.follow, rel: card.rel, screen: card.screen, size: card.size, base: card.base }))
     if (list.length) cardStore[doc] = list; else delete cardStore[doc]
   }
   void library.setSetting(CARDS, JSON.stringify(cardStore)).catch(() => { /* 存不进去就只留在这次阅读里 */ })
@@ -124,7 +133,7 @@ export function restoreCards(scroller: HTMLElement, doc: string) {
     for (const saved of cardStore[doc] || []) {
       if (!scroller.isConnected || explainCards.some(card => card.id === saved.id)) continue
       const anchor = saved.page ? scroller.querySelector<HTMLElement>(`.page-slot[data-page="${saved.page}"]`) || undefined : undefined
-      const item = reactive<Explain>({ id: saved.id, term: saved.term, context: '', mode: 'plain', text: saved.text, reasoning: '', status: 'done', error: '', startedAt: 0, ms: 0 })
+      const item = reactive<Explain>({ id: saved.id, term: saved.term, context: '', mode: 'plain', text: saved.text, question: saved.question, reasoning: '', status: 'done', error: '', startedAt: 0, ms: 0 })
       explainCards.push(reactive({ id: saved.id, item, x: saved.screen?.left ?? 80, y: saved.screen?.top ?? 120, pinned: true, follow: anchor ? saved.follow : 'screen', anchor, doc, page: saved.page, rel: saved.rel, screen: saved.screen, size: saved.size, base: Number(saved.base) > 0 ? Number(saved.base) : undefined }) as ExplainCardState)
     }
   })
@@ -143,7 +152,7 @@ export function releaseCards(scroller: HTMLElement) {
 
 // ---- Markdown：插在段落下面的释义；留下的记在本机，下次打开还在 ----
 const NOTES_KEY = 'kaizhi.explain.notes.v1'
-type Saved = { id: string; line: number; term: string; text: string; size?: { width?: number; height?: number } }
+type Saved = { id: string; line: number; term: string; text: string; question?: string; size?: { width?: number; height?: number } }
 // 记在文档库的设置里（和分组、排列顺序一样，跟着库走），关掉应用再开还在；浏览器的本地存储只当备份，
 // 以前只存在那里的也并进来。
 const SETTING = 'explain.notes.v1'
@@ -178,7 +187,7 @@ function writeNotes(doc: string, change: (list: Saved[]) => Saved[]) {
   if (list.length) store[doc] = list.slice(-200); else delete store[doc]
   void ready.then(persist)
 }
-export function keepNote(doc: string, line: number, item: Explain, size?: { width?: number; height?: number }) { writeNotes(doc, list => { const old = list.find(note => note.id === item.id); return [...list.filter(note => note.id !== item.id), { id: item.id, line, term: item.term, text: item.text, size: size ?? old?.size }] }) }
+export function keepNote(doc: string, line: number, item: Explain, size?: { width?: number; height?: number }) { writeNotes(doc, list => { const old = list.find(note => note.id === item.id); return [...list.filter(note => note.id !== item.id), { id: item.id, line, term: item.term, text: item.text, question: item.question, size: size ?? old?.size }] }) }
 export function dropNote(doc: string, id: string) { writeNotes(doc, list => list.filter(note => note.id !== id)) }
 
 const mounted = new WeakMap<HTMLElement, Set<App>>()
@@ -217,7 +226,7 @@ export function restoreNotes(paper: HTMLElement, doc: string) {
     for (const note of allNotes()[doc] || []) {
       if (paper.querySelector(`.explain-host[data-note="${note.id}"]`)) continue
       const block = [...paper.querySelectorAll<HTMLElement>(`[data-source-line="${note.line}"]`)].find(item => !item.parentElement?.closest('[data-source-line]'))
-      if (block) insertNote(block, reactive<Explain>({ id: note.id, term: note.term, context: block.textContent || '', mode: 'plain', text: note.text, reasoning: '', status: 'done', error: '', startedAt: 0, ms: 0 }), true)
+      if (block) insertNote(block, reactive<Explain>({ id: note.id, term: note.term, context: block.textContent || '', mode: 'plain', text: note.text, question: note.question, reasoning: '', status: 'done', error: '', startedAt: 0, ms: 0 }), true)
     }
   })
 }

@@ -3,7 +3,7 @@
 import { ref, reactive, computed, onBeforeUnmount } from 'vue'
 import { PROVIDERS, PROTOCOLS, getProvider, getNativeModels, getNativeStatus } from '../ai/providers.mjs'
 import { nativeModelInventory, registerNativeModelInventory } from '../ai/native-models'
-import { loadAiSettings, loadApiKey, saveAiSettings, saveCredential, supportsFast, TRANSLATION_DEFAULTS, EXPLAIN_DEFAULTS, VISUAL_DEFAULTS } from '../ai/settings.mjs'
+import { loadAiSettings, loadApiKey, saveAiSettings, saveCredential, supportsFast, TRANSLATION_DEFAULTS, EXPLAIN_DEFAULTS, VISUAL_DEFAULTS, ASK_DEFAULTS } from '../ai/settings.mjs'
 import { concreteChoice } from '../ai/translate-model'
 import { codexTimings } from '../ai/native.mjs'
 import { DOCUMENT_LIMIT_FIELDS } from '../../../extension/common/document-limits.mjs'
@@ -21,10 +21,11 @@ const ex0 = { ...EXPLAIN_DEFAULTS, ...(main.explain || {}) }
 if (ex0.share !== 'own') { const from = ex0.share === 'translation' ? tr0 : main; Object.assign(ex0, { share: 'own', provider: from.provider, baseUrl: from.baseUrl, protocol: from.protocol }) }
 main.translation = tr0; main.explain = ex0
 main.visual = { ...VISUAL_DEFAULTS, ...(main.visual || {}) }
+main.ask = { ...ASK_DEFAULTS, ...(main.ask || {}) }
 // 每家服务的地址和协议各记一份，功能只管选哪一家。
 const connections = reactive<Record<string, { baseUrl: string; protocol: string }>>({})
 for (const item of PROVIDERS as any[]) connections[item.id] = { baseUrl: main.connections?.[item.id]?.baseUrl || item.baseUrl || '', protocol: main.connections?.[item.id]?.protocol || item.protocol || 'chat' }
-for (const used of [main, tr0, ex0, ...(main.visual.share === 'own' ? [main.visual] : [])]) if (used.provider && used.provider !== 'codex' && used.baseUrl && connections[used.provider]) Object.assign(connections[used.provider]!, { baseUrl: used.baseUrl, protocol: used.protocol || connections[used.provider]!.protocol })
+for (const used of [main, tr0, ex0, ...(main.visual.share === 'own' ? [main.visual] : []), ...(main.ask.share === 'own' ? [main.ask] : [])]) if (used.provider && used.provider !== 'codex' && used.baseUrl && connections[used.provider]) Object.assign(connections[used.provider]!, { baseUrl: used.baseUrl, protocol: used.protocol || connections[used.provider]!.protocol })
 const keys = reactive<Record<string, string>>({})
 const keyEdited = new Set<string>()
 const status = ref('')
@@ -83,6 +84,7 @@ const slots: Slot[] = [
   { id: 'translation', label: '翻译', note: '划词翻译、翻译窗口', target: main.translation },
   { id: 'explain', label: '快速解释', note: '中键解释、深入 / 简化 / 举例', target: main.explain },
   { id: 'visual', label: '可视化讲解', note: '快速解释里的 Intelligent UI', target: main.visual, follow: true },
+  { id: 'ask', label: '自由提问', note: '双击解释卡片的标题提问', target: main.ask, follow: true },
 ]
 const following = (slot: Slot) => Boolean(slot.follow) && slot.target.share === 'assistant'
 const modelsOf = (id: string): any[] => id === 'codex' ? nativeModels.value : (getProvider(id) as any)?.models || []

@@ -69,6 +69,15 @@ export function visualSettings(main = loadAiSettings()) {
   if (own.share !== 'own') return { ...main, visual: own };
   return { ...main, provider: own.provider, baseUrl: own.baseUrl, protocol: own.protocol, model: own.model, effort: own.effort, fast: Boolean(own.fast) && supportsFast(own.provider), tier: own.tier || '', visual: own };
 }
+/**
+ * 解释卡片上「自由提问」（双击标题）用的 AI：默认跟阅读助手一样，也可以单独选一家。
+ */
+export const ASK_DEFAULTS = Object.freeze({ share: 'assistant', provider: 'deepseek', baseUrl: 'https://api.deepseek.com', protocol: 'chat', model: '', effort: '', fast: false });
+export function askSettings(main = loadAiSettings()) {
+  const own = { ...ASK_DEFAULTS, ...(main.ask || {}) };
+  if (own.share !== 'own') return { ...main, ask: own };
+  return { ...main, provider: own.provider, baseUrl: own.baseUrl, protocol: own.protocol, model: own.model, effort: own.effort, fast: Boolean(own.fast) && supportsFast(own.provider), tier: own.tier || '', ask: own };
+}
 /** 翻译窗口里改模型 / 强度 / Fast：只动 translation 这一块。 */
 export function saveTranslationChoice(patch) {
   let stored = {};
