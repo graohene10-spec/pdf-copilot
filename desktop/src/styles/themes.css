@@ -593,8 +593,10 @@
   white-space: nowrap;
 }
 
+/* 手写体的笔画会伸出字宽（数字的右半边尤其明显），裁切的边界往外放一点，不把笔画切掉。 */
 :root[data-style='sketch'] :is(button, [role='tab']) > :is(span, small) {
-  overflow: hidden;
+  overflow: clip;
+  overflow-clip-margin: .45em;
   text-overflow: ellipsis;
 }
 
