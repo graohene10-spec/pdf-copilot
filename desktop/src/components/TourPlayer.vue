@@ -23,6 +23,7 @@ let session = 0, alive = true
 const director = createDirector({
   viewport: () => viewport.value || null,
   world: () => viewport.value?.querySelector<HTMLElement>('.tw-world') || null,
+  camera: () => viewport.value?.querySelector<HTMLElement>('.tour-camera') || null,
   cursor: () => cursor.value || null,
   ripples: () => ripples.value || null,
 })
@@ -126,7 +127,7 @@ onBeforeUnmount(() => { alive = false; ++session; document.removeEventListener('
         </nav>
         <div class="tour-stage">
           <div ref="viewport" class="tour-view" :class="{ paused }" :role="full ? undefined : 'button'" :aria-label="full ? undefined : '展开使用教程'" @click="viewClick">
-            <div class="tour-film" :class="{ cut }"><TourWorld :scene="scene" /></div>
+            <div class="tour-film" :class="{ cut }"><div class="tour-camera"><TourWorld :scene="scene" /></div></div>
             <div ref="ripples" class="tour-ripples"></div>
             <svg ref="cursor" class="tour-cursor" width="16" height="22" viewBox="-1 -1 16 22" aria-hidden="true"><path d="M0 0V17L4.6 12.9 7.6 19.6 10.2 18.4 7.3 11.9H13Z" /></svg>
             <template v-if="full">
@@ -211,13 +212,19 @@ onBeforeUnmount(() => { alive = false; ++session; document.removeEventListener('
 .tour.full .tour-view{max-height:calc(94vh - 150px);border:1px solid var(--glass-outline);border-radius:14px}
 .tour-film{position:absolute;inset:0;transition:opacity .22s var(--ease-soft)}
 .tour-film.cut{opacity:0}
+/* 镜头：位移和缩放写在这一层。画布自己带着 CSS 缩放（为了文字清晰），位移要是写在画布上会被一起放大。 */
+/* 草稿主题给对话框的那一点歪斜这里不要：画面歪了，量出来的元素位置就带着误差，鼠标会点偏几个像素。 */
+.tour-dialog{rotate:none!important}
+.tour-camera{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform}
 .tour-ripples{position:absolute;inset:0;pointer-events:none}
-.tour-ripples :deep(.tour-ripple){position:absolute;width:44px;height:44px;margin:-22px 0 0 -22px;border-radius:50%;border:1.5px solid color-mix(in srgb,var(--ink) 55%,transparent);animation:tour-ripple .5s var(--ease-out) both}
-.tour.mini .tour-ripples :deep(.tour-ripple){width:22px;height:22px;margin:-11px 0 0 -11px}
-.tour-ripples :deep(.tour-ripple.right){border-style:dashed}
+/* 水波纹：外层由导演每帧摆到鼠标点下去的那个画布位置，里层只管放大淡出。 */
+.tour-ripples :deep(.tour-ripple){position:absolute;left:0;top:0;width:0;height:0;will-change:transform}
+.tour-ripples :deep(.tour-ripple b){position:absolute;width:44px;height:44px;margin:-22px 0 0 -22px;border-radius:50%;border:1.5px solid color-mix(in srgb,var(--ink) 55%,transparent);animation:tour-ripple .5s var(--ease-out) both}
+.tour.mini .tour-ripples :deep(.tour-ripple b){width:22px;height:22px;margin:-11px 0 0 -11px}
+.tour-ripples :deep(.tour-ripple.right b){border-style:dashed}
 .hint-mouse .side{fill:var(--accent);stroke:none}
 .hint-mouse:has(.side) line{stroke:color-mix(in srgb,var(--ink) 45%,transparent);stroke-width:1.3;animation:none}
-.tour-ripples :deep(.tour-ripple.middle){border-color:var(--accent);box-shadow:0 0 0 6px color-mix(in srgb,var(--accent) 16%,transparent)}
+.tour-ripples :deep(.tour-ripple.middle b){border-color:var(--accent);box-shadow:0 0 0 6px color-mix(in srgb,var(--accent) 16%,transparent)}
 @keyframes tour-ripple{from{opacity:.9;scale:.2}to{opacity:0;scale:1.15}}
 .tour-cursor{position:absolute;left:0;top:0;overflow:visible;transform-origin:0 0;will-change:transform;opacity:0;pointer-events:none;filter:drop-shadow(0 2px 3px rgb(0 0 0 / .32));transition:opacity .25s var(--ease-out)}
 .tour-cursor path{fill:#fff;stroke:#16181d;stroke-width:1.1;stroke-linejoin:round}

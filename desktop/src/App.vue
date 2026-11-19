@@ -2043,7 +2043,7 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
       <nav class="mark-nav" aria-label="全部书签">
         <section v-for="group in bookmarkGroups" :key="group.doc.id" class="mark-group">
           <p class="mark-book" :data-tip="group.doc.name">{{ group.doc.name.replace(/\.(pdf|md|markdown)$/i, '') }}</p>
-          <button v-for="item in group.marks" :key="item.mark.id" type="button" class="mark-row" :class="{ picked: pickedMarks.has(markKey(group.doc.id, item.mark.id)) }" :data-key="markKey(group.doc.id, item.mark.id)" :data-tip="`${item.art.name} · ${item.where}`" @click="markClick(group.doc, item.mark, $event)" @contextmenu.prevent.stop="markMenu(group.doc, item.mark, $event)"><svg class="mark-art" viewBox="0 0 96 40" preserveAspectRatio="xMaxYMid slice" aria-hidden="true" v-html="item.art.svg" /><span class="mark-name">{{ item.mark.name || item.where }}</span><small v-if="item.mark.name">{{ item.where }}</small></button>
+          <button v-for="item in group.marks" :key="item.mark.id" type="button" class="mark-row" :class="{ picked: pickedMarks.has(markKey(group.doc.id, item.mark.id)) }" :data-key="markKey(group.doc.id, item.mark.id)" :data-tip="`${item.art.name} · ${item.where}`" @click="markClick(group.doc, item.mark, $event)" @contextmenu.prevent.stop="markMenu(group.doc, item.mark, $event)"><svg class="mark-art" viewBox="0 0 96 40" preserveAspectRatio="xMaxYMid slice" aria-hidden="true" v-html="item.art.svg" /><span class="mark-name">{{ item.mark.name }}</span><small>{{ item.where }}</small></button>
         </section>
         <p v-if="!bookmarkGroups.length" class="tag-empty">在书里按 {{ shortcut('bookmark') || '右键' }} 留书签，都会收在这里。</p>
       </nav>

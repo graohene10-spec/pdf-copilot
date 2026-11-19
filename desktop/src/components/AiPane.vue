@@ -590,6 +590,11 @@ watch(pickerOpen, open => {
   }
 })
 watch(busy, value => { if (value) pickerOpen.value = false })
+// 答完的那一下：输入栏外沿荡开一圈，停止键换回发送键，灰掉的控件亮回来。只放一次。
+const settled = ref(false)
+let settleTimer = 0
+watch(busy, (value, before) => { clearTimeout(settleTimer); settled.value = Boolean(before && !value); if (settled.value) settleTimer = window.setTimeout(() => { settled.value = false }, 950) })
+onBeforeUnmount(() => clearTimeout(settleTimer))
 function drawerEscape(event: KeyboardEvent) { if (!pickerOpen.value || event.defaultPrevented) return; event.preventDefault(); event.stopPropagation(); closePicker() }
 // 抽屉里的按钮在读取模型时会暂时禁用，焦点随之落回页面：这时 Esc 仍然收起抽屉。
 function strayEscape(event: KeyboardEvent) { if (event.key === 'Escape' && (document.activeElement === document.body || !document.activeElement)) drawerEscape(event) }
@@ -923,13 +928,16 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
             </div>
             <template v-else>
               <div class="user-question">{{ message.content }}</div>
-              <div v-if="message.ask?.text || message.images?.length || message.ask?.includeDocument || message.excerpts?.length" class="sent-context" aria-label="随问题发送的上下文">
-                <span v-for="item in message.excerpts || []" :key="item.id" class="sent-quote sent-excerpt" :data-tip="`${excerptLabel(item.from)}：${item.text.slice(0, 300)}`"><AppIcon :name="item.from === 'self' ? 'pin' : 'branch'" :size="10" />{{ item.text.slice(0, 40) }}{{ item.text.length > 40 ? '…' : '' }}</span>
-                <img v-for="(image, index) in (message.images || []).slice(0, 5)" :key="index" :src="image" alt="随问题发送的图片" data-tip="双击放大" @dblclick="zoomed = image" />
-                <span v-if="message.ask?.text" class="sent-quote" :title="message.ask.text">“{{ message.ask.text.slice(0, 60) }}{{ message.ask.text.length > 60 ? '…' : '' }}”</span>
-                <span v-if="message.ask?.includeDocument" class="sent-doc"><AppIcon name="book" :size="11" />{{ document.kind === 'pdf' ? `文档 · 第 ${message.ask.page || 1} 页` : '文档' }}</span>
+              <!-- 问题下面只占一行：左边是指上去才出现的「编辑」「复制」，右边是随问题发出的引文、图片、页码。 -->
+              <div class="question-foot">
+                <div class="question-actions"><button v-if="!side || message.id === lastQuestionId" class="meta-button" :disabled="busy && message.id === lastQuestionId" aria-label="编辑问题" data-tip="编辑后重新回答" @click="startEdit(message)"><AppIcon name="edit" :size="13" /></button><button class="meta-button" aria-label="复制问题" data-tip="复制" @click="copy(message.content)"><AppIcon name="copy" :size="13" /></button></div>
+                <div v-if="message.ask?.text || message.images?.length || message.ask?.includeDocument || message.excerpts?.length" class="sent-context" aria-label="随问题发送的上下文">
+                  <span v-for="item in message.excerpts || []" :key="item.id" class="sent-quote sent-excerpt" :data-tip="`${excerptLabel(item.from)}：${item.text.slice(0, 300)}`"><AppIcon :name="item.from === 'self' ? 'pin' : 'branch'" :size="10" />{{ item.text.slice(0, 40) }}{{ item.text.length > 40 ? '…' : '' }}</span>
+                  <img v-for="(image, index) in (message.images || []).slice(0, 5)" :key="index" :src="image" alt="随问题发送的图片" data-tip="双击放大" @dblclick="zoomed = image" />
+                  <span v-if="message.ask?.text" class="sent-quote" :title="message.ask.text">“{{ message.ask.text.slice(0, 60) }}{{ message.ask.text.length > 60 ? '…' : '' }}”</span>
+                  <span v-if="message.ask?.includeDocument" class="sent-doc"><AppIcon name="book" :size="11" />{{ document.kind === 'pdf' ? `文档 · 第 ${message.ask.page || 1} 页` : '文档' }}</span>
+                </div>
               </div>
-              <div class="question-actions"><button v-if="!side || message.id === lastQuestionId" class="meta-button" :disabled="busy && message.id === lastQuestionId" aria-label="编辑问题" data-tip="编辑后重新回答" @click="startEdit(message)"><AppIcon name="edit" :size="13" /></button><button class="meta-button" aria-label="复制问题" data-tip="复制" @click="copy(message.content)"><AppIcon name="copy" :size="13" /></button></div>
             </template>
           </template>
           <div v-else-if="message.summary" class="summary-card">
@@ -1006,6 +1014,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
         </div>
       </Transition>
       <div ref="composerField" class="composer-field" :class="{ busy, expanded: pickerOpen }" @keydown.esc="drawerEscape" @dragover="dragImages" @drop="dropImages">
+        <i v-if="settled" class="composer-wave" aria-hidden="true"></i>
         <div class="composer-resize" role="separator" aria-orientation="horizontal" aria-label="拖动调整输入框高度" data-tip="拖动调整高度，双击恢复" @pointerdown="startResize" @pointermove="resize" @pointerup="endResize" @pointercancel="endResize" @dblclick="resetResize" />
         <div v-if="hasSelection && !selected.image" class="ai-selection-context">
           <label class="selection-chip" :class="{ off: !includeSelection }"><input v-model="includeSelection" type="checkbox" :disabled="busy" aria-label="使用所选文字" /><span class="selection-text">{{ selected.text.slice(0, 80) }}</span><small>{{ selected.rect?.space === 'markdown' ? '框选区域的文字' : '所选文字' }}</small></label>
@@ -1039,8 +1048,10 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
           <div ref="pickerHost" class="model-picker-host">
             <button type="button" class="model-picker" :disabled="busy" :aria-expanded="pickerOpen" :aria-controls="`model-drawer-${state.id}`" aria-label="选择模型与思考强度" data-tip="模型与思考强度" @click="pickerOpen = !pickerOpen"><span class="picker-model">{{ modelLabel }}</span><span class="picker-effort">{{ EFFORT_LABELS[settings.effort || ''] || settings.effort }}</span><AppIcon v-if="speedy" name="bolt" :size="11" class="picker-fast" /><AppIcon name="down" :size="12" class="picker-chevron" /></button>
           </div>
-          <button v-if="busy" class="send-button stop" aria-label="停止" data-tip="停止回答" @click="stop"><span class="stop-square" /></button>
-          <button v-else class="send-button" :disabled="!prompt.trim()" aria-label="发送" data-tip="发送" :data-tip-key="sendShortcut || 'Enter'" @click="send()"><AppIcon name="arrow-up" :size="17" /></button>
+          <Transition name="send-swap" mode="out-in">
+            <button v-if="busy" key="stop" class="send-button stop" aria-label="停止" data-tip="停止回答" @click="stop"><span class="stop-square" /></button>
+            <button v-else key="send" class="send-button" :disabled="!prompt.trim()" aria-label="发送" data-tip="发送" :data-tip-key="sendShortcut || 'Enter'" @click="send()"><AppIcon name="arrow-up" :size="17" /></button>
+          </Transition>
         </div>
         <!-- 点模型按钮时，输入栏下沿顺势拉长，露出模型与思考强度；再点一次或按 Esc 收回。 -->
         <div :id="`model-drawer-${state.id}`" class="composer-drawer" :class="{ open: pickerOpen }" :inert="!pickerOpen || undefined">
@@ -1253,7 +1264,11 @@ button:disabled{opacity:.4;cursor:default}
 /* 问题和它的回答挨得近一些：问题下面的操作按钮浮在间隙里，不再单独占一行。 */
 .ai-message.user{content-visibility:visible;position:relative;display:flex;flex-direction:column;align-items:flex-end;gap:2px;margin-bottom:10px}
 .user-question{max-width:88%;padding:9px 14px;border-radius:var(--r-lg) var(--r-lg) var(--r-xs) var(--r-lg);background:color-mix(in srgb,var(--ink) 9%,transparent);border:1px solid var(--hairline);font-size:13.5px;line-height:1.75;white-space:pre-wrap;overflow-wrap:anywhere}
-.question-actions{position:absolute;right:0;top:100%;z-index:2;display:flex;gap:2px;opacity:0;pointer-events:none;transition:opacity var(--dur-2) var(--ease-out)}
+.question-foot{display:flex;align-items:center;justify-content:flex-end;gap:6px;width:100%;min-width:0;min-height:28px;margin-top:3px}
+/* 没有引文、图片时这一行只有按钮：叠在下一条消息的留白上，不多占高度。 */
+.question-foot:not(:has(.sent-context)){margin-bottom:-16px}
+.question-actions{position:relative;z-index:2;flex:none;display:flex;gap:2px;opacity:0;pointer-events:none;transition:opacity var(--dur-2) var(--ease-out)}
+.question-actions .meta-button{width:30px}
 .ai-message.user:hover .question-actions,.question-actions:focus-within{pointer-events:auto}
 .ai-message.user:hover .question-actions,.question-actions:focus-within{opacity:1}
 .question-editor{width:min(100%,520px);padding:8px;border-radius:var(--r-lg);background:color-mix(in srgb,var(--ink) 7%,transparent);border:1px solid var(--hairline);animation:zg-pop-in var(--dur-3) var(--spring-snappy) both}
@@ -1320,8 +1335,10 @@ button:disabled{opacity:.4;cursor:default}
 .source-list{margin:8px 0 4px;font-size:12px}
 .source-heading{margin:4px 0 0;font-size:11.5px;font-weight:650;color:var(--secondary)}
 /* 问题气泡下面：这一问一起发给 AI 的截图、所选文字与文档。 */
-.sent-context{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:5px;max-width:88%;margin:5px 0 0 auto}
-.sent-context img{width:38px;height:28px;object-fit:cover;border-radius:6px;border:1px solid var(--hairline)}
+.sent-context{display:flex;flex-wrap:nowrap;align-items:center;justify-content:flex-end;gap:5px;flex:0 1 auto;min-width:0;overflow:hidden}
+.sent-context>*{flex:none}
+.sent-context>.sent-quote{flex:0 1 auto;min-width:36px}
+.sent-context img{width:34px;height:24px;object-fit:cover;border-radius:6px;border:1px solid var(--hairline)}
 .sent-context span{display:inline-flex;align-items:center;gap:4px;max-width:100%;height:24px;padding:0 9px;overflow:hidden;border-radius:var(--r-sm);background:var(--frost);border:1px solid var(--hairline);color:var(--secondary);font-size:11.5px;white-space:nowrap;text-overflow:ellipsis}
 .sent-context .sent-quote{display:block;line-height:22px}
 .source-list button{display:block;width:100%;margin-top:6px;padding:8px 11px;border:1px solid var(--hairline);border-radius:var(--r-md);background:var(--frost);box-shadow:none;text-align:left}
@@ -1355,6 +1372,15 @@ button:disabled{opacity:.4;cursor:default}
 @container composer (max-width: 290px){.context-label{display:none}.context-switch{padding:0 7px}}
 .composer-field{position:relative;border:1px solid var(--hairline);border-radius:var(--r-lg);background:var(--bar-glass);box-shadow:inset 0 1px 0 var(--glass-rim-soft),0 1px 2px rgb(0 0 0 / .04);transition:border-color var(--dur-2) var(--ease-out),background var(--dur-2) var(--ease-out)}
 .composer-field:focus-within{border-color:color-mix(in srgb,var(--ink) 24%,transparent)}
+/* 思考中 → 答完：一圈光从输入栏外沿荡开；按钮和灰掉的控件各自过渡，不是一下子换掉。 */
+.composer-wave{position:absolute;inset:-1px;z-index:3;border-radius:inherit;pointer-events:none;opacity:0;animation:composer-settle .9s var(--ease-out) 1}
+@keyframes composer-settle{0%{opacity:1;box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 46%,transparent),inset 0 0 0 1px color-mix(in srgb,var(--accent) 60%,transparent)}45%{opacity:1;box-shadow:0 0 0 6px color-mix(in srgb,var(--accent) 14%,transparent),inset 0 0 0 1px color-mix(in srgb,var(--accent) 30%,transparent)}100%{opacity:0;box-shadow:0 0 0 11px transparent,inset 0 0 0 1px transparent}}
+.composer-actions :is(.attach-button,.context-switch,.model-picker){transition:opacity .35s var(--ease-out),color .35s var(--ease-out),background-color .35s var(--ease-out)}
+.send-swap-enter-active{transition:scale .22s var(--ease-spring),opacity .16s var(--ease-out),rotate .22s var(--ease-out)}
+.send-swap-leave-active{transition:scale .13s var(--ease-out),opacity .13s var(--ease-out),rotate .13s var(--ease-out)}
+.send-swap-enter-from{scale:.4;opacity:0;rotate:-70deg}
+.send-swap-leave-to{scale:.4;opacity:0;rotate:70deg}
+@media(prefers-reduced-motion:reduce){.composer-wave{animation:none}.send-swap-enter-active,.send-swap-leave-active{transition:none}}
 .composer-resize{position:absolute;left:50%;top:-6px;width:56px;height:12px;margin-left:-28px;cursor:ns-resize;z-index:2;touch-action:none}
 .composer-resize::after{content:'';position:absolute;left:18px;right:18px;top:4px;height:4px;border-radius:2px;background:color-mix(in srgb,var(--ink) 25%,transparent);opacity:0;transition:opacity var(--dur-2) var(--ease-out)}
 .composer-field:hover .composer-resize::after,.composer-resize:active::after{opacity:1}
