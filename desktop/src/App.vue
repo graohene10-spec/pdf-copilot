@@ -36,6 +36,8 @@ const PdfReader = defineAsyncComponent(() => import('./components/PdfReader.vue'
 const MarkdownReader = defineAsyncComponent(() => import('./components/MarkdownReader.vue'))
 const AiPane = defineAsyncComponent(() => import('./components/AiPane.vue'))
 const SettingsDialog = defineAsyncComponent(() => import('./components/SettingsDialog.vue'))
+const ConversationManager = defineAsyncComponent(() => import('./components/ConversationManager.vue'))
+const managerOpen = ref(false)
 const TourPlayer = defineAsyncComponent(() => import('./components/TourPlayer.vue'))
 const SplitPicker = defineAsyncComponent(() => import('./components/SplitPicker.vue'))
 const UpdateCard = defineAsyncComponent(() => import('./components/UpdateCard.vue'))
@@ -93,6 +95,8 @@ function aiDocument(panel: AiPanel) { const doc = tabDoc(followedId(panel)); ret
 function aiAlternatives(panel: AiPanel) { const id = followedId(panel); return panel.doc ? [] : stagePaneIds.value.filter(item => sourceId(item) !== sourceId(id)).map(item => tabDoc(item)).filter(Boolean).map(doc => ({ id: doc!.id, title: doc!.name })) }
 function switchAiDocument(panel: AiPanel, id: string) { if (!panel.doc) followDoc.value = id }
 const libraryIndex = computed(() => documents.value.map(doc => ({ id: doc.id, title: doc.name })))
+const managerBooks = computed(() => documents.value.map(doc => ({ id: doc.id, title: doc.name, kind: doc.kind })))
+function openDocumentById(id: string) { const doc = documents.value.find(item => item.id === id); if (doc) void openDocument(doc) }
 async function openConversationAt(target: { documentId: string; conversationId: string }) {
   const shown = stagePaneIds.value.find(id => sourceId(id) === target.documentId)
   const doc = (shown && tabDoc(shown)) || tabs.value.find(tab => tab.doc.id === target.documentId)?.doc || documents.value.find(item => item.id === target.documentId)
@@ -1294,6 +1298,10 @@ function appContextMenu(event: MouseEvent) {
     items.push({ label: '复制', icon: 'copy', hint: 'Ctrl+C', disabled: !selected, action: () => { field.focus(); document.execCommand('copy') } })
     items.push({ label: '粘贴', icon: 'doc', hint: 'Ctrl+V', disabled: !editable, action: () => { void navigator.clipboard.readText().then(value => { field.focus(); document.execCommand('insertText', false, value) }).catch(() => notify('无法读取剪贴板，请用 Ctrl+V 粘贴。')) } })
     items.push({ label: '全选', icon: 'check', hint: 'Ctrl+A', separator: true, action: () => { field.focus(); field.select() } })
+  } else if (target.closest('.ai-toggle')) {
+    // 右键「阅读助手」：开关助手，或者去管理全部对话和记忆。
+    items.push({ label: aiOpen.value ? '关闭阅读助手' : '打开阅读助手', icon: 'sparkle', hint: shortcut('ai'), action: () => toggleAssistant() })
+    items.push({ label: '管理对话…', icon: 'list', separator: true, action: () => { managerOpen.value = true } })
   } else if (target.closest('.crop-toggle')) {
     // 右键「框选」按钮：选择框选后要不要先弹出快捷提问。
     items.push(...captureMenuItems(target))
@@ -2138,7 +2146,7 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
             <section v-for="id in (multiPanel ? paneIds.filter(id => !readerCache.some(entry => entry.id === id)) : [])" :key="`pending:${id}`" class="reader-pane pending" :style="{ order: panelOrder(`doc:${id}`) }"><div class="reader-overlay"><span class="spinner"></span><p>正在打开 {{ tabDoc(id)?.name }}…</p></div></section>
             <section v-for="panel in stageAi" :key="panel.key" class="ai-panel" :class="{ lifted: draggingPanel === panel.key, 'with-side': (panel.side || 0) > 0, 'side-animating': sideAnimating.has(panel.key) }" :style="{ order: panelOrder(panel.key), width: `${panel.width + (panel.side || 0)}px`, '--panel-width': `${panel.width + (panel.side || 0)}px` }" :data-panel-key="panel.key">
               <div class="panel-resizer" :data-edge="panelOrder(panel.key) === 0 && multiPanel ? 'right' : 'left'" role="separator" aria-orientation="vertical" aria-label="拖动调整阅读助手宽度" data-tip="拖动调整宽度，双击恢复" @pointerdown.stop="startWidthDrag($event, panel.key)" @pointermove="moveWidthDrag" @pointerup="endWidthDrag" @pointercancel="endWidthDrag" @dblclick="resetPanelWidth(panel)" />
-              <AiPane v-if="aiDocument(panel)" :ref="value => bindAi(panel.key, value)" data-glass-interactive="panel" :document="aiDocument(panel)!" :context="aiContext(panel)" :conversation-id="panel.conversation" :draggable="multiPanel" :send-shortcut="preferences.shortcuts.aiSend ? shortcut('aiSend') : ''" :consume-capture="consumeSelection" @settings="openSettings('ai')" @close="closeAiPanel(panel.key)" @jump="jump" @clear-selection="clearSelection" @conversation="id => setPanelConversation(panel.key, id)" @grab="startPanelDrag($event, panel.key)" :alternatives="aiAlternatives(panel)" :library="libraryIndex" @switch-document="id => switchAiDocument(panel, id)" @open-conversation="openConversationAt" @side="width => setPanelSide(panel.key, width)" />
+              <AiPane v-if="aiDocument(panel)" :ref="value => bindAi(panel.key, value)" data-glass-interactive="panel" :document="aiDocument(panel)!" :context="aiContext(panel)" :conversation-id="panel.conversation" :draggable="multiPanel" :send-shortcut="preferences.shortcuts.aiSend ? shortcut('aiSend') : ''" :consume-capture="consumeSelection" @settings="openSettings('ai')" @manage="managerOpen = true" @close="closeAiPanel(panel.key)" @jump="jump" @clear-selection="clearSelection" @conversation="id => setPanelConversation(panel.key, id)" @grab="startPanelDrag($event, panel.key)" :alternatives="aiAlternatives(panel)" :library="libraryIndex" @switch-document="id => switchAiDocument(panel, id)" @open-conversation="openConversationAt" @side="width => setPanelSide(panel.key, width)" />
             </section>
           </TransitionGroup>
           <div v-if="selection && !captureQuick && !aiOpen && selection.image" class="selection-context"><AppIcon name="crop" :size="16" /><span>{{ selection.image ? `已框选第 ${selection.page} 页的图表或公式` : `已选择 ${selection.text.length} 个字符` }}</span><button @click="openAssistant(true)"><AppIcon name="sparkle" :size="15" />向 AI 提问</button><button class="icon-button" @click="clearSelection" data-tip="清除选区" aria-label="清除选区"><AppIcon name="close" :size="14" /></button></div>
@@ -2174,6 +2182,7 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
     <Transition name="settings-pop">
       <SettingsDialog v-if="settingsOpen" :initial-tab="settingsTab" @close="settingsOpen = false" @ai-saved="aiSettingsSaved" @tour="openTour" />
     </Transition>
+    <ConversationManager v-if="managerOpen" :documents="managerBooks" @close="managerOpen = false" @open-conversation="openConversationAt" @open-document="openDocumentById" @notify="notify" />
     <TourPlayer v-if="tourOpen" :start-full="tourFull" @close="tourOpen = false" />
   </div>
 </template>
