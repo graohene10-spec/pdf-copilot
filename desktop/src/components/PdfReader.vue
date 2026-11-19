@@ -722,8 +722,17 @@ function bookmarkPlace(position: { page?: number; fraction?: number }) {
     host: view, scroller: view, shift: 0,
     top: stack.offsetTop + viewer.offsets[index] + (position.fraction || 0) * viewer.heights[index],
     left: slot.getBoundingClientRect().right - view.getBoundingClientRect().left - view.clientLeft + view.scrollLeft,
+    edge: slot.getBoundingClientRect().left - view.getBoundingClientRect().left - view.clientLeft + view.scrollLeft,
     width: Math.max(view.clientWidth, stack.offsetLeft + stack.offsetWidth + 30), height: stack.offsetTop + stack.offsetHeight + 24,
   }
+}
+/** 反过来：书页这一层里的一个高度，对应哪一页的什么位置（拖动书签时用）。 */
+function bookmarkAt(top: number) {
+  if (!active || !viewer?.pdf || !container.value || !viewer.offsets?.length) return undefined
+  const y = top - viewer.stack.offsetTop
+  let index = 0
+  while (index < viewer.offsets.length - 1 && viewer.offsets[index + 1] <= y) index++
+  return { page: index + 1, fraction: Math.max(-0.5, Math.min(1.5, (y - viewer.offsets[index]) / Math.max(1, viewer.heights[index]))) }
 }
 function goToBookmark(position: { page?: number; fraction?: number }) {
   if (!active || !viewer?.pdf || !container.value) return
@@ -780,7 +789,7 @@ async function resume() {
 }
 onActivated(resume)
 onDeactivated(suspend)
-defineExpose({ bookmarkPlace, goToPage, getPage: () => page.value, getPdf: () => pdf, isSuspended: () => !active, clearSelection: () => viewer?.clearOverlays(), getCaptureFrame, getCaptureElements, zoomIn, zoomOut, fitWidth, nextPage, previousPage, toggleOutline, toggleCapture, cancelCapture, toggleInk: ink.toggle, exitInk: ink.exit, pickInk: ink.pick, focusSearch, clearSearch, getDisplayScale: () => scale.value, getViewState, getBookmarkPosition, bookmarkRatio, goToBookmark, holdPanelResize, suspend, resume, getCacheStats: () => viewer?.getCacheStats() })
+defineExpose({ bookmarkPlace, bookmarkAt, goToPage, getPage: () => page.value, getPdf: () => pdf, isSuspended: () => !active, clearSelection: () => viewer?.clearOverlays(), getCaptureFrame, getCaptureElements, zoomIn, zoomOut, fitWidth, nextPage, previousPage, toggleOutline, toggleCapture, cancelCapture, toggleInk: ink.toggle, exitInk: ink.exit, pickInk: ink.pick, focusSearch, clearSearch, getDisplayScale: () => scale.value, getViewState, getBookmarkPosition, bookmarkRatio, goToBookmark, holdPanelResize, suspend, resume, getCacheStats: () => viewer?.getCacheStats() })
 </script>
 
 <template>

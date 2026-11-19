@@ -194,6 +194,23 @@ export function setConversationMemory(documentId: string, conversationId: string
   else scheduleMemory(conversation, 1500)
   schedulePersist(documentId)
 }
+/** 管理界面删除前留底：一段对话连同它的附属对话。 */
+export function conversationBundle(documentId: string, conversationId: string): ChatState[] {
+  return chats(documentId).list.filter(item => item.id === conversationId || item.sideOf === conversationId)
+}
+/** 撤销删除：把留底的对话放回这本书名下。 */
+export function restoreConversations(documentId: string, items: ChatState[]) {
+  const entry = chats(documentId), known = new Set(entry.list.map(item => item.id))
+  for (const item of items) if (!known.has(item.id)) { item.documentId = documentId; item.request = null; entry.list.push(item) }
+  schedulePersist(documentId)
+}
+/** 现在就把一段对话整理进记忆（管理界面里「整理还没整理的对话」）。 */
+export function memorizeNow(documentId: string, conversationId: string): Promise<void> {
+  const conversation = chats(documentId).list.find(item => item.id === conversationId)
+  if (!conversation || conversation.sideOf || conversation.memory === false || conversation.request) return Promise.resolve()
+  const turns = conversation.messages.filter(message => !message.note && !message.summary && message.content && !(message.failed && message.role === 'assistant')).map(message => ({ role: message.role, content: message.content }))
+  return memorize(conversation, conversationBooks[documentId]?.title || '', turns)
+}
 /** 把一段对话（连同它的附属对话）挪到另一本书名下。正在回答的不能挪。 */
 export async function moveConversation(fromId: string, conversationId: string, to: { id: string; title: string; kind: string }): Promise<boolean> {
   if (fromId === to.id) return false
