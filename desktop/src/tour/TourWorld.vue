@@ -379,15 +379,16 @@ const files = computed(() => {
 .tw-ul{position:relative;display:inline-block}
 .tw-ul svg{position:absolute;left:0;bottom:1px;width:100%;height:7px;overflow:visible}
 .tw-ul path{stroke:#3b6fe0}
-/* 书签：位置看得见时夹在页边上，翻走以后右侧只留一条同色的细线。 */
+/* 书签：夹在页边上，跟着书页走；翻走以后滚动条旁多一道同色的刻度。 */
 .tw-ribbons{position:absolute;left:calc(100% - 5px);top:76px;filter:drop-shadow(0 1px 2px rgb(0 0 0 / .42))}
 .tw-ribbon{display:block;width:46px;height:19px;clip-path:polygon(0 0,100% 0,calc(100% - 7px) 50%,100% 100%,0 100%)}
 .tw-ribbon-enter-active{transition:translate .45s var(--ease-spring),opacity .2s}
 .tw-ribbon-leave-active{transition:opacity .15s}
 .tw-ribbon-enter-from{translate:-30px 0;opacity:0}
 .tw-ribbon-leave-to{opacity:0}
-.tw-rail{position:absolute;right:8px;top:56px;bottom:20px;z-index:2;width:22px}
-.tw-line{position:absolute;right:0;width:20px;height:2.5px;border-radius:1px;box-shadow:0 1px 2px rgb(0 0 0 / .28)}
+.tw-rail{position:absolute;right:6px;top:56px;bottom:20px;z-index:2;width:16px;border-right:1px solid color-mix(in srgb,var(--ink) 20%,transparent)}
+.tw-line{position:absolute;right:0;width:11px;height:1.5px;border-radius:1px}
+.tw-line::before{content:'';position:absolute;left:-2px;top:50%;width:5px;height:5px;margin-top:-2.5px;border-radius:50%;background:inherit}
 .tw-railmark-enter-active{transition:translate .4s var(--ease-spring),opacity .2s}
 .tw-railmark-leave-active{transition:opacity .15s,translate .2s}
 .tw-railmark-enter-from,.tw-railmark-leave-to{translate:26px 0;opacity:0}

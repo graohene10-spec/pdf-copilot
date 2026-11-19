@@ -395,7 +395,7 @@ const bookmark: Play = async (stage, scene, say) => {
   scene.art = 2; scene.markMenu = false
   await stage.wait(800)
 
-  say('翻走以后，右侧留一条同色的细线')
+  say('翻走以后，滚动条旁留一道同色的刻度')
   stage.look('.tw-rail', 1.35, [-2.6, .4])
   await stage.move('.tw-page', { at: [.5, .5] })
   await stage.tween(900, k => { scene.scroll = k * 260 })

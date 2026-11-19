@@ -711,15 +711,19 @@ function bookmarkRatio(position: { page?: number; fraction?: number }) {
   const top = viewer.stack.offsetTop + viewer.offsets[index] + fraction * viewer.heights[index]
   return Math.max(0, Math.min(1, top / Math.max(1, container.value.scrollHeight)))
 }
-/** 书签那个位置现在看不看得见：看得见就给出它在窗口里的纵坐标和所在页的右边（视口坐标），书签就画在页边上。 */
-function bookmarkSpot(position: { page?: number; fraction?: number }) {
+/** 书签在书页这一层里的位置：挂在滚动内容里（host），坐标相对它的左上角；left 是那一页的右边。书签跟书页一起滚，滚到工具栏下面就被挡住。 */
+function bookmarkPlace(position: { page?: number; fraction?: number }) {
   const index = Math.max(0, (position.page || 1) - 1), view = container.value
   if (!active || !viewer?.pdf || !view || viewer.offsets?.[index] === undefined) return null
-  const top = viewer.stack.offsetTop + viewer.offsets[index] + (position.fraction || 0) * viewer.heights[index] - view.scrollTop
-  if (top < -6 || top > view.clientHeight - 24) return null
   const slot = view.querySelector<HTMLElement>(`.page-slot[data-page="${index + 1}"]`)
   if (!slot) return null
-  return { x: slot.getBoundingClientRect().right, y: view.getBoundingClientRect().top + top }
+  const stack = viewer.stack as HTMLElement
+  return {
+    host: view, scroller: view, shift: 0,
+    top: stack.offsetTop + viewer.offsets[index] + (position.fraction || 0) * viewer.heights[index],
+    left: slot.getBoundingClientRect().right - view.getBoundingClientRect().left - view.clientLeft + view.scrollLeft,
+    width: Math.max(view.clientWidth, stack.offsetLeft + stack.offsetWidth + 30), height: stack.offsetTop + stack.offsetHeight + 24,
+  }
 }
 function goToBookmark(position: { page?: number; fraction?: number }) {
   if (!active || !viewer?.pdf || !container.value) return
@@ -776,7 +780,7 @@ async function resume() {
 }
 onActivated(resume)
 onDeactivated(suspend)
-defineExpose({ bookmarkSpot, goToPage, getPage: () => page.value, getPdf: () => pdf, isSuspended: () => !active, clearSelection: () => viewer?.clearOverlays(), getCaptureFrame, getCaptureElements, zoomIn, zoomOut, fitWidth, nextPage, previousPage, toggleOutline, toggleCapture, cancelCapture, toggleInk: ink.toggle, exitInk: ink.exit, pickInk: ink.pick, focusSearch, clearSearch, getDisplayScale: () => scale.value, getViewState, getBookmarkPosition, bookmarkRatio, goToBookmark, holdPanelResize, suspend, resume, getCacheStats: () => viewer?.getCacheStats() })
+defineExpose({ bookmarkPlace, goToPage, getPage: () => page.value, getPdf: () => pdf, isSuspended: () => !active, clearSelection: () => viewer?.clearOverlays(), getCaptureFrame, getCaptureElements, zoomIn, zoomOut, fitWidth, nextPage, previousPage, toggleOutline, toggleCapture, cancelCapture, toggleInk: ink.toggle, exitInk: ink.exit, pickInk: ink.pick, focusSearch, clearSearch, getDisplayScale: () => scale.value, getViewState, getBookmarkPosition, bookmarkRatio, goToBookmark, holdPanelResize, suspend, resume, getCacheStats: () => viewer?.getCacheStats() })
 </script>
 
 <template>

@@ -171,7 +171,7 @@ const captureQuickBusy = computed(() => Boolean(captureQuick.value && (captureQu
 const captureQuickStatus = computed(() => captureQuick.value?.status || (captureQuick.value && chatState(sourceId(captureQuick.value.documentId)).request ? '这份文档已有问题正在处理，可点继续查看。' : ''))
 const reader = ref<any>()
 const settingsOpen = ref(false)
-const tourOpen = ref(false)
+const tourOpen = ref(false), tourFull = ref(false)
 const settingsTab = ref<'appearance' | 'reading' | 'shortcuts' | 'ai' | 'updates'>('appearance')
 const fitRequest = ref(0)
 const query = ref('')
@@ -1064,10 +1064,10 @@ function confirmClearBookmarks(source: string, count: number, x: number, y: numb
 }
 function deleteBookmark(id: string, markId: string) { removeBookmark(sourceId(id), markId); bookmarkTick.value++ }
 function deleteBookmarks(id: string, markIds: string[]) { for (const markId of markIds) removeBookmark(sourceId(id), markId); bookmarkTick.value++ }
-/** 书签的位置现在看得见时，给出它夹在页边上的地方（视口坐标）。 */
-function bookmarkSpot(id: string, markId: string) {
+/** 书签在书页那一层里的位置（阅读器还没排好版时没有）。 */
+function bookmarkPlace(id: string, markId: string) {
   const mark = bookmarks.get(sourceId(id))?.find(item => item.id === markId)
-  return mark ? readerInstances.get(id)?.bookmarkSpot?.(mark.position) ?? null : null
+  return mark ? readerInstances.get(id)?.bookmarkPlace?.(mark.position) ?? null : null
 }
 function bookmarkBatchMenu(id: string, markIds: string[], event: MouseEvent) {
   const source = sourceId(id), x = event.clientX, y = event.clientY
@@ -1791,9 +1791,10 @@ watch(reader, value => {
 watch(search, value => {
   if (value && focusSearchPending) { value.focus(); focusSearchPending = false }
 })
-// 教程每次启动在右下角自动弹出，直到在教程的章节表里勾上「启动时不再自动弹出」。
+// 教程每次启动在右下角弹出一个小的提醒窗，点它展开成完整的教程；直到在教程里勾上「不再自动弹出」。平时从设置里打开。
 let tourTimer: ReturnType<typeof setTimeout> | undefined
-onMounted(() => { if (!loadTour().hidden) tourTimer = setTimeout(() => { tourOpen.value = true }, 1400) })
+onMounted(() => { if (!loadTour().hidden) tourTimer = setTimeout(() => { if (!tourOpen.value) { tourFull.value = false; tourOpen.value = true } }, 1400) })
+async function openTour() { settingsOpen.value = false; tourOpen.value = false; await nextTick(); tourFull.value = true; tourOpen.value = true }
 onBeforeUnmount(() => clearTimeout(tourTimer))
 watch(settingsOpen, value => { nudgeGlassMotion(560); if (!value && captureQuick.value) monitorCaptureQuick() })
 watch(() => preferences.value.pdf.quickAskOnCapture, value => { if (!value) dismissCaptureQuick() })
@@ -2048,7 +2049,7 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
       </nav>
       <div class="sidebar-spacer"></div>
       <div v-if="effectiveAppearance.style === 'sketch'" class="sidebar-doodle" aria-hidden="true"></div>
-      <div class="sidebar-bottom"><button @click="openSettings()" aria-label="设置"><AppIcon name="settings" :size="17" /><span>设置</span></button><button class="tour-open" @click="tourOpen = true" aria-label="使用教程"><AppIcon name="play" :size="15" /><span>教程</span></button><button class="icon-button" @click="toggleTheme($event)" :data-tip="theme === 'dark' ? '切换浅色主题' : '切换深色主题'" :aria-label="theme === 'dark' ? '切换浅色主题' : '切换深色主题'"><AppIcon :name="theme === 'dark' ? 'sun' : 'moon'" :size="17" /></button></div>
+      <div class="sidebar-bottom"><button @click="openSettings()" aria-label="设置"><AppIcon name="settings" :size="17" /><span>设置</span></button><button class="icon-button" @click="toggleTheme($event)" :data-tip="theme === 'dark' ? '切换浅色主题' : '切换深色主题'" :aria-label="theme === 'dark' ? '切换浅色主题' : '切换深色主题'"><AppIcon :name="theme === 'dark' ? 'sun' : 'moon'" :size="17" /></button></div>
     </aside>
     </Transition>
 
@@ -2127,7 +2128,7 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
               <KeepAlive>
                 <component v-if="paneVisible(entry.id)" :is="entry.doc.kind === 'pdf' ? PdfReader : MarkdownReader" :ref="value => bindReader(entry.id, value)" :key="entry.id" :data="entry.bytes" :document-id="sourceId(entry.id)" :initial-page="entry.doc.page || 1" :initial-progress="entry.doc.progress || 0" :sidebar-fit-enabled="preferences.pdf.fitOnPanelOverflow" :initial-zoom="preferences.pdf.initialZoom === 'fit-width' ? 'fit' : preferences.pdf.initialZoom / 100" :zoom-step="preferences.pdf.zoomStep / 100" :fit-request="fitRequest" :font-size="preferences.markdown.fontSize" :content-width="preferences.markdown.contentWidth" :find-shortcut="preferences.shortcuts.find ? shortcut('find') : ''" :shortcuts="tipKeys" :initial-view="entry.view" :page-layout="preferences.pdf.pageLayout" :cover-alone="preferences.pdf.coverAlone" :right-capture="rightCaptureDocs.has(sourceId(entry.id))" v-on="entry.events" @page-layout="setPageLayout" />
               </KeepAlive>
-              <BookmarkRail v-if="paneVisible(entry.id)" :marks="paneBookmarks(entry.id)" :editing="editingBookmark" :spot="markId => bookmarkSpot(entry.id, markId)" @jump="markId => jumpBookmark(entry.id, markId)" @menu="(markId, event) => bookmarkMenu(entry.id, markId, event)" @batch="(ids, event) => bookmarkBatchMenu(entry.id, ids, event)" @remove-many="ids => deleteBookmarks(entry.id, ids)" @rename="(markId, name) => finishRename(entry.id, markId, name)" @remove="markId => deleteBookmark(entry.id, markId)" @cancel="editingBookmark = null" />
+              <BookmarkRail v-if="paneVisible(entry.id)" :marks="paneBookmarks(entry.id)" :editing="editingBookmark" :place="markId => bookmarkPlace(entry.id, markId)" @jump="markId => jumpBookmark(entry.id, markId)" @menu="(markId, event) => bookmarkMenu(entry.id, markId, event)" @batch="(ids, event) => bookmarkBatchMenu(entry.id, ids, event)" @remove-many="ids => deleteBookmarks(entry.id, ids)" @rename="(markId, name) => finishRename(entry.id, markId, name)" @remove="markId => deleteBookmark(entry.id, markId)" @cancel="editingBookmark = null" />
               <div v-if="tabDoc(entry.id)" class="reading-pill" :class="{ awake: splitView }" :data-tip="splitView ? entry.doc.name : undefined" role="status" :aria-label="`阅读位置自动保存 · ${tabDoc(entry.id)!.kind === 'pdf' ? `第 ${tabDoc(entry.id)!.page || 1} / ${tabDoc(entry.id)!.pageCount || '—'} 页 · ` : ''}已读 ${progressPercent(tabDoc(entry.id)!)}%`">
                 <svg class="pill-ring" viewBox="0 0 24 24" aria-hidden="true"><circle class="pill-ring-track" cx="12" cy="12" r="9" /><circle class="pill-ring-value" cx="12" cy="12" r="9" pathLength="100" :style="{ strokeDashoffset: 100 - progressPercent(tabDoc(entry.id)!) }" /></svg>
                 <span class="pill-text" aria-hidden="true"><span v-if="tabDoc(entry.id)!.kind === 'pdf'" class="pill-page"><b :key="tabDoc(entry.id)!.page || 1">{{ tabDoc(entry.id)!.page || 1 }}</b><i>/</i>{{ tabDoc(entry.id)!.pageCount || '—' }}</span><span v-else class="pill-page"><b :key="progressPercent(tabDoc(entry.id)!)">{{ progressPercent(tabDoc(entry.id)!) }}</b><i>%</i></span></span>
@@ -2171,8 +2172,8 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
       <div v-else-if="removeTarget" class="dialog-backdrop" @click.self="removeTarget = null"><section class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="remove-title"><div class="dialog-icon"><AppIcon name="trash" :size="24" /></div><h2 id="remove-title">从文档库移除？</h2><p>「{{ removeTarget.name }}」的阅读记录与标签会被移除，原文件仍保留在电脑上。</p><div class="dialog-actions"><button @click="removeTarget = null">取消</button><button class="danger-button" @click="removeDocument()">移除文档</button></div></section></div>
     </Transition>
     <Transition name="settings-pop">
-      <SettingsDialog v-if="settingsOpen" :initial-tab="settingsTab" @close="settingsOpen = false" @ai-saved="aiSettingsSaved" />
+      <SettingsDialog v-if="settingsOpen" :initial-tab="settingsTab" @close="settingsOpen = false" @ai-saved="aiSettingsSaved" @tour="openTour" />
     </Transition>
-    <Transition name="tour-pip"><TourPlayer v-if="tourOpen" @close="tourOpen = false" /></Transition>
+    <TourPlayer v-if="tourOpen" :start-full="tourFull" @close="tourOpen = false" />
   </div>
 </template>
