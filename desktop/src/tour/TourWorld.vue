@@ -2,6 +2,7 @@
 /* 教程里那张示意的界面：一块 1280×800 的画布，按当前主题的颜色画。它不接任何真实数据。 */
 import { computed } from 'vue'
 import AppIcon from '../components/AppIcon.vue'
+import { BOOKMARK_ARTS } from '../library/bookmark-art'
 import { MODELS, TEXT, replyLength, type Look, type Scene, type SlotId } from './lessons'
 
 const props = defineProps<{ scene: Scene }>()
@@ -36,7 +37,9 @@ const SLOTS: { id: SlotId; label: string; note: string }[] = [
 ]
 const SERVICES = ['OpenAI API', 'Claude', 'Kimi']
 const STYLES: { id: Look; label: string }[] = [{ id: 'glass', label: '液态玻璃' }, { id: 'crystal', label: '新液态玻璃' }, { id: 'warm', label: '暖色极简' }, { id: 'sketch', label: '铅笔草稿' }]
-const ARTS = ['至上主义', '风格派', '浮世绘', '包豪斯']
+/* 书签用应用里真的那套画：这几枚分别是至上主义、风格派、浮世绘、包豪斯、立体主义。 */
+const ARTS = ['suprematism', 'destijl', 'ukiyoe', 'bauhaus', 'cubism'].map(id => BOOKMARK_ARTS.find(item => item.id === id)!)
+const away = computed(() => props.scene.scroll > 110)
 const OUTLINE = ['5.1 特征值与特征向量', '5.2 特征方程', '5.3 相似对角化', '5.4 实对称矩阵']
 const FILES = [
   { id: 'new', title: '特征值专题讲义', meta: 'PDF · 24 页', kind: 'k1', hit: 0 },
@@ -54,7 +57,14 @@ const files = computed(() => {
 </script>
 
 <template>
-  <div class="tw-world" :data-look="look" :class="{ forced: scene.look, dark: scene.dark, photo: scene.photo, bare: !scene.chrome }" aria-hidden="true">
+  <div class="tw-world" :data-look="look" :class="{ forced: scene.look, dark: scene.dark, photo: scene.photo, bare: !scene.chrome, desk: scene.desk > 0 }" aria-hidden="true">
+    <div v-if="scene.desk > 0" class="tw-desk">
+      <p class="tw-icon"><AppIcon name="folder" :size="30" />文档</p>
+      <p class="tw-icon"><AppIcon name="image" :size="30" />截图</p>
+      <p class="tw-icon tw-deskfile" :class="{ lifted: scene.ghost }"><AppIcon name="file" :size="30" />特征值专题讲义.pdf</p>
+      <i class="tw-taskbar"><b></b><b></b><b></b><b></b></i>
+    </div>
+    <div class="tw-app" :style="scene.desk > 0 ? { transform: `translate(${-40 * scene.desk}px, ${-14 * scene.desk}px) scale(${1 - scene.desk * .27})` } : undefined">
     <aside class="tw-side">
       <div class="tw-search"><AppIcon name="search" :size="14" /><i></i></div>
       <p class="tw-row" :class="{ on: scene.view !== 'collection' }"><AppIcon name="library" :size="15" />全部文档</p>
@@ -65,9 +75,9 @@ const files = computed(() => {
       <p class="tw-row"><AppIcon name="folder" :size="15" />线性代数<b v-if="scene.grouped" class="tw-count">1</b></p>
       <p class="tw-row"><AppIcon name="folder" :size="15" />论文</p>
       <h6>书签</h6>
-      <p class="tw-mark"><i class="tw-art a0"></i>第 42 页</p>
-      <Transition name="tw-fade"><p v-if="scene.mark" class="tw-mark tw-mark-new"><i class="tw-art" :class="`a${scene.art}`"></i>第 87 页</p></Transition>
-      <p class="tw-mark"><i class="tw-art a3"></i>第 113 页</p>
+      <p class="tw-mark"><svg class="tw-art" viewBox="0 0 96 40" preserveAspectRatio="xMaxYMid slice" v-html="ARTS[4].svg" />第 42 页</p>
+      <Transition name="tw-fade"><p v-if="scene.mark" class="tw-mark tw-mark-new"><svg :key="scene.art" class="tw-art" viewBox="0 0 96 40" preserveAspectRatio="xMaxYMid slice" v-html="ARTS[scene.art].svg" />第 87 页</p></Transition>
+      <p class="tw-mark"><svg class="tw-art" viewBox="0 0 96 40" preserveAspectRatio="xMaxYMid slice" v-html="ARTS[3].svg" />第 113 页</p>
       <div class="tw-foot"><span class="tw-set"><AppIcon name="settings" :size="15" />设置</span><span class="tw-dark"><AppIcon :name="scene.dark ? 'sun' : 'moon'" :size="15" /></span></div>
     </aside>
 
@@ -104,6 +114,11 @@ const files = computed(() => {
         <div class="tw-entry"><small>Attention Is All You Need</small><p>注意力就是你所需要的一切</p></div>
       </div></Transition>
 
+      <div class="tw-rail">
+        <i class="tw-line" :style="{ top: '12%', background: ARTS[4].tint }"></i>
+        <Transition name="tw-railmark"><i v-if="scene.mark && away" class="tw-line tw-rail-new" :style="{ top: '27%', background: ARTS[scene.art].tint }"></i></Transition>
+        <i class="tw-line" :style="{ top: '36%', background: ARTS[3].tint }"></i>
+      </div>
       <div class="tw-pages" :style="{ transform: `translateY(${-scene.scroll}px) scale(${scene.zoom})` }">
         <article v-if="scene.split || scene.doc === 'algebra'" class="tw-page algebra">
           <small>第 5 章 · 特征值</small>
@@ -117,12 +132,12 @@ const files = computed(() => {
           <p>例 1　求矩阵 A 的<em>特征值</em>与特征向量。先写出特征多项式并因式分解，得到 λ₁ = 2，λ₂ = 5；再分别代回齐次方程组，各取一个基础解。</p>
           <p>例 2　设 A 的<em>特征值</em>为 1、2、3，求 A² − 2A 的全部<em>特征值</em>。把 A 换成 λ 代入即可。</p>
 
-          <div class="tw-ribbons"><i class="tw-ribbon tw-art a0"></i><Transition name="tw-ribbon"><i v-if="scene.mark" class="tw-ribbon tw-ribbon-new tw-art" :class="`a${scene.art}`"></i></Transition></div>
-          <Transition name="tw-pop"><div v-if="scene.markMenu" class="tw-menu tw-mark-menu"><span v-for="(name, index) in ARTS" :key="name" :class="`tw-art-${index}`"><i class="tw-art" :class="`a${index}`"></i>{{ name }}</span><span class="line"><AppIcon name="image" :size="13" />自定义图片…</span></div></Transition>
+          <div class="tw-ribbons"><Transition name="tw-ribbon"><svg v-if="scene.mark && !away" :key="scene.art" class="tw-ribbon tw-ribbon-new" viewBox="0 0 96 40" preserveAspectRatio="xMinYMid slice" v-html="ARTS[scene.art].svg" /></Transition></div>
+          <Transition name="tw-pop"><div v-if="scene.markMenu" class="tw-menu tw-mark-menu"><span class="line0"><AppIcon name="image" :size="13" />用自己的图片…</span><span v-for="(art, index) in ARTS.slice(0, 4)" :key="art.id" :class="`tw-art-${index}`"><svg class="tw-art" viewBox="0 0 96 40" preserveAspectRatio="xMaxYMid slice" v-html="art.svg" />{{ art.name }}<small>{{ art.era }}</small></span></div></Transition>
 
           <Transition name="tw-card">
-            <div v-if="scene.card !== 'none'" class="tw-card" :class="{ pinned: scene.card === 'pinned' }" :style="{ left: `${scene.cardAt.x}px`, top: `${scene.cardAt.y}px` }">
-              <div class="tw-card-head"><AppIcon class="tw-spark" name="sparkle" :size="13" /><span><mark>{{ TEXT.sentence.slice(0, 15) }}…</mark></span><b class="tw-pin" :class="{ on: scene.card === 'pinned' }"><AppIcon name="pin" :size="13" /></b></div>
+            <div v-if="scene.card !== 'none'" class="tw-card" :class="{ pinned: scene.card === 'pinned', floating: scene.follow === 'screen' }" :style="{ left: `${scene.cardAt.x}px`, top: `${scene.cardAt.y + (scene.follow === 'screen' ? scene.scroll - scene.hold : 0)}px` }">
+              <div class="tw-card-head"><AppIcon class="tw-spark" name="sparkle" :size="13" /><span><mark>{{ TEXT.sentence.slice(0, 15) }}…</mark></span><b v-if="scene.card === 'pinned'" class="tw-follow"><AppIcon :key="scene.follow" :name="scene.follow === 'page' ? 'doc' : 'fullscreen'" :size="13" /></b><b class="tw-pin" :class="{ on: scene.card === 'pinned' }"><AppIcon name="pin" :size="13" /></b></div>
               <i class="tw-rule" :class="{ running: scene.running }"></i>
               <p class="tw-answer">{{ written }}<i v-if="scene.running && scene.words < TEXT.answer.length" class="tw-caret"></i></p>
               <svg v-if="scene.drawn" class="tw-diagram" viewBox="0 0 260 104">
@@ -181,7 +196,6 @@ const files = computed(() => {
         </div>
       </section>
     </Transition>
-    <div v-if="scene.ghost" class="tw-ghost" :style="{ left: `${scene.ghost.x}px`, top: `${scene.ghost.y}px` }"><AppIcon name="file" :size="14" />特征值专题讲义.pdf</div>
 
     <Transition name="tw-ai">
       <aside v-if="scene.ai && scene.view === 'reader'" class="tw-ai" :class="{ side: scene.side }">
@@ -240,11 +254,22 @@ const files = computed(() => {
         </div>
       </section>
     </Transition>
+    </div>
+    <div v-if="scene.ghost" class="tw-ghost" :style="{ left: `${scene.ghost.x}px`, top: `${scene.ghost.y}px` }"><AppIcon name="file" :size="14" />特征值专题讲义.pdf</div>
   </div>
 </template>
 
 <style scoped>
-.tw-world{--tw-bg:var(--canvas);--tw-radius:16px;position:absolute;left:0;top:0;width:1280px;height:800px;transform-origin:0 0;overflow:hidden;background:var(--tw-bg);color:var(--ink);font-size:13px;line-height:1.4;user-select:none;pointer-events:none;transition:background .45s var(--ease-soft),color .45s var(--ease-soft)}
+.tw-world{--tw-bg:var(--canvas);--tw-radius:16px;position:absolute;left:0;top:0;width:1280px;height:800px;transform-origin:0 0;will-change:transform;overflow:hidden;background:var(--tw-bg);color:var(--ink);font-size:13px;line-height:1.4;user-select:none;pointer-events:none;transition:color .45s var(--ease-soft)}
+.tw-app{position:absolute;inset:0;overflow:hidden;background:var(--tw-bg);transform-origin:100% 46%;transition:background .45s var(--ease-soft)}
+/* 文库一课：窗口缩小一点，露出后面的桌面。 */
+.tw-world.desk .tw-app{border-radius:12px;box-shadow:0 40px 90px -30px rgb(0 0 0 / .6),0 0 0 1px rgb(255 255 255 / .22)}
+.tw-desk{position:absolute;inset:0;display:grid;align-content:start;justify-items:start;gap:26px;padding:150px 0 0 70px;background:linear-gradient(160deg,#2c4a66,#56799a 46%,#c58f7c);color:#fff;font:12px/1.3 'Segoe UI','Microsoft YaHei UI',system-ui,sans-serif}
+.tw-desk .tw-icon{display:grid;justify-items:center;gap:6px;width:112px;text-align:center;text-shadow:0 1px 3px rgb(0 0 0 / .5);transition:opacity .2s}
+.tw-desk .tw-icon svg{filter:drop-shadow(0 2px 4px rgb(0 0 0 / .35))}
+.tw-deskfile.lifted{opacity:.35}
+.tw-taskbar{position:absolute;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;gap:10px;height:38px;background:rgb(20 28 38 / .5)}
+.tw-taskbar b{width:20px;height:20px;border-radius:5px;background:rgb(255 255 255 / .34)}
 .tw-world p,.tw-world h1,.tw-world h2,.tw-world h3,.tw-world h5,.tw-world h6{margin:0}
 .tw-world i,.tw-world em{font-style:normal}
 .tw-side,.tw-top,.tw-ai,.tw-dialog,.tw-bar,.tw-lib{transition:background-color .45s var(--ease-soft),border-color .45s var(--ease-soft),border-radius .45s var(--ease-soft),translate .5s var(--ease-out),opacity .4s var(--ease-out)}
@@ -274,11 +299,7 @@ const files = computed(() => {
 @keyframes tw-bump{from{scale:.3;opacity:0}}
 .tw-side h6{margin:14px 10px 4px;color:var(--muted);font-size:11px;font-weight:600;letter-spacing:.08em}
 .tw-mark{display:flex;align-items:center;gap:9px;height:28px;padding:0 10px;color:var(--secondary);font-size:12px}
-.tw-mark .tw-art{width:24px;height:10px;clip-path:polygon(0 0,100% 0,82% 50%,100% 100%,0 100%)}
-.tw-art.a0{background:linear-gradient(90deg,#e9e3d5 0 30%,#16171a 30% 52%,#e9e3d5 52% 64%,#c8372d 64% 78%,#e9e3d5 78%)}
-.tw-art.a1{background:linear-gradient(90deg,#d8232a 0 28%,#111 28% 32%,#f4f1e8 32% 62%,#111 62% 66%,#1f4fa3 66% 84%,#111 84% 88%,#f2c318 88%)}
-.tw-art.a2{background:linear-gradient(90deg,#1f3a5f,#3f6b8c 52%,#e8dcc0 52% 60%,#274a6e 60%)}
-.tw-art.a3{background:linear-gradient(90deg,#e8b923 0 33%,#c8372d 33% 66%,#1f4fa3 66%)}
+.tw-mark .tw-art{flex:none;width:30px;height:13px;clip-path:polygon(0 0,100% 0,100% 100%,0 100%,5px 50%)}
 .tw-foot{display:flex;align-items:center;margin-top:auto;padding-top:10px;border-top:1px solid var(--line-soft);color:var(--secondary)}
 .tw-set{display:flex;align-items:center;gap:8px;height:32px;padding:0 12px;border:1px solid var(--line-soft);border-radius:999px}
 .tw-dark{display:grid;place-items:center;width:32px;height:32px;margin-left:auto;border:1px solid var(--line-soft);border-radius:50%}
@@ -358,11 +379,18 @@ const files = computed(() => {
 .tw-ul{position:relative;display:inline-block}
 .tw-ul svg{position:absolute;left:0;bottom:1px;width:100%;height:7px;overflow:visible}
 .tw-ul path{stroke:#3b6fe0}
-.tw-ribbons{position:absolute;right:-30px;top:84px;display:grid;gap:8px}
-.tw-ribbon{display:block;width:44px;height:17px;clip-path:polygon(0 0,100% 0,84% 50%,100% 100%,0 100%);filter:drop-shadow(0 2px 3px rgb(0 0 0 / .3))}
-.tw-ribbon-new{transition:background .35s}
-.tw-ribbon-enter-active{transition:translate .5s var(--ease-spring),opacity .25s}
-.tw-ribbon-enter-from{translate:-40px 0;opacity:0}
+/* 书签：位置看得见时夹在页边上，翻走以后右侧只留一条同色的细线。 */
+.tw-ribbons{position:absolute;left:calc(100% - 5px);top:76px;filter:drop-shadow(0 1px 2px rgb(0 0 0 / .42))}
+.tw-ribbon{display:block;width:46px;height:19px;clip-path:polygon(0 0,100% 0,calc(100% - 7px) 50%,100% 100%,0 100%)}
+.tw-ribbon-enter-active{transition:translate .45s var(--ease-spring),opacity .2s}
+.tw-ribbon-leave-active{transition:opacity .15s}
+.tw-ribbon-enter-from{translate:-30px 0;opacity:0}
+.tw-ribbon-leave-to{opacity:0}
+.tw-rail{position:absolute;right:8px;top:56px;bottom:20px;z-index:2;width:22px}
+.tw-line{position:absolute;right:0;width:20px;height:2.5px;border-radius:1px;box-shadow:0 1px 2px rgb(0 0 0 / .28)}
+.tw-railmark-enter-active{transition:translate .4s var(--ease-spring),opacity .2s}
+.tw-railmark-leave-active{transition:opacity .15s,translate .2s}
+.tw-railmark-enter-from,.tw-railmark-leave-to{translate:26px 0;opacity:0}
 
 /* ---- 解释卡、译文 ---- */
 .tw-card,.tw-trans{position:absolute;z-index:2;width:310px;padding:11px 14px 12px;border:1px solid var(--glass-outline);border-radius:14px;background:var(--popup-glass,var(--surface));box-shadow:0 18px 44px -18px rgb(0 0 0 / .42),0 2px 6px rgb(0 0 0 / .08);color:var(--ink);font:13.5px/1.62 var(--font-ui,system-ui);text-align:left;transform-origin:40% 0;transition:box-shadow .5s var(--ease-out),translate .45s var(--ease-spring),rotate .45s var(--ease-spring)}
@@ -377,6 +405,9 @@ const files = computed(() => {
 .tw-spark{flex:none;color:var(--accent)}
 .tw-pin{display:grid;place-items:center;flex:none;width:22px;height:22px;border-radius:50%;color:var(--muted);rotate:35deg;transition:rotate .35s var(--ease-spring),color .2s,background-color .2s}
 .tw-pin.on{rotate:0deg;background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent)}
+.tw-follow{display:grid;place-items:center;flex:none;width:22px;height:22px;border-radius:50%;color:var(--muted);animation:tw-bump .35s var(--ease-spring)}
+.tw-follow svg{animation:tw-bump .3s var(--ease-spring)}
+.tw-card.floating{rotate:0deg;translate:0 0;box-shadow:0 26px 60px -20px rgb(0 0 0 / .5),0 2px 8px rgb(0 0 0 / .12),0 0 0 1px color-mix(in srgb,var(--accent) 38%,transparent)}
 .tw-rule{position:relative;display:block;height:1px;margin:8px 0 9px;overflow:hidden;background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 55%,transparent),color-mix(in srgb,var(--ink) 10%,transparent) 45%,transparent)}
 .tw-rule.running::after{content:'';position:absolute;inset:0;width:38%;background:linear-gradient(90deg,transparent,var(--accent),transparent);animation:tw-run 1.15s cubic-bezier(.45,0,.55,1) infinite}
 @keyframes tw-run{from{translate:-100% 0}to{translate:270% 0}}
@@ -410,8 +441,10 @@ const files = computed(() => {
 .tw-menu span.dim{color:var(--muted);opacity:.6}
 .tw-menu span.line{margin-top:3px;border-top:1px solid var(--line-soft);border-radius:0 0 7px 7px;color:var(--secondary)}
 .tw-menu b{color:var(--accent);font-weight:600}
-.tw-menu .tw-art{width:26px;height:11px;clip-path:polygon(0 0,100% 0,82% 50%,100% 100%,0 100%)}
-.tw-mark-menu{right:8px;top:118px}
+.tw-menu .tw-art{flex:none;width:36px;height:15px;border-radius:2px;box-shadow:0 0 0 1px rgb(0 0 0 / .18)}
+.tw-menu small{margin-left:auto;padding-left:14px;color:var(--muted);font-size:11px}
+.tw-menu span.line0{margin-bottom:3px;border-bottom:1px solid var(--line-soft);border-radius:7px 7px 0 0;color:var(--secondary)}
+.tw-mark-menu{right:-64px;top:96px}
 .tw-file-menu{left:420px;top:178px}
 .tw-options{left:14px;right:14px;top:calc(100% - 8px)}
 .tw-quote{left:26px;top:150px}
@@ -440,7 +473,7 @@ const files = computed(() => {
 .tw-file-enter-active,.tw-file-leave-active,.tw-file-move{transition:opacity .3s var(--ease-out),scale .42s var(--ease-spring),transform .42s var(--ease-out)}
 .tw-file-enter-from,.tw-file-leave-to{opacity:0;scale:.82}
 .tw-file-leave-active{position:absolute;width:232px}
-.tw-ghost{position:absolute;z-index:9;display:flex;align-items:center;gap:7px;height:34px;margin:10px 0 0 14px;padding:0 13px;border:1px solid var(--glass-outline);border-radius:10px;background:var(--popup-glass,var(--surface));box-shadow:0 18px 40px -16px rgb(0 0 0 / .5);font-size:12.5px;font-weight:600;rotate:-4deg}
+.tw-ghost{position:absolute;z-index:19;display:flex;align-items:center;gap:7px;height:34px;margin:10px 0 0 14px;padding:0 13px;border:1px solid var(--glass-outline);border-radius:10px;background:var(--popup-glass,var(--surface));box-shadow:0 18px 40px -16px rgb(0 0 0 / .5);font-size:12.5px;font-weight:600;rotate:-4deg}
 .tw-ui{padding:16px;border:1px solid var(--line-soft);border-radius:14px;animation:tw-page .45s var(--ease-out) both}
 .tw-ui:nth-child(2){animation-delay:.08s}.tw-ui:nth-child(3){animation-delay:.16s}
 .tw-ui svg{display:block;width:100%;margin-bottom:10px}

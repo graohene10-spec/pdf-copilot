@@ -1517,10 +1517,15 @@
 /* ---- 侧栏空白处：铅笔排线的纹理，底下密、往上渐渐淡掉，像纸边被铅笔蹭过 -------------- */
 .sidebar-doodle { display: none; }
 
+/* 画在侧栏底部，不占位置：书签列表长了就盖在它上面。 */
 :root[data-style='sketch'] .sidebar-doodle {
   display: block;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 62px;
+  z-index: -1;
   height: 150px;
-  margin: auto -12px 6px;
   pointer-events: none;
   opacity: .5;
   background:
@@ -1535,6 +1540,7 @@
 @media (max-height: 680px) {
   :root[data-style='sketch'] .sidebar-doodle { display: none; }
 }
+:root[data-style='sketch'] .app-sidebar { isolation: isolate; }
 
 /* 格子纸上的流形画在所有纸片后面（z-index: -1），外壳自成一层叠放上下文，流形不会掉到桌面底色下面。 */
 :root[data-style='sketch'] .app-shell { isolation: isolate; }

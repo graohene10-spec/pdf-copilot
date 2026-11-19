@@ -64,6 +64,11 @@ export type Scene = {
   find: string
   clock: 'idle' | 'open' | 'running' | 'ringing'
   minutes: number
+  /** 固定的卡片在哪一层：跟着书页走，或停在屏幕上（hold 是切过去那一刻书页滚到了哪）。 */
+  follow: 'page' | 'screen'
+  hold: number
+  /** 文库一课：窗口缩小、露出桌面的程度，0 到 1。 */
+  desk: number
 }
 
 export const freshScene = (): Scene => ({
@@ -72,7 +77,7 @@ export const freshScene = (): Scene => ({
   settings: '', link: false, key: 0, codex: false, slots: { assistant: '未选择', translation: '未选择', explain: '未选择' }, menu: '',
   draft: '', asked: false, answer: 0, quote: false, quotePop: false, side: false, sideAsk: '', sideAnswer: 0, branch: false, commands: false, btw: false, btwAnswer: 0,
   pop: false, column: false, auto: false, ink: '', hl: 0, pen: 0, ul: 0, mark: false, art: 0, markMenu: false,
-  files: 6, ghost: null, query: '', fileMenu: false, grouped: false, starred: false, outline: false, finding: false, find: '', clock: 'idle', minutes: 5,
+  files: 6, ghost: null, query: '', fileMenu: false, grouped: false, starred: false, outline: false, finding: false, find: '', clock: 'idle', minutes: 5, follow: 'page', hold: 0, desk: 0,
 })
 
 export const TEXT = {
@@ -173,7 +178,7 @@ const explain: Play = async (stage, scene, say) => {
   scene.card = 'open'; scene.running = true
   await stage.wait(80)
   const card = stage.locate('.tw-card', [.5, 0])
-  stage.look({ x: card.x, y: card.y + 150 }, 1.6)
+  stage.look({ x: card.x, y: card.y + 105 }, 1.45)
   await stage.wait(300)
 
   say('解释显示在选区旁边')
@@ -192,12 +197,25 @@ const explain: Play = async (stage, scene, say) => {
   scene.card = 'pinned'
   await stage.wait(520)
 
-  say('固定的卡片随页面滚动')
-  stage.look(null, 1)
-  await stage.move('.tw-page', { at: [.2, .62] })
-  await stage.tween(900, k => { scene.scroll = k * 190 })
-  await stage.wait(200)
-  await stage.tween(800, k => { scene.scroll = 190 - k * 150 })
+  say('固定的卡片默认跟着书页走')
+  stage.look('.tw-page', 1.25, [.5, .42])
+  await stage.move('.tw-page', { at: [.14, .7] })
+  await stage.tween(800, k => { scene.scroll = k * 150 })
+  await stage.wait(150)
+  await stage.tween(700, k => { scene.scroll = 150 - k * 150 })
+  await stage.wait(250)
+
+  say('点图钉旁的图标，改成停在屏幕上')
+  const head = stage.locate('.tw-follow')
+  stage.look({ x: head.x - 60, y: head.y + 110 }, 1.6)
+  await click(stage, '.tw-follow')
+  scene.hold = scene.scroll; scene.follow = 'screen'
+  await stage.wait(450)
+  stage.look('.tw-page', 1.25, [.5, .42])
+  await stage.move('.tw-page', { at: [.14, .7] })
+  await stage.tween(900, k => { scene.scroll = k * 170 })
+  await stage.wait(250)
+  await stage.tween(700, k => { scene.scroll = 170 - k * 170 })
   await stage.wait(500)
 }
 
@@ -216,7 +234,7 @@ const visual: Play = async (stage, scene, say) => {
   scene.visual = true; scene.card = 'open'; scene.running = true
   await stage.wait(80)
   const card = stage.locate('.tw-card', [.5, 0])
-  stage.look({ x: card.x, y: card.y + 160 }, 1.6)
+  stage.look({ x: card.x, y: card.y + 115 }, 1.45)
   await stage.tween(800, k => { scene.words = Math.round(k * TEXT.answer.length) }, true)
   scene.drawn = true
   await stage.wait(1200)
@@ -317,16 +335,13 @@ const translate: Play = async (stage, scene, say) => {
 }
 
 const ink: Play = async (stage, scene, say) => {
-  say('点笔形按钮进入标记')
+  say({ text: '直接拿起荧光笔，不用先点标记按钮', keys: ['Alt', '2'] })
   stage.place(ENTRY)
-  stage.look('.tw-bar', 1.6)
-  await click(stage, '.tw-inkbtn')
-  scene.ink = 'pen'
+  stage.look('.tw-bar', 1.5)
+  await stage.move('.tw-page', { at: [.3, .2] })
   await stage.wait(500)
-
-  say({ text: '荧光笔涂文字', keys: ['Alt', '2'] })
-  await click(stage, '.tw-tool-highlighter')
   scene.ink = 'highlighter'
+  await stage.wait(700)
   await stage.move('.tw-hl', { at: [0, .55], look: 1.8 })
   stage.look('.tw-hl', 1.8)
   stage.press()
@@ -334,7 +349,7 @@ const ink: Play = async (stage, scene, say) => {
   stage.release()
   await stage.wait(300)
 
-  say({ text: '笔可以写字、画圈', keys: ['Alt', '1'] })
+  say({ text: '换成笔，写字、画圈', keys: ['Alt', '1'] })
   scene.ink = 'pen'
   const ring = stage.box('.tw-ring'), around = (k: number) => {
     const angle = -Math.PI * .75 + k * Math.PI * 2.08
@@ -347,7 +362,7 @@ const ink: Play = async (stage, scene, say) => {
   stage.release()
   await stage.wait(300)
 
-  say({ text: '划线工具画一条手写横线', keys: ['Alt', '3'] })
+  say({ text: '换成划线，画一条手写横线', keys: ['Alt', '3'] })
   scene.ink = 'underline'
   await stage.move('.tw-ul', { at: [0, 1], look: 1.8 })
   stage.look('.tw-ul', 1.8)
@@ -355,20 +370,24 @@ const ink: Play = async (stage, scene, say) => {
   await stage.move('.tw-ul', { at: [1, 1], ms: 650, step: k => { scene.ul = k } })
   stage.release()
   await stage.wait(400)
-  stage.look(null, 1)
-  await stage.wait(900)
+
+  say({ text: '退出标记', keys: ['Esc'] })
+  stage.look('.tw-bar', 1.3, [.5, 4])
+  await stage.wait(500)
+  scene.ink = ''
+  await stage.wait(1000)
 }
 
 const bookmark: Play = async (stage, scene, say) => {
-  say({ text: '在当前位置加书签', keys: ['Alt', 'B'] })
+  say({ text: '在当前位置加书签，夹在页边上', keys: ['Alt', 'B'] })
   stage.place(ENTRY)
-  stage.look('.tw-ribbons', 1.7)
-  await stage.move('.tw-page', { at: [.7, .3] })
+  stage.look('.tw-ribbons', 1.7, [.5, 3])
+  await stage.move('.tw-page', { at: [.7, .2] })
   await stage.wait(350)
   scene.mark = true
   await stage.wait(900)
 
-  say('右键书签换样式，也可以用自己的图片')
+  say('右键换画风，也可以用自己的图片')
   await click(stage, '.tw-ribbon-new')
   scene.markMenu = true
   await stage.wait(320)
@@ -376,27 +395,42 @@ const bookmark: Play = async (stage, scene, say) => {
   scene.art = 2; scene.markMenu = false
   await stage.wait(800)
 
-  say('书签都列在侧栏，点一下跳转')
+  say('翻走以后，右侧留一条同色的细线')
+  stage.look('.tw-rail', 1.35, [-2.6, .4])
+  await stage.move('.tw-page', { at: [.5, .5] })
+  await stage.tween(900, k => { scene.scroll = k * 260 })
+  await stage.wait(900)
+
+  say({ text: '在书签之间跳转', keys: ['Ctrl', '↑', '↓'] })
+  await stage.wait(450)
+  await stage.tween(600, k => { scene.scroll = 260 - k * 260 })
+  await stage.wait(900)
+
+  say('全部书签列在侧栏，点一下跳过去')
   stage.look(null, 1)
-  await stage.move('.tw-page', { at: [.3, .5] })
-  await stage.tween(650, k => { scene.scroll = k * 230 })
+  await stage.tween(500, k => { scene.scroll = k * 260 })
   await click(stage, '.tw-mark-new')
-  await stage.tween(560, k => { scene.scroll = 230 - k * 230 })
+  await stage.tween(560, k => { scene.scroll = 260 - k * 260 })
   await stage.wait(900)
 }
 
 const library: Play = async (stage, scene, say) => {
   scene.view = 'library'
-  say('把 PDF 或 Markdown 拖进窗口')
-  await stage.wait(60)
-  stage.look({ x: 700, y: 330 }, 1.2)
-  const from = { x: 1150, y: 120 }, to = stage.locate('.tw-file-0', [.5, .4])
-  stage.place(from); stage.show(); stage.press()
+  say('从桌面把 PDF 或 Markdown 拖进窗口')
+  await stage.tween(650, k => { scene.desk = k })
+  stage.place({ x: 250, y: 560 })
+  await stage.move('.tw-deskfile', { at: [.5, .3] })
+  await stage.wait(200)
+  stage.press()
+  const from = stage.locate('.tw-deskfile', [.5, .3]), to = stage.locate('.tw-file-0', [.5, .4])
   scene.ghost = from
-  await stage.move(to, { ms: 900, step: k => { scene.ghost = { x: from.x + (to.x - from.x) * k, y: from.y + (to.y - from.y) * k } } })
+  await stage.move(to, { ms: 1000, step: k => { scene.ghost = { x: from.x + (to.x - from.x) * k, y: from.y + (to.y - from.y) * k } } })
   stage.release()
   scene.ghost = null; scene.files = 7
-  await stage.wait(800)
+  await stage.wait(350)
+  await stage.tween(600, k => { scene.desk = 1 - k })
+  stage.look({ x: 700, y: 330 }, 1.2)
+  await stage.wait(500)
 
   say({ text: '搜索标题和正文', keys: ['Ctrl', 'K'] })
   await click(stage, '.tw-lib-search')
@@ -524,12 +558,12 @@ const look: Play = async (stage, scene, say) => {
 
 export const LESSONS: Lesson[] = [
   { id: 'setup', title: '接入 AI', note: '连接服务，给每个功能选模型', steps: 4, play: setup },
-  { id: 'explain', title: '快速解释', note: '选中文字后按中键', steps: 6, play: explain },
+  { id: 'explain', title: '快速解释', note: '选中文字后按中键', steps: 7, play: explain },
   { id: 'visual', title: '用图解释', note: '图解、可拖的图、合集', steps: 3, play: visual },
   { id: 'assistant', title: '阅读助手', note: '提问、附属对话、分支、指令', steps: 5, play: assistant },
   { id: 'translate', title: '翻译', note: '划词翻译与翻译栏', steps: 3, play: translate },
-  { id: 'ink', title: '标记', note: '笔、荧光笔、划线', steps: 4, play: ink },
-  { id: 'bookmark', title: '书签', note: '艺术史书签，侧栏汇总', steps: 3, play: bookmark },
+  { id: 'ink', title: '标记', note: 'Alt + 1 / 2 / 3 直接拿起工具', steps: 4, play: ink },
+  { id: 'bookmark', title: '书签', note: '夹在页边，Ctrl + ↑ ↓ 跳转', steps: 5, play: bookmark },
   { id: 'library', title: '文库', note: '导入、搜索、分组、收藏', steps: 3, play: library },
   { id: 'tabs', title: '多文档', note: '标签页与并排阅读', steps: 2, play: tabs },
   { id: 'view', title: '阅读视图', note: '目录、搜索、缩放、收起界面', steps: 4, play: view },
