@@ -92,7 +92,7 @@ export function createDirector(parts: { viewport: () => HTMLElement | null; worl
     return { x: (box.left - frameBox.left + box.width * at[0]) / scale, y: (box.top - frameBox.top + box.height * at[1]) / scale }
   }
 
-  function ripple(kind: 'left' | 'middle') {
+  function ripple(kind: 'left' | 'middle' | 'right') {
     const layer = parts.ripples(); if (!layer) return
     const { left, top, scale } = paint(), dot = document.createElement('i')
     dot.className = `tour-ripple ${kind}`
@@ -140,7 +140,7 @@ export function createDirector(parts: { viewport: () => HTMLElement | null; worl
     },
     press() { pointer.down = true },
     release() { pointer.down = false },
-    async click(kind: 'left' | 'middle' = 'left') {
+    async click(kind: 'left' | 'middle' | 'right' = 'left') {
       pointer.down = true; ripple(kind)
       await schedule(110)
       pointer.down = false

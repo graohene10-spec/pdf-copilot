@@ -598,6 +598,8 @@
   overflow: clip;
   overflow-clip-margin: .45em;
   text-overflow: ellipsis;
+  /* clip 不像 hidden 那样让弹性子项可以收窄，要自己写明，否则长标题会撑出按钮。 */
+  min-width: 0;
 }
 
 :root[data-style='sketch'] :is(h1, h2, h3, h4, strong, b) {

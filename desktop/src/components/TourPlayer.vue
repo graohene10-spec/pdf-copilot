@@ -133,7 +133,7 @@ onBeforeUnmount(() => { alive = false; ++session; document.removeEventListener('
               <div v-if="phase === 'play' && !titled" class="tour-beats" aria-hidden="true"><i v-for="index in current.steps" :key="index" :class="{ past: index < beat, now: index === beat }"></i></div>
               <Transition name="tour-say" mode="out-in">
                 <p v-if="caption.text && phase === 'play' && !titled" :key="caption.text" class="tour-caption" :class="{ top: caption.top }">
-                  <svg v-if="caption.mouse" class="hint-mouse" viewBox="0 0 14 20" aria-hidden="true"><rect x="1" y="1" width="12" height="18" rx="6" /><line x1="7" y1="4.5" x2="7" y2="8.5" /></svg>
+                  <svg v-if="caption.mouse" class="hint-mouse" viewBox="0 0 14 20" aria-hidden="true"><path v-if="caption.mouse === 'left'" class="side" d="M7 1.6A5.4 5.4 0 0 0 1.6 7v1.8H7z" /><path v-else-if="caption.mouse === 'right'" class="side" d="M7 1.6A5.4 5.4 0 0 1 12.4 7v1.8H7z" /><rect x="1" y="1" width="12" height="18" rx="6" /><line x1="7" y1="4.5" x2="7" y2="8.5" /></svg>
                   <kbd v-for="key in caption.keys" :key="key">{{ key }}</kbd>{{ caption.text }}
                 </p>
               </Transition>
@@ -214,6 +214,9 @@ onBeforeUnmount(() => { alive = false; ++session; document.removeEventListener('
 .tour-ripples{position:absolute;inset:0;pointer-events:none}
 .tour-ripples :deep(.tour-ripple){position:absolute;width:44px;height:44px;margin:-22px 0 0 -22px;border-radius:50%;border:1.5px solid color-mix(in srgb,var(--ink) 55%,transparent);animation:tour-ripple .5s var(--ease-out) both}
 .tour.mini .tour-ripples :deep(.tour-ripple){width:22px;height:22px;margin:-11px 0 0 -11px}
+.tour-ripples :deep(.tour-ripple.right){border-style:dashed}
+.hint-mouse .side{fill:var(--accent);stroke:none}
+.hint-mouse:has(.side) line{stroke:color-mix(in srgb,var(--ink) 45%,transparent);stroke-width:1.3;animation:none}
 .tour-ripples :deep(.tour-ripple.middle){border-color:var(--accent);box-shadow:0 0 0 6px color-mix(in srgb,var(--accent) 16%,transparent)}
 @keyframes tour-ripple{from{opacity:.9;scale:.2}to{opacity:0;scale:1.15}}
 .tour-cursor{position:absolute;left:0;top:0;overflow:visible;transform-origin:0 0;will-change:transform;opacity:0;pointer-events:none;filter:drop-shadow(0 2px 3px rgb(0 0 0 / .32));transition:opacity .25s var(--ease-out)}
