@@ -39,6 +39,13 @@ const SERVICES = ['OpenAI API', 'Claude', 'Kimi']
 const STYLES: { id: Look; label: string }[] = [{ id: 'glass', label: '液态玻璃' }, { id: 'crystal', label: '新液态玻璃' }, { id: 'warm', label: '暖色极简' }, { id: 'sketch', label: '铅笔草稿' }]
 /* 书签用应用里真的那套画：这几枚分别是至上主义、风格派、浮世绘、包豪斯、立体主义。 */
 const ARTS = ['suprematism', 'destijl', 'ukiyoe', 'bauhaus', 'cubism'].map(id => BOOKMARK_ARTS.find(item => item.id === id)!)
+/* 截图一课：三张截图各截了什么（输入框里的小图就是把这段字缩小了画）、快捷提问的气泡。 */
+const SHOTS = ['det(A − λI) = 0', '定理 5.2　实对称矩阵的特征值都是实数', TEXT.sentence]
+const QUICK = ['为什么？', '详细展开', '通俗解释', '举个例子']
+const box = computed(() => { const frame = props.scene.frame; return frame ? { left: `${frame.x}px`, top: `${frame.y}px`, width: `${frame.width}px`, height: `${frame.height}px` } : {} })
+/* 快捷提问时选区以外压暗：整块遮罩在选区处挖一个洞。 */
+const hole = computed(() => { const frame = props.scene.frame; return frame ? { clipPath: `path(evenodd, "M0 0H1280V800H0Z M${frame.x} ${frame.y}h${frame.width}v${frame.height}h${-frame.width}Z")` } : {} })
+const beside = computed(() => { const frame = props.scene.frame; return frame ? { left: `${frame.x + frame.width + 26}px`, top: `${frame.y + frame.height / 2}px` } : {} })
 const away = computed(() => props.scene.scroll > 110)
 const OUTLINE = ['5.1 特征值与特征向量', '5.2 特征方程', '5.3 相似对角化', '5.4 实对称矩阵']
 const FILES = [
@@ -103,7 +110,7 @@ const files = computed(() => {
           <i class="tw-sep"></i><i class="tw-dot c1"></i><i class="tw-dot c2"></i><i class="tw-dot c3"></i>
         </template>
         <template v-else>
-          <AppIcon class="tw-ol" name="list" :size="15" /><i class="tw-sep"></i><span class="tw-percent">−<b>{{ Math.round(scene.zoom * 100) }}%</b>+</span><i class="tw-sep"></i><AppIcon name="crop" :size="15" /><AppIcon class="tw-inkbtn" name="edit" :size="15" />
+          <AppIcon class="tw-ol" name="list" :size="15" /><i class="tw-sep"></i><span class="tw-percent">−<b>{{ Math.round(scene.zoom * 100) }}%</b>+</span><i class="tw-sep"></i><span class="tw-cropbtn" :class="{ on: scene.crop }"><AppIcon name="crop" :size="15" /></span><AppIcon class="tw-inkbtn" name="edit" :size="15" />
         </template>
       </div>
       <Transition name="tw-slide"><div v-if="scene.outline" class="tw-outline"><h6>目录</h6><p v-for="(item, index) in OUTLINE" :key="item" :class="[`tw-ol-${index}`, { on: index === 0 }]">{{ item }}</p></div></Transition>
@@ -209,10 +216,15 @@ const files = computed(() => {
               <Transition name="tw-pop"><div v-if="scene.quotePop" class="tw-menu tw-quote"><span><AppIcon name="append" :size="13" />引用到输入框</span><span class="tw-quote-side"><AppIcon name="branch" :size="13" />在侧边对话提问</span></div></Transition>
               <Transition name="tw-fade"><p v-if="scene.branch" class="tw-note"><AppIcon name="branch" :size="12" />新分支从这条回答开始，原对话在对话记录里</p></Transition>
             </template>
+            <template v-else-if="scene.shotSent">
+              <div class="tw-me tw-me-shots"><span><b v-for="(text, index) in SHOTS" :key="index" class="tw-shot flat"><i>{{ text }}</i></b></span>{{ TEXT.shotAsk }}</div>
+              <p class="tw-say">{{ TEXT.shotReply.slice(0, scene.shotAnswer) }}</p>
+            </template>
             <div v-else class="tw-empty"><AppIcon name="sparkle" :size="22" /><span>总结这一页</span><span>这个公式怎么来的</span></div>
           </div>
           <Transition name="tw-pop"><div v-if="scene.btw" class="tw-btw"><p><b>/btw</b>{{ TEXT.btwAsk }}</p><p>{{ TEXT.btwReply.slice(0, scene.btwAnswer) }}</p></div></Transition>
           <Transition name="tw-pop"><div v-if="scene.commands" class="tw-menu tw-cmds"><span class="tw-cmd-btw"><b>/btw</b>顺便问一句</span><span><b>/compress</b>压缩对话</span><span><b>/usage</b>查看用量</span></div></Transition>
+          <TransitionGroup v-if="scene.shots" tag="div" name="tw-shot" class="tw-shots"><b v-for="index in scene.shots" :key="index" class="tw-shot" :class="[`tw-shot-${index - 1}`, { kept: index <= scene.kept }]"><i>{{ SHOTS[index - 1] }}</i></b></TransitionGroup>
           <div class="tw-ask" :class="{ typed: scene.draft }"><span>{{ scene.draft || '问问这一页' }}<i v-if="scene.draft" class="tw-caret"></i></span><b class="tw-send"><AppIcon name="arrow-up" :size="14" /></b></div>
         </div>
         <div v-if="scene.side" class="tw-sidechat">
@@ -254,6 +266,19 @@ const files = computed(() => {
         </div>
       </section>
     </Transition>
+
+    <Transition name="tw-fade"><div v-if="scene.quick && scene.frame" class="tw-dim" :style="hole"></div></Transition>
+    <div v-if="scene.frame" class="tw-frame" :class="{ set: scene.quick }" :style="box"><i v-for="corner in 4" :key="corner"></i></div>
+    <Transition name="tw-pop"><div v-if="scene.quick && scene.frame" class="tw-quick" :style="beside">
+      <span class="tw-thinking"><AppIcon name="sparkle" :size="12" />想问点什么</span>
+      <span v-for="(label, index) in QUICK" :key="label" class="tw-bubble" :class="`tw-bubble-${index}`" :style="{ animationDelay: `${90 + index * 55}ms` }">{{ label }}<kbd>{{ index + 1 }}</kbd></span>
+      <span class="tw-quick-foot"><span class="tw-quick-own"><AppIcon name="sparkle" :size="12" />自己提问</span><kbd>Esc</kbd></span>
+    </div></Transition>
+    <Transition name="tw-pop"><div v-if="scene.ctx" class="tw-menu tw-ctx" :style="{ left: `${scene.ctx.x + 4}px`, top: `${scene.ctx.y + 4}px` }">
+      <span><AppIcon name="split" :size="13" />并排阅读…</span><span><AppIcon name="fullscreen" :size="13" />进入全屏</span>
+      <span class="tw-ctx-right line"><AppIcon name="crop" :size="13" />开启右键拖动截图</span><span><AppIcon name="sparkle" :size="13" />关闭框选快捷提问</span>
+      <span class="line"><AppIcon name="settings" :size="13" />设置</span>
+    </div></Transition>
     </div>
     <div v-if="scene.ghost" class="tw-ghost" :style="{ left: `${scene.ghost.x}px`, top: `${scene.ghost.y}px` }"><AppIcon name="file" :size="14" />特征值专题讲义.pdf</div>
   </div>
@@ -569,4 +594,39 @@ const files = computed(() => {
 .tw-slide-enter-from,.tw-slide-leave-to{opacity:0;translate:-18px 0}
 .tw-fade-enter-active{transition:opacity .3s var(--ease-out),translate .36s var(--ease-out)}
 .tw-fade-enter-from{opacity:0;translate:-8px 0}
+/* 截图一课：拖出来的框、快捷提问的气泡、输入框里的小图。 */
+.tw-cropbtn{display:grid;place-items:center;width:28px;height:26px;margin:0 -6px;border-radius:8px;transition:background-color .2s,color .2s}
+.tw-cropbtn.on{background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent)}
+.tw-frame{position:absolute;z-index:9;box-sizing:border-box;border:1.5px dashed var(--accent);border-radius:4px;background:color-mix(in srgb,var(--accent) 9%,transparent);transition:box-shadow .35s var(--ease-out),border-radius .3s,background-color .3s}
+.tw-frame.set{border:1.5px solid rgb(255 255 255 / .92);border-radius:7px;background:none;box-shadow:0 0 0 1px rgb(0 0 0 / .22),0 0 24px 2px color-mix(in srgb,var(--accent) 45%,transparent)}
+.tw-dim{position:absolute;inset:0;z-index:9;background:rgb(12 16 26 / .3)}
+.tw-frame i{position:absolute;width:10px;height:10px;border:2.5px solid #fff;opacity:0;transition:opacity .3s}
+.tw-frame.set i{opacity:1}
+.tw-frame i:nth-child(1){left:-4px;top:-4px;border-right:0;border-bottom:0;border-top-left-radius:6px}
+.tw-frame i:nth-child(2){right:-4px;top:-4px;border-left:0;border-bottom:0;border-top-right-radius:6px}
+.tw-frame i:nth-child(3){right:-4px;bottom:-4px;border-left:0;border-top:0;border-bottom-right-radius:6px}
+.tw-frame i:nth-child(4){left:-4px;bottom:-4px;border-right:0;border-top:0;border-bottom-left-radius:6px}
+.tw-quick{position:absolute;z-index:10;display:flex;flex-direction:column;align-items:flex-start;gap:7px;translate:0 -50%;font:12.5px/1.3 var(--font-ui,system-ui);white-space:nowrap}
+.tw-quick>span,.tw-quick-own{display:flex;align-items:center;gap:7px;border:1px solid var(--glass-outline);border-radius:999px;background:var(--popup-glass,var(--surface));color:var(--ink);box-shadow:0 10px 24px -14px rgb(0 0 0 / .55)}
+.tw-quick .tw-thinking{height:24px;padding:0 10px 0 8px;font-size:11px;font-weight:600;letter-spacing:.3px}
+.tw-thinking svg,.tw-quick-own svg{color:var(--accent)}
+.tw-quick .tw-bubble{height:32px;padding:0 8px 0 14px;animation:tw-bubble .42s var(--ease-spring) both}
+@keyframes tw-bubble{from{opacity:0;translate:-18px 0;scale:.6}}
+.tw-quick kbd{display:grid;place-items:center;min-width:18px;height:18px;padding:0 4px;border-radius:5px;background:color-mix(in srgb,var(--ink) 9%,transparent);color:var(--muted);font:600 10px/1 var(--font-ui,system-ui)}
+.tw-quick .tw-quick-foot{gap:8px;margin-top:3px;border:0;background:none;box-shadow:none}
+.tw-quick-own{height:28px;padding:0 12px 0 10px;font-size:12px}
+.tw-quick-foot>kbd{height:22px;padding:0 7px;background:var(--popup-glass,var(--surface));box-shadow:0 0 0 1px var(--glass-outline)}
+.tw-ctx{z-index:11;min-width:190px}
+.tw-shots{--tw-red:#e5484d;display:flex;gap:12px;padding:4px 6px 0}
+.tw-world[data-look='warm'] .tw-shots{--tw-red:var(--accent)}
+.tw-world[data-look='sketch'] .tw-shots{--tw-red:var(--red-pencil,#c0392b)}
+.tw-shot{flex:none;width:58px;height:40px;border-radius:5px;background:#fffefb;color:#23252b;overflow:hidden;outline:1.5px dashed var(--accent);outline-offset:2px;box-shadow:0 4px 12px -6px rgb(0 0 0 / .4);font-weight:400;transition:outline-color .2s}
+.tw-shot i{display:block;padding:6px 6px 0;font:italic 6.5px/1.55 Georgia,'Source Han Serif SC','Noto Serif CJK SC',SimSun,serif}
+.tw-shot.kept{outline:2px solid var(--tw-red);box-shadow:0 0 0 5px color-mix(in srgb,var(--tw-red) 14%,transparent);animation:tw-kept .42s var(--ease-spring)}
+@keyframes tw-kept{0%{scale:1}35%{scale:.88}70%{scale:1.08}100%{scale:1}}
+.tw-shot-enter-active{transition:opacity .25s,scale .36s var(--ease-spring)}
+.tw-shot-enter-from{opacity:0;scale:.6}
+.tw-shot.flat{width:44px;height:30px;outline:0;box-shadow:0 0 0 1px rgb(0 0 0 / .12)}
+.tw-me-shots{display:grid;gap:7px;justify-items:end}
+.tw-me-shots>span{display:flex;gap:6px}
 </style>

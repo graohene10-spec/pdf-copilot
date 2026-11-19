@@ -67,6 +67,16 @@ export type Scene = {
   /** 固定的卡片在哪一层：跟着书页走，或停在屏幕上（hold 是切过去那一刻书页滚到了哪）。 */
   follow: 'page' | 'screen'
   hold: number
+  /** 截图一课：框选工具开着、正在拖的框（画布坐标）、快捷提问气泡、右键菜单、输入框里的图。 */
+  crop: boolean
+  frame: { x: number; y: number; width: number; height: number } | null
+  quick: boolean
+  ctx: Point | null
+  rightOn: boolean
+  shots: number
+  kept: number
+  shotSent: boolean
+  shotAnswer: number
   /** 文库一课：窗口缩小、露出桌面的程度，0 到 1。 */
   desk: number
 }
@@ -78,6 +88,7 @@ export const freshScene = (): Scene => ({
   draft: '', asked: false, answer: 0, quote: false, quotePop: false, side: false, sideAsk: '', sideAnswer: 0, branch: false, commands: false, btw: false, btwAnswer: 0,
   pop: false, column: false, auto: false, ink: '', hl: 0, pen: 0, ul: 0, mark: false, art: 0, markMenu: false,
   files: 6, ghost: null, query: '', fileMenu: false, grouped: false, starred: false, outline: false, finding: false, find: '', clock: 'idle', minutes: 5, follow: 'page', hold: 0, desk: 0,
+  crop: false, frame: null, quick: false, ctx: null, rightOn: false, shots: 0, kept: 0, shotSent: false, shotAnswer: 0,
 })
 
 export const TEXT = {
@@ -91,12 +102,14 @@ export const TEXT = {
   sideReply: '换一组基，让矩阵只剩对角线上的数。',
   btwAsk: 'λ 可以是 0 吗',
   btwReply: '可以。λ = 0 表示 A 把这个方向压成了零向量，这时 A 不可逆。',
+  shotAsk: '针对框选的内容解释「为什么」',
+  shotReply: '三张图是同一条线索：定义给出 Av = λv，特征方程求出 λ，定理 5.2 保证实对称矩阵的 λ 都是实数。',
 }
 /* 后两个所属的服务在这一课里没有连接，菜单里是灰的。 */
 export const MODELS = ['DeepSeek Flash', 'DeepSeek V4 Pro', 'GPT-5.4（未连接）', 'Claude Opus 5.5（未连接）']
 export const replyLength = TEXT.reply.join('').length
 
-export type Caption = { text: string; keys?: string[]; mouse?: boolean; top?: boolean }
+export type Caption = { text: string; keys?: string[]; mouse?: boolean | 'left' | 'right'; top?: boolean }
 type Stage = Director['api']
 export type Play = (stage: Stage, scene: Scene, say: (caption: Caption | string) => void) => Promise<void>
 export type Lesson = { id: string; title: string; note: string; steps: number; play: Play }
@@ -304,6 +317,74 @@ const assistant: Play = async (stage, scene, say) => {
   await stage.wait(200)
   scene.draft = ''; scene.btw = true
   await stage.tween(900, k => { scene.btwAnswer = Math.round(k * TEXT.btwReply.length) }, true)
+  await stage.wait(1100)
+}
+
+/* 在页面上拖出一个框；右键拖动时不用先点「框选」。 */
+async function frame(stage: Stage, scene: Scene, target: string, pad: [number, number]) {
+  const box = stage.box(target), from = { x: box.x - pad[0], y: box.y - pad[1] }, to = { x: box.x + box.width + pad[0], y: box.y + box.height + pad[1] }
+  await stage.move(from)
+  stage.press()
+  scene.frame = { ...from, width: 0, height: 0 }
+  await stage.move(to, { ms: 560, step: k => { scene.frame = { ...from, width: (to.x - from.x) * k, height: (to.y - from.y) * k } } })
+  stage.release()
+  scene.crop = false; scene.shots += 1; scene.quick = true
+}
+
+const capture: Play = async (stage, scene, say) => {
+  say({ text: '点「框选」，在页面上拖出一块', keys: ['Alt', 'Shift', 'S'] })
+  stage.place(ENTRY)
+  stage.look('.tw-bar', 1.5, [.5, 4])
+  await click(stage, '.tw-cropbtn')
+  scene.crop = true
+  await stage.wait(260)
+  await frame(stage, scene, '.tw-ring', [16, 8])
+  stage.look('.tw-ring', 1.5, [1.1, .5])
+  await stage.wait(800)
+
+  say('点气泡直接提问；点「自己提问」，图进输入框')
+  await click(stage, '.tw-quick-own')
+  scene.quick = false; scene.frame = null
+  stage.look('.tw-ask', 1.6, [.5, -1.1])
+  await stage.wait(700)
+
+  say({ text: '刚截的图是虚线框，左键点一下才留住', mouse: 'left', top: true })
+  await click(stage, '.tw-shot-0')
+  scene.kept = 1
+  await stage.wait(900)
+
+  say('第二种截法：在文档里右键，开启「右键拖动截图」')
+  stage.look({ x: 600, y: 520 }, 1.4)
+  await stage.move('.tw-page', { at: [.5, .5] })
+  await stage.tween(520, k => { scene.scroll = k * 120 })
+  await stage.move('.tw-ul', { at: [.7, 2.4] })
+  await stage.click('right')
+  scene.ctx = stage.locate('.tw-ul', [.7, 2.4])
+  await stage.wait(360)
+  await click(stage, '.tw-ctx-right')
+  scene.ctx = null; scene.rightOn = true
+  await stage.wait(300)
+
+  say({ text: '之后按住右键拖动就是截图', mouse: 'right' })
+  await frame(stage, scene, '.tw-ul', [10, 7])
+  await stage.wait(650)
+  say({ text: '收起气泡，图留在输入框', keys: ['Esc'] })
+  await stage.wait(700)
+  scene.quick = false; scene.frame = null
+  stage.look({ x: 800, y: 480 }, 1.15)
+  await stage.wait(800)
+
+  say({ text: '按住再截，上一张自动留住', keys: ['Shift'], mouse: 'right' })
+  await stage.tween(420, k => { scene.scroll = 120 - k * 120 })
+  await frame(stage, scene, '.tw-target', [8, 5])
+  scene.kept = 2
+  await stage.wait(1000)
+
+  say('点一个气泡，留住的图一起发出去')
+  await click(stage, '.tw-bubble-0')
+  scene.quick = false; scene.frame = null; scene.shots = 0; scene.kept = 0; scene.shotSent = true
+  stage.look('.tw-chat', 1.5, [.5, .2])
+  await stage.tween(1100, k => { scene.shotAnswer = Math.round(k * TEXT.shotReply.length) }, true)
   await stage.wait(1100)
 }
 
@@ -561,6 +642,7 @@ export const LESSONS: Lesson[] = [
   { id: 'explain', title: '快速解释', note: '选中文字后按中键', steps: 7, play: explain },
   { id: 'visual', title: '用图解释', note: '图解、可拖的图、合集', steps: 3, play: visual },
   { id: 'assistant', title: '阅读助手', note: '提问、附属对话、分支、指令', steps: 5, play: assistant },
+  { id: 'capture', title: '截图提问', note: '框选、右键拖动、留住多张', steps: 7, play: capture },
   { id: 'translate', title: '翻译', note: '划词翻译与翻译栏', steps: 3, play: translate },
   { id: 'ink', title: '标记', note: 'Alt + 1 / 2 / 3 直接拿起工具', steps: 4, play: ink },
   { id: 'bookmark', title: '书签', note: '夹在页边，Ctrl + ↑ ↓ 跳转', steps: 5, play: bookmark },
