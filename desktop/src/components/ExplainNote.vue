@@ -6,7 +6,8 @@ import ThoughtChip from './ThoughtChip.vue'
 import AppIcon from './AppIcon.vue'
 // 标题、细线、按钮的样子写在 PDF 的解释卡片里，这里共用。
 import './ExplainCard.vue'
-import { dropNote, keepNote, rerunExplain, type Explain, type ExplainMode } from '../ai/explain'
+import ExplainTitle from './ExplainTitle.vue'
+import { askExplain, dropNote, keepNote, rerunExplain, type Explain, type ExplainMode } from '../ai/explain'
 
 const props = defineProps<{ item: Explain; kept: boolean; doc: string; line: number; size?: { width?: number; height?: number } }>()
 const emit = defineEmits<{ close: [] }>()
@@ -32,7 +33,10 @@ function startResize(event: PointerEvent) {
 }
 function resetSize() { size.value = {}; if (saved.value && props.item.status === 'done') keepNote(props.doc, props.line, props.item, {}) }
 function menu(event: MouseEvent) { window.dispatchEvent(new CustomEvent('kaizhi:explain-menu', { detail: { kind: 'note', id: props.item.id, x: event.clientX, y: event.clientY } })) }
-function again(mode: ExplainMode) { rerunExplain(props.item, mode) }
+function again(mode: Exclude<ExplainMode, 'ask'>) { rerunExplain(props.item, mode) }
+// 双击标题那一行（按钮除外）：自己问一句。
+const title = ref<{ begin: () => void }>()
+function startAsk(event: MouseEvent) { if (!(event.target as HTMLElement).closest('button, input')) title.value?.begin() }
 // 留下的释义换了讲法，存的也跟着换。
 watch(() => props.item.status, status => { if (status === 'done' && saved.value) keepNote(props.doc, props.line, props.item, size.value) }, { immediate: !props.kept })
 // 出现和关闭都带着高度一起变：下面的正文被慢慢推开、慢慢合拢，不会一下子跳。
@@ -54,9 +58,9 @@ function discard() {
 <template>
   <!-- 和 PDF 里的解释卡片是同一套：词条像被荧光笔划过，标题下一道细线，追问按钮收在一枚小药丸里。 -->
   <aside ref="root" class="explain-note" :class="{ leaving, saved, sized: Boolean(size.width || size.height) }" :style="noteStyle" contenteditable="false" @contextmenu.stop.prevent="menu">
-    <div class="ec-head">
+    <div class="ec-head" @dblclick.stop="startAsk">
       <AppIcon class="ec-spark" name="sparkle" :size="13" />
-      <span class="st-term"><mark>{{ item.term.length > 60 ? item.term.slice(0, 60) + '…' : item.term }}</mark></span>
+      <ExplainTitle ref="title" :item="item" :limit="60" @ask="askExplain(item, $event)" />
       <button type="button" class="ec-tool en-keep" :class="{ on: saved }" :disabled="item.status !== 'done'" :aria-pressed="saved" :aria-label="saved ? '已记入文档' : '记入文档'" :data-tip="saved ? '已记入文档，点一下取消' : '记入文档'" @click="keep"><AppIcon name="bookmark" :size="13" /></button>
       <button type="button" class="ec-tool" aria-label="关闭" data-tip="关闭" @click="discard"><AppIcon name="close" :size="12" /></button>
     </div>
