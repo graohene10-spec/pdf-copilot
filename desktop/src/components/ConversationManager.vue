@@ -208,6 +208,28 @@ function keydown(event: KeyboardEvent) {
   } else if (event.key === 'Delete' && picked.size) { event.preventDefault(); doomed.value = [...picked] }
   else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') { event.preventDefault(); for (const root of roots.value) for (const talk of root.list) picked.add(key(root.id, talk.id)) }
 }
+// ---- 样子：每本书一张按书名定色的小封面；父子之间是量出来的曲线 ----
+const hue = (title: string) => { let sum = 7; for (const char of title) sum = (sum * 31 + char.codePointAt(0)!) % 360; return sum }
+const initial = (title: string) => (title.trim().match(/[\p{L}\p{N}]/u)?.[0] || '书').toUpperCase()
+const memoryOf = (root: { list: ChatState[] }) => root.list.reduce((sum, talk) => sum + itemsOf(talk.id).length, 0)
+// 记忆是「概念：掌握得怎样」一行：拆开，概念深一点，掌握情况淡一点。
+const parts = (item: string) => { const at = item.search(/[：:]/); return at > 0 ? [item.slice(0, at), item.slice(at + 1).trim()] : [item, ''] }
+const GAP = 56
+function draw(el: HTMLElement) {
+  const svg = el.querySelector(':scope > svg.cm-links')
+  if (!svg) return
+  const mid = (el.offsetHeight / 2).toFixed(1)
+  const lines = ([...el.children].filter(child => child.classList.contains('cm-kid')) as HTMLElement[]).map(kid => { const y = (kid.offsetTop + kid.offsetHeight / 2).toFixed(1); return `M0 ${mid}C${GAP * .55} ${mid} ${GAP * .45} ${y} ${GAP} ${y}` })
+  // 条数没变只改形状，不重建：重建会让「画出来」的动画重放。
+  if (svg.childElementCount !== lines.length) svg.innerHTML = lines.map(d => `<path pathLength="1" d="${d}"/>`).join('')
+  else lines.forEach((d, index) => { const path = svg.children[index]!; if (path.getAttribute('d') !== d) path.setAttribute('d', d) })
+}
+const vLinks = {
+  mounted(el: HTMLElement & { _links?: ResizeObserver }) { draw(el); el._links = new ResizeObserver(() => draw(el)); el._links.observe(el) },
+  updated(el: HTMLElement) { draw(el) },
+  unmounted(el: HTMLElement & { _links?: ResizeObserver }) { el._links?.disconnect() },
+}
+
 function capture(event: KeyboardEvent) { if (event.key === 'Escape' || event.key === 'Delete') keydown(event) }
 onMounted(() => window.addEventListener('keydown', capture, true))
 onBeforeUnmount(() => window.removeEventListener('keydown', capture, true))
@@ -215,44 +237,49 @@ onBeforeUnmount(() => window.removeEventListener('keydown', capture, true))
 
 <template>
   <section ref="dialog" class="cm-page" role="dialog" aria-modal="true" aria-label="管理对话" tabindex="-1" @keydown="keydown" @pointerdown="menu && !($event.target as HTMLElement).closest('.cm-menu') && (menu = undefined)" @contextmenu.prevent>
-    <header class="cm-head">
-      <button type="button" class="cm-back" @click="emit('close')"><AppIcon name="arrow" :size="15" />返回</button>
-      <h2>管理对话</h2>
-      <span v-if="ready" class="cm-count">{{ roots.length }} 本书 · {{ total }} 段对话 · {{ remembered }} 条记忆</span>
-      <span class="cm-hint">左键进入 · 右键选中 · 拖到另一本书上移动 · 空白处拖动框选</span>
-    </header>
+    <button type="button" class="cm-back" @click="emit('close')"><AppIcon name="arrow" :size="15" />返回</button>
 
     <div ref="tree" class="cm-tree" @pointerdown="startPointer">
+      <header class="cm-hero">
+        <h2>管理对话</h2>
+        <p v-if="ready && roots.length"><b>{{ roots.length }}</b>本书<i></i><b>{{ total }}</b>段对话<i></i><b>{{ remembered }}</b>条记忆</p>
+      </header>
       <p v-if="!ready" class="cm-empty">正在读取…</p>
       <p v-else-if="!roots.length" class="cm-empty">还没有对话。</p>
       <div class="cm-forest">
-        <div v-for="root in roots" :key="root.id" class="cm-book" :class="{ gone: root.gone, drop: dropId === root.id }" :data-book="root.id">
+        <div v-for="(root, order) in roots" :key="root.id" class="cm-book" :class="{ gone: root.gone, drop: dropId === root.id }" :data-book="root.id" :style="{ '--hue': hue(root.title), '--i': order }">
           <div class="cm-root" :data-root="root.id" @contextmenu.prevent.stop="rootMenu(root, $event)">
             <button type="button" class="cm-root-open" :data-tip="root.gone ? '这本书已从文档库移除，对话和记忆仍然保留' : '打开这本书'" @click="openRoot(root)">
-              <AppIcon :name="root.kind === 'pdf' ? 'book' : 'doc'" :size="16" />
-              <span class="cm-text"><span class="cm-title">{{ root.title }}</span><small>{{ root.list.length }} 段对话<em v-if="root.gone">已移除</em></small></span>
+              <span class="cm-cover" :class="root.kind === 'pdf' ? 'book' : 'sheet'" aria-hidden="true"><b>{{ initial(root.title) }}</b></span>
+              <span class="cm-text"><span class="cm-title">{{ root.title }}</span><small>{{ root.list.length }} 段对话<template v-if="memoryOf(root)"> · {{ memoryOf(root) }} 条记忆</template><em v-if="root.gone">已移除</em></small></span>
             </button>
-            <button type="button" class="cm-act cm-fold" :aria-expanded="!folded.has(root.id)" :aria-label="folded.has(root.id) ? '展开' : '收起'" @click="folded.has(root.id) ? folded.delete(root.id) : folded.add(root.id)"><AppIcon name="arrow" :size="13" /></button>
           </div>
-          <div v-if="!folded.has(root.id)" class="cm-kids">
-            <div v-for="talk in root.list" :key="talk.id" class="cm-kid">
+          <button type="button" class="cm-act cm-knob" :class="{ shut: folded.has(root.id) }" :aria-expanded="!folded.has(root.id)" :aria-label="folded.has(root.id) ? '展开' : '收起'" @click="folded.has(root.id) ? folded.delete(root.id) : folded.add(root.id)"><template v-if="folded.has(root.id)">{{ root.list.length }}</template><AppIcon v-else name="arrow" :size="11" /></button>
+          <div v-if="!folded.has(root.id)" v-links class="cm-kids">
+            <svg class="cm-links" aria-hidden="true"></svg>
+            <div v-for="(talk, index) in root.list" :key="talk.id" class="cm-kid" :style="{ '--i': order + 1 + Math.min(index, 8) * .6 }">
               <div class="cm-talk" :class="{ picked: picked.has(key(root.id, talk.id)), lifted: drag && picked.has(key(root.id, talk.id)) }" :data-key="key(root.id, talk.id)" @contextmenu.prevent.stop="talkMenu(root, talk, $event)">
                 <input v-if="renaming === key(root.id, talk.id)" ref="field" v-model="draft" class="cm-rename" maxlength="60" aria-label="对话名称" @keydown.enter.prevent="endRename(true)" @keydown.esc.prevent.stop="endRename(false)" @blur="endRename(true)" @pointerdown.stop />
                 <button v-else type="button" class="cm-talk-open" @click="openTalk(root, talk, $event)">
-                  <span class="cm-text"><span class="cm-title"><AppIcon v-if="talk.branchOf" name="branch" :size="12" />{{ talk.title || '新对话' }}</span>
-                  <small>{{ Math.ceil(talk.messages.length / 2) }} 问 · {{ relative(talk.updatedAt) }}<template v-if="talk.request"> · 回答中</template></small></span>
+                  <AppIcon v-if="talk.branchOf" name="branch" :size="12" /><span class="cm-title">{{ talk.title || '新对话' }}</span>
+                  <small><template v-if="talk.request">回答中 · </template>{{ Math.ceil(talk.messages.length / 2) }} 问 · {{ relative(talk.updatedAt) }}</small>
+                  <AppIcon v-if="talk.memory === false" class="cm-mute" name="memory" :size="13" data-tip="这段对话不记入记忆" />
                 </button>
-                <button type="button" class="cm-act cm-memory" :class="{ off: talk.memory === false, has: itemsOf(talk.id).length }" :aria-pressed="opened.has(talk.id)" :disabled="talk.memory === false || !itemsOf(talk.id).length" :data-tip="talk.memory === false ? '这段对话不记入记忆' : itemsOf(talk.id).length ? '看这段对话记下了什么' : '还没有整理出记忆'" :aria-label="`记忆 ${itemsOf(talk.id).length} 条`" @click="opened.has(talk.id) ? opened.delete(talk.id) : opened.add(talk.id)"><AppIcon name="memory" :size="14" /><i v-if="itemsOf(talk.id).length">{{ itemsOf(talk.id).length }}</i></button>
               </div>
-              <div v-if="opened.has(talk.id) && itemsOf(talk.id).length" class="cm-kids">
-                <div v-for="(item, index) in itemsOf(talk.id)" :key="item" class="cm-kid"><div class="cm-item"><span>{{ item }}</span><button type="button" class="cm-act" aria-label="忘掉这一条" data-tip="忘掉这一条" @click="forgetItem(talk.id, index)"><AppIcon name="close" :size="11" /></button></div></div>
-              </div>
+              <template v-if="talk.memory !== false && itemsOf(talk.id).length">
+                <button type="button" class="cm-act cm-knob has" :class="{ shut: !opened.has(talk.id) }" :aria-expanded="opened.has(talk.id)" :data-tip="opened.has(talk.id) ? '收起记忆' : '看这段对话记下了什么'" :aria-label="`记忆 ${itemsOf(talk.id).length} 条`" @click="opened.has(talk.id) ? opened.delete(talk.id) : opened.add(talk.id)"><AppIcon v-if="opened.has(talk.id)" name="arrow" :size="11" /><template v-else>{{ itemsOf(talk.id).length }}</template></button>
+                <div v-if="opened.has(talk.id)" v-links class="cm-kids">
+                  <svg class="cm-links" aria-hidden="true"></svg>
+                  <div v-for="(item, at) in itemsOf(talk.id)" :key="item" class="cm-kid" :style="{ '--i': at * .6 }"><div class="cm-item"><span><b>{{ parts(item)[0] }}</b><em v-if="parts(item)[1]">{{ parts(item)[1] }}</em></span><button type="button" class="cm-act" aria-label="忘掉这一条" data-tip="忘掉这一条" @click="forgetItem(talk.id, at)"><AppIcon name="close" :size="11" /></button></div></div>
+                </div>
+              </template>
             </div>
           </div>
         </div>
       </div>
       <i v-if="band" class="cm-band" :style="{ left: `${band.left}px`, top: `${band.top}px`, width: `${band.width}px`, height: `${band.height}px` }"></i>
     </div>
+    <p class="cm-hint">左键进入<i></i>右键操作<i></i>拖到另一本书上移动<i></i>空白处拖动框选</p>
 
     <Transition name="cm-bar">
       <footer v-if="doomed || drag || picked.size" class="cm-bar">
@@ -265,8 +292,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', capture, true))
           <span class="cm-other" :class="{ on: dropId === OTHER }" data-drop><AppIcon name="folder" :size="14" />树上没有的书…</span>
         </template>
         <template v-else>
-          <span>已选 {{ picked.size }} 段</span>
-          <button type="button" class="cm-button" @click="moving = [...picked]"><AppIcon name="folder" :size="14" />移到另一本书</button><button type="button" class="cm-button danger" @click="doomed = [...picked]"><AppIcon name="trash" :size="14" />删除</button><button type="button" class="cm-button" @click="picked.clear()">取消选中</button>
+          <span><b>{{ picked.size }}</b> 段已选</span>
+          <button type="button" class="cm-button" @click="moving = [...picked]"><AppIcon name="folder" :size="14" />移到另一本书</button><button type="button" class="cm-button danger" @click="doomed = [...picked]"><AppIcon name="trash" :size="14" />删除</button><button type="button" class="cm-act" aria-label="取消选中" data-tip="取消选中" @click="picked.clear()"><AppIcon name="close" :size="13" /></button>
         </template>
       </footer>
     </Transition>
@@ -289,77 +316,86 @@ onBeforeUnmount(() => window.removeEventListener('keydown', capture, true))
 </template>
 
 <style scoped>
-/* 整页盖在应用上面：不是弹窗，也不占侧栏。 */
-.cm-page{--cm-line:color-mix(in srgb,var(--ink) 30%,transparent);position:fixed;inset:0;z-index:75;display:flex;flex-direction:column;background:color-mix(in srgb,var(--canvas) 90%,transparent);backdrop-filter:blur(36px) saturate(1.15);color:var(--ink);outline:0;animation:cm-in .26s var(--ease-out)}
-@keyframes cm-in{from{opacity:0;transform:translateY(10px)}}
-.cm-head{display:flex;align-items:center;gap:14px;flex:none;height:56px;padding:0 24px 0 14px;border-bottom:1px solid var(--separator)}
-.cm-head h2{margin:0;font-size:16px;font-weight:650}
-.cm-back{display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 12px 0 8px;border:0;border-radius:var(--r-control);background:none;box-shadow:none;color:var(--secondary);font:inherit;font-size:13px;cursor:pointer}
-.cm-back:hover{background:color-mix(in srgb,var(--ink) 8%,transparent);color:var(--ink)}
-.cm-count{color:var(--muted);font-size:12px}
-.cm-hint{margin-left:auto;color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.cm-tree{position:relative;flex:1;min-height:0;overflow:auto;padding:26px 36px 110px;user-select:none}
-.cm-empty{margin:80px 0;text-align:center;color:var(--muted);font-size:13px}
-.cm-forest{display:flex;flex-direction:column;align-items:flex-start;gap:14px;width:max-content;min-width:100%}
-.cm-book{display:flex;align-items:center;padding:8px 14px 8px 8px;border-radius:18px;outline:1.5px dashed transparent;transition:background-color .16s var(--ease-out),outline-color .16s var(--ease-out)}
-.cm-book.drop{background:color-mix(in srgb,var(--accent) 10%,transparent);outline-color:color-mix(in srgb,var(--accent) 65%,transparent)}
+/* 整页盖在应用上面：一张带点阵的画布，树从左往右长。 */
+.cm-page{--cm-line:color-mix(in srgb,var(--ink) 26%,transparent);--cm-tone:var(--accent);position:fixed;inset:0;z-index:75;display:flex;flex-direction:column;background:color-mix(in srgb,var(--canvas) 92%,transparent);backdrop-filter:blur(40px) saturate(1.15);color:var(--ink);outline:0;animation:cm-in .3s var(--ease-out)}
+@keyframes cm-in{from{opacity:0}}
+.cm-back{position:absolute;left:18px;top:16px;z-index:4;display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 13px 0 9px;border:1px solid color-mix(in srgb,var(--ink) 12%,transparent);border-radius:999px;background:color-mix(in srgb,var(--surface) 80%,transparent);box-shadow:none;color:var(--secondary);font:inherit;font-size:12.5px;cursor:pointer;transition:border-color .16s var(--ease-out),color .16s var(--ease-out)}
+.cm-back:hover{border-color:color-mix(in srgb,var(--ink) 34%,transparent);color:var(--ink)}
+.cm-back svg{transition:translate .2s var(--ease-out)}
+.cm-back:hover svg{translate:-2px 0}
+.cm-tree{position:relative;flex:1;min-height:0;overflow:auto;padding:76px clamp(40px,8vw,130px) 140px;user-select:none;background-image:radial-gradient(circle,color-mix(in srgb,var(--ink) 11%,transparent) 1px,transparent 1.5px);background-size:26px 26px;background-attachment:local}
+.cm-hero{margin:0 0 44px 4px}
+.cm-hero h2{margin:0;font-size:30px;font-weight:600;letter-spacing:.04em;line-height:1.2}
+.cm-hero p{display:flex;align-items:baseline;margin:12px 0 0;color:var(--muted);font-size:12.5px;letter-spacing:.06em}
+.cm-hero b{margin-right:5px;color:var(--ink);font-size:17px;font-weight:600;font-variant-numeric:tabular-nums}
+.cm-hero i,.cm-hint i{width:1px;height:11px;margin:0 14px;background:var(--cm-line)}
+.cm-empty{margin:80px 0;color:var(--muted);font-size:13px}
+.cm-forest{display:flex;flex-direction:column;align-items:flex-start;gap:26px;width:max-content;min-width:100%}
+.cm-book{display:flex;align-items:center;margin-left:-14px;padding:12px 22px 12px 14px;border-radius:22px;transition:background-color .2s var(--ease-out)}
+.cm-book.drop{background:color-mix(in srgb,var(--cm-tone) 9%,transparent)}
 
-/* 根：一本书。书很长时它跟着滚动留在视野里。 */
-.cm-root{position:sticky;top:8px;bottom:8px;z-index:1;display:flex;align-items:center;flex:none;width:238px;min-height:52px;border:1px solid color-mix(in srgb,var(--ink) 20%,transparent);border-radius:14px;background:var(--surface);box-shadow:0 1px 2px rgb(0 0 0 / .05),0 10px 24px -18px rgb(0 0 0 / .35)}
-.cm-root-open{flex:1;min-width:0;display:flex;align-items:center;justify-content:flex-start;gap:10px;min-height:50px;padding:7px 4px 7px 13px;border:0;border-radius:13px;background:none;box-shadow:none;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
-.cm-text{flex:1;min-width:0;display:grid;gap:2px}
+/* 根：一本书，一张按书名定色的小封面。书很长时它跟着滚动留在视野里。 */
+.cm-root{position:sticky;top:10px;bottom:10px;z-index:1;flex:none;width:248px;border-radius:14px;animation:cm-node .5s var(--ease-out) both;animation-delay:calc(var(--i,0) * 70ms)}
+.cm-root-open{display:flex;align-items:center;justify-content:flex-start;gap:14px;width:100%;min-height:64px;padding:6px 8px 6px 6px;border:0;border-radius:14px;background:none;box-shadow:none;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
+.cm-cover{position:relative;display:grid;place-items:center;flex:none;width:40px;height:54px;border-radius:3px 6px 6px 3px;background:linear-gradient(155deg,hsl(var(--hue) 36% 60%),hsl(calc(var(--hue) + 26) 34% 42%));box-shadow:inset 4px 0 0 rgb(0 0 0 / .16),inset 5px 0 0 rgb(255 255 255 / .16),0 1px 1px rgb(0 0 0 / .14),0 12px 20px -12px hsl(var(--hue) 40% 30% / .7);color:#fff;transition:translate .28s var(--ease-spring),rotate .28s var(--ease-spring)}
+.cm-cover b{padding-left:4px;font:600 19px/1 Georgia,'Songti SC','Source Han Serif SC','Noto Serif CJK SC',SimSun,serif;text-shadow:0 1px 2px rgb(0 0 0 / .25)}
+.cm-cover.sheet{border-radius:3px;box-shadow:0 1px 1px rgb(0 0 0 / .14),0 12px 20px -12px hsl(var(--hue) 40% 30% / .7);clip-path:polygon(0 0,calc(100% - 11px) 0,100% 11px,100% 100%,0 100%)}
+.cm-cover.sheet b{padding:0}
+.cm-cover.sheet::after{content:'';position:absolute;right:0;top:0;width:11px;height:11px;background:rgb(255 255 255 / .38)}
+.cm-root-open:hover .cm-cover,.cm-book.drop .cm-cover{translate:0 -3px;rotate:-4deg}
+.cm-text{flex:1;min-width:0;display:grid;gap:5px}
 .cm-title{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-.cm-root .cm-title{font-size:13.5px;font-weight:640}
-.cm-text small{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:11.5px;font-weight:400;white-space:nowrap}
-.cm-text em{padding:0 6px;border-radius:999px;background:color-mix(in srgb,var(--ink) 12%,transparent);font-size:10.5px;font-style:normal}
-/* 书已经不在文档库里：根节点压一层斜纹阴影，字也淡一些。 */
-.cm-book.gone .cm-root{border-style:dashed;background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--ink) 13%,var(--surface)) 0 6px,color-mix(in srgb,var(--ink) 5%,var(--surface)) 6px 12px);box-shadow:none}
-.cm-book.gone .cm-root-open{color:var(--muted)}
-.cm-act{display:grid;place-items:center;flex:none;width:28px;height:28px;padding:0;border:0;border-radius:var(--r-sm,8px);background:none;box-shadow:none;color:var(--muted);cursor:pointer}
+.cm-root .cm-title{display:-webkit-box;white-space:normal;-webkit-box-orient:vertical;-webkit-line-clamp:2;font-size:14.5px;font-weight:640;line-height:1.3;overflow-wrap:anywhere}
+.cm-text small{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:11.5px;white-space:nowrap}
+.cm-text em{padding:0 7px;border:1px solid var(--cm-line);border-radius:999px;font-size:10.5px;font-style:normal}
+/* 书已经不在文档库里：根节点压一层斜纹阴影，封面褪色。 */
+.cm-book.gone .cm-root{background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--ink) 12%,transparent) 0 5px,color-mix(in srgb,var(--ink) 3%,transparent) 5px 11px)}
+.cm-book.gone .cm-cover{filter:grayscale(1) opacity(.55)}
+.cm-book.gone .cm-title{color:var(--muted)}
+
+.cm-act{display:grid;place-items:center;flex:none;width:28px;height:28px;padding:0;border:0;border-radius:999px;background:none;box-shadow:none;color:var(--muted);cursor:pointer}
 .cm-act:hover:not(:disabled){background:color-mix(in srgb,var(--ink) 8%,transparent);color:var(--ink)}
-.cm-fold{margin-right:5px}
-.cm-fold svg{transition:rotate .2s var(--ease-out)}
-.cm-fold[aria-expanded='false'] svg{rotate:180deg}
+/* 节点右边的小圆钮：收起时写着里面有几个，展开后是收回去的箭头。 */
+.cm-knob{width:22px;height:22px;margin-left:8px;border:1px solid var(--cm-line);background:var(--canvas);font:inherit;font-size:11px;font-variant-numeric:tabular-nums;line-height:1;transition:border-color .16s var(--ease-out),color .16s var(--ease-out),scale .2s var(--ease-spring)}
+.cm-knob:hover:not(:disabled){border-color:color-mix(in srgb,var(--ink) 50%,transparent);background:var(--canvas);scale:1.1}
+.cm-knob.has{border-color:color-mix(in srgb,var(--cm-tone) 55%,transparent);color:var(--cm-tone)}
 
-/* 往右长的枝：父节点右边一段横线接到竖线上，竖线再分给每个孩子。 */
-.cm-kids{position:relative;display:flex;flex-direction:column;flex:none;margin-left:26px}
-.cm-kids::before{content:'';position:absolute;left:-26px;top:50%;width:26px;border-top:1px solid var(--cm-line);pointer-events:none}
-.cm-kid{position:relative;display:flex;align-items:center;padding:4px 0 4px 24px}
-.cm-kid::before{content:'';position:absolute;left:0;top:0;bottom:0;width:24px;border-left:1px solid var(--cm-line);pointer-events:none}
-.cm-kid::after{content:'';position:absolute;left:0;top:50%;width:24px;border-top:1px solid var(--cm-line);pointer-events:none}
-.cm-kid:first-child::before{top:50%;border-top:1px solid var(--cm-line);border-top-left-radius:11px}
-.cm-kid:last-child::before{bottom:50%;border-bottom:1px solid var(--cm-line);border-bottom-left-radius:11px}
-.cm-kid:first-child::after,.cm-kid:last-child::after{display:none}
-.cm-kid:only-child::before{top:50%;bottom:auto;border-left:0;border-bottom:0;border-radius:0}
+/* 往右长的枝：曲线是量出来画的（v-links）。 */
+.cm-kids{position:relative;display:flex;flex-direction:column;flex:none;gap:9px;margin-left:56px}
+.cm-links{position:absolute;left:-56px;top:0;width:56px;height:100%;overflow:visible;pointer-events:none}
+.cm-links :deep(path){fill:none;stroke:var(--cm-line);stroke-width:1;stroke-linecap:round;stroke-dasharray:1;animation:cm-draw .6s var(--ease-out) both}
+@keyframes cm-draw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
+.cm-kid{display:flex;align-items:center;animation:cm-node .46s var(--ease-out) both;animation-delay:calc(var(--i,0) * 70ms + 90ms)}
+@keyframes cm-node{from{opacity:0;translate:-10px 0}}
 
-.cm-talk{display:flex;align-items:center;flex:none;width:292px;min-height:46px;border:1px solid color-mix(in srgb,var(--ink) 13%,transparent);border-radius:12px;background:color-mix(in srgb,var(--surface) 82%,transparent);transition:border-color .14s var(--ease-out),background-color .14s var(--ease-out),opacity .14s var(--ease-out)}
-.cm-talk:hover{border-color:color-mix(in srgb,var(--ink) 30%,transparent)}
-.cm-talk.picked{border-color:color-mix(in srgb,var(--accent) 70%,transparent);background:color-mix(in srgb,var(--accent) 14%,var(--surface));box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 45%,transparent)}
-.cm-talk.lifted{opacity:.45}
-.cm-talk-open{flex:1;min-width:0;display:flex;align-items:center;justify-content:flex-start;min-height:44px;padding:6px 4px 6px 13px;border:0;border-radius:11px;background:none;box-shadow:none;color:var(--ink);font:inherit;font-size:13px;text-align:left;cursor:pointer}
-.cm-talk .cm-title{display:block}
-.cm-talk .cm-title svg{margin-right:5px;vertical-align:-1px}
-.cm-memory{position:relative;width:40px;margin-right:4px;justify-content:start;display:flex;align-items:center;gap:2px;padding-left:7px}
-.cm-memory.has{color:var(--accent)}
-.cm-memory.off{opacity:.35}
-.cm-memory:disabled{cursor:default}
-.cm-memory i{font-size:10.5px;font-style:normal;font-variant-numeric:tabular-nums}
-.cm-rename{flex:1;min-width:0;height:32px;margin:0 6px;padding:0 8px;border:1px solid color-mix(in srgb,var(--accent) 55%,transparent);border-radius:var(--r-sm,8px);background:var(--surface);color:var(--ink);font:inherit;font-size:13px;outline:0}
-.cm-item{display:flex;align-items:center;gap:6px;max-width:340px;min-height:30px;padding:4px 4px 4px 11px;border-radius:10px;background:color-mix(in srgb,var(--accent) 9%,transparent);color:var(--secondary);font-size:12.5px;line-height:1.5}
-.cm-item span{flex:1;min-width:0;overflow-wrap:anywhere}
+.cm-talk{display:flex;align-items:center;flex:none;width:312px;height:40px;border:1px solid color-mix(in srgb,var(--ink) 10%,transparent);border-radius:13px;background:color-mix(in srgb,var(--surface) 78%,transparent);box-shadow:0 1px 0 rgb(255 255 255 / .35) inset,0 8px 18px -16px rgb(0 0 0 / .5);transition:border-color .16s var(--ease-out),background-color .16s var(--ease-out),box-shadow .16s var(--ease-out),opacity .16s var(--ease-out)}
+.cm-talk:hover{border-color:color-mix(in srgb,var(--ink) 30%,transparent);background:var(--surface)}
+.cm-talk.picked{border-color:color-mix(in srgb,var(--cm-tone) 72%,transparent);background:color-mix(in srgb,var(--cm-tone) 12%,var(--surface));box-shadow:0 0 0 3px color-mix(in srgb,var(--cm-tone) 16%,transparent)}
+.cm-talk.lifted{opacity:.4}
+.cm-talk-open{flex:1;min-width:0;display:flex;align-items:center;justify-content:flex-start;gap:8px;height:38px;padding:0 13px 0 14px;border:0;border-radius:12px;background:none;box-shadow:none;color:var(--ink);font:inherit;font-size:13px;text-align:left;cursor:pointer}
+.cm-talk-open small{flex:none;margin-left:auto;padding-left:10px;color:var(--muted);font-size:11px;white-space:nowrap}
+.cm-mute{flex:none;opacity:.4}
+.cm-rename{flex:1;min-width:0;height:30px;margin:0 5px;padding:0 9px;border:1px solid color-mix(in srgb,var(--cm-tone) 55%,transparent);border-radius:9px;background:var(--surface);color:var(--ink);font:inherit;font-size:13px;outline:0}
+.cm-item{display:flex;align-items:center;gap:4px;max-width:380px;min-height:26px;padding-left:10px;font-size:12.5px;line-height:1.5}
+.cm-item::before{content:'';flex:none;width:5px;height:5px;margin-right:6px;border-radius:50%;background:var(--cm-tone)}
+.cm-item span{min-width:0;overflow-wrap:anywhere}
+.cm-item b{font-weight:560}
+.cm-item em{margin-left:9px;color:var(--muted);font-size:11.5px;font-style:normal}
 .cm-item .cm-act{width:22px;height:22px;opacity:0}
 .cm-item:hover .cm-act,.cm-item .cm-act:focus-visible{opacity:1}
-.cm-band{position:absolute;z-index:3;border:1px solid color-mix(in srgb,var(--accent) 70%,transparent);border-radius:3px;background:color-mix(in srgb,var(--accent) 12%,transparent);pointer-events:none}
+.cm-band{position:absolute;z-index:3;border:1px solid color-mix(in srgb,var(--cm-tone) 70%,transparent);border-radius:4px;background:color-mix(in srgb,var(--cm-tone) 10%,transparent);pointer-events:none}
+.cm-hint{position:absolute;left:24px;bottom:16px;z-index:2;display:flex;align-items:center;margin:0;color:var(--muted);font-size:11.5px;letter-spacing:.04em;pointer-events:none}
 
 /* 选中后的操作条：浮在底部中间。 */
-.cm-bar{position:absolute;left:50%;bottom:26px;z-index:5;display:flex;align-items:center;gap:8px;min-height:50px;max-width:calc(100% - 40px);padding:8px 10px 8px 18px;border:1px solid var(--glass-outline,var(--separator));border-radius:16px;background:var(--popup-glass,var(--surface));box-shadow:0 26px 60px -24px rgb(0 0 0 / .5),0 2px 8px rgb(0 0 0 / .08);font-size:12.5px;color:var(--secondary);translate:-50% 0;white-space:nowrap}
+.cm-bar{position:absolute;left:50%;bottom:30px;z-index:5;display:flex;align-items:center;gap:8px;min-height:50px;max-width:calc(100% - 40px);padding:8px 10px 8px 20px;border:1px solid var(--glass-outline,var(--separator));border-radius:999px;background:var(--popup-glass,var(--surface));box-shadow:0 26px 60px -24px rgb(0 0 0 / .5),0 2px 8px rgb(0 0 0 / .08);font-size:12.5px;color:var(--secondary);translate:-50% 0;white-space:nowrap}
 .cm-bar>span:first-child{margin-right:8px}
+.cm-bar b{color:var(--ink);font-size:14px;font-weight:620;font-variant-numeric:tabular-nums}
 .cm-warn{color:var(--danger,#b3261e)}
-.cm-other{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 14px;border:1.5px dashed color-mix(in srgb,var(--ink) 30%,transparent);border-radius:11px;color:var(--ink)}
-.cm-other.on{border-color:color-mix(in srgb,var(--accent) 70%,transparent);background:color-mix(in srgb,var(--accent) 12%,transparent)}
-.cm-ghost{position:fixed;z-index:9;padding:5px 11px;border-radius:999px;background:var(--ink);color:var(--canvas);font-size:12px;opacity:.72;pointer-events:none;white-space:nowrap}
-.cm-ghost.ok{background:var(--accent);color:#fff;opacity:1}
-.cm-button{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 13px;border:1px solid var(--glass-outline,var(--separator));border-radius:var(--r-control);background:color-mix(in srgb,var(--ink) 4%,transparent);box-shadow:none;color:var(--ink);font:inherit;font-size:12.5px;cursor:pointer}
+.cm-other{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 15px;border:1px dashed color-mix(in srgb,var(--ink) 34%,transparent);border-radius:999px;color:var(--ink);transition:border-color .16s,background-color .16s}
+.cm-other.on{border-color:color-mix(in srgb,var(--cm-tone) 75%,transparent);background:color-mix(in srgb,var(--cm-tone) 12%,transparent)}
+.cm-ghost{position:fixed;z-index:9;padding:5px 12px;border-radius:999px;background:var(--ink);color:var(--canvas);font-size:12px;opacity:.7;pointer-events:none;white-space:nowrap;transition:background-color .16s,opacity .16s}
+.cm-ghost.ok{background:var(--cm-tone);color:#fff;opacity:1}
+.cm-button{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 14px;border:1px solid var(--glass-outline,var(--separator));border-radius:999px;background:color-mix(in srgb,var(--ink) 4%,transparent);box-shadow:none;color:var(--ink);font:inherit;font-size:12.5px;cursor:pointer}
 .cm-button:hover{background:color-mix(in srgb,var(--ink) 9%,transparent)}
 .cm-button.danger{border-color:color-mix(in srgb,var(--danger,#b3261e) 45%,transparent);color:var(--danger,#b3261e)}
 .cm-menu{position:absolute;z-index:6;display:grid;gap:1px;min-width:200px;padding:5px;border:1px solid var(--glass-outline,var(--separator));border-radius:12px;background:var(--popup-glass,var(--surface));box-shadow:0 22px 50px -20px rgb(0 0 0 / .5),0 2px 6px rgb(0 0 0 / .08)}
@@ -368,7 +404,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', capture, true))
 .cm-menu button:disabled{opacity:.4;cursor:default}
 .cm-menu button.danger{color:var(--danger,#b3261e)}
 .cm-menu button.line{margin-top:4px;border-top:1px solid var(--separator);border-radius:0 0 7px 7px}
-.cm-move{position:absolute;left:50%;top:90px;z-index:7;display:flex;flex-direction:column;gap:9px;width:min(400px,calc(100% - 40px));max-height:calc(100% - 150px);padding:14px;border:1px solid var(--glass-outline,var(--separator));border-radius:14px;background:var(--popup-glass,var(--surface));box-shadow:0 30px 70px -24px rgb(0 0 0 / .55),0 2px 8px rgb(0 0 0 / .1);translate:-50% 0}
+.cm-move{position:absolute;left:50%;top:90px;z-index:7;display:flex;flex-direction:column;gap:9px;width:min(400px,calc(100% - 40px));max-height:calc(100% - 150px);padding:14px;border:1px solid var(--glass-outline,var(--separator));border-radius:16px;background:var(--popup-glass,var(--surface));box-shadow:0 30px 70px -24px rgb(0 0 0 / .55),0 2px 8px rgb(0 0 0 / .1);translate:-50% 0}
 .cm-move p{margin:0;font-size:13px;font-weight:620}
 .cm-move input{height:32px;padding:0 10px;border:1px solid var(--separator);border-radius:var(--r-sm,8px);background:var(--surface);color:var(--ink);font:inherit;font-size:13px;outline:0}
 .cm-targets{flex:1;min-height:0;overflow:auto;display:grid;gap:1px}
@@ -379,12 +415,20 @@ onBeforeUnmount(() => window.removeEventListener('keydown', capture, true))
 .cm-pop-enter-active{transition:opacity .16s var(--ease-out),scale .22s var(--ease-spring)}
 .cm-pop-leave-active{transition:opacity .12s var(--ease-out)}
 .cm-pop-enter-from{opacity:0;scale:.94}.cm-pop-leave-to{opacity:0}
-.cm-bar-enter-active,.cm-bar-leave-active{transition:opacity .18s var(--ease-out),translate .24s var(--ease-out)}
-.cm-bar-enter-from,.cm-bar-leave-to{opacity:0;translate:-50% 12px}
-@media (prefers-reduced-motion:reduce){.cm-page{animation:none}}
-:root[data-style='sketch'] .cm-page{--cm-line:color-mix(in srgb,var(--pencil,#2b2a27) 55%,transparent);background:var(--canvas);backdrop-filter:none}
-:root[data-style='sketch'] .cm-talk.picked{border-color:color-mix(in srgb,var(--red-pencil,#c0392b) 70%,transparent);background:color-mix(in srgb,var(--red-pencil,#c0392b) 9%,var(--surface));box-shadow:0 0 0 1px color-mix(in srgb,var(--red-pencil,#c0392b) 45%,transparent)}
-:root[data-style='sketch'] .cm-memory.has{color:var(--red-pencil,#c0392b)}
-:root[data-style='sketch'] .cm-book.drop{background:color-mix(in srgb,var(--red-pencil,#c0392b) 7%,transparent);outline-color:color-mix(in srgb,var(--red-pencil,#c0392b) 60%,transparent)}
-:root[data-style='sketch'] .cm-ghost.ok{background:var(--red-pencil,#c0392b)}
+.cm-bar-enter-active,.cm-bar-leave-active{transition:opacity .18s var(--ease-out),translate .26s var(--ease-spring)}
+.cm-bar-enter-from,.cm-bar-leave-to{opacity:0;translate:-50% 14px}
+@media (prefers-reduced-motion:reduce){.cm-page,.cm-root,.cm-kid,.cm-links :deep(path){animation:none}}
+
+/* 草稿风格：铅笔线、纸色封面、红铅笔做强调。 */
+:root[data-style='sketch'] .cm-page{--cm-line:color-mix(in srgb,var(--pencil,#2b2a27) 52%,transparent);--cm-tone:var(--red-pencil,#c0392b);background:var(--canvas);backdrop-filter:none}
+:root[data-style='sketch'] .cm-cover{border:1.4px solid var(--pencil,#2b2a27);background:repeating-linear-gradient(135deg,transparent 0 4px,hsl(var(--hue) 46% 50% / .16) 4px 5.5px),color-mix(in srgb,hsl(var(--hue) 50% 60%) 30%,var(--surface));box-shadow:2.5px 3px 0 color-mix(in srgb,var(--pencil,#2b2a27) 22%,transparent);color:var(--pencil,#2b2a27);rotate:-2deg}
+:root[data-style='sketch'] .cm-cover b{font-family:inherit;text-shadow:none}
+:root[data-style='sketch'] .cm-cover.book::before{content:'';position:absolute;left:5px;top:0;bottom:0;border-left:1.2px solid var(--pencil,#2b2a27)}
+:root[data-style='sketch'] .cm-cover.sheet::after{background:var(--canvas);border-left:1.4px solid var(--pencil,#2b2a27);border-bottom:1.4px solid var(--pencil,#2b2a27)}
+:root[data-style='sketch'] .cm-root-open:hover .cm-cover,:root[data-style='sketch'] .cm-book.drop .cm-cover{rotate:-6deg}
+:root[data-style='sketch'] .cm-talk{border:1.3px solid color-mix(in srgb,var(--pencil,#2b2a27) 62%,transparent);border-radius:14px 11px 15px 10px / 11px 15px 10px 14px;box-shadow:none}
+:root[data-style='sketch'] .cm-talk:nth-child(even){border-radius:10px 15px 11px 14px / 14px 10px 15px 11px}
+:root[data-style='sketch'] .cm-talk.picked{box-shadow:2px 2.5px 0 color-mix(in srgb,var(--cm-tone) 35%,transparent)}
+:root[data-style='sketch'] .cm-links :deep(path){stroke-width:1.2}
+:root[data-style='sketch'] .cm-knob{border-width:1.3px}
 </style>
