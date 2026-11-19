@@ -47,6 +47,27 @@ const box = computed(() => { const frame = props.scene.frame; return frame ? { l
 const hole = computed(() => { const frame = props.scene.frame; return frame ? { clipPath: `path(evenodd, "M0 0H1280V800H0Z M${frame.x} ${frame.y}h${frame.width}v${frame.height}h${-frame.width}Z")` } : {} })
 const beside = computed(() => { const frame = props.scene.frame; return frame ? { left: `${frame.x + frame.width + 26}px`, top: `${frame.y + frame.height / 2}px` } : {} })
 const away = computed(() => props.scene.scroll > 110)
+/* 管理对话那一页的示意：两本书、五段对话、三条记忆。t1 可以被拖到第二本书里。 */
+type Talk = { id: string; title: string; meta: string; items?: [string, string][] }
+const CM_BOOKS: { id: string; title: string; kind: 'square' | 'round'; talks: Talk[] }[] = [
+  { id: 'b0', title: '线性代数讲义', kind: 'square', talks: [
+    { id: 't0', title: '特征值是什么', meta: '3 问 · 刚刚', items: [['特征值的定义', '已弄懂'], ['相似对角化', '问过还不熟']] },
+    { id: 't1', title: '行列式为什么能判可逆', meta: '2 问 · 1 小时前' },
+    { id: 't2', title: '这一节的思路', meta: '4 问 · 昨天' },
+  ] },
+  { id: 'b1', title: 'Attention Is All You Need', kind: 'round', talks: [
+    { id: 't3', title: '自注意力怎么算', meta: '5 问 · 2 天前', items: [['缩放点积注意力', '已弄懂']] },
+    { id: 't4', title: '位置编码', meta: '2 问 · 3 天前' },
+  ] },
+]
+const cmBooks = computed(() => {
+  if (!props.scene.cmMoved) return CM_BOOKS
+  const moved = CM_BOOKS[0]!.talks[1]!
+  return [{ ...CM_BOOKS[0]!, talks: CM_BOOKS[0]!.talks.filter(talk => talk !== moved) }, { ...CM_BOOKS[1]!, talks: [CM_BOOKS[1]!.talks[0]!, moved, CM_BOOKS[1]!.talks[1]!] }]
+})
+/* 根到每段对话的折线：行高 40、间隔 8，和真的那页一样先平、再斜、再平。 */
+const cmLinks = (count: number) => { const mid = (count * 48 - 8) / 2; return Array.from({ length: count }, (_, index) => `M0 ${mid}L14 ${mid}L32 ${index * 48 + 20}L46 ${index * 48 + 20}`) }
+const ribbonStyle = computed(() => props.scene.ribbonAt ? { left: `${props.scene.ribbonAt.x}px`, top: `${props.scene.ribbonAt.y}px`, translate: props.scene.ribbonFlip ? '-100% -50%' : '0 -50%' } : undefined)
 const OUTLINE = ['5.1 特征值与特征向量', '5.2 特征方程', '5.3 相似对角化', '5.4 实对称矩阵']
 const FILES = [
   { id: 'new', title: '特征值专题讲义', meta: 'PDF · 24 页', kind: 'k1', hit: 0 },
@@ -96,7 +117,7 @@ const files = computed(() => {
         <template v-if="scene.clock === 'ringing'"><AppIcon class="tw-bell" name="bell" :size="14" />到点了</template>
         <template v-else><svg v-if="scene.clock === 'running'" class="tw-ring-timer" width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" /><circle cx="8" cy="8" r="6" pathLength="1" stroke-dasharray=".82 1" /></svg><AppIcon v-else name="sun" :size="14" /><small>下午</small>4:44</template>
       </span>
-      <span class="tw-icons"><AppIcon class="tw-split" name="split" :size="16" /><AppIcon name="search" :size="16" /><AppIcon class="tw-tr" name="translate" :size="16" /><AppIcon name="sparkle" :size="16" /></span>
+      <span class="tw-icons"><AppIcon class="tw-split" name="split" :size="16" /><AppIcon name="search" :size="16" /><AppIcon class="tw-tr" name="translate" :size="16" /><AppIcon class="tw-aibtn" name="sparkle" :size="16" /></span>
     </header>
     <Transition name="tw-pop"><div v-if="scene.clock === 'open'" class="tw-clock-panel">
       <div class="tw-wheel"><span><i>{{ pad(scene.minutes - 5) }}</i><b>{{ pad(scene.minutes) }}</b><i>{{ pad(scene.minutes + 5) }}</i></span><em>:</em><span><i>55</i><b>00</b><i>05</i></span></div>
@@ -139,7 +160,7 @@ const files = computed(() => {
           <p>例 1　求矩阵 A 的<em>特征值</em>与特征向量。先写出特征多项式并因式分解，得到 λ₁ = 2，λ₂ = 5；再分别代回齐次方程组，各取一个基础解。</p>
           <p>例 2　设 A 的<em>特征值</em>为 1、2、3，求 A² − 2A 的全部<em>特征值</em>。把 A 换成 λ 代入即可。</p>
 
-          <div class="tw-ribbons"><Transition name="tw-ribbon"><svg v-if="scene.mark && !away" :key="scene.art" class="tw-ribbon tw-ribbon-new" viewBox="0 0 96 40" preserveAspectRatio="xMinYMid slice" v-html="ARTS[scene.art].svg" /></Transition></div>
+          <div class="tw-ribbons" :class="{ flip: scene.ribbonFlip, lifted: scene.ribbonLift }" :style="ribbonStyle"><Transition name="tw-ribbon"><svg v-if="scene.mark && !away" :key="scene.art" class="tw-ribbon tw-ribbon-new" viewBox="0 0 96 40" preserveAspectRatio="xMinYMid slice" v-html="ARTS[scene.art].svg" /></Transition></div>
           <Transition name="tw-pop"><div v-if="scene.markMenu" class="tw-menu tw-mark-menu"><span class="line0"><AppIcon name="image" :size="13" />用自己的图片…</span><span v-for="(art, index) in ARTS.slice(0, 4)" :key="art.id" :class="`tw-art-${index}`"><svg class="tw-art" viewBox="0 0 96 40" preserveAspectRatio="xMaxYMid slice" v-html="art.svg" />{{ art.name }}<small>{{ art.era }}</small></span></div></Transition>
 
           <Transition name="tw-card">
@@ -281,6 +302,39 @@ const files = computed(() => {
       <span class="line"><AppIcon name="settings" :size="13" />设置</span>
     </div></Transition>
     </div>
+    <Transition name="tw-pop"><div v-if="scene.aiMenu" class="tw-menu tw-aimenu"><span><AppIcon name="sparkle" :size="13" />关闭阅读助手</span><span class="tw-aimenu-manage line"><AppIcon name="list" :size="13" />管理对话…</span></div></Transition>
+    <Transition name="tw-fade"><section v-if="scene.manager" class="tw-cm">
+      <div class="tw-cm-main">
+        <p class="tw-cm-tools"><span><AppIcon name="arrow" :size="12" />返回</span><span :class="{ off: scene.cmFlash !== 'moved' }"><AppIcon name="reset" :size="12" />撤销<kbd>Ctrl Z</kbd></span></p>
+        <header class="tw-cm-hero"><h2><i></i>管理对话</h2><dl><div><dt>2</dt><dd>本书</dd></div><div><dt>5</dt><dd>段对话</dd></div><div class="red"><dt>3</dt><dd>条记忆</dd></div></dl></header>
+        <div v-for="book in cmBooks" :key="book.id" class="tw-cm-book" :class="`tw-cm-${book.id}`">
+          <div class="tw-cm-root"><i :class="book.kind"><AppIcon :name="book.kind === 'square' ? 'book' : 'doc'" :size="15" /></i><span><b>{{ book.title }}</b><small>{{ book.talks.length }} 段对话</small></span></div>
+          <i class="tw-cm-knob"><AppIcon name="arrow" :size="9" /></i>
+          <div class="tw-cm-kids">
+            <svg class="tw-cm-links" :height="book.talks.length * 48 - 8" width="46"><path v-for="d in cmLinks(book.talks.length)" :key="d" :d="d" /></svg>
+            <div v-for="talk in book.talks" :key="talk.id" class="tw-cm-kid">
+              <div class="tw-cm-talk" :class="[`tw-cm-${talk.id}`, { has: talk.items, lifted: scene.cmDrag && talk.id === 't1', picked: (scene.cmDrag || scene.cmFlash === 'moved') && talk.id === 't1' }]"><b>{{ talk.title }}</b><small>{{ talk.meta }}</small></div>
+              <template v-if="talk.items">
+                <i class="tw-cm-knob has" :class="[`tw-cm-knob-${talk.id}`, { shut: !(scene.cmOpen && talk.id === 't0') }]"><AppIcon v-if="scene.cmOpen && talk.id === 't0'" name="arrow" :size="9" /><template v-else>{{ talk.items.length }}</template></i>
+                <div v-if="scene.cmOpen && talk.id === 't0'" class="tw-cm-items"><p v-for="item in talk.items" :key="item[0]"><b>{{ item[0] }}</b><em>{{ item[1] }}</em></p></div>
+              </template>
+              <Transition name="tw-fade"><div v-if="scene.cmPeek && talk.id === 't1'" class="tw-cm-peek"><h5>{{ talk.title }}</h5><p><i>问</i><span>行列式等于 0，为什么矩阵就不可逆？</span></p><p class="answer"><i>答</i><span>行列式是这组列向量张成的体积。体积为 0，说明它们被压进了更低的维度，信息丢了，这个变换就退不回去。</span></p></div></Transition>
+            </div>
+            <i v-if="scene.cmSlot && book.id === 'b1'" class="tw-cm-slot"></i>
+          </div>
+        </div>
+        <Transition name="tw-fade"><p v-if="scene.cmFlash" :key="scene.cmFlash" class="tw-cm-flash"><span>{{ scene.cmFlash === 'moved' ? '已把 1 段对话移到《Attention Is All You Need》' : '已撤销：把 1 段对话移到《Attention Is All You Need》' }}</span><b v-if="scene.cmFlash === 'moved'">撤销</b></p></Transition>
+        <p v-if="!scene.cmFlash" class="tw-cm-hint">左键进入<i></i>右键操作<i></i>拖动移动或排序<i></i>空白处框选<i></i>Ctrl Z 撤销</p>
+        <div v-if="scene.cmDrag" class="tw-cm-ghost" :style="{ left: `${scene.cmDrag.x + 12}px`, top: `${scene.cmDrag.y + 10}px` }">1 段对话</div>
+      </div>
+      <aside class="tw-cm-side">
+        <svg class="tw-cm-art" viewBox="0 0 400 250" preserveAspectRatio="xMidYMid slice"><path class="l" d="M-10 196 420 42M-10 212 420 58M-10 228 420 74" /><circle class="r" cx="262" cy="118" r="86" /><circle class="k" cx="262" cy="118" r="11" /><path class="w" d="M14 54 268 118 56 214Z" /><path class="k" d="M196 250 372 18 392 33 216 265Z" /><path class="k" d="M330 180h44v44h-44zM24 20h18v18H24zM50 20h8v8h-8z" /><circle class="w" cx="352" cy="62" r="13" /></svg>
+        <header><h3>记忆</h3><b>3</b><span>条</span></header>
+        <div class="tw-cm-side-list">
+          <template v-for="book in CM_BOOKS" :key="book.id"><h4>{{ book.title }}</h4><template v-for="talk in book.talks" :key="talk.id"><p v-for="item in talk.items || []" :key="item[0]"><b>{{ item[0] }}</b><em>{{ item[1] }}</em></p></template></template>
+        </div>
+      </aside>
+    </section></Transition>
     <div v-if="scene.ghost" class="tw-ghost" :style="{ left: `${scene.ghost.x}px`, top: `${scene.ghost.y}px` }"><AppIcon name="file" :size="14" />特征值专题讲义.pdf</div>
   </div>
 </template>
@@ -324,7 +378,7 @@ const files = computed(() => {
 .tw-count{margin-left:auto;min-width:18px;height:18px;border-radius:9px;background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent);font-size:11px;line-height:18px;text-align:center;animation:tw-bump .4s var(--ease-spring)}
 @keyframes tw-bump{from{scale:.3;opacity:0}}
 .tw-side h6{margin:14px 10px 4px;color:var(--muted);font-size:11px;font-weight:600;letter-spacing:.08em}
-.tw-mark{display:flex;align-items:center;justify-content:space-between;gap:9px;height:28px;padding:0 10px;color:var(--secondary);font-size:12px}
+.tw-mark{display:flex;align-items:center;justify-content:flex-start;gap:9px;height:28px;padding:0 10px;color:var(--secondary);font-size:12px}
 .tw-mark .tw-art{flex:none;width:30px;height:13px;clip-path:polygon(0 0,100% 0,100% 100%,0 100%,5px 50%)}
 .tw-foot{display:flex;align-items:center;margin-top:auto;padding-top:10px;border-top:1px solid var(--line-soft);color:var(--secondary)}
 .tw-set{display:flex;align-items:center;gap:8px;height:32px;padding:0 12px;border:1px solid var(--line-soft);border-radius:999px}
@@ -408,6 +462,10 @@ const files = computed(() => {
 /* 书签：夹在页边上，跟着书页走；翻走以后滚动条旁多一道同色的刻度。 */
 .tw-ribbons{position:absolute;left:calc(100% - 5px);top:76px;filter:drop-shadow(0 1px 2px rgb(0 0 0 / .42))}
 .tw-ribbon{display:block;width:46px;height:19px;clip-path:polygon(0 0,100% 0,calc(100% - 7px) 50%,100% 100%,0 100%)}
+.tw-ribbons.flip .tw-ribbon{scale:-1 1}
+.tw-ribbons .tw-ribbon{transition:scale 0s,filter .2s}
+.tw-ribbons.lifted{z-index:6;filter:drop-shadow(0 7px 9px rgb(0 0 0 / .42))}
+.tw-ribbons.lifted .tw-ribbon{width:53px;height:22px}
 .tw-ribbon-enter-active{transition:translate .45s var(--ease-spring),opacity .2s}
 .tw-ribbon-leave-active{transition:opacity .15s}
 .tw-ribbon-enter-from{translate:-30px 0;opacity:0}
@@ -475,6 +533,78 @@ const files = computed(() => {
 .tw-menu small{margin-left:auto;padding-left:14px;color:var(--muted);font-size:11px}
 .tw-menu span.line0{margin-bottom:3px;border-bottom:1px solid var(--line-soft);border-radius:7px 7px 0 0;color:var(--secondary)}
 .tw-mark-menu{right:-64px;top:96px}
+.tw-aimenu{right:14px;top:50px;z-index:12}
+/* 管理对话那一页：构成主义的红、黑、纸色，直角和斜线。 */
+.tw-cm{--cm-red:#d23f2a;--cm-line:color-mix(in srgb,var(--ink) 58%,transparent);position:absolute;inset:0;z-index:14;display:grid;grid-template-columns:minmax(0,1fr) 330px;background:var(--canvas);color:var(--ink);text-align:left}
+.tw-world[data-look='sketch'] .tw-cm{--cm-red:var(--red-pencil,#c0392b)}
+.tw-cm-main{position:relative;padding:62px 0 0 64px;min-width:0}
+.tw-cm-tools{position:absolute;left:18px;top:14px;display:flex;gap:7px}
+.tw-cm-tools span{display:inline-flex;align-items:center;gap:5px;height:27px;padding:0 10px 0 8px;border:1.5px solid var(--ink);font-size:11.5px;font-weight:600}
+.tw-cm-tools span.off{opacity:.3}
+.tw-cm-tools kbd{margin-left:2px;font:inherit;font-size:10px;font-weight:400;opacity:.6}
+.tw-cm-hero{display:flex;align-items:flex-end;gap:34px;width:max-content;margin-bottom:34px;padding-bottom:13px;border-bottom:4px solid var(--ink)}
+.tw-cm-hero h2{display:flex;align-items:center;gap:12px;font-size:28px;font-weight:800;letter-spacing:.1em;line-height:1}
+.tw-cm-hero h2 i{width:22px;height:25px;background:var(--cm-red);clip-path:polygon(0 0,100% 50%,0 100%)}
+.tw-cm-hero dl{display:flex;gap:22px;margin:0}
+.tw-cm-hero dl div{display:flex;align-items:baseline;gap:5px}
+.tw-cm-hero dt{font-size:20px;font-weight:800;line-height:1}
+.tw-cm-hero dd{margin:0;color:var(--muted);font-size:10.5px;letter-spacing:.14em}
+.tw-cm-hero .red dt{color:var(--cm-red)}
+.tw-cm-book{display:flex;align-items:center;margin-bottom:30px}
+.tw-cm-root{display:flex;align-items:center;gap:11px;flex:none;width:212px}
+.tw-cm-root>i{display:grid;place-items:center;flex:none;width:34px;height:34px;background:var(--ink);color:var(--canvas)}
+.tw-cm-root>i.round{border-radius:50%;background:var(--cm-red);color:#fff}
+.tw-cm-root span{display:grid;gap:3px;min-width:0}
+.tw-cm-root b{font-size:13px;font-weight:700;line-height:1.25}
+.tw-cm-root small{color:var(--muted);font-size:10.5px}
+.tw-cm-knob{display:grid;place-items:center;flex:none;width:18px;height:18px;margin-left:7px;border:1.5px solid var(--ink);background:var(--canvas);font-size:10px;font-weight:700;line-height:1}
+.tw-cm-knob.has{border-color:var(--cm-red);color:var(--cm-red)}
+.tw-cm-knob.has.shut{background:var(--cm-red);color:#fff}
+.tw-cm-kids{position:relative;display:flex;flex-direction:column;gap:8px;margin-left:46px}
+.tw-cm-links{position:absolute;left:-46px;top:0;overflow:visible}
+.tw-cm-links path{fill:none;stroke:var(--cm-line);stroke-width:1.3}
+.tw-cm-kid{position:relative;display:flex;align-items:center;height:40px}
+.tw-cm-talk{display:flex;align-items:center;gap:8px;flex:none;width:270px;height:36px;padding:0 11px;border:1px solid color-mix(in srgb,var(--ink) 22%,transparent);border-left:5px solid var(--ink);background:var(--surface);font-size:12px;transition:opacity .15s,border-color .15s,background-color .15s,box-shadow .15s}
+.tw-cm-talk.has{border-left-color:var(--cm-red)}
+.tw-cm-talk b{flex:1;min-width:0;overflow:hidden;font-weight:400;white-space:nowrap;text-overflow:ellipsis}
+.tw-cm-talk small{flex:none;color:var(--muted);font-size:10px}
+.tw-cm-talk.picked{border-color:var(--cm-red);background:color-mix(in srgb,var(--cm-red) 10%,var(--surface));box-shadow:4px 4px 0 color-mix(in srgb,var(--cm-red) 30%,transparent)}
+.tw-cm-talk.lifted{opacity:.35}
+.tw-cm-items{display:grid;gap:0;margin-left:16px}
+.tw-cm-items p{display:flex;align-items:center;height:20px;font-size:11.5px;white-space:nowrap}
+.tw-cm-items p::before{content:'';width:5px;height:5px;margin-right:7px;background:var(--cm-red)}
+.tw-cm-items b,.tw-cm-side-list b{font-weight:600}
+.tw-cm-items em,.tw-cm-side-list em{margin-left:8px;color:var(--muted);font-size:10.5px}
+.tw-cm-slot{position:absolute;left:0;top:42.5px;z-index:2;width:270px;height:3px;background:var(--cm-red)}
+.tw-cm-slot::before{content:'';position:absolute;left:-8px;top:-2.5px;width:8px;height:8px;background:var(--cm-red)}
+.tw-cm-peek{position:absolute;left:292px;top:-4px;z-index:5;width:300px;padding:12px 14px 13px;border:1.5px solid var(--ink);background:var(--surface);box-shadow:6px 6px 0 color-mix(in srgb,var(--ink) 18%,transparent)}
+.tw-cm-peek h5{margin-bottom:8px;padding-bottom:7px;border-bottom:1px solid var(--cm-line);font-size:11.5px;font-weight:700}
+.tw-cm-peek p{display:flex;align-items:flex-start;gap:9px;font-size:11.5px;line-height:1.6}
+.tw-cm-peek p+p{margin-top:7px}
+.tw-cm-peek i{display:grid;place-items:center;flex:none;width:17px;height:17px;margin-top:1px;background:var(--ink);color:var(--canvas);font-size:10px;font-weight:700}
+.tw-cm-peek .answer i{background:var(--cm-red);color:#fff}
+.tw-cm-peek .answer span{color:var(--secondary)}
+.tw-cm-hint,.tw-cm-flash{position:absolute;left:20px;bottom:14px;display:flex;align-items:center;font-size:10.5px}
+.tw-cm-hint{color:var(--muted)}
+.tw-cm-hint i{width:1px;height:10px;margin:0 10px;background:var(--cm-line)}
+.tw-cm-flash{gap:12px;height:32px;padding:0 6px 0 12px;border-left:6px solid var(--cm-red);background:var(--ink);color:var(--canvas);font-size:11.5px}
+.tw-cm-flash b{display:grid;place-items:center;height:23px;padding:0 9px;background:var(--cm-red);color:#fff;font-weight:700}
+.tw-cm-flash:not(:has(b)){padding-right:12px}
+.tw-cm-ghost{position:absolute;z-index:9;padding:3px 9px;background:var(--cm-red);color:#fff;font-size:10.5px;font-weight:600;white-space:nowrap}
+.tw-cm-side{display:flex;flex-direction:column;border-left:4px solid var(--ink);background:color-mix(in srgb,var(--surface) 55%,var(--canvas))}
+.tw-cm-art{display:block;width:100%;height:200px;border-bottom:4px solid var(--ink);background:var(--canvas)}
+.tw-cm-art .l{fill:none;stroke:var(--ink);stroke-width:1.2}
+.tw-cm-art .r{fill:none;stroke:var(--ink);stroke-width:3}
+.tw-cm-art .k{fill:var(--ink)}
+.tw-cm-art .w{fill:var(--cm-red)}
+.tw-cm-side header{display:flex;align-items:baseline;gap:7px;padding:16px 20px 8px}
+.tw-cm-side h3{margin-right:auto;font-size:19px;font-weight:800;letter-spacing:.12em}
+.tw-cm-side header b{color:var(--cm-red);font-size:22px;font-weight:800;line-height:1}
+.tw-cm-side header span{color:var(--muted);font-size:10.5px}
+.tw-cm-side-list{padding:0 20px}
+.tw-cm-side-list h4{display:flex;align-items:center;gap:8px;margin:14px 0 5px;font-size:11px;font-weight:700}
+.tw-cm-side-list h4::before{content:'';width:14px;height:4px;background:var(--ink)}
+.tw-cm-side-list p{display:flex;align-items:center;height:26px;padding-left:9px;font-size:11.5px}
 .tw-file-menu{left:420px;top:178px}
 .tw-options{left:14px;right:14px;top:calc(100% - 8px)}
 .tw-quote{left:26px;top:150px}

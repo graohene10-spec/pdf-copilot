@@ -38,6 +38,10 @@ const AiPane = defineAsyncComponent(() => import('./components/AiPane.vue'))
 const SettingsDialog = defineAsyncComponent(() => import('./components/SettingsDialog.vue'))
 const ConversationManager = defineAsyncComponent(() => import('./components/ConversationManager.vue'))
 const managerOpen = ref(false)
+// 管理对话是不透明的一整页：它淡入完、背景图案完全看不见以后，图案才停画；一关掉马上接着画。
+const sceneCovered = ref(false)
+let sceneCoverTimer: ReturnType<typeof setTimeout> | undefined
+watch(managerOpen, open => { clearTimeout(sceneCoverTimer); if (open) sceneCoverTimer = setTimeout(() => { sceneCovered.value = true }, 380); else sceneCovered.value = false })
 const TourPlayer = defineAsyncComponent(() => import('./components/TourPlayer.vue'))
 const SplitPicker = defineAsyncComponent(() => import('./components/SplitPicker.vue'))
 const UpdateCard = defineAsyncComponent(() => import('./components/UpdateCard.vue'))
@@ -2043,7 +2047,7 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
 <template>
   <div class="app-shell" :class="{ 'sidebar-collapsed': !sidebarOpen, 'has-reader': active, 'chrome-collapsed': chromeCollapsed }">
     <i v-if="markBand" class="mark-band" :style="{ left: `${markBand.left}px`, top: `${markBand.top}px`, width: `${markBand.width}px`, height: `${markBand.height}px` }"></i>
-    <ManifoldDoodle v-if="manifoldVisible" :shapes="effectiveAppearance.manifold.shapes" />
+    <ManifoldDoodle v-if="manifoldVisible" :shapes="effectiveAppearance.manifold.shapes" :covered="sceneCovered" />
     <Transition name="chrome-tag"><button v-if="chromeCollapsed" class="chrome-tag" data-tip="展开顶栏与侧栏" :data-tip-key="tipKey('chrome')" aria-label="展开顶栏与侧栏" @click="expandChrome"><AppIcon name="chevron-right" :size="14" /></button></Transition>
     <Transition name="sidebar" @before-enter="paneResizeStart($event, true)" @before-leave="paneResizeStart($event, false)" @after-enter="paneResizeEnd" @after-leave="paneResizeEnd" @enter-cancelled="paneResizeEnd($event, true)" @leave-cancelled="paneResizeEnd($event, true)">
     <aside ref="sidebarEl" class="app-sidebar" v-if="sidebarOpen" tabindex="-1" data-glass-interactive="panel" @pointerdown="sidePointerDown" @keydown="sideKeydown">
