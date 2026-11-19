@@ -94,10 +94,10 @@ function spread(list: Placed[], min: number, max: number) {
     for (let index = list.length - 2; index >= 0; index--) list[index].top = Math.min(list[index].top, list[index + 1].top - gap(list[index], list[index + 1]))
   }
 }
-// 右侧的细线：只给不在视野里的书签。
+// 右侧的刻度：每个书签一道，一直都在（书签那一页翻到眼前也不收起）。
 const lines = computed(() => {
   const { top, height } = rail.value, span = height || Math.max(0, paneHeight.value - top - 22)
-  const list: Placed[] = props.marks.filter(mark => away.has(mark.id) || !spots.has(mark.id)).map(mark => ({ key: mark.id, mark, top: top + mark.ratio * span, page: false }))
+  const list: Placed[] = props.marks.map(mark => ({ key: mark.id, mark, top: top + mark.ratio * span, page: false }))
   spread(list, top + 4, top + span - 4)
   return list
 })

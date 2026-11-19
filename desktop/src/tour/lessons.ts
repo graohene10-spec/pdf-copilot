@@ -75,6 +75,11 @@ export type Scene = {
   rightOn: boolean
   shots: number
   kept: number
+  /** 解释卡片上的自由提问：标题变成输入框、问的那句话、回答写了多少字。 */
+  asking: boolean
+  cardDraft: string
+  cardAsk: boolean
+  cardAnswer: number
   shotSent: boolean
   shotAnswer: number
   /** 文库一课：窗口缩小、露出桌面的程度，0 到 1。 */
@@ -88,7 +93,7 @@ export const freshScene = (): Scene => ({
   draft: '', asked: false, answer: 0, quote: false, quotePop: false, side: false, sideAsk: '', sideAnswer: 0, branch: false, commands: false, btw: false, btwAnswer: 0,
   pop: false, column: false, auto: false, ink: '', hl: 0, pen: 0, ul: 0, mark: false, art: 0, markMenu: false,
   files: 6, ghost: null, query: '', fileMenu: false, grouped: false, starred: false, outline: false, finding: false, find: '', clock: 'idle', minutes: 5, follow: 'page', hold: 0, desk: 0,
-  crop: false, frame: null, quick: false, ctx: null, rightOn: false, shots: 0, kept: 0, shotSent: false, shotAnswer: 0,
+  crop: false, frame: null, quick: false, ctx: null, rightOn: false, shots: 0, kept: 0, shotSent: false, shotAnswer: 0, asking: false, cardDraft: '', cardAsk: false, cardAnswer: 0,
 })
 
 export const TEXT = {
@@ -102,6 +107,8 @@ export const TEXT = {
   sideReply: '换一组基，让矩阵只剩对角线上的数。',
   btwAsk: 'λ 可以是 0 吗',
   btwReply: '可以。λ = 0 表示 A 把这个方向压成了零向量，这时 A 不可逆。',
+  cardAsk: 'λ 是负数会怎样？',
+  cardReply: 'v 仍然留在原来那条直线上，只是被翻到反方向，长度变成 |λ| 倍。',
   shotAsk: '针对框选的内容解释「为什么」',
   shotReply: '三张图是同一条线索：定义给出 Av = λv，特征方程求出 λ，定理 5.2 保证实对称矩阵的 λ 都是实数。',
 }
@@ -204,6 +211,18 @@ const explain: Play = async (stage, scene, say) => {
   await stage.move('.tw-actions', { at: [.14, .5] })
   await stage.move('.tw-actions', { at: [.64, .5], ms: 620 })
   await stage.wait(260)
+
+  say('双击标题，就这段内容自己问一句')
+  await stage.move('.tw-card-head span', { at: [.3, .5] })
+  await stage.click(); await stage.click()
+  scene.asking = true
+  await stage.wait(200)
+  await stage.type(TEXT.cardAsk, value => { scene.cardDraft = value }, 44)
+  await stage.wait(240)
+  scene.asking = false; scene.cardAsk = true; scene.drawn = false; scene.running = true
+  await stage.tween(1000, k => { scene.cardAnswer = Math.round(k * TEXT.cardReply.length) }, true)
+  scene.running = false
+  await stage.wait(800)
 
   say('点图钉固定卡片')
   await click(stage, '.tw-pin')
@@ -476,7 +495,7 @@ const bookmark: Play = async (stage, scene, say) => {
   scene.art = 2; scene.markMenu = false
   await stage.wait(800)
 
-  say('翻走以后，滚动条旁留一道同色的刻度')
+  say('滚动条旁同时有一道同色的刻度，翻走了靠它找回来')
   stage.look('.tw-rail', 1.35, [-2.6, .4])
   await stage.move('.tw-page', { at: [.5, .5] })
   await stage.tween(900, k => { scene.scroll = k * 260 })
@@ -639,7 +658,7 @@ const look: Play = async (stage, scene, say) => {
 
 export const LESSONS: Lesson[] = [
   { id: 'setup', title: '接入 AI', note: '连接服务，给每个功能选模型', steps: 4, play: setup },
-  { id: 'explain', title: '快速解释', note: '选中文字后按中键', steps: 7, play: explain },
+  { id: 'explain', title: '快速解释', note: '选中文字后按中键', steps: 8, play: explain },
   { id: 'visual', title: '用图解释', note: '图解、可拖的图、合集', steps: 3, play: visual },
   { id: 'assistant', title: '阅读助手', note: '提问、附属对话、分支、指令', steps: 5, play: assistant },
   { id: 'capture', title: '截图提问', note: '框选、右键拖动、固定多张', steps: 7, play: capture },

@@ -11,7 +11,7 @@ const look = computed(() => props.scene.look || own)
 const source = computed(() => props.scene.doc === 'paper' ? TEXT.english : TEXT.sentence)
 const picked = computed(() => source.value.slice(0, props.scene.selected))
 const rest = computed(() => source.value.slice(props.scene.selected))
-const written = computed(() => TEXT.answer.slice(0, props.scene.words))
+const written = computed(() => props.scene.cardAsk ? TEXT.cardReply.slice(0, props.scene.cardAnswer) : TEXT.answer.slice(0, props.scene.words))
 const reply = computed(() => { let left = props.scene.answer; return TEXT.reply.map(part => { const shown = part.slice(0, Math.max(0, left)); left -= part.length; return shown }) })
 const pad = (value: number) => String(Math.max(0, value)).padStart(2, '0')
 
@@ -123,7 +123,7 @@ const files = computed(() => {
 
       <div class="tw-rail">
         <i class="tw-line" :style="{ top: '12%', background: ARTS[4].tint }"></i>
-        <Transition name="tw-railmark"><i v-if="scene.mark && away" class="tw-line tw-rail-new" :style="{ top: '27%', background: ARTS[scene.art].tint }"></i></Transition>
+        <Transition name="tw-railmark"><i v-if="scene.mark" class="tw-line tw-rail-new" :style="{ top: '27%', background: ARTS[scene.art].tint }"></i></Transition>
         <i class="tw-line" :style="{ top: '36%', background: ARTS[3].tint }"></i>
       </div>
       <div class="tw-pages" :style="{ transform: `translateY(${-scene.scroll}px) scale(${scene.zoom})` }">
@@ -144,9 +144,10 @@ const files = computed(() => {
 
           <Transition name="tw-card">
             <div v-if="scene.card !== 'none'" class="tw-card" :class="{ pinned: scene.card === 'pinned', floating: scene.follow === 'screen' }" :style="{ left: `${scene.cardAt.x}px`, top: `${scene.cardAt.y + (scene.follow === 'screen' ? scene.scroll - scene.hold : 0)}px` }">
-              <div class="tw-card-head"><AppIcon class="tw-spark" name="sparkle" :size="13" /><span><mark>{{ TEXT.sentence.slice(0, 15) }}…</mark></span><b v-if="scene.card === 'pinned'" class="tw-follow"><AppIcon :key="scene.follow" :name="scene.follow === 'page' ? 'doc' : 'fullscreen'" :size="13" /></b><b class="tw-pin" :class="{ on: scene.card === 'pinned' }"><AppIcon name="pin" :size="13" /></b></div>
+              <div class="tw-card-head"><AppIcon class="tw-spark" name="sparkle" :size="13" /><span v-if="scene.asking" class="tw-card-ask" :class="{ empty: !scene.cardDraft }">{{ scene.cardDraft || '就这段内容提问，回车发送' }}<i class="tw-caret"></i></span><span v-else><mark>{{ TEXT.sentence.slice(0, 15) }}…</mark></span><b v-if="scene.card === 'pinned'" class="tw-follow"><AppIcon :key="scene.follow" :name="scene.follow === 'page' ? 'doc' : 'fullscreen'" :size="13" /></b><b class="tw-pin" :class="{ on: scene.card === 'pinned' }"><AppIcon name="pin" :size="13" /></b></div>
               <i class="tw-rule" :class="{ running: scene.running }"></i>
-              <p class="tw-answer">{{ written }}<i v-if="scene.running && scene.words < TEXT.answer.length" class="tw-caret"></i></p>
+              <p v-if="scene.cardAsk" class="tw-card-q">{{ TEXT.cardAsk }}</p>
+              <p class="tw-answer">{{ written }}<i v-if="scene.running && (scene.cardAsk ? scene.cardAnswer < TEXT.cardReply.length : scene.words < TEXT.answer.length)" class="tw-caret"></i></p>
               <svg v-if="scene.drawn" class="tw-diagram" viewBox="0 0 260 104">
                 <path class="axis" d="M14 88H250M44 100V6" />
                 <path class="soft" pathLength="1" :d="scaled.shaft" style="--d: 0ms" /><path class="soft head" :d="scaled.head" style="--d: 560ms" />
@@ -285,7 +286,7 @@ const files = computed(() => {
 </template>
 
 <style scoped>
-.tw-world{--tw-bg:var(--canvas);--tw-radius:16px;position:absolute;left:0;top:0;width:1280px;height:800px;transform-origin:0 0;will-change:transform;overflow:hidden;background:var(--tw-bg);color:var(--ink);font-size:13px;line-height:1.4;user-select:none;pointer-events:none;transition:color .45s var(--ease-soft)}
+.tw-world{--tw-bg:var(--canvas);--tw-radius:16px;position:absolute;left:0;top:0;width:1280px;height:800px;overflow:hidden;background:var(--tw-bg);color:var(--ink);font-size:13px;line-height:1.4;user-select:none;pointer-events:none;transition:color .45s var(--ease-soft)}
 .tw-app{position:absolute;inset:0;overflow:hidden;background:var(--tw-bg);transform-origin:100% 46%;transition:background .45s var(--ease-soft)}
 /* 文库一课：窗口缩小一点，露出后面的桌面。 */
 .tw-world.desk .tw-app{border-radius:12px;box-shadow:0 40px 90px -30px rgb(0 0 0 / .6),0 0 0 1px rgb(255 255 255 / .22)}
@@ -323,7 +324,7 @@ const files = computed(() => {
 .tw-count{margin-left:auto;min-width:18px;height:18px;border-radius:9px;background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent);font-size:11px;line-height:18px;text-align:center;animation:tw-bump .4s var(--ease-spring)}
 @keyframes tw-bump{from{scale:.3;opacity:0}}
 .tw-side h6{margin:14px 10px 4px;color:var(--muted);font-size:11px;font-weight:600;letter-spacing:.08em}
-.tw-mark{display:flex;align-items:center;gap:9px;height:28px;padding:0 10px;color:var(--secondary);font-size:12px}
+.tw-mark{display:flex;align-items:center;justify-content:space-between;gap:9px;height:28px;padding:0 10px;color:var(--secondary);font-size:12px}
 .tw-mark .tw-art{flex:none;width:30px;height:13px;clip-path:polygon(0 0,100% 0,100% 100%,0 100%,5px 50%)}
 .tw-foot{display:flex;align-items:center;margin-top:auto;padding-top:10px;border-top:1px solid var(--line-soft);color:var(--secondary)}
 .tw-set{display:flex;align-items:center;gap:8px;height:32px;padding:0 12px;border:1px solid var(--line-soft);border-radius:999px}
@@ -427,6 +428,9 @@ const files = computed(() => {
 .tw-card-enter-from{opacity:0;scale:.86}
 .tw-card-head{display:flex;align-items:center;gap:6px}
 .tw-card-head span{flex:1;min-width:0;overflow:hidden;white-space:nowrap;font-size:12.5px;font-weight:650}
+.tw-card-head .tw-card-ask{height:22px;padding:0 7px;border:1px solid color-mix(in srgb,var(--accent) 55%,transparent);border-radius:6px;font-weight:400;line-height:20px;color:var(--ink)}
+.tw-card-head .tw-card-ask.empty{color:var(--muted)}
+.tw-card .tw-card-q{margin:0 0 5px;padding-left:7px;border-left:2px solid color-mix(in srgb,var(--accent) 60%,transparent);color:var(--muted);font-size:12px;text-align:left}
 .tw-card-head mark{background:linear-gradient(transparent 56%,color-mix(in srgb,var(--accent) 26%,transparent) 56%);color:inherit}
 .tw-spark{flex:none;color:var(--accent)}
 .tw-pin{display:grid;place-items:center;flex:none;width:22px;height:22px;border-radius:50%;color:var(--muted);rotate:35deg;transition:rotate .35s var(--ease-spring),color .2s,background-color .2s}

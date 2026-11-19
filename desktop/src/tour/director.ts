@@ -29,16 +29,18 @@ function damp(item: Axis, time: number, dt: number) {
 
 export type Director = ReturnType<typeof createDirector>
 
-export function createDirector(parts: { viewport: () => HTMLElement | null; world: () => HTMLElement | null; cursor: () => HTMLElement | null; ripples: () => HTMLElement | null }) {
+export function createDirector(parts: { viewport: () => HTMLElement | null; world: () => HTMLElement | null; camera: () => HTMLElement | null; cursor: () => HTMLElement | null; ripples: () => HTMLElement | null }) {
   const camera = { x: axis(WORLD.width / 2), y: axis(WORLD.height / 2), zoom: axis(1) }
   const pointer = { x: WORLD.width * .62, y: WORLD.height + 40, down: false, shown: false }
   let jobs: Job[] = [], frame = 0, last = 0, paused = false, run = 0, base = 1, shown = ''
+  // 点击的水波纹记的是画布上的位置：镜头还在动的时候，它跟着画面走，不会和鼠标错开。
+  let ripples: { node: HTMLElement; x: number; y: number }[] = []
   // 画布按「最近的镜头」的清晰度排一次版（density），之后镜头推拉只是合成层的缩放，不用每帧重画文字。
-  let view = { width: WORLD.width, height: WORLD.height }, density = 1, world: HTMLElement | null = null, cursor: HTMLElement | null = null
+  let view = { width: WORLD.width, height: WORLD.height }, density = 1, world: HTMLElement | null = null, lens: HTMLElement | null = null, cursor: HTMLElement | null = null
 
   function resize() {
     const box = parts.viewport()
-    world = parts.world(); cursor = parts.cursor()
+    world = parts.world(); lens = parts.camera(); cursor = parts.cursor()
     if (box?.clientWidth) view = { width: box.clientWidth, height: box.clientHeight }
     base = Math.min(view.width / WORLD.width, view.height / WORLD.height)
     const next = Math.round(Math.min(1.6, Math.max(.7, base * 2.2)) * 20) / 20
@@ -55,13 +57,14 @@ export function createDirector(parts: { viewport: () => HTMLElement | null; worl
     const cx = Math.min(Math.max(camera.x.now, halfW), Math.max(halfW, WORLD.width - halfW))
     const cy = Math.min(Math.max(camera.y.now, halfH), Math.max(halfH, WORLD.height - halfH))
     const left = view.width / 2 - cx * scale, top = view.height / 2 - cy * scale
-    if (world) world.style.transform = `translate3d(${left.toFixed(2)}px, ${top.toFixed(2)}px, 0) scale(${(scale / density).toFixed(4)})`
+    if (lens) lens.style.transform = `translate3d(${left.toFixed(2)}px, ${top.toFixed(2)}px, 0) scale(${(scale / density).toFixed(4)})`
     if (cursor) {
       const grow = (1 + (camera.zoom.now - 1) * .2) * (pointer.down ? .86 : 1)
       cursor.style.transform = `translate3d(${(left + pointer.x * scale).toFixed(2)}px, ${(top + pointer.y * scale).toFixed(2)}px, 0) scale(${grow.toFixed(3)})`
       const opacity = pointer.shown ? '1' : '0'
       if (opacity !== shown) cursor.style.opacity = shown = opacity
     }
+    for (const item of ripples) item.node.style.transform = `translate3d(${(left + item.x * scale).toFixed(2)}px, ${(top + item.y * scale).toFixed(2)}px, 0)`
     return { left, top, scale }
   }
 
@@ -94,11 +97,13 @@ export function createDirector(parts: { viewport: () => HTMLElement | null; worl
 
   function ripple(kind: 'left' | 'middle' | 'right') {
     const layer = parts.ripples(); if (!layer) return
-    const { left, top, scale } = paint(), dot = document.createElement('i')
+    const dot = document.createElement('i'), item = { node: dot, x: pointer.x, y: pointer.y }
     dot.className = `tour-ripple ${kind}`
-    dot.style.left = `${left + pointer.x * scale}px`; dot.style.top = `${top + pointer.y * scale}px`
+    dot.append(document.createElement('b'))
     layer.append(dot)
-    dot.addEventListener('animationend', () => dot.remove(), { once: true })
+    ripples.push(item)
+    paint()
+    dot.firstElementChild!.addEventListener('animationend', () => { dot.remove(); ripples = ripples.filter(other => other !== item) }, { once: true })
   }
 
   const api = {
@@ -125,13 +130,17 @@ export function createDirector(parts: { viewport: () => HTMLElement | null; worl
     place(point: Point) { pointer.x = point.x; pointer.y = point.y },
     /* 鼠标走一条略带弧度的路过去；距离越远用时越长。 */
     move(target: Target, options: MoveOptions = {}) {
-      const from = { x: pointer.x, y: pointer.y }, to = locate(target, options.at)
-      const dx = to.x - from.x, dy = to.y - from.y, far = Math.hypot(dx, dy)
-      const bend = options.step ? 0 : Math.min(46, far * .12) * (dx >= 0 ? 1 : -1)
-      const mid = { x: (from.x + to.x) / 2 + (far ? -dy / far : 0) * bend, y: (from.y + to.y) / 2 + (far ? dx / far : 0) * bend }
-      if (options.look) api.look(to, options.look)
+      const from = { x: pointer.x, y: pointer.y }, first = locate(target, options.at)
+      const far = Math.hypot(first.x - from.x, first.y - from.y)
+      const side = first.x - from.x >= 0 ? 1 : -1
+      if (options.look) api.look(first, options.look)
       pointer.shown = true
       return schedule(options.ms ?? Math.min(760, 240 + far * .8), raw => {
+        // 目标是界面上的元素时每一帧重新量：面板还在展开、内容还在滚，鼠标也落在它身上。
+        const to = typeof target === 'string' ? locate(target, options.at) : first
+        const dx = to.x - from.x, dy = to.y - from.y, length = Math.hypot(dx, dy)
+        const bend = options.step ? 0 : Math.min(46, length * .12) * side
+        const mid = { x: (from.x + to.x) / 2 + (length ? -dy / length : 0) * bend, y: (from.y + to.y) / 2 + (length ? dx / length : 0) * bend }
         const k = glide(raw), rest = 1 - k
         pointer.x = rest * rest * from.x + 2 * rest * k * mid.x + k * k * to.x
         pointer.y = rest * rest * from.y + 2 * rest * k * mid.y + k * k * to.y
@@ -155,6 +164,8 @@ export function createDirector(parts: { viewport: () => HTMLElement | null; worl
       const mine = ++run
       for (const job of jobs) job.fail(CANCEL)
       jobs = []
+      for (const item of ripples) item.node.remove()
+      ripples = []
       camera.x = axis(WORLD.width / 2); camera.y = axis(WORLD.height / 2); camera.zoom = axis(1)
       Object.assign(pointer, { x: WORLD.width * .62, y: WORLD.height + 40, down: false, shown: false })
       paused = false; shown = ''
