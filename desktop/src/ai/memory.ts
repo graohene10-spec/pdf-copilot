@@ -35,6 +35,8 @@ export function forgetItem(conversationId: string, index: number) {
   persist()
 }
 /** 对话换了书、改了名：记录跟着改。 */
+/** 撤销用：把一段对话的记忆原样放回去。 */
+export function restoreMemory(conversationId: string, entry: MemoryEntry) { memory.entries[conversationId] = entry; persist() }
 export function retagMemory(conversationId: string, patch: Partial<Pick<MemoryEntry, 'documentId' | 'documentTitle' | 'title'>>) {
   const entry = memory.entries[conversationId]
   if (entry) { Object.assign(entry, patch); persist() }

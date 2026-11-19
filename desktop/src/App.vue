@@ -16,7 +16,7 @@ import { restoreLeavingPanel } from './ui/panel-transition'
 import BookmarkRail from './components/BookmarkRail.vue'
 import ClaudeBurst from './components/ClaudeBurst.vue'
 import { nudgeGlassMotion } from './ui/glass-motion'
-import { bookmarks, loadBookmarks, addBookmark, removeBookmark, clearBookmarks, renameBookmark, restyleBookmark, neighbour, type BookmarkPosition } from './library/bookmarks'
+import { bookmarks, loadBookmarks, addBookmark, removeBookmark, clearBookmarks, renameBookmark, restyleBookmark, neighbour, type BookmarkPosition, placeBookmark } from './library/bookmarks'
 import { BOOKMARK_ARTS, artOf, addCustomArt, customArtList, loadCustomArts, removeCustomArt } from './library/bookmark-art'
 import { useFullscreen } from './ui/fullscreen'
 import { vLiquidSelection } from './ui/liquid-selection'
@@ -867,7 +867,7 @@ watch(() => paneIds.value.join(), () => { for (const id of paneIds.value) void l
 function paneBookmarks(id: string) {
   void bookmarkTick.value
   const instance = readerInstances.get(id), doc = tabDoc(id)
-  return (bookmarks.get(sourceId(id)) || []).map(mark => ({ id: mark.id, name: mark.name, art: artOf(mark), ratio: instance?.bookmarkRatio?.(mark.position) ?? 0, hint: mark.position.page ? `第 ${mark.position.page} 页` : `${Math.round((mark.position.progress || 0) * 100)}% 处` }))
+  return (bookmarks.get(sourceId(id)) || []).map(mark => ({ id: mark.id, name: mark.name, art: artOf(mark), flip: mark.flip, x: mark.x, ratio: instance?.bookmarkRatio?.(mark.position) ?? 0, hint: mark.position.page ? `第 ${mark.position.page} 页` : `${Math.round(Math.min(1, mark.position.progress || 0) * 100)}% 处` }))
     .filter(() => !!doc)
 }
 function addBookmarkHere(id = active.value?.id) {
@@ -945,7 +945,7 @@ const bookmarkGroups = computed(() => {
   void bookmarkTick.value
   return documents.value.map(doc => ({ doc, marks: [...(bookmarks.get(doc.id) || [])]
     .sort((a, b) => (a.position.page ?? 0) - (b.position.page ?? 0) || (a.position.fraction ?? a.position.progress ?? 0) - (b.position.fraction ?? b.position.progress ?? 0))
-    .map(mark => ({ mark, art: artOf(mark), where: mark.position.page ? `第 ${mark.position.page} 页` : `${Math.round((mark.position.progress || 0) * 100)}% 处` })) }))
+    .map(mark => ({ mark, art: artOf(mark), where: mark.position.page ? `第 ${mark.position.page} 页` : `${Math.round(Math.min(1, mark.position.progress || 0) * 100)}% 处` })) }))
     .filter(group => group.marks.length)
 })
 const bookmarkTotal = computed(() => bookmarkGroups.value.reduce((sum, group) => sum + group.marks.length, 0))
@@ -1072,6 +1072,15 @@ function deleteBookmarks(id: string, markIds: string[]) { for (const markId of m
 function bookmarkPlace(id: string, markId: string) {
   const mark = bookmarks.get(sourceId(id))?.find(item => item.id === markId)
   return mark ? readerInstances.get(id)?.bookmarkPlace?.(mark.position) ?? null : null
+}
+// 拖动书签松手：竖向换成它标记的位置，横向是贴右边、贴左边（掉头）还是自己摆的比例。
+function moveBookmark(id: string, markId: string, to: { top: number; left: number; dock: 'right' | 'left' | 'free'; flip: boolean }) {
+  const instance = readerInstances.get(id), position: BookmarkPosition | undefined = instance?.bookmarkAt?.(to.top)
+  if (!position) return
+  let x: number | undefined
+  if (to.dock === 'free') { const at = instance.bookmarkPlace?.(position); if (at && at.left > at.edge) x = Math.round((to.left - at.edge) / (at.left - at.edge) * 1000) / 1000 }
+  placeBookmark(sourceId(id), markId, { position, flip: to.flip, x })
+  bookmarkTick.value++
 }
 function bookmarkBatchMenu(id: string, markIds: string[], event: MouseEvent) {
   const source = sourceId(id), x = event.clientX, y = event.clientY
@@ -2144,7 +2153,7 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
               <KeepAlive>
                 <component v-if="paneVisible(entry.id)" :is="entry.doc.kind === 'pdf' ? PdfReader : MarkdownReader" :ref="value => bindReader(entry.id, value)" :key="entry.id" :data="entry.bytes" :document-id="sourceId(entry.id)" :initial-page="entry.doc.page || 1" :initial-progress="entry.doc.progress || 0" :sidebar-fit-enabled="preferences.pdf.fitOnPanelOverflow" :initial-zoom="preferences.pdf.initialZoom === 'fit-width' ? 'fit' : preferences.pdf.initialZoom / 100" :zoom-step="preferences.pdf.zoomStep / 100" :fit-request="fitRequest" :font-size="preferences.markdown.fontSize" :content-width="preferences.markdown.contentWidth" :find-shortcut="preferences.shortcuts.find ? shortcut('find') : ''" :shortcuts="tipKeys" :initial-view="entry.view" :page-layout="preferences.pdf.pageLayout" :cover-alone="preferences.pdf.coverAlone" :right-capture="rightCaptureDocs.has(sourceId(entry.id))" v-on="entry.events" @page-layout="setPageLayout" />
               </KeepAlive>
-              <BookmarkRail v-if="paneVisible(entry.id)" :marks="paneBookmarks(entry.id)" :editing="editingBookmark" :place="markId => bookmarkPlace(entry.id, markId)" @jump="markId => jumpBookmark(entry.id, markId)" @menu="(markId, event) => bookmarkMenu(entry.id, markId, event)" @batch="(ids, event) => bookmarkBatchMenu(entry.id, ids, event)" @remove-many="ids => deleteBookmarks(entry.id, ids)" @rename="(markId, name) => finishRename(entry.id, markId, name)" @remove="markId => deleteBookmark(entry.id, markId)" @cancel="editingBookmark = null" />
+              <BookmarkRail v-if="paneVisible(entry.id)" :marks="paneBookmarks(entry.id)" :editing="editingBookmark" :place="markId => bookmarkPlace(entry.id, markId)" @jump="markId => jumpBookmark(entry.id, markId)" @menu="(markId, event) => bookmarkMenu(entry.id, markId, event)" @batch="(ids, event) => bookmarkBatchMenu(entry.id, ids, event)" @remove-many="ids => deleteBookmarks(entry.id, ids)" @rename="(markId, name) => finishRename(entry.id, markId, name)" @remove="markId => deleteBookmark(entry.id, markId)" @move="(markId, to) => moveBookmark(entry.id, markId, to)" @cancel="editingBookmark = null" />
               <div v-if="tabDoc(entry.id)" class="reading-pill" :class="{ awake: splitView }" :data-tip="splitView ? entry.doc.name : undefined" role="status" :aria-label="`阅读位置自动保存 · ${tabDoc(entry.id)!.kind === 'pdf' ? `第 ${tabDoc(entry.id)!.page || 1} / ${tabDoc(entry.id)!.pageCount || '—'} 页 · ` : ''}已读 ${progressPercent(tabDoc(entry.id)!)}%`">
                 <svg class="pill-ring" viewBox="0 0 24 24" aria-hidden="true"><circle class="pill-ring-track" cx="12" cy="12" r="9" /><circle class="pill-ring-value" cx="12" cy="12" r="9" pathLength="100" :style="{ strokeDashoffset: 100 - progressPercent(tabDoc(entry.id)!) }" /></svg>
                 <span class="pill-text" aria-hidden="true"><span v-if="tabDoc(entry.id)!.kind === 'pdf'" class="pill-page"><b :key="tabDoc(entry.id)!.page || 1">{{ tabDoc(entry.id)!.page || 1 }}</b><i>/</i>{{ tabDoc(entry.id)!.pageCount || '—' }}</span><span v-else class="pill-page"><b :key="progressPercent(tabDoc(entry.id)!)">{{ progressPercent(tabDoc(entry.id)!) }}</b><i>%</i></span></span>

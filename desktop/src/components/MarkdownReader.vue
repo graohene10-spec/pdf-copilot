@@ -268,8 +268,16 @@ function bookmarkPlace(position: { progress?: number }) {
     host, scroller: view, shift,
     top: Math.max(0, view.scrollHeight - view.clientHeight) * (position.progress ?? 0) - shift,
     left: sheet.getBoundingClientRect().right - hostBox.left,
+    edge: sheet.getBoundingClientRect().left - hostBox.left,
     width: host.offsetWidth + 28, height: host.offsetHeight,
   }
+}
+/** 反过来：纸这一层里的一个高度，对应整篇的什么比例（拖动书签时用）。最后一屏里的位置比例超过 1。 */
+function bookmarkAt(top: number) {
+  const view = scroll.value, host = stage.value
+  if (!active || !view || !host || raw.value) return undefined
+  const shift = host.getBoundingClientRect().top - view.getBoundingClientRect().top + view.scrollTop
+  return { progress: Math.max(0, Math.min(3, (top + shift) / Math.max(1, view.scrollHeight - view.clientHeight))) }
 }
 function goToBookmark(position: { progress?: number }) {
   const view = scroll.value
@@ -399,7 +407,7 @@ async function resume() {
 }
 onActivated(resume)
 onDeactivated(suspend)
-defineExpose({ bookmarkPlace, goToPage, goToHeading, isSuspended: () => !active, zoomIn, zoomOut, resetZoom, getZoom: () => zoom.value, toggleOutline, nextPage, previousPage, focusSearch, clearSearch, toggleCapture, cancelCapture, getCaptureFrame, getCaptureElements, clearSelection, toggleInk, exitInk: ink.exit, pickInk: ink.pick, getPage: () => currentLine, getFontSize: () => displayFontSize.value, getViewState, getBookmarkPosition, bookmarkRatio, goToBookmark, suspend, resume, getCacheStats: () => ({ suspended: !active, pages: 0, pixels: 0 }) })
+defineExpose({ bookmarkPlace, bookmarkAt, goToPage, goToHeading, isSuspended: () => !active, zoomIn, zoomOut, resetZoom, getZoom: () => zoom.value, toggleOutline, nextPage, previousPage, focusSearch, clearSearch, toggleCapture, cancelCapture, getCaptureFrame, getCaptureElements, clearSelection, toggleInk, exitInk: ink.exit, pickInk: ink.pick, getPage: () => currentLine, getFontSize: () => displayFontSize.value, getViewState, getBookmarkPosition, bookmarkRatio, goToBookmark, suspend, resume, getCacheStats: () => ({ suspended: !active, pages: 0, pixels: 0 }) })
 </script>
 
 <template>
