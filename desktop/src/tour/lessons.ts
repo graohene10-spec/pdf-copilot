@@ -85,6 +85,19 @@ export type Scene = {
   shotAnswer: number
   /** 文库一课：窗口缩小、露出桌面的程度，0 到 1。 */
   desk: number
+  /** 书签拖动：平的那一头在书页上的位置（没拖过是 null，贴在右边）、有没有掉头、是不是正拿在手里。 */
+  ribbonAt: Point | null
+  ribbonFlip: boolean
+  ribbonLift: boolean
+  /** 管理对话一课：「阅读助手」的右键菜单、管理页、悬停预览、正在拖（指针在哪）、落点红线、移过去了没有、左下角的提示、记忆展开了没有。 */
+  aiMenu: boolean
+  manager: boolean
+  cmPeek: boolean
+  cmDrag: Point | null
+  cmSlot: boolean
+  cmMoved: boolean
+  cmFlash: '' | 'moved' | 'undone'
+  cmOpen: boolean
 }
 
 export const freshScene = (): Scene => ({
@@ -95,6 +108,7 @@ export const freshScene = (): Scene => ({
   pop: false, column: false, auto: false, ink: '', hl: 0, pen: 0, ul: 0, mark: false, art: 0, markMenu: false,
   files: 6, ghost: null, query: '', fileMenu: false, grouped: false, starred: false, outline: false, finding: false, find: '', clock: 'idle', minutes: 5, follow: 'page', hold: 0, desk: 0,
   crop: false, frame: null, quick: false, ctx: null, rightOn: false, quickOff: false, shots: 0, kept: 0, shotSent: false, shotAnswer: 0, asking: false, cardDraft: '', cardAsk: false, cardAnswer: 0,
+  ribbonAt: null, ribbonFlip: false, ribbonLift: false, aiMenu: false, manager: false, cmPeek: false, cmDrag: null, cmSlot: false, cmMoved: false, cmFlash: '', cmOpen: false,
 })
 
 export const TEXT = {
@@ -543,6 +557,101 @@ const bookmark: Play = async (stage, scene, say) => {
   await click(stage, '.tw-mark-new')
   await stage.tween(560, k => { scene.scroll = 260 - k * 260 })
   await stage.wait(900)
+
+  // 挪书签：位置按书页自己的坐标记（平的那一头在哪、中线多高）。
+  say({ text: '按住书签可以挪：竖着挪到哪，它就标记哪', mouse: 'left' })
+  stage.look('.tw-page', 1.25, [.62, .3])
+  await stage.wait(500)
+  const page = stage.box('.tw-page'), tab = stage.box('.tw-ribbon-new')
+  const edge = page.width - 5, high = tab.y + tab.height / 2 - page.y
+  const grab = { x: tab.x + 12, y: tab.y + tab.height / 2 }
+  const carry = async (to: Point, ms: number, flip?: (x: number) => boolean) => {
+    const from = { ...scene.ribbonAt! }
+    await stage.move({ x: grab.x + to.x - edge, y: page.y + to.y }, { ms, step: k => {
+      const x = from.x + (to.x - from.x) * k, y = from.y + (to.y - from.y) * k
+      // 靠近左边就吸上去并掉头；离开以后保持掉头。
+      const snapped = flip?.(x) ?? false
+      if (flip) scene.ribbonFlip = scene.ribbonFlip || snapped
+      scene.ribbonAt = { x: snapped ? 5 : x, y }
+    } })
+  }
+  scene.ribbonAt = { x: edge, y: high }
+  await stage.move(grab, { ms: 700 })
+  stage.press()
+  await stage.wait(420)
+  scene.ribbonLift = true
+  await stage.wait(250)
+  await carry({ x: edge, y: high + 170 }, 1000)
+  stage.release(); scene.ribbonLift = false
+  await stage.wait(1100)
+
+  say('拖到左边会吸上去并掉头，这也是给书签掉头的办法')
+  stage.look('.tw-page', 1.25, [.4, .4])
+  stage.press()
+  await stage.wait(420)
+  scene.ribbonLift = true
+  await carry({ x: 5, y: high + 120 }, 1500, x => x < 46)
+  stage.release(); scene.ribbonLift = false
+  await stage.wait(1300)
+
+  say('两边都不靠，就停在松手的地方')
+  stage.press()
+  await stage.wait(420)
+  scene.ribbonLift = true
+  await carry({ x: page.width * .46, y: high + 40 }, 1100)
+  stage.release(); scene.ribbonLift = false
+  await stage.wait(1500)
+}
+
+/* 管理对话：从「阅读助手」的右键菜单进去；树、悬停预览、拖动移动、撤销、记忆。 */
+const manage: Play = async (stage, scene, say) => {
+  say({ text: '右键「阅读助手」，打开管理对话', mouse: 'right' })
+  stage.place(ENTRY)
+  stage.look('.tw-aibtn', 1.5, [3.2, 3.2])
+  await stage.move('.tw-aibtn', { ms: 800 })
+  await stage.wait(250)
+  await stage.click('right')
+  scene.aiMenu = true
+  await stage.wait(900)
+  await stage.move('.tw-aimenu-manage', { ms: 600 })
+  await stage.wait(250)
+  await stage.click()
+  scene.aiMenu = false; scene.manager = true
+  stage.look(null, 1)
+  await stage.wait(1600)
+
+  say('书在左，右边是它的对话。停在一段对话上，看它最后一轮问答')
+  stage.look('.tw-cm-t1', 1.12, [.75, .9])
+  await stage.move('.tw-cm-t1', { at: [.3, .5], ms: 800 })
+  await stage.wait(450)
+  scene.cmPeek = true
+  await stage.wait(2400)
+
+  say({ text: '拖到别的书是移动，拖到同一本书里是排序，红线是落点', mouse: 'left' })
+  scene.cmPeek = false
+  stage.look('.tw-cm-b1', 1.2, [.5, -.2])
+  await stage.wait(400)
+  stage.press()
+  const from = stage.locate('.tw-cm-t1', [.3, .5]), to = stage.locate('.tw-cm-t4', [.3, -.05])
+  await stage.move(to, { ms: 1300, step: k => { scene.cmDrag = { x: from.x + (to.x - from.x) * k, y: from.y + (to.y - from.y) * k }; scene.cmSlot = k > .72 } })
+  await stage.wait(500)
+  stage.release()
+  scene.cmDrag = null; scene.cmSlot = false; scene.cmMoved = true; scene.cmFlash = 'moved'
+  await stage.wait(1700)
+
+  say({ text: '每一步都能撤销', keys: ['Ctrl', 'Z'] })
+  await stage.wait(900)
+  scene.cmMoved = false; scene.cmFlash = 'undone'
+  await stage.wait(1700)
+
+  say('小方钮展开这段对话记下的内容；右边一栏是现在记着的全部')
+  scene.cmFlash = ''
+  stage.look(null, 1)
+  await click(stage, '.tw-cm-knob-t0')
+  scene.cmOpen = true
+  await stage.wait(900)
+  await stage.move('.tw-cm-side-list', { at: [.4, .3], ms: 900 })
+  await stage.wait(1800)
 }
 
 const library: Play = async (stage, scene, say) => {
@@ -693,9 +802,10 @@ export const LESSONS: Lesson[] = [
   { id: 'visual', title: '用图解释', note: '图解、可拖的图、合集', steps: 3, play: visual },
   { id: 'assistant', title: '阅读助手', note: '提问、附属对话、分支、指令', steps: 5, play: assistant },
   { id: 'capture', title: '截图提问', note: '框选、右键拖动、固定多张', steps: 9, play: capture },
+  { id: 'manage', title: '管理对话', note: '移动、排序、撤销，看记下了什么', steps: 5, play: manage },
   { id: 'translate', title: '翻译', note: '划词翻译与翻译栏', steps: 3, play: translate },
   { id: 'ink', title: '标记', note: 'Alt + 1 / 2 / 3 直接拿起工具', steps: 4, play: ink },
-  { id: 'bookmark', title: '书签', note: '夹在页边，Ctrl + ↑ ↓ 跳转', steps: 5, play: bookmark },
+  { id: 'bookmark', title: '书签', note: '夹在页边，可以拖，Ctrl + ↑ ↓ 跳转', steps: 8, play: bookmark },
   { id: 'library', title: '文库', note: '导入、搜索、分组、收藏', steps: 3, play: library },
   { id: 'tabs', title: '多文档', note: '标签页与并排阅读', steps: 2, play: tabs },
   { id: 'view', title: '阅读视图', note: '目录、搜索、缩放、收起界面', steps: 4, play: view },

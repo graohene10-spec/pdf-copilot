@@ -9,7 +9,9 @@ import { networkById, ML_FACTS, type Graph } from '../sketch/networks'
 import { sketchById, type Painter, type Sketch, resetSprites } from '../sketch/scenes'
 
 // preview：设置里悬停时的缩略图——只画一个画面，铺满自己的小框，不写旁注、不轮换。
-const props = defineProps<{ shapes: string[]; preview?: boolean }>()
+// covered：被一整页不透明的界面（管理对话）完全盖住、一点都看不见时为真。这时和窗口藏起来一样不画；时间照走，露出来时画面就在它该在的地方。
+const props = defineProps<{ shapes: string[]; preview?: boolean; covered?: boolean }>()
+const unseen = () => document.hidden || Boolean(props.covered)
 const backing = ref('')
 
 const canvas = ref<HTMLCanvasElement>()
@@ -74,7 +76,7 @@ async function recoverWorker(event: ErrorEvent) {
     startWorker(); postView(true)
     const rebuilt = worker as Worker | undefined
     rebuilt?.postMessage({ type: 'scene', id: sketch?.offscreen ? current.value : null, elapsed: Math.max(0, performance.now() - drawnAt) })
-    if (document.hidden || held) rebuilt?.postMessage({ type: 'halt' })
+    if (unseen() || held) rebuilt?.postMessage({ type: 'halt' })
   }
   remote = Boolean(worker && sketch?.offscreen)
   if (!worker) console.warn('[background] worker unavailable; using the foreground renderer')
@@ -131,7 +133,7 @@ function choose(id: string | undefined) {
   painter = other?.create()
   remote = Boolean(worker && other?.offscreen)
   worker?.postMessage({ type: 'scene', id: remote ? id : null, elapsed: 0 })
-  if (remote && !document.hidden && !held) worker?.postMessage({ type: 'run' })
+  if (remote && !unseen() && !held) worker?.postMessage({ type: 'run' })
   baseTilt = other?.tilt ?? manifold?.tilt ?? (network ? .32 : .42)
   jitter = seeded(mesh ? mesh.points.length / 3 : graph ? graph.nodes.length / 3 : 1)
   drawnAt = performance.now()
@@ -674,7 +676,7 @@ function drawVisual(context: CanvasRenderingContext2D, item: Drawing, now: numbe
 
 function tick(now: number) {
   frame = 0
-  if (document.hidden) return
+  if (unseen()) return
   if (held) { frame = requestAnimationFrame(tick); return }
   // GB300 保持原最高目标 60 FPS；其他场景沿用原来的自适应调度。
   const interval = sketch?.offscreen ? 1000 / 60 : cost < (smoothRun ? 10 : 7) ? 1000 / 60 : cost > 16 ? 1000 / 20 : FRAME
@@ -685,7 +687,7 @@ function tick(now: number) {
     cost += (performance.now() - began - cost) * .1 }
   if (!reduced.matches && (!remote || !labelSettled || labelDirty)) frame = requestAnimationFrame(tick)
 }
-function run() { if (!disposed && !frame && !document.hidden && (!remote || !labelSettled || labelDirty)) frame = requestAnimationFrame(tick) }
+function run() { if (!disposed && !frame && !unseen() && (!remote || !labelSettled || labelDirty)) frame = requestAnimationFrame(tick) }
 function halt() { cancelAnimationFrame(frame); frame = 0 }
 
 // 随机的定理 / 定义：洗好的一袋，抽完再洗；夹几条当前画面自己的。流形上能画的就画在曲面上。
@@ -741,7 +743,7 @@ function nextNote() {
   noteTimer = setTimeout(nextNote, reduced.matches ? 60000 : NOTE_EVERY)
 }
 
-function visibility() { if (document.hidden) { halt(); worker?.postMessage({ type: 'halt' }) } else { run(); worker?.postMessage({ type: 'run' }) } }
+function visibility() { if (unseen()) { halt(); worker?.postMessage({ type: 'halt' }) } else { run(); worker?.postMessage({ type: 'run' }) } }
 const resizer = new ResizeObserver(() => { resize(); if (!frame) draw(performance.now()) })
 // 图案在任何界面操作时都不暂停（收放面板、拖宽度、弹窗、拖动排列都一样照常画）：只有窗口藏起来时才停。
 const themeWatch = new MutationObserver(records => {
@@ -749,6 +751,7 @@ const themeWatch = new MutationObserver(records => {
   readInk(); if (!frame) draw(performance.now())
 })
 
+watch(() => props.covered, visibility)
 watch(() => props.shapes.join(','), () => { if (!current.value || !props.shapes.includes(current.value)) choose(nextManifold(props.shapes, undefined)); else scheduleSwitch() })
 
 onMounted(() => {
