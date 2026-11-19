@@ -1801,6 +1801,14 @@ watch(search, value => {
 })
 // 教程每次启动在右下角弹出一个小的提醒窗，点它展开成完整的教程；直到在教程里勾上「不再自动弹出」。平时从设置里打开。
 let tourTimer: ReturnType<typeof setTimeout> | undefined
+// 有功能用着本机 Codex：打开应用就自己检查登录、读模型名单，不用每次去设置里点。没连上只提示一次。
+onMounted(() => setTimeout(async () => {
+  const { loadAiSettings, translationSettings, explainSettings, visualSettings, askSettings } = await import('./ai/settings.mjs')
+  const main: any = loadAiSettings()
+  if (![main, translationSettings(main), explainSettings(main), visualSettings(main), askSettings(main)].some((item: any) => item?.provider === 'codex')) return
+  const { checkCodex, codexCheck } = await import('./ai/native-models')
+  if (!(await checkCodex()) && codexCheck.state === 'failed') notify(codexCheck.text)
+}, 1200))
 onMounted(() => { if (!loadTour().hidden) tourTimer = setTimeout(() => { if (!tourOpen.value) { tourFull.value = false; tourOpen.value = true } }, 1400) })
 async function openTour() { settingsOpen.value = false; tourOpen.value = false; await nextTick(); tourFull.value = true; tourOpen.value = true }
 onBeforeUnmount(() => clearTimeout(tourTimer))
@@ -2051,7 +2059,7 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
       <nav class="mark-nav" aria-label="全部书签">
         <section v-for="group in bookmarkGroups" :key="group.doc.id" class="mark-group">
           <p class="mark-book" :data-tip="group.doc.name">{{ group.doc.name.replace(/\.(pdf|md|markdown)$/i, '') }}</p>
-          <button v-for="item in group.marks" :key="item.mark.id" type="button" class="mark-row" :class="{ picked: pickedMarks.has(markKey(group.doc.id, item.mark.id)) }" :data-key="markKey(group.doc.id, item.mark.id)" :data-tip="`${item.art.name} · ${item.where}`" @click="markClick(group.doc, item.mark, $event)" @contextmenu.prevent.stop="markMenu(group.doc, item.mark, $event)"><svg class="mark-art" viewBox="0 0 96 40" preserveAspectRatio="xMaxYMid slice" aria-hidden="true" v-html="item.art.svg" /><span class="mark-name">{{ item.mark.name }}</span><small>{{ item.where }}</small></button>
+          <button v-for="item in group.marks" :key="item.mark.id" type="button" class="mark-row" :class="{ picked: pickedMarks.has(markKey(group.doc.id, item.mark.id)) }" :data-key="markKey(group.doc.id, item.mark.id)" :data-tip="`${item.art.name} · ${item.where}`" @click="markClick(group.doc, item.mark, $event)" @contextmenu.prevent.stop="markMenu(group.doc, item.mark, $event)"><svg class="mark-art" viewBox="0 0 96 40" preserveAspectRatio="xMaxYMid slice" aria-hidden="true" v-html="item.art.svg" /><small>{{ item.where }}</small><span class="mark-name">{{ item.mark.name }}</span></button>
         </section>
         <p v-if="!bookmarkGroups.length" class="tag-empty">在书里按 {{ shortcut('bookmark') || '右键' }} 留书签，都会收在这里。</p>
       </nav>
