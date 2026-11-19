@@ -258,13 +258,18 @@ function toggleInk() { if (raw.value) raw.value = false; ink.toggle() }
 // ---- 书签：位置就是整篇的滚动比例 ----
 function getBookmarkPosition() { return active && rendered ? { progress: Math.max(0, Math.min(1, getViewState().progress)) } : undefined }
 function bookmarkRatio(position: { progress?: number }) { return Math.max(0, Math.min(1, position.progress ?? 0)) }
-/** 书签那个位置现在看不看得见：看得见就给出它在窗口里的纵坐标和纸的右边（视口坐标）。 */
-function bookmarkSpot(position: { progress?: number }) {
-  const view = scroll.value
-  if (!active || !view || raw.value) return null
-  const top = Math.max(0, view.scrollHeight - view.clientHeight) * (position.progress ?? 0) - view.scrollTop
-  if (top < -6 || top > view.clientHeight - 24 || !body.value) return null
-  return { x: body.value.getBoundingClientRect().right, y: view.getBoundingClientRect().top + top }
+/** 书签在纸这一层里的位置：挂在纸所在的那一层（host），坐标相对它的左上角；left 是纸的右边。shift 是这一层在滚动内容里的起点。 */
+function bookmarkPlace(position: { progress?: number }) {
+  const view = scroll.value, host = stage.value, sheet = body.value
+  if (!active || !view || !host || !sheet || raw.value) return null
+  const viewBox = view.getBoundingClientRect(), hostBox = host.getBoundingClientRect()
+  const shift = hostBox.top - viewBox.top + view.scrollTop
+  return {
+    host, scroller: view, shift,
+    top: Math.max(0, view.scrollHeight - view.clientHeight) * (position.progress ?? 0) - shift,
+    left: sheet.getBoundingClientRect().right - hostBox.left,
+    width: host.offsetWidth + 28, height: host.offsetHeight,
+  }
 }
 function goToBookmark(position: { progress?: number }) {
   const view = scroll.value
@@ -394,7 +399,7 @@ async function resume() {
 }
 onActivated(resume)
 onDeactivated(suspend)
-defineExpose({ bookmarkSpot, goToPage, goToHeading, isSuspended: () => !active, zoomIn, zoomOut, resetZoom, getZoom: () => zoom.value, toggleOutline, nextPage, previousPage, focusSearch, clearSearch, toggleCapture, cancelCapture, getCaptureFrame, getCaptureElements, clearSelection, toggleInk, exitInk: ink.exit, pickInk: ink.pick, getPage: () => currentLine, getFontSize: () => displayFontSize.value, getViewState, getBookmarkPosition, bookmarkRatio, goToBookmark, suspend, resume, getCacheStats: () => ({ suspended: !active, pages: 0, pixels: 0 }) })
+defineExpose({ bookmarkPlace, goToPage, goToHeading, isSuspended: () => !active, zoomIn, zoomOut, resetZoom, getZoom: () => zoom.value, toggleOutline, nextPage, previousPage, focusSearch, clearSearch, toggleCapture, cancelCapture, getCaptureFrame, getCaptureElements, clearSelection, toggleInk, exitInk: ink.exit, pickInk: ink.pick, getPage: () => currentLine, getFontSize: () => displayFontSize.value, getViewState, getBookmarkPosition, bookmarkRatio, goToBookmark, suspend, resume, getCacheStats: () => ({ suspended: !active, pages: 0, pixels: 0 }) })
 </script>
 
 <template>

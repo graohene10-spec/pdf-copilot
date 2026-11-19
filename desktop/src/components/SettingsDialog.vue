@@ -12,7 +12,7 @@ import { useSettings, PREDICT_LEVELS, defaultPreferences, normalizePreferences, 
 
 type Tab = 'appearance' | 'reading' | 'shortcuts' | 'ai' | 'updates'
 const props = withDefaults(defineProps<{ initialTab?: Tab }>(), { initialTab: 'appearance' })
-const emit = defineEmits<{ close: []; saved: [value: AppPreferences]; 'ai-saved': [value: any] }>()
+const emit = defineEmits<{ close: []; saved: [value: AppPreferences]; 'ai-saved': [value: any]; tour: [] }>()
 const AiSettings = defineAsyncComponent(() => import('./AiSettings.vue'))
 const UpdateSettings = defineAsyncComponent(() => import('./UpdateSettings.vue'))
 const shared = useSettings()
@@ -343,7 +343,7 @@ function failureText(item: RenderFailure) {
     <section ref="dialog" class="settings-dialog" data-glass-interactive="panel" role="dialog" aria-modal="true" aria-labelledby="settings-title" tabindex="-1" @keydown="dialogKeydown">
       <header class="dialog-header"><h2 id="settings-title">设置</h2><button class="settings-close" :disabled="saving" @click="close" aria-label="关闭设置"><AppIcon name="close" :size="18" /></button></header>
       <div class="settings-body">
-        <nav v-liquid-selection class="settings-tabs" aria-label="设置分类"><button v-for="item in tabs" :key="item.id" :class="{ selected: tab === item.id }" @click="switchTab(item.id)" :aria-current="tab === item.id ? 'page' : undefined"><AppIcon :name="item.icon" :size="17" />{{ item.label }}</button></nav>
+        <nav v-liquid-selection class="settings-tabs" aria-label="设置分类"><button v-for="item in tabs" :key="item.id" :class="{ selected: tab === item.id }" @click="switchTab(item.id)" :aria-current="tab === item.id ? 'page' : undefined"><AppIcon :name="item.icon" :size="17" />{{ item.label }}</button><button type="button" class="tour-entry" :disabled="saving" @click="emit('tour')"><AppIcon name="play" :size="16" />使用教程</button></nav>
         <div ref="content" class="settings-content">
           <p v-if="!ready" class="settings-help">{{ status || '正在读取设置…' }}</p>
           <template v-else-if="tab === 'appearance'">
@@ -540,6 +540,7 @@ button{color:var(--control-ink)}
 .settings-body{display:flex;flex:1;min-height:0}
 /* 分类：一列胶囊，选中的一滴玻璃上下滑动。 */
 .settings-tabs{flex:0 0 156px;padding:10px 0 10px 14px;display:flex;flex-direction:column;gap:3px}
+.settings-tabs .tour-entry{margin-top:auto;color:var(--muted)}
 .settings-tabs button{height:40px;font-size:13px;justify-content:flex-start;gap:10px;background:none;border:0;box-shadow:none;padding:9px 14px;color:var(--control-ink);border-radius:var(--r-control);transition:background-color var(--dur-1) var(--ease-soft)}
 .settings-tabs button:hover:not(:disabled){background-color:var(--control-hover);color:var(--control-ink)}
 /* 选中的分类页仅调整灰度底色，保持统一文字颜色。 */

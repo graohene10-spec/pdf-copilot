@@ -732,9 +732,6 @@ kbd {
   padding: 0;
 }
 
-.sidebar-bottom { gap: 6px; }
-.sidebar-bottom button:not(.icon-button) { flex: 1 1 0; justify-content: center; min-width: 0; padding: 6px 8px; gap: 6px; }
-
 .sidebar-bottom button:hover:not(:disabled) {
   background-color: var(--control-hover);
   color: var(--control-ink);
