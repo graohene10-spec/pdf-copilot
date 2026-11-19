@@ -636,6 +636,9 @@ function racks(): Painter {
   // 一个机柜的正面，照着 GB300 画：黑色的框，顶上一小块圆角的窗（交换机与线缆），下面一大块圆角的窗——里面是一层层计算托盘，上半截右侧垂着一束束线缆；窗与窗之间、最底下是深色的电源框。
   // 按宽度分档各画一张（16、32、64…像素宽），细节随大小多起来：先是框和两块窗，再是托盘线，最大才有线缆、把手、电源小格。
   const fronts = new Map<string, HTMLCanvasElement>()
+  // 每帧都要用的两块工作区：一排机柜各自的高度、攒着还没贴的正面（每个四个数）。留着重复用，不每帧新开。
+  let lifts = new Float64Array(256)
+  const rects: number[] = []
   let epoch = spriteEpoch
   let waveIndex = -1
   let events: { kind: number; born: number; x: number; z: number; nx: number; nz: number; centre: number }[] = []
@@ -697,6 +700,8 @@ function racks(): Painter {
         return { ...event, age, gain: smooth(age / 7) * smooth((LIFE - age) / 10), ringZ: 0, planeZ: 0 }
       }).filter(wave => wave.gain > .001)
       const timePhase = .13 * seconds
+      // 这一刻波最多能把一个机柜压低多少（各个波的振幅加起来）：下面用它估前一排最低能低到哪。
+      const swell = waves.reduce((sum, wave) => sum + (wave.kind === 0 ? .42 : wave.kind === 1 ? .37 : .62) * wave.gain, 0)
       const ring = (x: number, z: number, age: number) => { const d = Math.hypot(x, z) - 1.7 * age, q = d / 9; return q > -3 && q < 3 ? Math.cos(.5 * d) * Math.exp(-q * q) : 0 }
       // 波越近越高：远处的排在屏幕上只隔几个像素，同样高的波会把一排排柜顶线挤到几乎重叠，细线扎堆，一动就像摩尔纹。
       // 所以每一排的波高按距离收小（机柜还画成一个个的近处不变，再远按距离的平方降下去），像浪靠岸才涌起来。
@@ -751,14 +756,48 @@ function racks(): Painter {
         // 一排里靠中间的机柜总在外侧机柜的前面（视线从中间斜着看出去），所以严格从两头往中间一个个画完整，
         // 后画的盖住先画的，不会有哪个柜顶从别的机柜里穿出来。
         const sprite = front(pixels), first = Math.floor((-half - shift) / WIDE), last = Math.ceil((half - shift) / WIDE), centre = Math.floor(-shift / WIDE)
+        // 这一排每个机柜抬多高，先算好：一个机柜画不画侧板、能不能和邻居并在一起画，都要看它和左右两个差多少。
+        const count = last - first + 1
+        if (lifts.length < count) lifts = new Float64Array(count * 2)
+        for (let i = 0; i < count; i++) lifts[i] = height((first + i) * WIDE + shift + WIDE / 2)
+        // 一个机柜和左右两个邻居的高差在屏幕上不到半个像素，它就是「平」的：侧板整块被靠中间的邻居挡住，不用画；
+        // 柜顶和邻居的只是边挨着边，谁先谁后看不出来。平的机柜攒在一起：整批柜顶一次填、一次描，正面一张张连着贴。
+        // 每帧上千个机柜，原来一个五条绘制指令，显卡那边和界面抢着干活；这样平静的地方一排只剩两条加一串贴图。
+        // 被波抬起来或压下去的机柜照旧一个个按顺序画，轮到它之前先把攒着的那批画掉，前后遮挡的次序不变。
+        const perUnit = focal / z
+        // 正面的下半截被前一排挡着（越远挡得越多，远处只露出顶上一两成）：只贴露出来的那一截，省掉大片白画的像素。
+        // 前一排的后沿最低能低到哪，按这一刻波的最大振幅保守地估，再多留两个像素；最前面的一排前面没有东西挡，整张贴。
+        let cut = Infinity
+        if ((row - 1) * PITCH - camera > nearest) { const nearZ = z - PITCH; cut = sy(TALL - swell * Math.min(1, (calmFrom / nearZ) ** 2) - .05, nearZ + DEEP) + 2 }
+        const paste = (x: number, y: number, wide: number, tall: number) => {
+          const shown = Math.min(tall, cut - y)
+          if (shown <= 0) return
+          if (shown >= tall - .5) c.drawImage(sprite, x, y, wide, tall)
+          else c.drawImage(sprite, 0, 0, sprite.width, sprite.height * shown / tall, x, y, wide, shown)
+        }
+        const flat = (i: number) => { const k = i - first, own = lifts[k]!; return (k === 0 || Math.abs(own - lifts[k - 1]!) * perUnit < .5) && (k === count - 1 || Math.abs(own - lifts[k + 1]!) * perUnit < .5) }
+        let tops: Path2D | null = null, held = 0
+        const flush = () => {
+          if (!tops) return
+          c.fillStyle = env.paper; c.fill(tops); c.stroke(tops)
+          for (let k = 0; k < held; k += 4) paste(rects[k]!, rects[k + 1]!, rects[k + 2]!, rects[k + 3]!)
+          tops = null; held = 0
+        }
         const rack = (i: number) => {
-          const x0 = i * WIDE + shift, x1 = x0 + WIDE, y0 = height(x0 + WIDE / 2), y1 = y0 + TALL
+          const x0 = i * WIDE + shift, x1 = x0 + WIDE, y0 = lifts[i - first]!, y1 = y0 + TALL
           const a = sx(x0, z), b = sx(x1, z), high = sy(y1, z), bottom = sy(y0, z), behind = sy(y1, back), a2 = sx(x0, back), b2 = sx(x1, back)
           // Only reject a complete rack outside the canvas, including a generous
           // margin for its one-pixel stroke and half-pixel front overlap. Do not
           // clip intersecting paths: changing their clip can alter rasterization.
           const backBottom = sy(y0, back)
           if (Math.max(a, b, a2, b2) < left - 2 || Math.min(a, b, a2, b2) > left + w + 2 || Math.min(high, behind) > top + h + 2 || Math.max(bottom, backBottom) < top - 2) return
+          if (flat(i)) {
+            tops ||= new Path2D()
+            tops.moveTo(a, high); tops.lineTo(a2, behind); tops.lineTo(b2, behind); tops.lineTo(b, high); tops.closePath()
+            rects[held++] = a - .5; rects[held++] = high; rects[held++] = b - a + 1; rects[held++] = bottom - high // 两边各多盖半个像素，相邻机柜之间不漏缝
+            return
+          }
+          flush()
           if (x1 < 0 || x0 > 0) {
             const near = x1 < 0 ? b : a, deep = x1 < 0 ? b2 : a2
             c.beginPath(); c.moveTo(near, high); c.lineTo(deep, behind); c.lineTo(deep, backBottom); c.lineTo(near, bottom); c.closePath()
@@ -766,12 +805,13 @@ function racks(): Painter {
           }
           c.beginPath(); c.moveTo(a, high); c.lineTo(a2, behind); c.lineTo(b2, behind); c.lineTo(b, high); c.closePath()
           c.fillStyle = env.paper; c.fill(); c.stroke()
-          c.drawImage(sprite, a - .5, high, b - a + 1, bottom - high) // 两边各多盖半个像素，相邻机柜之间不漏缝
+          paste(a - .5, high, b - a + 1, bottom - high)
         }
         // 颜色先和纸色调好、不透明地画，免得每个面都切换透明度。
         c.globalAlpha = solid; c.lineWidth = 1; c.strokeStyle = stroke
         for (let i = first; i < centre; i++) rack(i)
         for (let i = last; i >= centre; i--) rack(i)
+        flush()
         c.strokeStyle = env.ink
       }
     }
