@@ -23,3 +23,16 @@ test('README style html becomes plain images and links; scripts and handlers are
   assert.doesNotMatch(html, /alert|onerror|onclick|<script|<div|style=/)
   assert.match(html, /text/)
 })
+
+test('answers: <details>/<summary> on their own lines become folds, other HTML stays text', async () => {
+  const { installFold } = await import('../src/components/markdown-fold.ts')
+  const markdown = new MarkdownIt({ html: false, breaks: true }); installFold(markdown)
+  const html = markdown.render('前言\n<details>\n<summary><strong>1　置换</strong>　｜　先算谁？</summary>\n\n- 一条\n- 两条\n\n<details>\n<summary>例题</summary>\n\n正文 <b>x</b>\n</details>\n</details>\n\n<details open><summary>写在一行</summary>\n里面\n</details>\n\n<script>alert(1)</script>')
+  assert.equal(html.match(/<details/g).length, 3)
+  assert.equal(html.match(/<\/details>/g).length, 3)
+  assert.match(html, /<details class="answer-fold">\s*<summary><strong>1　置换<\/strong>　｜　先算谁？<\/summary>/)
+  assert.match(html, /<details class="answer-fold" open="">\s*<summary>写在一行<\/summary>/)
+  assert.match(html, /<p>正文 &lt;b&gt;x&lt;\/b&gt;<\/p>\s*<\/details>/)
+  assert.doesNotMatch(html, /&lt;\/?(details|summary)/)
+  assert.match(html, /&lt;script&gt;/)
+})

@@ -12,7 +12,7 @@
 // 远处没有侧板，正面是一块平的颜色，线按排距变淡；近处有侧板，正面贴小图，线是实的。
 import { rackFront } from './scenes'
 
-const WIDE = .6, DEEP = 1.2, PITCH = 2.9, TALL = 2.25, EYE = 5.6, SPEED = .09, EVERY = 56000, LIFE = 60
+const WIDE = .6, DEEP = 1.2, PITCH = 2.9, TALL = 2.25, EYE = 5.6, SPEED = .09, EVERY = 24000, LIFE = 60
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value))
 const smooth = (x: number) => { const t = clamp(x, 0, 1); return t * t * (3 - 2 * t) }
 const hash = (n: number) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x) }
@@ -200,7 +200,7 @@ export function createRacksGL(canvas: Canvas, software = false): RacksGL | null 
     const seconds = t / 1000, camera = seconds * SPEED, latest = Math.floor(t / EVERY)
     if (latest !== waveIndex) {
       waveIndex = latest
-      events = [0, 1].map(k => latest - k).filter(k => k >= 0).map(k => {
+      events = [0, 1, 2].map(k => latest - k).filter(k => k >= 0).map(k => {
         const born = k * EVERY / 1000, angle = (hash(k * 3.7 + 5) - .5) * .7 + (hash(k * 1.9 + 7) < .5 ? 0 : Math.PI), pick = hash(k * 5.1 + .3)
         return { kind: pick < .22 ? 0 : pick < .86 ? 1 : 2, born, x: (hash(k * 2.3 + 1) - .5) * 36, z: born * SPEED + 12 + hash(k * 2.3 + 2) * 30, nx: Math.sin(angle), nz: Math.cos(angle), centre: born * SPEED + 45 }
       })

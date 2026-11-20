@@ -190,3 +190,16 @@
 .iui-outputs{gap:8px;margin-top:10px}
 .iui-card>.iui-title{margin:0 0 6px!important}
 .iui-dl.set .katex{font-size:1.22em}
+
+/* 折叠段落：回答里的 <details>。一行标题带一个小箭头，点开后正文缩进在一条细线右边，可以一层套一层。 */
+details.answer-fold{margin:0 0 .3em;interpolate-size:allow-keywords}
+details.answer-fold>summary{display:flex;align-items:baseline;gap:10px;padding:6px 10px 6px 5px;border-radius:8px;list-style:none;cursor:pointer;user-select:none;transition:background-color .14s ease}
+details.answer-fold>summary::-webkit-details-marker{display:none}
+details.answer-fold>summary::before{content:'';flex:none;width:6px;height:6px;margin-left:3px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;rotate:-45deg;translate:0 -2px;opacity:.55;transition:rotate .2s ease,translate .2s ease}
+details.answer-fold[open]>summary::before{rotate:45deg;translate:0 -3px}
+details.answer-fold>summary:hover{background:color-mix(in srgb,var(--ink) 6%,transparent)}
+details.answer-fold>summary:focus-visible{outline:1.5px solid var(--accent);outline-offset:-1.5px}
+details.answer-fold::details-content{margin-left:10px;padding-left:16px;border-left:1.5px solid var(--hairline,var(--line));block-size:0;overflow:clip;transition:block-size .26s cubic-bezier(.22,.9,.28,1),content-visibility .26s allow-discrete}
+details.answer-fold[open]::details-content{block-size:auto;padding-top:.35em;padding-bottom:.15em}
+details.answer-fold[open]{margin-bottom:.7em}
+@media (prefers-reduced-motion:reduce){details.answer-fold::details-content,details.answer-fold>summary::before{transition:none}}

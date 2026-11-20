@@ -1,11 +1,13 @@
 /**
  * Markdown for assistant answers: headings, lists, tables, quotes, code with a
- * copy button, KaTeX math and Mermaid diagrams. Source HTML stays disabled; the
+ * copy button, KaTeX math and Mermaid diagrams. Source HTML stays disabled (the one
+ * exception is <details>/<summary> on their own lines, see markdown-fold.ts); the
  * only generated HTML comes from markdown-it, KaTeX and Mermaid (strict mode).
  */
 import MarkdownIt from 'markdown-it'
 import { installMarkdownMath } from '../components/markdown-math'
 import { installCjkEmphasis } from '../components/markdown-cjk'
+import { installFold } from '../components/markdown-fold'
 
 // 代码块右上角的复制按钮：一枚小图标，复制成功后换成对勾（AiPane 切换 .copied）。
 const icon = (d: string, name: string) => `<svg class="copy-${name}" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>`
@@ -15,6 +17,7 @@ import { highlightCode } from './highlight'
 const markdown = new MarkdownIt({ html: false, linkify: true, breaks: true, typographer: false })
 installMarkdownMath(markdown)
 installCjkEmphasis(markdown)
+installFold(markdown)
 
 const escape = (value: string) => value.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]!))
 const DIAGRAM_LANGUAGES = new Set(['mermaid', 'flowchart', 'sequence', 'mmd'])
