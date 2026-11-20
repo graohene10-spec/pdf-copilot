@@ -2868,6 +2868,10 @@ kbd {
   word-break: normal;
 }
 
+/* 断行：标题几行尽量一样长；正文段落最后一行不落单。只给这几种元素，不铺到全部。 */
+.markdown-paper :is(h1, h2, h3, h4, h5, h6), .answer-body :is(h1, h2, h3, h4) { text-wrap: balance; }
+.markdown-paper :is(p, li, blockquote, dd), .answer-body :is(p, li, blockquote) { text-wrap: pretty; }
+
 .markdown-paper > :first-child { margin-top: 0 !important; }
 .markdown-paper > :last-child { margin-bottom: 0 !important; }
 
@@ -3506,6 +3510,21 @@ kbd {
 
 /* 阅读区的滚动条平时不显示，滚动时才出现（停下约一秒后隐去）；鼠标指到滚动条上也会显出来。 */
 :is(.pdf-scroll, .markdown-scroll):not([data-scrolling])::-webkit-scrollbar-thumb:not(:hover):not(:active) { background: transparent; }
+
+/* 滑块再短也留一截能点中的长度：几百页的文档按比例算只剩几个像素。 */
+::-webkit-scrollbar-thumb:vertical { min-height: 36px; }
+::-webkit-scrollbar-thumb:horizontal { min-width: 36px; }
+/* 阅读区的竖滚动条：占 14px 宽方便瞄准，平时只画中间细细一条，指上去或拖着时变粗；滑块最短 72px。 */
+:is(.pdf-scroll, .markdown-scroll)::-webkit-scrollbar:vertical { width: 14px; }
+:is(.pdf-scroll, .markdown-scroll)::-webkit-scrollbar-thumb:vertical { min-height: 72px; border-width: 3px 5px; }
+:is(.pdf-scroll, .markdown-scroll)::-webkit-scrollbar-thumb:vertical:hover,
+:is(.pdf-scroll, .markdown-scroll)::-webkit-scrollbar-thumb:vertical:active { border-width: 3px; }
+/* 系统开了「提高对比度」：滑块用正文色，阅读区的也一直显示。 */
+@media (prefers-contrast: more) {
+  /* 四个 :root 是为了压过各界面风格自己定的滑块颜色。 */
+  :root:root:root:root { --scroll-thumb: color-mix(in srgb, var(--ink) 72%, transparent); --scroll-thumb-hover: var(--ink); }
+  :is(.pdf-scroll, .markdown-scroll):not([data-scrolling])::-webkit-scrollbar-thumb:not(:hover):not(:active) { background: var(--scroll-thumb); background-clip: content-box; }
+}
 .pdf-hscroll { opacity: 0; transition: opacity var(--dur-3) var(--ease-out); }
 .pdf-viewport:has(> .pdf-scroll[data-scrolling]) .pdf-hscroll,
 .pdf-hscroll:hover,

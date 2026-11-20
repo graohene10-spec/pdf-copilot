@@ -1,3 +1,4 @@
+import { pacer } from './pace.mjs';
 // Plain-text search with offsets back into the original text. Unicode
 // compatibility forms (including PDF ligatures) keep their original ranges.
 export function normalizeSearchText(value) {
@@ -114,6 +115,7 @@ async function pageItems(page, signal) {
  */
 export async function scanPdfMatches(pdf, query, { signal, onPage, releasePage, limit = 10000, startPage = 1 } = {}) {
   let total = 0;
+  const pause = pacer();
   for (let number = startPage; number <= pdf.numPages; number++) {
     if (signal?.aborted) throw abortError();
     const page = await pdf.getPage(number);
@@ -126,8 +128,9 @@ export async function scanPdfMatches(pdf, query, { signal, onPage, releasePage, 
       onPage?.(number, matches, total);
       if (total >= limit) return { total, limited: true };
     } finally { releasePage?.(number, page); }
-    // Give typing, scrolling and active-page raster jobs a turn between pages.
-    await new Promise(resolve => setTimeout(resolve, 0));
+    // Give typing, scrolling and active-page raster jobs a turn — once the 50 ms budget is spent, not after every page:
+    // a timer per page is clamped to 4 ms each, which alone adds seconds on a long book.
+    await pause();
   }
   return { total, limited: false };
 }
