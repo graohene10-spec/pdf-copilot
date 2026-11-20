@@ -25,6 +25,13 @@ const canceled = error => ['RenderingCancelledException', 'AbortException'].incl
 const darkTheme = () => document.documentElement.dataset.theme === 'dark';
 const idle = callback => (window.requestIdleCallback ? window.requestIdleCallback(callback, { timeout: 1200 }) : setTimeout(callback, 200));
 
+/** Resolves when the container stops scrolling (`scrollend`), or after a second and a half where that event is missing. */
+const scrollRest = container => new Promise(resolve => {
+  const done = () => { clearTimeout(timer); container.removeEventListener('scrollend', done); resolve(undefined); };
+  const timer = setTimeout(done, 1500);
+  container.addEventListener('scrollend', done, { once: true });
+});
+
 export class ContinuousPdfViewer extends PageWindow {
   constructor(options) {
     // The shared viewer removes the document's existing #page-surface, which in
@@ -76,7 +83,8 @@ export class ContinuousPdfViewer extends PageWindow {
     const canvas = view.canvas, units = view.imageUnits;
     const run = async () => {
       if (view.disposed || view.canvas !== canvas || !darkTheme()) { view.photosChecked = false; return; }
-      if (performance.now() - this.lastScroll < 400) { idle(run); return; }
+      // Still scrolling: wait for the browser to report the scroll has come to rest instead of re-queueing an idle callback over and over.
+      if (performance.now() - this.lastScroll < 400) { await scrollRest(this.container); idle(run); return; }
       const flags = await classifyImages(canvas, view.viewport, units).catch(() => null);
       if (!flags || view.disposed || view.canvas !== canvas) { view.photosChecked = false; return; }
       const images = units.map((unit, index) => ({ unit, photo: flags[index] }));

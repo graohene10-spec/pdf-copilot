@@ -99,7 +99,7 @@ onMounted(() => chips.value?.querySelector<HTMLElement>('[aria-selected="true"]'
 button{font:inherit;color:inherit;cursor:pointer}
 .drawer-row{display:flex;align-items:center;gap:8px;min-width:0;height:32px}
 .drawer-label{flex:0 0 auto;width:28px;font-size:11.5px;font-weight:600;color:var(--muted)}
-.model-chips{display:flex;align-items:center;gap:4px;flex:1;min-width:0;height:32px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;scroll-behavior:smooth;-webkit-mask:linear-gradient(90deg,transparent,#000 10px,#000 calc(100% - 14px),transparent);mask:linear-gradient(90deg,transparent,#000 10px,#000 calc(100% - 14px),transparent);padding:0 10px 0 6px}
+.model-chips{display:flex;align-items:center;gap:4px;flex:1;min-width:0;height:32px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;scroll-behavior:smooth;padding:0 10px 0 6px}
 .model-chips::-webkit-scrollbar{display:none}
 .model-chips button{flex:0 0 auto;height:26px;padding:0 11px;border:1px solid transparent;border-radius:var(--r-sm);background:none;box-shadow:none;font-size:12px;font-weight:550;color:var(--secondary);white-space:nowrap;transition:background var(--dur-1) var(--ease-soft),color var(--dur-1) var(--ease-soft),transform var(--dur-press) var(--spring-press)}
 .model-chips button:hover{background:var(--frost);color:var(--ink)}
