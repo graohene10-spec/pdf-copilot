@@ -163,7 +163,7 @@
 /* 侧栏的书签汇总：每本有书签的书一组，一行一枚——左边是那枚书签的小画，右边是名字或页码；点一下打开那本书跳过去。 */
 .mark-total{margin-left:6px;font-weight:500;letter-spacing:0;opacity:.7}
 /* 不写 scrollbar-width：它会让 Chromium 换回系统样式的滚动条（带箭头的灰条）。高度随内容长，侧栏放不下了才滚动。 */
-.mark-nav{display:flex;flex-direction:column;gap:2px;flex:0 1 auto;min-height:56px;overflow:hidden auto;padding:0 4px 14px;-webkit-mask-image:linear-gradient(180deg,#000 calc(100% - 14px),transparent);mask-image:linear-gradient(180deg,#000 calc(100% - 14px),transparent)}
+.mark-nav{display:flex;flex-direction:column;gap:2px;flex:0 1 auto;min-height:56px;overflow:hidden auto;padding:0 4px 14px}
 .mark-group{display:flex;flex-direction:column;gap:1px}
 .mark-group+.mark-group{margin-top:8px}
 .mark-book{margin:0 8px 3px;overflow:hidden;color:var(--muted);font-size:11.5px;white-space:nowrap;text-overflow:ellipsis}
@@ -193,3 +193,35 @@
 .app-sidebar:has(.mark-row,[data-group-id]){user-select:none}
 .group-nav button.picked{background:color-mix(in srgb,var(--accent) 16%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 40%,transparent)}
 :root[data-style='sketch'] .group-nav button.picked{background:color-mix(in srgb,var(--red-pencil,#c0392b) 10%,transparent);box-shadow:inset 0 0 0 1.4px color-mix(in srgb,var(--red-pencil,#c0392b) 60%,transparent)}
+
+/* 还能往哪边滚：滚动条藏起来的几处（标签条、模型条、译文语言、对话历史、书签列表），哪一头还有内容，哪一头就淡出一小段；
+   滚到头那一头的淡出消失，内容放得下时两头都没有。由滚动位置直接驱动，不用监听滚动。 */
+@property --edge-a { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@property --edge-b { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@keyframes edge-a-in { to { --edge-a: var(--edge-size); } }
+@keyframes edge-b-out { from { --edge-b: var(--edge-size); } }
+@supports (animation-timeline: scroll()) {
+  /* 草稿风格的标签是伸出去的索引签，标签条本身不滚动，不加。 */
+  :is(:root:not([data-style='sketch']) .tab-strip, .model-chips, .tp-targets) {
+    --edge-size: 22px;
+    scroll-padding-inline: var(--edge-size);
+    mask:
+      linear-gradient(#000, #000) no-clip subtract,
+      linear-gradient(to right, #000, transparent) 0 0 / var(--edge-a) 100% no-repeat no-clip,
+      linear-gradient(to right, transparent, #000) 100% 0 / var(--edge-b) 100% no-repeat no-clip;
+    animation: edge-a-in linear both, edge-b-out linear both;
+    animation-timeline: scroll(self inline);
+    animation-range: 0 var(--edge-size), calc(100% - var(--edge-size)) 100%;
+  }
+  :is(.history-list, .mark-nav) {
+    --edge-size: 18px;
+    scroll-padding-block: var(--edge-size);
+    mask:
+      linear-gradient(#000, #000) no-clip subtract,
+      linear-gradient(to bottom, #000, transparent) 0 0 / 100% var(--edge-a) no-repeat no-clip,
+      linear-gradient(to bottom, transparent, #000) 0 100% / 100% var(--edge-b) no-repeat no-clip;
+    animation: edge-a-in linear both, edge-b-out linear both;
+    animation-timeline: scroll(self block);
+    animation-range: 0 var(--edge-size), calc(100% - var(--edge-size)) 100%;
+  }
+}

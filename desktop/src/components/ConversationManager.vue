@@ -442,7 +442,7 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey, true); clea
               <svg class="cm-links" aria-hidden="true"></svg>
               <div v-for="(talk, index) in root.list" :key="talk.id" class="cm-kid" :data-f="`c:${talk.id}`" :style="{ '--i': at + 1 + Math.min(index, 8) * .6 }">
                 <div class="cm-talk" :class="{ picked: picked.has(key(root.id, talk.id)), lifted: drag && picked.has(key(root.id, talk.id)), has: talk.memory !== false && itemsOf(talk.id).length, mute: talk.memory === false, lit: lit === key(root.id, talk.id) }" :data-key="key(root.id, talk.id)" :data-f="`t:${talk.id}`" @contextmenu.prevent.stop="talkMenu(root, talk, $event)" @pointerenter="peekIn(talk, $event)" @pointerleave="peekOut">
-                  <input v-if="renaming === key(root.id, talk.id)" ref="field" v-model="draft" class="cm-rename" maxlength="60" aria-label="对话名称" @keydown.enter.prevent="endRename(true)" @keydown.esc.prevent.stop="endRename(false)" @blur="endRename(true)" @pointerdown.stop />
+                  <input v-if="renaming === key(root.id, talk.id)" ref="field" v-model="draft" class="cm-rename" maxlength="60" aria-label="对话名称" @keydown.enter.prevent="!$event.isComposing && $event.keyCode !== 229 && endRename(true)" @keydown.esc.prevent.stop="endRename(false)" @blur="endRename(true)" @pointerdown.stop />
                   <button v-else type="button" class="cm-talk-open" @click="openTalk(root, talk, $event)">
                     <AppIcon v-if="talk.branchOf" name="branch" :size="12" /><span class="cm-title">{{ talk.title || '新对话' }}</span>
                     <small><template v-if="talk.request">回答中 · </template>{{ Math.ceil(talk.messages.length / 2) }} 问 · {{ relative(talk.updatedAt) }}</small>

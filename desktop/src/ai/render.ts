@@ -31,7 +31,7 @@ markdown.renderer.rules.fence = (tokens, index) => {
     return `<figure class="answer-diagram" data-diagram="${escape(token.content)}"><pre class="answer-code"><code>${escape(token.content)}</code></pre></figure>\n`
   }
   const label = language ? `<span>${escape(language)}</span>` : '<span>代码</span>'
-  return `<div class="answer-code-block"><div class="answer-code-head">${label}<button type="button" class="answer-copy" data-copy aria-label="复制代码" data-tip="复制代码">${COPY_ICON}</button></div><pre class="answer-code"><code>${highlightCode(token.content, language) || escape(token.content)}</code></pre></div>\n`
+  return `<div class="answer-code-block"><div class="answer-code-head">${label}<button type="button" class="answer-copy" data-copy aria-label="复制代码" data-tip="复制代码">${COPY_ICON}</button></div><pre class="answer-code" tabindex="0" role="region" aria-label="${language ? escape(language) + ' 代码' : '代码'}"><code>${highlightCode(token.content, language) || escape(token.content)}</code></pre></div>\n`
 }
 markdown.renderer.rules.code_block = markdown.renderer.rules.fence
 const defaultLink = markdown.renderer.rules.link_open || ((tokens, index, options, _env, self) => self.renderToken(tokens, index, options))

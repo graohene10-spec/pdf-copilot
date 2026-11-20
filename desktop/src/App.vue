@@ -1533,10 +1533,16 @@ function monitorCaptureQuick() {
 // 选区真的移出视野时由上面的检查收起。
 // 阅读区的滚动条只在滚动时显示：滚动中的容器带上 data-scrolling，停下约一秒后去掉。
 const scrollingTimers = new WeakMap<Element, ReturnType<typeof setTimeout>>()
+const SCROLLEND = 'onscrollend' in window
 function markScrolling(event: Event) {
   const element = event.target
   if (!(element instanceof HTMLElement) || !element.matches('.pdf-scroll, .markdown-scroll')) return
-  if (!scrollingTimers.has(element)) element.dataset.scrolling = ''
+  // 滚动中只做一件事：第一下打上标记。计时等浏览器报「滚动停了」（scrollend）再开始，不必每个滚动事件都重设一次定时器。
+  if (event.type === 'scroll') {
+    if (element.dataset.scrolling === undefined) element.dataset.scrolling = ''
+    if (scrollingTimers.has(element)) { clearTimeout(scrollingTimers.get(element)); scrollingTimers.delete(element) }
+    if (SCROLLEND) return
+  }
   clearTimeout(scrollingTimers.get(element))
   scrollingTimers.set(element, setTimeout(() => { scrollingTimers.delete(element); delete element.dataset.scrolling }, 1000))
 }
@@ -2009,6 +2015,7 @@ onMounted(async () => {
   document.addEventListener('scroll', dismissSelectionAction, true)
   document.addEventListener('scroll', captureViewportChanged, true)
   document.addEventListener('scroll', markScrolling, true)
+  document.addEventListener('scrollend', markScrolling, true)
   window.addEventListener('resize', dismissSelectionAction)
   window.addEventListener('resize', captureViewportChanged)
   systemTheme.addEventListener('change', applyTheme)
