@@ -403,6 +403,20 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey, true); clea
 <template>
   <section ref="dialog" class="cm-page" :class="{ opening }" role="dialog" aria-modal="true" aria-label="管理对话" tabindex="-1" @pointerdown="menu && !($event.target as HTMLElement).closest('.cm-menu') && (menu = undefined)" @contextmenu.prevent>
     <div class="cm-main">
+      <svg class="cm-ground" viewBox="0 0 1000 800" preserveAspectRatio="xMaxYMid slice" aria-hidden="true">
+        <defs><pattern id="cm-hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)"><path d="M0 0V7" /></pattern><pattern id="cm-hatch-red" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(28)"><path d="M0 0V6" /></pattern></defs>
+        <path class="g-plane" d="M1000 70V800H290Z" />
+        <path class="g-hatch" d="M1000 430V800H640Z" />
+        <path class="g-rays" d="M290 800 1000 70M330 800 1000 111M370 800 1000 152" />
+        <circle class="g-disc" cx="800" cy="548" r="210" />
+        <path class="g-wedge" d="M1000 318 664 548 1000 690Z" />
+        <circle class="g-ring" cx="800" cy="548" r="210" />
+        <circle class="g-orbit" cx="800" cy="548" r="262" />
+        <path class="g-beam" d="M604 800 886 380 906 393 632 800Z" />
+        <path class="g-bits" d="M928 92h28v28h-28zM964 128h11v11h-11zM548 744h15v15h-15z" />
+        <circle class="g-core" cx="800" cy="548" r="9" />
+        <circle class="g-ball" cx="664" cy="548" r="9" />
+      </svg>
       <div class="cm-tools">
         <button type="button" class="cm-tool" @click="emit('close')"><AppIcon name="arrow" :size="14" />返回</button>
         <button type="button" class="cm-tool" :disabled="!undoable" data-tip="撤销上一步" @click="undoLast"><AppIcon name="reset" :size="14" />撤销<kbd>Ctrl Z</kbd></button>
@@ -449,10 +463,12 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey, true); clea
         <i v-if="band" class="cm-band" :style="{ left: `${band.left}px`, top: `${band.top}px`, width: `${band.width}px`, height: `${band.height}px` }"></i>
       </div>
 
-      <Transition name="cm-fade" mode="out-in">
-        <p v-if="flash" :key="flash.text" class="cm-flash" role="status"><span>{{ flash.text }}</span><button v-if="flash.undo" type="button" @click="undoLast">撤销</button></p>
-        <p v-else class="cm-hint">左键进入<i></i>右键操作<i></i>拖动移动或排序<i></i>空白处框选<i></i>Ctrl Z 撤销</p>
-      </Transition>
+      <div class="cm-foot">
+        <Transition name="cm-fade" mode="out-in">
+          <p v-if="flash" :key="flash.text" class="cm-flash" role="status"><span>{{ flash.text }}</span><button v-if="flash.undo" type="button" @click="undoLast">撤销</button></p>
+          <p v-else class="cm-hint">左键进入<i></i>右键操作<i></i>拖动移动或排序<i></i>空白处框选<i></i>Ctrl Z 撤销</p>
+        </Transition>
+      </div>
 
       <Transition name="cm-bar">
         <footer v-if="doomed || drag || picked.size" class="cm-bar">
@@ -527,7 +543,29 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey, true); clea
 .cm-tool:hover:not(:disabled){background:var(--ink);color:var(--canvas)}
 .cm-tool:disabled{opacity:.3;cursor:default}
 .cm-tool kbd{margin-left:3px;font:inherit;font-size:10.5px;font-weight:400;opacity:.6}
-.cm-tree{position:relative;flex:1;min-height:0;overflow:auto;padding:78px clamp(36px,6vw,96px) 150px;user-select:none}
+.cm-tree{position:relative;z-index:1;flex:1;min-height:0;overflow:auto;padding:78px clamp(36px,6vw,96px) 120px;user-select:none}
+
+/* 底图：一幅淡的构成，靠右下，不跟着滚动。树从它上面经过，所以只有细线和小块是实色。 */
+.cm-ground{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.g-plane{fill:color-mix(in srgb,var(--ink) 4%,transparent)}
+.g-hatch{fill:url(#cm-hatch)}
+.cm-ground pattern path{stroke:color-mix(in srgb,var(--ink) 20%,transparent);stroke-width:1}
+.g-rays{fill:none;stroke:color-mix(in srgb,var(--ink) 34%,transparent);stroke-width:1;vector-effect:non-scaling-stroke}
+.g-disc{fill:color-mix(in srgb,var(--canvas) 72%,transparent)}
+.g-wedge{fill:url(#cm-hatch-red);stroke:var(--cm-red);stroke-width:1.5;vector-effect:non-scaling-stroke}
+.cm-ground #cm-hatch-red path{stroke:color-mix(in srgb,var(--cm-red) 62%,transparent);stroke-width:1.1}
+.g-ring{fill:none;stroke:color-mix(in srgb,var(--ink) 62%,transparent);stroke-width:2;vector-effect:non-scaling-stroke}
+.g-orbit{fill:none;stroke:color-mix(in srgb,var(--ink) 40%,transparent);stroke-width:1;stroke-dasharray:2 9;vector-effect:non-scaling-stroke}
+.g-beam{fill:color-mix(in srgb,var(--ink) 13%,transparent)}
+.g-bits,.g-core{fill:var(--ink)}
+.g-ball{fill:var(--cm-red)}
+.cm-page.opening .g-plane,.cm-page.opening .g-hatch,.cm-page.opening .g-rays{animation:cm-in .7s var(--ease-out) both .1s}
+.cm-page.opening .g-wedge{animation:g-wedge .9s cubic-bezier(.2,.9,.2,1) both .2s}
+.cm-page.opening .g-beam{animation:a-beam .8s var(--ease-out) both .3s}
+.cm-page.opening .g-ring{stroke-dasharray:1320;animation:g-ring 1.1s var(--ease-out) both .15s}
+.cm-page.opening :is(.g-disc,.g-orbit,.g-bits,.g-core,.g-ball){animation:cm-in .5s var(--ease-out) both .6s}
+@keyframes g-wedge{from{translate:220px 0;opacity:0}}
+@keyframes g-ring{from{stroke-dashoffset:1320}to{stroke-dashoffset:0}}
 
 /* 标题：红楔子、粗体字、一道粗黑线，三个数排在线上。 */
 .cm-hero{display:flex;align-items:flex-end;gap:44px;width:max-content;max-width:100%;margin-bottom:46px;padding-bottom:16px;border-bottom:4px solid var(--ink)}
@@ -607,7 +645,8 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey, true); clea
 .cm-slot{position:absolute;z-index:3;height:3px;background:var(--cm-red);pointer-events:none;transition:top .12s var(--ease-out),left .12s var(--ease-out)}
 .cm-slot::before{content:'';position:absolute;left:-9px;top:-3px;width:9px;height:9px;background:var(--cm-red)}
 
-.cm-hint,.cm-flash{position:absolute;left:22px;bottom:16px;z-index:2;display:flex;align-items:center;margin:0;font-size:11.5px}
+.cm-foot{position:relative;z-index:2;display:flex;align-items:center;flex:none;height:46px;padding:0 22px;border-top:1.5px solid var(--ink);background:var(--canvas)}
+.cm-hint,.cm-flash{display:flex;align-items:center;margin:0;font-size:11.5px}
 .cm-hint{color:var(--muted);letter-spacing:.04em;pointer-events:none}
 .cm-hint i{width:1px;height:11px;margin:0 12px;background:var(--cm-line)}
 .cm-flash{gap:14px;height:36px;padding:0 6px 0 14px;border-left:6px solid var(--cm-red);background:var(--ink);color:var(--canvas);font-size:12.5px}
