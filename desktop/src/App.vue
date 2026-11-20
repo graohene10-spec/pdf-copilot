@@ -1274,6 +1274,10 @@ function endPanelDrag() {
   window.removeEventListener('pointerup', endPanelDrag)
   window.removeEventListener('pointercancel', endPanelDrag)
   if (!drag?.moved) return
+  // 现在标题也能当把手：拖完松手时别把这一下算成点击（不然会弹出对话记录）。点击事件紧跟在松手后面，下一轮就把拦截撤掉。
+  const swallow = (event: Event) => { event.stopPropagation(); event.preventDefault() }
+  window.addEventListener('click', swallow, { capture: true, once: true })
+  setTimeout(() => window.removeEventListener('click', swallow, true))
   const from = drag.element.style.transform
   drag.element.style.transform = ''
   drag.element.animate([{ transform: from }, { transform: 'none' }], { duration: 460, easing: getComputedStyle(document.documentElement).getPropertyValue('--spring-bouncy').trim() || 'ease-out' })

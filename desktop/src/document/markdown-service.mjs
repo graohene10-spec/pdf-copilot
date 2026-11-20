@@ -24,7 +24,7 @@ export class MarkdownService {
   close() { for (const id of this.sessions.keys()) this.end(id); }
   end(id) { this.sessions.get(id)?.controller.abort(); this.sessions.delete(id); }
   remaining(s) { return { calls: s.limits.calls - s.calls, images: 0, pages: s.limits.pages - s.pages.size, characters: s.limits.characters - s.characters }; }
-  assert(s) { s.controller.signal.throwIfAborted(); if (Date.now() - s.created > 600000) throw new Error('Markdown 阅读请求已过期。'); }
+  assert(s) { s.controller.signal.throwIfAborted(); }
   info(s, offset = 0) {
     return { kind: 'markdown', name: this.name, pages: this.pages, lines: this.lines.length, linesPerSegment: LINES_PER_SEGMENT,
       currentPage: s.anchor, outline: this.headings.slice(offset, offset + 30), nextOutlineOffset: offset + 30 < this.headings.length ? offset + 30 : null,

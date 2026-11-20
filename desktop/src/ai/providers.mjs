@@ -106,7 +106,8 @@ export async function streamTurn(options) {
   apiOrigin(baseUrl);
   const protocol = protocolOf(provider, options.protocol);
   if (protocol === 'anthropic') { const { streamAnthropic } = await import('./anthropic.mjs'); return streamAnthropic(options, buildPayload(options)); }
-  const signal = AbortSignal.any([options.signal || new AbortController().signal, AbortSignal.timeout(10 * 60000)]);
+  // 不设总时长上限：只有读者按停止才中断。
+  const signal = options.signal;
   const response = await transportFetch(baseUrl.replace(/\/+$/, '') + (protocol === 'responses' ? '/responses' : '/chat/completions'), {
     method: 'POST', signal, redirect: 'error', cache: 'no-store', credentials: 'omit',
     headers: { 'Content-Type': 'application/json', ...(apiKey ? { Authorization: 'Bearer ' + apiKey } : {}) },
