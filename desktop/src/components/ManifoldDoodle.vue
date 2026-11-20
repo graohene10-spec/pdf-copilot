@@ -60,8 +60,23 @@ function startWorker() {
     const offscreen = element.transferControlToOffscreen()
     worker = new Worker(new URL('../sketch/scene-worker.ts', import.meta.url), { type: 'module' })
     worker.onerror = recoverWorker
-    worker.postMessage({ type: 'init', canvas: offscreen }, [offscreen])
+    // 后台线程里 WebGL 画着画着出了错：换一张画布，这次只用二维画法。
+    worker.onmessage = ({ data }) => { if (data?.type === 'plain' && !plainOnly) { plainOnly = true; void rebuildWorker() } }
+    worker.postMessage({ type: 'init', canvas: offscreen, plain: plainOnly, software: Boolean((globalThis as any).__allowSoftwareGl) }, [offscreen])
   } catch { worker = undefined }
+}
+let plainOnly = false
+// 换一张新画布、起一个新的后台线程，接着原来的时间画。
+async function rebuildWorker() {
+  worker?.terminate(); worker = undefined
+  layerKey.value++
+  await nextTick()
+  if (disposed) return
+  startWorker(); postView(true)
+  const rebuilt = worker as Worker | undefined
+  rebuilt?.postMessage({ type: 'scene', id: sketch?.offscreen ? current.value : null, elapsed: Math.max(0, performance.now() - drawnAt) })
+  if (unseen() || held) rebuilt?.postMessage({ type: 'halt' })
+  remote = Boolean(worker && sketch?.offscreen)
 }
 async function recoverWorker(event: ErrorEvent) {
   console.warn('[background] worker failed; rebuilding its canvas', event.message)
@@ -69,15 +84,7 @@ async function recoverWorker(event: ErrorEvent) {
   if (disposed) return
   // A transferred canvas cannot be transferred a second time. Recreate only this
   // background layer; keep the document/UI and the scene's elapsed time intact.
-  if (workerRetries++ < 1) {
-    layerKey.value++
-    await nextTick()
-    if (disposed) return
-    startWorker(); postView(true)
-    const rebuilt = worker as Worker | undefined
-    rebuilt?.postMessage({ type: 'scene', id: sketch?.offscreen ? current.value : null, elapsed: Math.max(0, performance.now() - drawnAt) })
-    if (unseen() || held) rebuilt?.postMessage({ type: 'halt' })
-  }
+  if (workerRetries++ < 1) await rebuildWorker()
   remote = Boolean(worker && sketch?.offscreen)
   if (!worker) console.warn('[background] worker unavailable; using the foreground renderer')
   labelSettled = false; invalidateLabel()
