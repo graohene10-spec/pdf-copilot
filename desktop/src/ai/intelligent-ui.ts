@@ -432,6 +432,7 @@ export function mountIntelligentUi(root: HTMLElement, options: Context & { strea
  * 阅读助手里图解和可交互并重，按内容选；快速解释是一张小卡片，首选图解，可交互只是可选的补充。
  */
 const WRITING = '写法：语言标记为 ui 的代码块，内容是一段 JSON，顶层是一个组件或组件数组，阅读器会把它画出来。图上的文字要短，公式写成 $...$；用 focus 标出最关键的那一处。示例数据要注明是示例，不要编造文档里没有的真实数据。'
+const FOLD = '内容分层多、一张图放不下，或读者要「自己点开看」的大纲、分支总结：不用 ui 代码块，在正文里写折叠段落——`<details>` 单独一行，下一行 `<summary>标题</summary>`，空一行后写这一层的正文（列表、公式、表格都行，也可以再套一层），最后 `</details>` 单独一行。正文里只有这两个标签会生效，其他 HTML 标签会原样显示成文字，不要写。'
 const INTERACTIVE = {
   cards: '- cards：{"type":"cards","items":[{"label":"说明","value":"98.6%","badge":"正常","tone":"good|warn|bad|info","note":""}]}',
   chart: '- chart：{"type":"chart","kind":"line|bar|scatter|pie","title":"","x":["A","B"]或数字数组,"series":[{"name":"","data":[1,2]}],"unit":"%","xLabel":"","yLabel":""}；散点用 "series":[{"name":"","points":[[x,y]]}]；饼图用 "items":[{"label":"","value":1}]',
@@ -444,6 +445,7 @@ export const UI_INSTRUCTIONS = {
   assistant: [
     '当一张图或一个能操作的界面比文字更清楚时，可以在回答里放 ui 代码块；普通问题照常用文字回答，不要为了用而用。',
     WRITING,
+    FOLD,
     '组件分两类，同等看待，按内容选：讲「是什么、怎么来的、彼此什么关系」用图解；讲「怎么变、差多少、让读者动手试」用可交互。两者都合适时可以各放一个——先用图解把结构讲清，再给一个可交互的让读者自己拨一拨。',
     '【图解】静态示意图，讲概念的结构。先想清楚结构是什么（包含？交集？映射？推导？分类？运算？区间？），再挑最贴切的一种：',
     ...DIAGRAM_CATALOG,

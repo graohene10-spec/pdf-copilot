@@ -321,7 +321,10 @@ const uiStyle = computed(() => effectiveAppearance.value.style === 'crystal' ? '
 const answerKey = (message: Message) => `${message.content.length}:${message.content.slice(-24)}:${message.finishedAt || 0}:${message.sources.length}:${dark.value}:${uiStyle.value}`
 function renderAnswer(element: HTMLElement, message: Message) {
   renderedKeys.set(element, answerKey(message))
+  // 读者点开的折叠段落：回答重画（还在写、换主题）后保持原样。
+  const unfolded = [...element.querySelectorAll('details')].map(item => item.open)
   element.innerHTML = renderMarkdown(message.content)
+  if (unfolded.includes(true)) element.querySelectorAll('details').forEach((item, index) => { if (unfolded[index]) item.open = true })
   // 模型有时引用前几轮回答里的来源，甚至写出不存在的编号：先在整场对话的来源里找，找不到就把编号去掉，绝不把 [S…] 原样留在正文里。
   const sourceMap = new Map([...messages.value.flatMap(item => item.sources || []), ...message.sources].map(source => [source.sourceId, source]))
   {

@@ -666,7 +666,7 @@ export function rackFront(paper: string, ink: string, size: number, high?: numbe
 }
 
 function racks(): Painter {
-  const WIDE = .6, DEEP = 1.2, PITCH = 2.9, TALL = 2.25, EYE = 5.6, SPEED = .09, EVERY = 56000, LIFE = 60
+  const WIDE = .6, DEEP = 1.2, PITCH = 2.9, TALL = 2.25, EYE = 5.6, SPEED = .09, EVERY = 24000, LIFE = 60
   // 一个机柜的正面，照着 GB300 画：黑色的框，顶上一小块圆角的窗（交换机与线缆），下面一大块圆角的窗——里面是一层层计算托盘，上半截右侧垂着一束束线缆；窗与窗之间、最底下是深色的电源框。
   // 按宽度分档各画一张（16、32、64…像素宽），细节随大小多起来：先是框和两块窗，再是托盘线，最大才有线缆、把手、电源小格。
   const fronts = new Map<string, HTMLCanvasElement>()
@@ -687,10 +687,10 @@ function racks(): Painter {
     {
       const seconds = env.t / 1000, camera = seconds * SPEED, latest = Math.floor(env.t / EVERY)
       // 波：每隔一阵在随机的地方来一个，形状随机——一滴水的圆环、从画面外推进来的平面波、两滴水的干涉。振幅从零慢慢起来，最后慢慢平息。
-      // 一次只来一个波，歇一会儿再来下一个；振幅从零慢慢起来、慢慢平息，波长长、走得慢——云卷云舒，不是惊涛骇浪。
+      // 每 24 秒来一个，一个波活 60 秒，所以画面里常有两三个叠着；振幅从零慢慢起来、慢慢平息，波长长、走得慢——云卷云舒，不是惊涛骇浪。
       if (latest !== waveIndex) {
         waveIndex = latest
-        events = [0, 1].map(k => latest - k).filter(k => k >= 0).map(k => {
+        events = [0, 1, 2].map(k => latest - k).filter(k => k >= 0).map(k => {
           // 平面波多数前后走（朝着镜头来或往远处去），波峰是横着的一道道，远处看是一排排整齐地起伏，不会斜着露出大片柜子正面。
           const born = k * EVERY / 1000, angle = (hash(k * 3.7 + 5) - .5) * .7 + (hash(k * 1.9 + 7) < .5 ? 0 : Math.PI), pick = hash(k * 5.1 + .3)
           return { kind: pick < .22 ? 0 : pick < .86 ? 1 : 2, born, x: (hash(k * 2.3 + 1) - .5) * 36, z: born * SPEED + 12 + hash(k * 2.3 + 2) * 30, nx: Math.sin(angle), nz: Math.cos(angle), centre: born * SPEED + 45 }
