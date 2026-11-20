@@ -12,6 +12,7 @@ import { availableReadingWidth, shrinkToFitScale, clampPdfScale } from '../reade
 import AppIcon from './AppIcon.vue'
 import ReaderSearch from './ReaderSearch.vue'
 import { normalizeSearchText, scanPdfMatches } from '../reader/search.mjs'
+import { pacer } from '../reader/pace.mjs'
 import { documentPassword, rememberPassword } from '../document/passwords.mjs'
 import { floatLeavingPanel, restoreLeavingPanel } from '../ui/panel-transition'
 import { usePdfInk } from '../reader/ink/use-ink'
@@ -593,6 +594,7 @@ async function load() {
     function flatten(items: any[], depth = 0) { for (const item of items || []) { if (flat.length >= 1000 || depth > 20) break; flat.push({ title: tidy(item.title), dest: item.dest, depth }); flatten(item.items, depth + 1) } }
     flatten(entries); if (epoch === current) outline.value = flat
     // Resolve page numbers in the background so the outline can show them and follow the reading position.
+    const pause = pacer()
     for (const [index, item] of outline.value.slice(0, 800).entries()) {
       if (epoch !== current) break
       try {
@@ -602,7 +604,7 @@ async function load() {
         const number = typeof dest[0] === 'number' ? dest[0] + 1 : (await pdf.getPageIndex(dest[0])) + 1
         if (epoch === current && outline.value[index] === item) item.page = number
       } catch { /* An unresolved entry simply shows no page number. */ }
-      if (index % 40 === 39) await new Promise(resolve => setTimeout(resolve, 0))
+      await pause()
     }
   } catch (reason: any) {
     if (current !== epoch) return

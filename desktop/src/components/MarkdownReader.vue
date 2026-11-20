@@ -74,14 +74,25 @@ function selectedText() {
   const source = selection.anchorNode?.parentElement?.closest('[data-source-line]')
   if (text) emit('selection', { text, page: Number(source?.getAttribute('data-source-line')) || 1 })
 }
-function scrolled() { progress(); if (ink.state.enabled) inkSchedule() }
+// 滚动事件一帧可能来好几次：读位置的活合到下一帧做一次。
+let progressFrame = 0
+function scrolled() {
+  if (!progressFrame) progressFrame = requestAnimationFrame(() => { progressFrame = 0; progress() })
+  if (ink.state.enabled) inkSchedule()
+}
 function progress() {
   if (!active || !scroll.value) return
   const max = scroll.value.scrollHeight - scroll.value.clientHeight
   const blocks = body.value?.querySelectorAll<HTMLElement>('[data-source-line]') || []
   const top = scroll.value.getBoundingClientRect().top + 20
-  let line = 1
-  for (const block of blocks) { if (block.getBoundingClientRect().top <= top) line = Number(block.dataset.sourceLine) || line; else break }
+  // 块按文档顺序从上到下排，用二分找最后一个顶边不低于视口上沿的：长文档滚到后面时，不必从第一块量到当前块。
+  let line = 1, low = 0, high = blocks.length - 1
+  while (low <= high) {
+    const middle = (low + high) >> 1
+    if (blocks[middle]!.getBoundingClientRect().top <= top) low = middle + 1; else high = middle - 1
+  }
+  // 行号取不到的块（没写 data-source-line 的值）沿用它前面最近一个有行号的。
+  for (let index = high; index >= 0; index--) { const value = Number(blocks[index]!.dataset.sourceLine); if (value) { line = value; break } }
   if (raw.value) line = Math.max(1, Math.round((scroll.value.scrollTop / Math.max(1, max)) * (totalLines - 1)) + 1)
   currentLine = line
   emit('progress', { page: line, pageCount: totalLines, progress: max > 0 ? Math.min(1, scroll.value.scrollTop / max) : 1 })
@@ -313,7 +324,7 @@ async function renderDocument() {
     for (const child of token.children || []) {
       if (child.type === 'image') {
         const src = child.attrGet('src') || ''
-        if (/^(https?:|\/\/)/i.test(src)) { child.attrSet('src', src.startsWith('//') ? `https:${src}` : src); child.attrSet('loading', 'lazy'); child.attrSet('referrerpolicy', 'no-referrer'); continue }
+        if (/^(https?:|\/\/)/i.test(src)) { child.attrSet('src', src.startsWith('//') ? `https:${src}` : src); child.attrSet('loading', 'lazy'); child.attrSet('decoding', 'async'); child.attrSet('referrerpolicy', 'no-referrer'); continue }
         if (/^(data:|blob:)/i.test(src)) { child.attrSet('src', ''); continue }
         try {
           const asset = await library.readAsset(props.documentId, decodeURIComponent(src.split('#')[0]))
@@ -378,7 +389,7 @@ onMounted(() => {
   resize = new ResizeObserver(() => inkSchedule())
   resize.observe(body.value)
 })
-onBeforeUnmount(() => { selector?.dispose(); resize?.disconnect(); active = false; ++activation; ++epoch; if (searchTimer) clearTimeout(searchTimer); searchIndex = undefined; searchRanges = []; searchHighlighter.dispose(); for (const clear of transientMarkers) clear(); urls.forEach(url => URL.revokeObjectURL(url)) })
+onBeforeUnmount(() => { cancelAnimationFrame(progressFrame); selector?.dispose(); resize?.disconnect(); active = false; ++activation; ++epoch; if (searchTimer) clearTimeout(searchTimer); searchIndex = undefined; searchRanges = []; searchHighlighter.dispose(); for (const clear of transientMarkers) clear(); urls.forEach(url => URL.revokeObjectURL(url)) })
 function getViewState() { return { progress: active && scroll.value ? scroll.value.scrollTop / Math.max(1, scroll.value.scrollHeight - scroll.value.clientHeight) : cachedProgress, raw: raw.value, outlineOpen: outlineOpen.value, fontSize: displayFontSize.value, zoom: zoom.value, search: { query: searchQuery.value, current: searchCurrent.value } } }
 function suspend() {
   if (!active) return
