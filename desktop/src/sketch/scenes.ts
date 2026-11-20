@@ -760,11 +760,15 @@ function racks(): Painter {
         const count = last - first + 1
         if (lifts.length < count) lifts = new Float64Array(count * 2)
         for (let i = 0; i < count; i++) lifts[i] = height((first + i) * WIDE + shift + WIDE / 2)
-        // 一个机柜和左右两个邻居的高差在屏幕上不到半个像素，它就是「平」的：侧板整块被靠中间的邻居挡住，不用画；
-        // 柜顶和邻居的只是边挨着边，谁先谁后看不出来。平的机柜攒在一起：整批柜顶一次填、一次描，正面一张张连着贴。
-        // 每帧上千个机柜，原来一个五条绘制指令，显卡那边和界面抢着干活；这样平静的地方一排只剩两条加一串贴图。
+        // 一个机柜和左右两个邻居的高差在屏幕上小到看不出来，它就是「平」的，可以和别的平机柜攒成一批画：
+        // 一批里侧板一次填，柜顶一次填、一次描，正面一张张连着贴。每帧上千个机柜，原来一个五条绘制指令，显卡那边和界面抢着干活。
+        // 攒着画也尽量和一个个画的结果一样：
+        // 一个机柜比靠中间的邻居高一点，它的侧板就从邻居的柜顶上面露出一条细缝，两条边线叠成一道粗一点的线；
+        // 比邻居低，它朝中间的那条边线就被邻居的柜顶盖住，只剩邻居自己的那一条。
+        // 所以一批里的次序是：全部侧板（填、描）→ 全部柜顶（填）→ 柜顶的边线（比邻居低的，朝中间那条不描）→ 正面。
         // 被波抬起来或压下去的机柜照旧一个个按顺序画，轮到它之前先把攒着的那批画掉，前后遮挡的次序不变。
-        const perUnit = focal / z
+        // 高差到八分之一个像素就看得出线的深浅在变（近处几排的微波就是这么来的）：这样的机柜一律照原样一个个画，只有差得更小的才攒。
+        const perUnit = focal / z, FLAT = .125
         // 正面的下半截被前一排挡着（越远挡得越多，远处只露出顶上一两成）：只贴露出来的那一截，省掉大片白画的像素。
         // 前一排的后沿最低能低到哪，按这一刻波的最大振幅保守地估，再多留两个像素；最前面的一排前面没有东西挡，整张贴。
         let cut = Infinity
@@ -775,13 +779,15 @@ function racks(): Painter {
           if (shown >= tall - .5) c.drawImage(sprite, x, y, wide, tall)
           else c.drawImage(sprite, 0, 0, sprite.width, sprite.height * shown / tall, x, y, wide, shown)
         }
-        const flat = (i: number) => { const k = i - first, own = lifts[k]!; return (k === 0 || Math.abs(own - lifts[k - 1]!) * perUnit < .5) && (k === count - 1 || Math.abs(own - lifts[k + 1]!) * perUnit < .5) }
-        let tops: Path2D | null = null, held = 0
+        const flat = (i: number) => { const k = i - first, own = lifts[k]!; return (k === 0 || Math.abs(own - lifts[k - 1]!) * perUnit < FLAT) && (k === count - 1 || Math.abs(own - lifts[k + 1]!) * perUnit < FLAT) }
+        // 柜顶分单双号两批填：相邻两个柜顶各填各的，共用的那条边上才有和原来一样的一丝透底（并成一块填就没有了）。
+        let tops: Path2D | null = null, odds: Path2D | null = null, edges: Path2D | null = null, slivers: Path2D | null = null, held = 0
         const flush = () => {
           if (!tops) return
-          c.fillStyle = env.paper; c.fill(tops); c.stroke(tops)
+          if (slivers) { c.fillStyle = shade; c.fill(slivers); c.stroke(slivers) }
+          c.fillStyle = env.paper; c.fill(tops); if (odds) c.fill(odds); c.stroke(edges!)
           for (let k = 0; k < held; k += 4) paste(rects[k]!, rects[k + 1]!, rects[k + 2]!, rects[k + 3]!)
-          tops = null; held = 0
+          tops = odds = edges = slivers = null; held = 0
         }
         const rack = (i: number) => {
           const x0 = i * WIDE + shift, x1 = x0 + WIDE, y0 = lifts[i - first]!, y1 = y0 + TALL
@@ -792,8 +798,20 @@ function racks(): Painter {
           const backBottom = sy(y0, back)
           if (Math.max(a, b, a2, b2) < left - 2 || Math.min(a, b, a2, b2) > left + w + 2 || Math.min(high, behind) > top + h + 2 || Math.max(bottom, backBottom) < top - 2) return
           if (flat(i)) {
-            tops ||= new Path2D()
-            tops.moveTo(a, high); tops.lineTo(a2, behind); tops.lineTo(b2, behind); tops.lineTo(b, high); tops.closePath()
+            // toward：靠中间的邻居在哪一边（正中间那个没有）；drop：它比那个邻居高多少（单位是高度，不是像素）。
+            const k = i - first, toward = x1 < 0 ? 1 : x0 > 0 ? -1 : 0, drop = toward && k + toward >= 0 && k + toward < count ? y0 - lifts[k + toward]! : 0
+            tops ||= new Path2D(); edges ||= new Path2D()
+            const lid = i & 1 ? odds ||= new Path2D() : tops
+            lid.moveTo(a, high); lid.lineTo(a2, behind); lid.lineTo(b2, behind); lid.lineTo(b, high); lid.closePath()
+            // 侧板每个都画（填了再描），和原来一样：它的边线压在柜顶下面露出的那一丝，也是那道线深浅的一部分。
+            if (toward) {
+              const near = toward > 0 ? b : a, deep = toward > 0 ? b2 : a2
+              slivers ||= new Path2D()
+              slivers.moveTo(near, high); slivers.lineTo(deep, behind); slivers.lineTo(deep, backBottom); slivers.lineTo(near, bottom); slivers.closePath()
+            }
+            if (!toward || drop >= 0) { edges.moveTo(a, high); edges.lineTo(a2, behind); edges.lineTo(b2, behind); edges.lineTo(b, high); edges.closePath() }
+            else if (toward > 0) { edges.moveTo(b, high); edges.lineTo(a, high); edges.lineTo(a2, behind); edges.lineTo(b2, behind) }
+            else { edges.moveTo(a2, behind); edges.lineTo(b2, behind); edges.lineTo(b, high); edges.lineTo(a, high) }
             rects[held++] = a - .5; rects[held++] = high; rects[held++] = b - a + 1; rects[held++] = bottom - high // 两边各多盖半个像素，相邻机柜之间不漏缝
             return
           }
