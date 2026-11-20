@@ -1,11 +1,10 @@
 # 开智 · PDF / Markdown 阅读与管理
 
-开智是一款 Windows PDF / Markdown 阅读与管理工具，结合本地文档库、并排阅读、手写标记和 AI 文档问答，提供可自定义底板与字体的液态玻璃界面。本仓库也保留 PDF Copilot 浏览器扩展；两个产品独立发布，版本号分别维护。
+开智是一款 Windows PDF / Markdown 阅读与管理工具，结合本地文档库、并排阅读、手写标记和 AI 文档问答，提供可自定义底板与字体的液态玻璃界面。
 
 | 产品 | 最新正式版 | 下载与说明 |
 | --- | --- | --- |
 | 开智 Windows 桌面版 | **0.10.114** | [下载](https://github.com/graohene10-spec/pdf-copilot/releases/tag/desktop-v0.10.114) · [使用说明](desktop/README.md) · [本版更新](desktop/RELEASE_NOTES_0.10.114.md) |
-| PDF Copilot 浏览器扩展 | **v0.3.3** | [下载](https://github.com/graohene10-spec/pdf-copilot/releases/tag/v0.3.3) · [扩展教程](docs/USER_GUIDE.md) |
 
 ## 开智 Windows 桌面版
 
@@ -37,15 +36,25 @@
 
 [桌面使用与快捷键](desktop/README.md) · [升级与备份](desktop/docs/UPDATING.md) · [桌面隐私说明](desktop/docs/PRIVACY.md) · [源码构建与发布](desktop/docs/RELEASING.md)
 
-## PDF Copilot 浏览器扩展
+PDF Copilot 浏览器插件已停止更新，历史版本与使用资料见[附录](#pdf-copilot-浏览器扩展)。
 
-轻量的 Windows Edge / Chrome 扩展，把 AI 对话放在 PDF 阅读旁边。继续使用浏览器自带阅读器，也可以切换到基于 PDF.js 的增强阅读器，连续滚动、选文、框选公式，并让 AI 按需查阅相关页。
+## 许可
 
-**浏览器扩展稳定版：v0.3.3。** 使用 DeepSeek / OpenAI API Key，只需安装扩展；复用 Codex CLI 登录，再安装随包提供的 Windows 小助手。默认版自带公式排版模块和字体，无需安装 LaTeX。以下安装与使用步骤针对浏览器扩展。
+项目自身代码采用 [MIT](LICENSE)。PDF.js、KaTeX 等第三方资源说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
-[下载 v0.3.3](https://github.com/graohene10-spec/pdf-copilot/releases/tag/v0.3.3) · [完整安装与使用教程](docs/USER_GUIDE.md) · [本版更新](docs/RELEASE_NOTES_v0.3.3.md) · [隐私与权限](PRIVACY.md)
+<a id="pdf-copilot-浏览器扩展"></a>
 
-当前开发版新增增强模式框选快捷键、切换标签页后继续接收回复，以及多个窗口共用的并发限制与等待队列。这些新增功能尚未包含在上面的 v0.3.3 发行包中；本地从源码构建可使用。
+## 附录：PDF Copilot 浏览器插件（已停止更新）
+
+**浏览器插件已停止更新，最后正式版为 v0.3.3。** 以下保留历史版本的下载、安装和使用资料。
+
+PDF Copilot 是 Windows Edge / Chrome 的 PDF 阅读扩展，支持浏览器阅读器和基于 PDF.js 的增强阅读器，可连续阅读、选文、框选图表并进行 AI 问答。
+
+v0.3.3 支持 DeepSeek / OpenAI API Key 和 Codex 本机登录。Codex 连接需安装随包提供的 Windows 小助手；默认版内置公式模块和字体。
+
+[下载 v0.3.3](https://github.com/graohene10-spec/pdf-copilot/releases/tag/v0.3.3) · [安装与使用教程](docs/USER_GUIDE.md) · [版本更新记录](docs/RELEASE_NOTES_v0.3.3.md) · [隐私与权限](PRIVACY.md)
+
+源码版另含增强模式框选快捷键、跨标签页会话和跨窗口并发队列。
 
 ### 第一次安装：从这里开始
 
@@ -77,7 +86,7 @@
 
 对话支持 DeepSeek API、OpenAI API 和 Codex 本机登录，模型与思考强度可调整，回复流式显示，可停止、复制、清空会话。顶部 **A− / A+** 将字号调整为 14–24，默认 17；点击数字恢复默认。文字、代码和公式同步缩放，字号在侧栏和临时窗口间同步。
 
-开发版中，侧栏随当前标签页显示该页的独立会话，原页继续接收回复，切回可查看结果；草稿和附件也分别保留。默认全部窗口同时运行 **2 题**，其中 Codex 最多 **1 题**，最多等待 **8 题**，在 **模型与密钥设置 → 多标签页与排队** 中调整。按最早可运行的提问顺序分配空位，Codex 满额时不会挡住有空位的 API 提问；等待中的问题可以停止，队列满时保留问题与附件。关闭对话界面或原 PDF 标签页、更换原文档会停止对应提问。
+源码版中，侧栏随当前标签页显示该页的独立会话，原页继续接收回复，切回可查看结果；草稿和附件也分别保留。默认全部窗口同时运行 **2 题**，其中 Codex 最多 **1 题**，最多等待 **8 题**，在 **模型与密钥设置 → 多标签页与排队** 中调整。按最早可运行的提问顺序分配空位，Codex 满额时不会挡住有空位的 API 提问；等待中的问题可以停止，队列满时保留问题与附件。关闭对话界面或原 PDF 标签页、更换原文档会停止对应提问。
 
 **自动上下文默认开启**，保留用户主动关闭的偏好。只有点击发送才会准备页面并调用模型；翻页本身不会上传。没有手动附件时附当前页，有选文或截图时使用附件，避免重复附整页。自动页图默认收起，可展开预览。增强模式还可按需补充其他页的相关内容，整份 PDF 不自动上传。
 
@@ -164,7 +173,3 @@ npm run package
 加载 `dist/extension` 或 `dist/extension-lite`；安装包输出到 `release/0.3.3`。浏览器验收需另外安装 Playwright，不进入发行包，执行方式见[开发验收说明](docs/ACCEPTANCE.md)。
 
 [架构说明](docs/ARCHITECTURE.md) · [小助手协议](docs/native-host.md) · [发布流程](docs/RELEASING.md)
-
-## 许可
-
-项目自身代码采用 [MIT](LICENSE)。PDF.js、KaTeX 等第三方资源说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
