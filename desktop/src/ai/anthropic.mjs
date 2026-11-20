@@ -53,7 +53,7 @@ export async function streamAnthropic(options, chatPayload) {
   if (CLAUDE_5_5.test(model)) params.thinking = { type: 'adaptive', display: 'summarized' };
   if (effort && effort !== 'none') params.output_config = { effort };
   if (chatPayload.tools?.length) params.tools = chatPayload.tools.map(({ function: tool }) => ({ name: tool.name, description: tool.description, input_schema: tool.parameters }));
-  const client = new Anthropic({ apiKey, baseURL: baseUrl.replace(/\/+$/, '').replace(/\/v1$/, ''), fetch: transportFetch, dangerouslyAllowBrowser: true, maxRetries: 1, timeout: 10 * 60000 });
+  const client = new Anthropic({ apiKey, baseURL: baseUrl.replace(/\/+$/, '').replace(/\/v1$/, ''), fetch: transportFetch, dangerouslyAllowBrowser: true, maxRetries: 1, timeout: 24 * 3600000 });
   let message;
   try {
     const stream = client.messages.stream(params, { signal });

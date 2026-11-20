@@ -173,7 +173,7 @@ export async function streamNative({ model, effort, fast = false, tier = '', use
     const toolReplies = new Set();
     function finish(error, healthy = false) {
       if (settled) return;
-      settled = true; clearTimeout(timer); signal?.removeEventListener('abort', abort);
+      settled = true; signal?.removeEventListener('abort', abort);
       if (healthy) release(port, true, key);
       else if (cancelled) settle();
       else release(port, false);
@@ -191,7 +191,7 @@ export async function streamNative({ model, effort, fast = false, tier = '', use
     }
     const cancel = () => { cancelled = true; try { port.postMessage({ id: crypto.randomUUID(), type: 'cancel', targetId: id }); } catch {} };
     const abort = () => { cancel(); finish(signal.reason || new DOMException('已取消', 'AbortError')); };
-    const timer = setTimeout(() => { cancel(); finish(new Error('对话超过 10 分钟，已停止。')); }, 10 * 60000);
+    // 不设总时长上限：长回答、反复读文档的回答可以一直跑，要停由读者按停止。
     port.onDisconnect.addListener(error => finish(new Error(error)));
     port.onMessage.addListener(msg => {
       if (settled) return;

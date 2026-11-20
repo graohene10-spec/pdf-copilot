@@ -469,7 +469,7 @@ namespace PdfCopilot {
                 chat.TurnId = Json.Text(Json.Map(Json.Get(turnResult, "turn")), "id");
                 chat.TurnMs = chat.Clock.ElapsedMilliseconds;
                 if (chat.Cancelled) Interrupt(chat);
-                if (!chat.Finished.WaitOne(15 * 60 * 1000)) { chat.Error = "The Codex response timed out."; Interrupt(chat); }
+                chat.Finished.WaitOne(); // 不设总时长上限：回答可以一直跑，停止由阅读器发 cancel。
                 if (chat.Error != null && !chat.Cancelled) throw new InvalidOperationException(chat.Error);
             } finally {
                 lastTiming = Json.Obj("prepared", chat.Prepared, "threadMs", chat.ThreadMs, "turnMs", chat.TurnMs, "firstMs", chat.FirstMs, "answerMs", chat.AnswerMs, "totalMs", chat.Clock.ElapsedMilliseconds, "engine", version ?? "", "transport", request.QuickExplain && canUseExplainHttp ? "http" : "default");

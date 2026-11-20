@@ -56,14 +56,23 @@
 /* 镜面环的受光方向：静止时来自左上，光标在玻璃上时转向光标。 */
 @property --rim-angle {
   syntax: '<angle>';
-  inherits: true;
+  inherits: false;
   initial-value: 155deg;
 }
+
+/* 光标位置同样不向下继承：这几个变量每帧写在光标所在的那块玻璃上（可以是整个助手面板），
+   继承的话面板里所有节点的样式每帧都要重算。真正用到它们的只有这块玻璃自己的 ::before / ::after，在那里显式向它要。
+   语法写 *、不给初始值：没设置时仍然走 var() 里各自的备用值。 */
+@property --glass-x { syntax: '*'; inherits: false; }
+@property --glass-y { syntax: '*'; inherits: false; }
 
 /* ---- 点亮的镜面环 ---------------------------------------------------- */
 
 [data-glass-live]:not(.file-tab)::before {
   --glass-active: inherit;
+  --glass-x: inherit;
+  --glass-y: inherit;
+  --rim-angle: inherit;
   content: '';
   position: absolute;
   inset: 0;
@@ -129,6 +138,8 @@
 
 [data-glass-live]::after {
   --glass-active: inherit;
+  --glass-x: inherit;
+  --glass-y: inherit;
   content: '';
   position: absolute;
   inset: 0;

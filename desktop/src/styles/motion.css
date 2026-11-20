@@ -496,6 +496,8 @@
 
 .reader-panes > .ai-panel:is(.pane-enter-active, .pane-leave-active) > * {
   flex-shrink: 0;
+  /* --panel-width 不向下继承（见 tokens 末尾的 @property），这里显式向父元素要一次。 */
+  --panel-width: inherit;
   min-width: var(--panel-width, 360px);
   /* 内容宽度不变、只是被裁：单独成一层，画一次就够，动画期间不再每帧重画整个助手栏。 */
   will-change: transform;
@@ -542,8 +544,13 @@
   backdrop-filter: none !important;
 }
 
-:root[data-pane-motion] :is(.app-sidebar, .ai-panel, .reader-pane) {
-  pointer-events: none;
-}
+/* 助手和阅读区不直接写 pointer-events：它会继承，面板上一开一关，里面几千上万个节点的样式各重算一遍（收起助手时卡的那一下）。
+   改成在它们的公共容器上盖一层透明的挡板，效果一样，不碰任何节点的样式。侧栏里节点少，照旧。 */
+:root[data-pane-motion] .app-sidebar { pointer-events: none; }
+:root[data-pane-motion] .reader-panes::after { content: ''; position: absolute; inset: 0; z-index: 60; }
 /* 正文定住宽度期间，阅读区比它窄时只裁掉，不冒出横向滚动条。 */
 :root[data-pane-motion] .reader-pane .markdown-scroll { overflow-x: hidden; }
+
+/* 助手面板的宽度变量只给它的直接子元素用（收放动画时撑住内容宽度）。登记成「不继承」：
+   普通自定义属性会继承，面板上每改一次，里面成千上万个节点的样式都要重算一遍——拖宽度时就是每帧一次。 */
+@property --panel-width { syntax: "<length>"; inherits: false; initial-value: 360px; }

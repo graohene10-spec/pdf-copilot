@@ -2496,29 +2496,31 @@ kbd {
   display: none;
 }
 
+/* 热区：整条边都能抓，宽 20px，一半在助手和阅读区之间的空隙里，一半在助手边缘以内（不压阅读区的滚动条）。
+   原来只有 12px、上下各空 40px，容易点到标题上。 */
 .panel-resizer {
   position: absolute;
-  top: 40px;
-  bottom: 40px;
+  top: 10px;
+  bottom: 10px;
   z-index: 7;
-  width: 12px;
+  width: 20px;
   cursor: col-resize;
   touch-action: none;
 }
 
 .panel-resizer[data-edge='left'] {
-  left: -11px;
+  left: -10px;
 }
 
 .panel-resizer[data-edge='right'] {
-  right: -11px;
+  right: -10px;
 }
 
 .panel-resizer::after {
   content: '';
   position: absolute;
   top: 50%;
-  left: 4px;
+  left: 3px;
   width: 4px;
   height: 44px;
   margin-top: -22px;
@@ -2533,12 +2535,9 @@ kbd {
   opacity: 1;
 }
 
-/* 只给根元素：用 `.resizing-panels *` 的话，开关这个类要把页面里上万个文字层节点都重算一遍样式，拖动一开始就卡一下。
-   拖动时指针被分隔条捕获，光标本来就跟着它。 */
-.resizing-panels {
-  cursor: col-resize !important;
-  user-select: none;
-}
+/* 拖动时根元素上不放任何会继承的属性（光标、禁止选中）：根上一改，整棵树上万个节点的样式都要重算，
+   拖动开始和松手各卡一下。指针被分隔条捕获，光标本来就跟着它；禁止选中放在分隔条自己身上，从它按下不会带出选区。 */
+.panel-resizer, .translate-resizer { -webkit-user-select: none; user-select: none; }
 .ai-panel.width-springing { transition: width var(--dur-bounce) var(--spring-snappy); }
 
 /* 拖动中的窗口浮起，其余窗口稍稍退后、轻轻晃动让位。 */

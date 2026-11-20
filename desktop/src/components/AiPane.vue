@@ -397,6 +397,11 @@ watch(() => [conversationId.value, messages.value.length, messages.value.at(-1)?
 })
 // 滚动时每帧只更新一次细滑块与「当前这一问」，不重算整条刻度（刻度只在内容变化时重算）。
 let scrollFrame = 0
+// 并排时整条头部都能按住拖动换位（标题也算：按住拖是换位，点一下才是打开对话记录）；右边那几个按钮和弹出的对话记录不算。
+function grabHeader(event: PointerEvent) {
+  if (!props.draggable || (event.target as Element).closest('.header-button, .history-menu, input, textarea')) return
+  emit('grab', event)
+}
 function onScroll() {
   if (scrollFrame) return
   scrollFrame = requestAnimationFrame(() => { scrollFrame = 0; follow = nearBottom(); rememberScroll() })
@@ -879,7 +884,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
       <span class="side-of" :title="mainTitle">挂在「{{ mainTitle || '新对话' }}」旁边</span>
       <button class="header-button close-assistant" data-tip="收起附属对话（内容会保留）" aria-label="收起附属对话" @click="emit('close')"><AppIcon name="close" :size="15" /></button>
     </header>
-    <header v-else class="ai-header" :class="{ draggable }" @pointerdown.self="draggable && emit('grab', $event)">
+    <header v-else class="ai-header" :class="{ draggable }" @pointerdown="grabHeader">
       <span v-if="draggable" class="drag-grip" data-tip="拖动调整位置" aria-hidden="true" @pointerdown.stop="emit('grab', $event)"><AppIcon name="grip" :size="14" /></span>
       <div class="history-host">
         <button class="conversation-title" :aria-expanded="historyOpen" aria-label="对话记录" data-tip="对话记录" @click="historyOpen = !historyOpen"><span class="title-text">{{ title }}</span><small>{{ document.title }}</small></button>
