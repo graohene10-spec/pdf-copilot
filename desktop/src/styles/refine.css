@@ -166,6 +166,13 @@
 .mark-nav{display:flex;flex-direction:column;gap:2px;flex:0 1 auto;min-height:56px;overflow:hidden auto;padding:0 4px 14px}
 .mark-group{display:flex;flex-direction:column;gap:1px}
 .mark-group+.mark-group{margin-top:8px}
+/* 挪书：按住书名这一组就浮起来（稍微放大、有投影），跟着指针走；别的组淡一点，用弹簧让出位置。 */
+.mark-nav>.mark-group{position:relative;border-radius:10px;transition:scale var(--dur-2) var(--spring-snappy),box-shadow var(--dur-2) var(--ease-out),background-color var(--dur-2) var(--ease-out),opacity var(--dur-2) var(--ease-out)}
+.mark-nav>.mark-group:is(.reorder-lifted,.reorder-landing){z-index:3}
+.mark-nav>.mark-group.reorder-lifted{scale:1.04;background:var(--surface,var(--canvas));box-shadow:0 12px 28px -12px rgb(0 0 0 / .4),0 0 0 1px var(--hairline);cursor:grabbing;transition:scale var(--dur-2) var(--spring-snappy),box-shadow var(--dur-2) var(--ease-out)}
+.mark-nav.reorder-active>.mark-group:not(.reorder-lifted){opacity:.72}
+.mark-book{cursor:grab}
+.mark-nav.reorder-active .mark-book{cursor:grabbing}
 .mark-book{margin:0 8px 3px;overflow:hidden;color:var(--muted);font-size:11.5px;white-space:nowrap;text-overflow:ellipsis}
 .mark-row{display:flex;align-items:center;gap:9px;width:100%;min-height:28px;padding:3px 8px;border:0;border-radius:var(--r-control,8px);background:none;box-shadow:none;color:var(--ink);font:inherit;font-size:12.5px;text-align:left;cursor:pointer;transition:background-color var(--dur-1) var(--ease-soft)}
 .mark-row:hover,.mark-row:focus-visible{outline:none;background:color-mix(in srgb,var(--ink) 7%,transparent)}
@@ -225,3 +232,15 @@
     animation-range: 0 var(--edge-size), calc(100% - var(--edge-size)) 100%;
   }
 }
+
+/* 界面上的字——按钮、标签、提示、标题——不参与选中：拖一下、按 Ctrl+A，不会把它们刷成一片。
+   能选的只有内容：书页、文档、助手的回答和思考、你问的话、译文、释义、报错，以及一切输入框。 */
+body { -webkit-user-select: none; user-select: none; }
+:is(.textLayer, .markdown-paper, .answer-body, .reasoning-body, .user-question, .note-text, .sent-quote, .tp-result, .tp-source, .ex-text, .st-text, .explain-note, .update-notes, .detail-path, .ai-error, .ai-status, .toast-message, .reader-overlay p, .cm-item, .cm-group li, .iui, input, textarea, [contenteditable]) { -webkit-user-select: text; user-select: text; }
+/* 内容里嵌着的按钮（来源编号、复制代码、草稿牌子）仍然不选。 */
+:is(.answer-body, .markdown-paper) :is(button, .answer-code-head) { -webkit-user-select: none; user-select: none; }
+
+/* 正经的界面字体：草稿风格里凡是要一眼看清、要认真读的地方（总结的表单和草稿）用它，不用手写体。 */
+:root { --font-formal: 'Segoe UI Variable Text', 'Segoe UI', 'Microsoft YaHei UI', 'PingFang SC', 'Noto Sans SC', 'Source Han Sans SC', system-ui, sans-serif; }
+/* 总结草稿里划选后要助手改的那一段。 */
+::highlight(draft-ask) { background-color: color-mix(in srgb, var(--accent) 24%, transparent); }

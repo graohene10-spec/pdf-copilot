@@ -157,8 +157,6 @@ onBeforeUnmount(() => document.removeEventListener('keydown', keydown, true))
 .ui-item.selected{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent),0 0 18px -4px color-mix(in srgb,var(--accent) 45%,transparent)}
 /* 铅笔草稿：一张张贴在方格纸上的纸片，铅笔描边、略歪一点；图自己不再套一层框。 */
 :root[data-style='sketch'] .ui-item{border:1.4px solid color-mix(in srgb,var(--pencil,#2b2a27) 72%,transparent);border-radius:7px 12px 8px 13px/12px 7px 13px 8px;box-shadow:2px 3px 0 color-mix(in srgb,var(--pencil,#2b2a27) 12%,transparent)}
-:root[data-style='sketch'] .uc-grid>.ui-item:nth-child(2n){rotate:.35deg}
-:root[data-style='sketch'] .uc-grid>.ui-item:nth-child(3n+1){rotate:-.3deg}
 :root[data-style='sketch'] .ui-item-head{border-bottom:1.2px dashed color-mix(in srgb,var(--pencil,#2b2a27) 34%,transparent)}
 .ui-item .iui>.iui-card:only-child{padding:6px 0 0;border:0;background:none}
 :root[data-style='sketch'] .ui-item.selected{border-color:var(--red-pencil,#c0392b);box-shadow:0 0 0 2px color-mix(in srgb,var(--red-pencil,#c0392b) 22%,transparent)}

@@ -948,9 +948,28 @@ function pickBookmarkImage(source: string, target: string | string[]) {
   input.click()
 }
 // 侧栏里的书签汇总：每本有书签的书一组，按书里的先后排；点一枚就打开那本书、跳到那里。
+// 书的先后可以拖：按住书名拖动，像手机主屏上挪图标那样，别的书让出位置。顺序单独记着，没排过的书按文档库的顺序排在后面。
+const MARK_ORDER_KEY = 'bookmarks.order.v1'
+const markOrder = ref<string[]>([])
+void library.getSetting(MARK_ORDER_KEY).then(value => { try { const parsed = JSON.parse(value || '[]'); if (Array.isArray(parsed)) markOrder.value = parsed.filter(id => typeof id === 'string') } catch { /* 没排过 */ } }).catch(() => {})
+const markNav = ref<HTMLElement>()
+const reorderMarks = useReorder({
+  container: () => markNav.value,
+  ids: () => bookmarkGroups.value.map(group => group.doc.id),
+  apply: ids => { markOrder.value = ids },
+  commit: ids => { void library.setSetting(MARK_ORDER_KEY, JSON.stringify(ids)).catch(() => {}) },
+  hold: 280,
+})
+/** 只有按在书名上才是挪这本书；按在书签上是点它，按在空白处是框选。 */
+function markGroupDown(event: PointerEvent, id: string) {
+  if (!(event.target as Element).closest('.mark-book')) return
+  event.stopPropagation()
+  reorderMarks.pointerdown(event, id)
+}
 const bookmarkGroups = computed(() => {
   void bookmarkTick.value
-  return documents.value.map(doc => ({ doc, marks: [...(bookmarks.get(doc.id) || [])]
+  const rank = new Map(markOrder.value.map((id, index) => [id, index]))
+  return [...documents.value].sort((a, b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity)).map(doc => ({ doc, marks: [...(bookmarks.get(doc.id) || [])]
     .sort((a, b) => (a.position.page ?? 0) - (b.position.page ?? 0) || (a.position.fraction ?? a.position.progress ?? 0) - (b.position.fraction ?? b.position.progress ?? 0))
     .map(mark => ({ mark, art: artOf(mark), where: mark.position.page ? `第 ${mark.position.page} 页` : `${Math.round(Math.min(1, mark.position.progress || 0) * 100)}% 处` })) }))
     .filter(group => group.marks.length)
@@ -1134,11 +1153,26 @@ async function saveDraft(text: string) {
   } catch (error) { notify(reason(error)) }
   finally { draftSaving.value = false }
 }
+/** 草稿上划选一段、写了怎么改：交给正显示这份文档的那个助手窗口发出去。 */
+function reviseDraft(value: { quote: string; instruction: string }) {
+  const target = draft.value
+  if (!target) return
+  const panel = visibleAi.value.find(item => aiDocument(item)?.id === target.documentId)
+  const instance = panel && aiInstances.get(panel.key)
+  if (!instance?.revise) { notify('先打开这份文档的阅读助手。'); return }
+  void instance.revise(target.conversationId, `修改草稿里的这一段：\n> ${value.quote.replace(/\s*\n+\s*/g, '\n> ')}\n\n要求：${value.instruction}`)
+}
 function openSavedDraft() {
   const doc = documents.value.find(item => item.id === draftSummary.value?.savedId)
   if (!doc) { notify('存好的那份已经不在文档库里了。'); return }
   draft.value = null
   void openDocument(doc)
+}
+/** 一份正开着的文档的目录，给总结的表格按章节选范围。读一下 reader：阅读器装好之后会重新取。 */
+function outlineOf(documentId: string) {
+  void reader.value
+  const pane = paneIds.value.find(id => sourceId(id) === documentId)
+  return (pane && readerInstances.get(pane)?.getOutline?.()) || []
 }
 /** 三个入口（文档库右键、阅读区右键、/summary）最后都到这里：打开这份文档的阅读助手，开一段总结对话。 */
 let summarizePending = false
@@ -1406,6 +1440,7 @@ function appContextMenu(event: MouseEvent) {
     items.push({ label: '从文档库移除', icon: 'trash', danger: true, separator: true, action: () => { removeTarget.value = doc } })
   } else if (active.value) {
     if (!aiOpen.value) items.push({ label: '打开阅读助手', icon: 'sparkle', hint: shortcut('ai'), action: () => openAssistant(true) })
+    if (target.closest('.reader-pane')) items.push({ label: '总结这份文档…', icon: 'doc', action: () => { void summarizeDocument() } })
     items.push({ label: '并排阅读…', icon: 'split', hint: shortcut('split'), action: () => toggleSplitPicker() })
     items.push({ label: fullscreen.value ? '退出全屏' : '进入全屏', icon: fullscreen.value ? 'exit-fullscreen' : 'fullscreen', hint: shortcut('fullscreen'), separator: true, action: () => { void toggleFullscreen() } })
     if (target.closest('.reader-pane')) items.push(...captureMenuItems(target))
@@ -2133,9 +2168,9 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
         <p v-else-if="!groups.length" class="tag-empty">点 + 新建，右键文档放进分组。</p>
       </nav>
       <div class="tag-heading"><p class="sidebar-label">书签<span v-if="bookmarkTotal" class="mark-total">{{ bookmarkTotal }}</span></p><AppIcon name="bookmark" :size="14" /></div>
-      <nav class="mark-nav" aria-label="全部书签">
-        <section v-for="group in bookmarkGroups" :key="group.doc.id" class="mark-group">
-          <p class="mark-book" :data-tip="group.doc.name">{{ group.doc.name.replace(/\.(pdf|md|markdown)$/i, '') }}</p>
+      <nav ref="markNav" class="mark-nav" aria-label="全部书签">
+        <section v-for="group in bookmarkGroups" :key="group.doc.id" class="mark-group" :class="{ 'reorder-lifted': reorderMarks.dragging.value === group.doc.id }" :data-reorder-id="group.doc.id" @pointerdown="markGroupDown($event, group.doc.id)">
+          <p class="mark-book" :data-tip="`${group.doc.name} · 按住拖动可以调整顺序`">{{ group.doc.name.replace(/\.(pdf|md|markdown)$/i, '') }}</p>
           <button v-for="item in group.marks" :key="item.mark.id" type="button" class="mark-row" :class="{ picked: pickedMarks.has(markKey(group.doc.id, item.mark.id)) }" :data-key="markKey(group.doc.id, item.mark.id)" :data-tip="`${item.art.name} · ${item.where}`" @click="markClick(group.doc, item.mark, $event)" @contextmenu.prevent.stop="markMenu(group.doc, item.mark, $event)"><svg class="mark-art" viewBox="0 0 96 40" preserveAspectRatio="xMaxYMid slice" aria-hidden="true" v-html="item.art.svg" /><small>{{ item.where }}</small><span class="mark-name">{{ item.mark.name }}</span></button>
         </section>
         <p v-if="!bookmarkGroups.length" class="tag-empty">在书里按 {{ shortcut('bookmark') || '右键' }} 留书签，都会收在这里。</p>
@@ -2232,9 +2267,9 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
             <section v-for="id in (multiPanel ? paneIds.filter(id => !readerCache.some(entry => entry.id === id)) : [])" :key="`pending:${id}`" class="reader-pane pending" :style="{ order: panelOrder(`doc:${id}`) }"><div class="reader-overlay"><span class="spinner"></span><p>正在打开 {{ tabDoc(id)?.name }}…</p></div></section>
             <section v-for="panel in stageAi" :key="panel.key" class="ai-panel" :class="{ lifted: draggingPanel === panel.key, 'with-side': (panel.side || 0) > 0, 'side-animating': sideAnimating.has(panel.key) }" :style="{ order: panelOrder(panel.key), width: `${panel.width + (panel.side || 0)}px`, '--panel-width': `${panel.width + (panel.side || 0)}px` }" :data-panel-key="panel.key">
               <div class="panel-resizer" :data-edge="panelOrder(panel.key) === 0 && multiPanel ? 'right' : 'left'" role="separator" aria-orientation="vertical" aria-label="拖动调整阅读助手宽度" data-tip="拖动调整宽度，双击恢复" @pointerdown.stop="startWidthDrag($event, panel.key)" @pointermove="moveWidthDrag" @pointerup="endWidthDrag" @pointercancel="endWidthDrag" @dblclick="resetPanelWidth(panel)" />
-              <AiPane v-if="aiDocument(panel)" :ref="value => bindAi(panel.key, value)" data-glass-interactive="panel" :document="aiDocument(panel)!" :context="aiContext(panel)" :conversation-id="panel.conversation" :draggable="multiPanel" :draft-open="!!draft && draft.documentId === aiDocument(panel)!.id" @draft="value => toggleDraft(aiDocument(panel)!.id, value)" :send-shortcut="preferences.shortcuts.aiSend ? shortcut('aiSend') : ''" :consume-capture="consumeSelection" @settings="openSettings('ai')" @manage="managerOpen = true" @close="closeAiPanel(panel.key)" @jump="jump" @clear-selection="clearSelection" @conversation="id => setPanelConversation(panel.key, id)" @grab="startPanelDrag($event, panel.key)" :alternatives="aiAlternatives(panel)" :library="libraryIndex" @switch-document="id => switchAiDocument(panel, id)" @open-conversation="openConversationAt" @side="width => setPanelSide(panel.key, width)" />
+              <AiPane v-if="aiDocument(panel)" :ref="value => bindAi(panel.key, value)" data-glass-interactive="panel" :document="aiDocument(panel)!" :context="aiContext(panel)" :conversation-id="panel.conversation" :draggable="multiPanel" :get-outline="outlineOf" :draft-open="!!draft && draft.documentId === aiDocument(panel)!.id" @draft="value => toggleDraft(aiDocument(panel)!.id, value)" :send-shortcut="preferences.shortcuts.aiSend ? shortcut('aiSend') : ''" :consume-capture="consumeSelection" @settings="openSettings('ai')" @manage="managerOpen = true" @close="closeAiPanel(panel.key)" @jump="jump" @clear-selection="clearSelection" @conversation="id => setPanelConversation(panel.key, id)" @grab="startPanelDrag($event, panel.key)" :alternatives="aiAlternatives(panel)" :library="libraryIndex" @switch-document="id => switchAiDocument(panel, id)" @open-conversation="openConversationAt" @side="width => setPanelSide(panel.key, width)" />
             </section>
-            <SummaryDraft v-if="draft && paneIds.some(id => sourceId(id) === draft!.documentId)" :key="draft.conversationId" :document-id="draft.documentId" :conversation-id="draft.conversationId" :title="documents.find(item => item.id === draft!.documentId)?.name || ''" :saving="draftSaving" :saved="draftSaved" @close="draft = null" @save="saveDraft" @open="openSavedDraft" @copied="notify('已复制')" />
+            <SummaryDraft v-if="draft && paneIds.some(id => sourceId(id) === draft!.documentId)" :key="draft.conversationId" :document-id="draft.documentId" :conversation-id="draft.conversationId" :title="documents.find(item => item.id === draft!.documentId)?.name || ''" :saving="draftSaving" :saved="draftSaved" @close="draft = null" @save="saveDraft" @open="openSavedDraft" @copied="notify('已复制')" @revise="reviseDraft" />
           </TransitionGroup>
           <div v-if="selection && !captureQuick && !aiOpen && selection.image" class="selection-context"><AppIcon name="crop" :size="16" /><span>{{ selection.image ? `已框选第 ${selection.page} 页的图表或公式` : `已选择 ${selection.text.length} 个字符` }}</span><button @click="openAssistant(true)"><AppIcon name="sparkle" :size="15" />向 AI 提问</button><button class="icon-button" @click="clearSelection" data-tip="清除选区" aria-label="清除选区"><AppIcon name="close" :size="14" /></button></div>
         </section>
