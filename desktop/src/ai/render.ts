@@ -27,6 +27,8 @@ markdown.renderer.rules.fence = (tokens, index) => {
   const language = (token.info || '').trim().split(/\s+/)[0].toLowerCase()
   // Intelligent UI：```ui 里是一段 JSON，由 intelligent-ui.ts 画成可操作的界面。
   if (language === 'ui' || language === 'iui') return `<div class="iui" data-ui="${escape(token.content)}"></div>\n`
+  // 总结对话里文档块的替身：一枚小牌子，点它打开草稿面板（见 summary.ts 的 summaryChat）。
+  if (language === 'draft-chip') return `<button type="button" class="draft-chip" data-draft><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6z M14 3v5h5 M9 13h7 M9 17h5"/></svg><span>${escape(token.content.trim())}</span></button>\n`
   if (DIAGRAM_LANGUAGES.has(language)) {
     return `<figure class="answer-diagram" data-diagram="${escape(token.content)}"><pre class="answer-code"><code>${escape(token.content)}</code></pre></figure>\n`
   }

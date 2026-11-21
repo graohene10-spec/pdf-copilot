@@ -3,11 +3,14 @@ import { loadAiSettings, loadApiKey } from './settings.mjs'
 import { RequestScheduler } from './request-scheduler.mjs'
 import { library } from '../sdk'
 import { recordUsage } from './usage'
+import { summaryDraft, summaryInstructions, summaryContinues, lastSummaryOptions, MAX_SUMMARY_ROUNDS, type SummaryState } from './summary'
 import { defaultMemoryMode, forgetConversation, memorize, memoryInstructions, memoryMode, memoryReady, rememberMemoryMode, retagMemory, type MemoryMode } from './memory'
 
 export type Usage = { input?: number; output?: number; reasoning?: number; estimated: boolean }
 export type Message = {
   id: string; role: 'user' | 'assistant'; content: string; reasoning?: string; sources: any[]; images?: string[]; failed?: boolean
+  /** 应用替读者发的一问（分多次写总结时的「继续」）：照常带给模型，对话栏里不显示。 */
+  auto?: boolean
   /** Live progress of an answer: wall-clock timing, token use and the current activity line. */
   startedAt?: number; firstTokenAt?: number; finishedAt?: number; usage?: Usage; activity?: string; stopped?: boolean
   /** How a question was asked, so it can be regenerated or edited the same way. */
@@ -38,6 +41,8 @@ export type ChatState = {
   /** 这段对话记不记进「记忆」（读者学过什么）。默认记；false 是读者关掉了。 */
   /** 这段对话用哪种记忆：只留在本书、所有书共用、不用。没写是共用（老对话），false 是不用（老写法）。 */
   memory?: MemoryMode | false
+  /** 总结对话：系统提示词换成总结那一套，助手把文档写进草稿面板。见 summary.ts。 */
+  summary?: SummaryState
 }
 type DocumentChats = { list: ChatState[]; activeId: string; loaded: boolean; loading?: Promise<void> }
 
@@ -62,6 +67,13 @@ export function keepImage(key: string, image: string) {
   composerImages.set(key, [...list, image]); return true
 }
 
+function readSummary(value: any): SummaryState | undefined {
+  if (!value || typeof value !== 'object' || !value.options) return undefined
+  const options = lastSummaryOptions()
+  for (const key of ['scope', 'length', 'structure', 'tone', 'language', 'focus'] as const) options[key] = typeof value.options[key] === 'string' ? value.options[key].slice(0, 400) : ''
+  options.ui = value.options.ui === true; options.multi = value.options.multi === true
+  return { options, started: value.started !== false, savedId: typeof value.savedId === 'string' ? value.savedId : undefined, rounds: Number(value.rounds) || 0 }
+}
 function blank(documentId: string): ChatState {
   const now = Date.now()
   return reactive({ id: crypto.randomUUID(), documentId, title: '', createdAt: now, updatedAt: now, messages: [], draft: '', status: '', error: false, includeDocument: true, includeSelection: false, request: null, scrollTop: 0, ...(defaultMemoryMode() === 'all' ? {} : { memory: defaultMemoryMode() }) }) as ChatState
@@ -115,6 +127,9 @@ function wireText(message: Message) {
   if (message.note) return `[${NOTE_LABEL[message.note]}]\n${message.content}`
   return message.content + excerptText(message.excerpts)
 }
+// 总结对话里，以前各轮写的文档不逐份带给模型（改一次就多一份，很快超出上限、被截掉）：
+// 每轮的文档块换成一句占位，最新的整份草稿随这一问带一次。
+const withoutDrafts = (text: string) => text.replace(/<summary-(doc|add)>[\s\S]*?(?:<\/summary-\1>|$)/g, '[这一轮把内容写进了草稿]')
 function excerptText(excerpts: Excerpt[] | undefined) {
   return excerpts?.length ? excerpts.map(item => `\n\n[${NOTE_LABEL[item.from]}]\n${item.text}`).join('') : ''
 }
@@ -163,6 +178,24 @@ export function newConversation(documentId: string): ChatState {
   const conversation = blank(documentId)
   entry.list.push(conversation); entry.activeId = conversation.id
   return conversation
+}
+/** 开一段总结对话：先停在设置表格上，读者点了开始才发第一句。总结不读也不写记忆。 */
+export function newSummaryConversation(documentId: string): ChatState {
+  const entry = chats(documentId)
+  flushMemory(documentId, entry.activeId)
+  let conversation = entry.list.find(item => !item.sideOf && !item.messages.length && !item.request)
+  if (!conversation) { conversation = blank(documentId); entry.list.push(conversation) }
+  conversation.summary = { options: lastSummaryOptions(), started: false }
+  conversation.memory = 'off'; conversation.updatedAt = Date.now()
+  entry.activeId = conversation.id
+  return conversation
+}
+/** 还没开始的总结对话改回普通对话。 */
+export function cancelSummary(documentId: string, conversationId: string) {
+  const conversation = chats(documentId).list.find(item => item.id === conversationId)
+  if (!conversation?.summary || conversation.messages.length) return
+  conversation.summary = undefined
+  const mode = defaultMemoryMode(); conversation.memory = mode === 'all' ? undefined : mode
 }
 export function deleteConversation(documentId: string, conversationId: string) {
   const entry = chats(documentId)
@@ -361,7 +394,7 @@ function serialize(entry: DocumentChats) {
   const kept = new Set(mains.map(item => item.id))
   const sides = entry.list.filter(item => item.sideOf && kept.has(item.sideOf) && item.messages.length)
   return JSON.stringify({ activeId: entry.activeId, list: [...mains, ...sides].map(item => ({
-    id: item.id, title: item.title, createdAt: item.createdAt, updatedAt: item.updatedAt, branchOf: item.branchOf, sideOf: item.sideOf, inherited: item.inherited, memory: item.memory,
+    id: item.id, title: item.title, createdAt: item.createdAt, updatedAt: item.updatedAt, branchOf: item.branchOf, sideOf: item.sideOf, inherited: item.inherited, memory: item.memory, summary: item.summary,
     messages: item.messages.filter(message => !message.failed || message.content).slice(-MAX_MESSAGES).map(({ images: _images, activity: _activity, ...message }) => ({ ...message, content: message.content.slice(0, 60000), reasoning: message.reasoning?.slice(0, 20000), sources: message.sources.slice(0, 24).map(source => ({ ...source, text: String(source.text || '').slice(0, 600) })) })),
   })) })
 }
@@ -392,7 +425,7 @@ export function loadConversations(documentId: string): Promise<void> {
       for (const item of Array.isArray(stored?.list) ? stored.list : []) {
         if (!item || typeof item.id !== 'string' || known.has(item.id) || !Array.isArray(item.messages)) continue
         const conversation = blank(documentId)
-        Object.assign(conversation, { id: item.id, title: String(item.title || ''), memory: item.memory === false || item.memory === 'off' ? 'off' : item.memory === 'book' ? 'book' : undefined, sideOf: typeof item.sideOf === 'string' ? item.sideOf : undefined, inherited: Array.isArray(item.inherited) ? item.inherited.filter((entry: any) => entry && typeof entry.content === 'string' && (entry.role === 'user' || entry.role === 'assistant')) : undefined, branchOf: item.branchOf && typeof item.branchOf.conversationId === 'string' ? { conversationId: item.branchOf.conversationId, title: String(item.branchOf.title || '') } : undefined, createdAt: Number(item.createdAt) || Date.now(), updatedAt: Number(item.updatedAt) || Date.now(),
+        Object.assign(conversation, { id: item.id, title: String(item.title || ''), memory: item.memory === false || item.memory === 'off' ? 'off' : item.memory === 'book' ? 'book' : undefined, summary: readSummary(item.summary), sideOf: typeof item.sideOf === 'string' ? item.sideOf : undefined, inherited: Array.isArray(item.inherited) ? item.inherited.filter((entry: any) => entry && typeof entry.content === 'string' && (entry.role === 'user' || entry.role === 'assistant')) : undefined, branchOf: item.branchOf && typeof item.branchOf.conversationId === 'string' ? { conversationId: item.branchOf.conversationId, title: String(item.branchOf.title || '') } : undefined, createdAt: Number(item.createdAt) || Date.now(), updatedAt: Number(item.updatedAt) || Date.now(),
           messages: item.messages.filter((message: any) => message && (message.role === 'user' || message.role === 'assistant')).map((message: any) => ({ ...message, content: String(message.content || ''), sources: Array.isArray(message.sources) ? message.sources : [] })) })
         entry.list.push(conversation)
       }
@@ -438,7 +471,7 @@ function titleFrom(question: string) {
 }
 
 // selectionOnly: a quick capture question sends just the question and the selected region.
-type SendOptions = { /** 重新回答：新的问答换掉这个问题和它原来的回答，前后的对话不动。 */ replace?: string; conversationId?: string; includeDocument?: boolean; includeSelection?: boolean; selectionOnly?: boolean; images?: string[]; attachments?: string[]; excerpts?: Excerpt[] }
+type SendOptions = { /** 应用自己替读者发的（分多次写总结时的「继续」）：对话栏里不显示这一问。 */ auto?: boolean; /** 重新回答：新的问答换掉这个问题和它原来的回答，前后的对话不动。 */ replace?: string; conversationId?: string; includeDocument?: boolean; includeSelection?: boolean; selectionOnly?: boolean; images?: string[]; attachments?: string[]; excerpts?: Excerpt[] }
 export async function sendChat(descriptor: { id: string; title: string; kind: string }, source: any, onSettings: () => void, onAccepted?: () => void, explicitQuestion?: string, sendOptions: SendOptions = {}) {
   const state = chatState(descriptor.id, sendOptions.conversationId), question = (explicitQuestion ?? state.draft).trim()
   if (!question || state.request) return
@@ -460,7 +493,7 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
   const signal = request.controller.signal
   const entry = chats(descriptor.id)
   const valid = () => state.request === request && !signal.aborted && entry.list.includes(state)
-  let answer: Message | undefined, ticket: any, resource: any, documentSession: any
+  let answer: Message | undefined, ticket: any, resource: any, documentSession: any, again = false
   const activity = (text: string) => { if (valid() && answer) answer.activity = text }
   try {
     const [{ getModel, streamChat }, { streamDocumentChat, boundedHistory }] = await Promise.all([import('./providers.mjs'), import('./document-chat.mjs')])
@@ -475,13 +508,15 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
     // 同一张图只发一次（同一块地方截了两遍）。
     const images = [...new Set([...(selection.image ? [selection.image] : []), ...attached])]
     if (images.reduce((sum, image) => sum + image.length, 0) > 8 * 1024 * 1024) throw new Error('图片总量太大，请减少几张或换小一点的图片。')
-    const user: Message = { id: crypto.randomUUID(), role: 'user', content: question, sources: [], images, ...(excerpts.length ? { excerpts } : {}), ask: { includeDocument, selectionOnly: sendOptions.selectionOnly, page: context.page, text: selection.text ? String(selection.text).slice(0, 20000) : undefined } }
+    const user: Message = { id: crypto.randomUUID(), role: 'user', content: question, sources: [], images, ...(sendOptions.auto ? { auto: true } : {}), ...(excerpts.length ? { excerpts } : {}), ask: { includeDocument, selectionOnly: sendOptions.selectionOnly, page: context.page, text: selection.text ? String(selection.text).slice(0, 20000) : undefined } }
     const wireContent = sendOptions.selectionOnly
       ? `${question}${excerptText(excerpts)}${selection.text ? '\n\n[用户选中的内容]\n' + selection.text : ''}${selection.image ? '\n\n[附图是用户在文档里框选的区域，问题针对它]' : ''}${attached.length ? `\n\n[用户附上了 ${attached.length} 张图片]` : ''}`
       : `${question}${excerptText(excerpts)}\n\n[用户当前阅读的文档]\n${descriptor.title}${descriptor.kind === 'pdf' ? ` · 物理 PDF 第 ${context.page} 页` : ' · Markdown 文档'}${selection.text ? '\n\n[用户选中的内容]\n' + selection.text : ''}${attached.length ? `\n\n[用户附上了 ${attached.length} 张图片]` : ''}${state.sideOf ? '\n\n[这是挂在主对话旁边的附属对话（侧边对话）]' : ''}`
+    const draft = state.summary ? summaryDraft(state.messages).text : ''
+    const draftNow = draft ? `\n\n[草稿面板里现在的文档全文；要修改就在它的基础上改]\n${draft.slice(0, 60000)}` : ''
     // 重新回答中间的某一问：只把它之前的对话带给模型。
     const before = sendOptions.replace ? state.messages.findIndex(message => message.id === sendOptions.replace) : -1
-    const history = boundedHistory([...(state.inherited || []).map(item => ({ role: item.role, content: `[主对话里的内容（开启附属对话时）]\n${item.content}` })), ...(before < 0 ? state.messages : state.messages.slice(0, before)).filter(message => !message.failed && !message.compressed).map(message => message.summary || message.note ? { role: 'user', content: wireText(message) } : ({ role: message.role, content: wireText(message) + (message.sources.length ? '\n[此前查到的相关位置]\n' + JSON.stringify(message.sources.slice(0, 8).map(item => ({ sourceId: item.sourceId, page: item.page, line: item.line, text: item.text.slice(0, 400) }))) : '') })), { ...user, content: wireContent }])
+    const history = boundedHistory([...(state.inherited || []).map(item => ({ role: item.role, content: `[主对话里的内容（开启附属对话时）]\n${item.content}` })), ...(before < 0 ? state.messages : state.messages.slice(0, before)).filter(message => !message.failed && !message.compressed).map(message => message.summary || message.note ? { role: 'user', content: wireText(message) } : ({ role: message.role, content: (state.summary && message.role === 'assistant' ? withoutDrafts(wireText(message)) : wireText(message)) + (message.sources.length ? '\n[此前查到的相关位置]\n' + JSON.stringify(message.sources.slice(0, 8).map(item => ({ sourceId: item.sourceId, page: item.page, line: item.line, text: item.text.slice(0, 400) }))) : '') })), { ...user, content: wireContent + draftNow }])
     // The scheduler reports the first queue position before the answer bubble exists.
     let waiting = ''
     ticket = scheduler.acquire({ owner: `${descriptor.id}:${state.id}`, provider: snapshot.provider, signal, onState: (value: any) => {
@@ -517,7 +552,9 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
     await memoryReady()
     const owner = state.sideOf ? chats(state.documentId).list.find(item => item.id === state.sideOf) || state : state
     const remembered = memoryInstructions({ id: owner.id, documentId: descriptor.id, mode: memoryMode(owner) })
-    const options = { ...snapshot, apiKey, signal, messages: history, extraInstructions: UI_INSTRUCTIONS.assistant + (remembered ? '\n\n' + remembered : ''),
+    // 总结对话用自己的一套提示词，不带学习记录；Intelligent UI 的写法只在读者打开时给。
+    const extraInstructions = state.summary ? summaryInstructions(descriptor.title, state.summary.options, state.summary.options.ui ? UI_INSTRUCTIONS.document : '') : UI_INSTRUCTIONS.assistant + (remembered ? '\n\n' + remembered : '')
+    const options = { ...snapshot, apiKey, signal, messages: history, extraInstructions,
       onDelta: (text: string) => { if (valid() && answer) { answer.firstTokenAt ||= Date.now(); answer.content += text; answer.activity = '正在回答'; output() } },
       onReasoning: (text: string) => { if (valid() && answer) { answer.reasoning = (answer.reasoning || '') + text; answer.activity = '思考中'; output() } },
       onProgress: (text: string) => activity(text.replace(/[…。]+$/, '')),
@@ -538,7 +575,8 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
         answer.activity = `查阅文档 · ${answer.sources.length} 段`
       }, signal)
       signal.throwIfAborted()
-      if (resource.context.pdf && !selection.text && !selection.image) {
+      // 普通提问先把当前页的图带上；总结要读的是整个范围，由助手自己用工具去翻，不带这一页。
+      if (resource.context.pdf && !selection.text && !selection.image && !state.summary) {
         if (getModel(snapshot.provider, snapshot.model)?.vision !== false) {
           activity('查看当前页')
           const page = await documentSession.document.tool('pdf_view', { page: documentSession.seed.info.currentPage, block_id: null })
@@ -551,7 +589,13 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
       activity('思考中')
       await streamDocumentChat(options, documentSession.document, documentSession.seed)
     } else await streamChat(options)
-    if (valid()) { state.status = ''; noticeFinished(state, descriptor.title); scheduleMemory(state) }
+    if (valid()) {
+      state.status = ''
+      // 分多次写的总结：这一段写完、后面还有，就自己接着发「继续」，直到写完、出错或读者按停止。
+      const summary = state.summary
+      if (summary?.options.multi && answer && summaryContinues(answer.content) && (summary.rounds || 0) < MAX_SUMMARY_ROUNDS) { summary.rounds = (summary.rounds || 0) + 1; again = true }
+      else { noticeFinished(state, descriptor.title); scheduleMemory(state) }
+    }
   } catch (error: any) {
     if (answer) { answer.failed = true; answer.stopped = signal.aborted }
     if (state.request === request && entry.list.includes(state)) {
@@ -569,6 +613,7 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
     if (state.request === request) state.request = null
     schedulePersist(descriptor.id)
   }
+  if (again && !state.request && entry.list.includes(state)) void sendChat(descriptor, source, onSettings, undefined, '继续', { conversationId: state.id, includeSelection: false, auto: true })
 }
 
 /**

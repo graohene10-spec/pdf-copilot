@@ -452,6 +452,14 @@ export const UI_INSTRUCTIONS = {
     '【可交互】读者能动手的界面：量随参数变化用 sim，数据对比用 chart，条目多、要筛选用 table，几个关键数字用 cards，需要读者填写后再继续用 form：',
     ...Object.values(INTERACTIVE),
   ].join('\n'),
+  // 写进文档里的（总结文档）：没有「交给助手」的表单，其余和回答里一样。
+  document: [
+    WRITING,
+    '【图解】静态示意图，讲概念的结构。先想清楚结构是什么（包含？交集？映射？推导？分类？运算？区间？），再挑最贴切的一种：',
+    ...DIAGRAM_CATALOG,
+    '【可交互】读者能动手的界面：量随参数变化用 sim，数据对比用 chart，条目多、要筛选用 table，几个关键数字用 cards。不要用 form。',
+    INTERACTIVE.sim, INTERACTIVE.chart, INTERACTIVE.table, INTERACTIVE.cards, INTERACTIVE.badges,
+  ].join('\n'),
   explain: [
     '这是一张就地弹出的小卡片：用一个 ui 代码块把选中的概念画出来。',
     WRITING,

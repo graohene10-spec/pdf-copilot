@@ -117,7 +117,7 @@ const files = computed(() => {
         <template v-if="scene.clock === 'ringing'"><AppIcon class="tw-bell" name="bell" :size="14" />到点了</template>
         <template v-else><svg v-if="scene.clock === 'running'" class="tw-ring-timer" width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" /><circle cx="8" cy="8" r="6" pathLength="1" stroke-dasharray=".82 1" /></svg><AppIcon v-else name="sun" :size="14" /><small>下午</small>4:44</template>
       </span>
-      <span class="tw-icons"><AppIcon class="tw-split" name="split" :size="16" /><AppIcon name="search" :size="16" /><AppIcon class="tw-tr" name="translate" :size="16" /><AppIcon class="tw-aibtn" name="sparkle" :size="16" /></span>
+      <span class="tw-icons"><AppIcon name="search" :size="16" /><AppIcon class="tw-tr" name="translate" :size="16" /><AppIcon class="tw-aibtn" name="sparkle" :size="16" /></span>
     </header>
     <Transition name="tw-pop"><div v-if="scene.clock === 'open'" class="tw-clock-panel">
       <div class="tw-wheel"><span><i>{{ pad(scene.minutes - 5) }}</i><b>{{ pad(scene.minutes) }}</b><i>{{ pad(scene.minutes + 5) }}</i></span><em>:</em><span><i>55</i><b>00</b><i>05</i></span></div>

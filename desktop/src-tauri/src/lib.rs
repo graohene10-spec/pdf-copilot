@@ -47,6 +47,29 @@ async fn import_documents(window: tauri::Window, state: State<'_,AppState>, path
     library_operation(state.library.clone(),move |library| library.import(paths)).await
 }
 
+/// 把助手写的总结存成 Markdown，放在原文档旁边，再加入文档库。只能写在文档库里某份文档所在的文件夹里，文件名由这里生成。
+/// `replace` 是这段对话上次存出来的那份文档的 id：还在原处就覆盖它。
+#[tauri::command]
+async fn save_summary(window: tauri::Window, state: State<'_,AppState>, id: String, text: String, replace: Option<String>) -> Result<Document> {
+    main_window(&window)?;
+    if text.trim().is_empty() { return Err("总结还是空的".into()); }
+    if text.len() > 4 * 1024 * 1024 { return Err("总结太长，无法保存".into()); }
+    library_operation(state.library.clone(),move |library| {
+        let source = library.get(&id)?;
+        let previous = replace.and_then(|id| library.get(&id).ok()).map(|doc| PathBuf::from(doc.path));
+        let path = files::summary_path(Path::new(&source.path),previous.as_deref())?;
+        std::fs::write(&path,text.as_bytes()).map_err(|e| format!("无法写入总结：{e}"))?;
+        library.import(vec![path.to_string_lossy().into_owned()])?.into_iter().next().ok_or_else(|| "总结没有加入文档库".to_string())
+    }).await
+}
+
+#[tauri::command]
+async fn reveal_document(window: tauri::Window, state: State<'_,AppState>, id: String) -> Result<()> {
+    main_window(&window)?;
+    let doc = library_operation(state.library.clone(),move |library| library.get(&id)).await?;
+    files::reveal(Path::new(&doc.path))
+}
+
 #[tauri::command]
 async fn read_document(window: tauri::Window, state: State<'_,AppState>, id: String) -> Result<Response> {
     main_window(&window)?;
@@ -199,7 +222,7 @@ pub fn run() {
                 window.state::<AppState>().http.cancel_all();
             }
         })
-        .invoke_handler(tauri::generate_handler![list_documents,import_documents,read_document,update_document,remove_document,read_asset,index_document,get_setting,set_setting,get_credential,set_credential,native_connect,native_send,native_disconnect,http_start,http_cancel,render_recovered,render_status,render_set_graphite,
+        .invoke_handler(tauri::generate_handler![list_documents,import_documents,save_summary,reveal_document,read_document,update_document,remove_document,read_asset,index_document,get_setting,set_setting,get_credential,set_credential,native_connect,native_send,native_disconnect,http_start,http_cancel,render_recovered,render_status,render_set_graphite,
             updater::update_status,updater::update_check,updater::update_download,updater::update_cancel,updater::update_install,updater::update_open_page])
         .run(tauri::generate_context!())
         .expect("开智启动失败");

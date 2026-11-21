@@ -28,9 +28,80 @@ pub fn resolve_asset(document: &Path, relative_path: &str) -> Result<PathBuf> {
     Ok(resolved)
 }
 
+/// 总结存在哪：原文档所在的文件夹，文件名「原名 · 总结.md」，重名就加序号。
+/// `previous` 是这段对话上一次存出来的那份；它还在同一个文件夹里、也是 Markdown 时就覆盖它，不再多出一份。
+pub fn summary_path(source: &Path, previous: Option<&Path>) -> Result<PathBuf> {
+    let folder = source.parent().ok_or("文档目录无效")?.canonicalize().map_err(|_| "原文档所在的文件夹已不存在")?;
+    if let Some(previous) = previous {
+        let same_folder = previous.parent().and_then(|parent| parent.canonicalize().ok()).is_some_and(|parent| parent == folder);
+        let markdown = previous.extension().and_then(|s| s.to_str()).is_some_and(|s| s.eq_ignore_ascii_case("md"));
+        if same_folder && markdown && previous != source { return Ok(previous.to_path_buf()); }
+    }
+    let stem = source.file_stem().and_then(|s| s.to_str()).ok_or("文件名不是有效的 Unicode")?;
+    // Windows 的文件名最长 255 个字符，给后缀留出余地。
+    let stem: String = stem.chars().take(180).collect();
+    for index in 1..200 {
+        let name = if index == 1 { format!("{stem} · 总结.md") } else { format!("{stem} · 总结 {index}.md") };
+        let path = folder.join(name);
+        if !path.exists() { return Ok(path); }
+    }
+    Err("这个文件夹里同名的总结太多了".into())
+}
+
+/// 在系统的文件管理器里打开文档所在的文件夹，并选中这份文档；文件已经不在了就只打开文件夹。
+pub fn reveal(path: &Path) -> Result<()> {
+    let folder = path.parent().filter(|folder| folder.is_dir()).ok_or("文档所在的文件夹已不存在")?;
+    open_folder(path, folder).map_err(|e| format!("无法打开文件夹：{e}"))
+}
+
+#[cfg(windows)]
+fn open_folder(path: &Path, folder: &Path) -> std::io::Result<()> {
+    use std::os::windows::process::CommandExt;
+    // 资源管理器不认 \\?\ 开头的长路径写法。
+    fn plain(path: &Path) -> String {
+        let text = path.to_string_lossy().into_owned();
+        if let Some(rest) = text.strip_prefix(r"\\?\UNC\") { return format!(r"\\{rest}"); }
+        text.strip_prefix(r"\\?\").map(str::to_owned).unwrap_or(text)
+    }
+    let mut command = std::process::Command::new("explorer.exe");
+    // /select 和路径必须是同一个参数，路径里有空格时只给路径加引号（Windows 的文件名里不会有引号）。
+    if path.is_file() { command.raw_arg(format!("/select,\"{}\"", plain(path))); } else { command.arg(plain(folder)); }
+    command.spawn().map(|_| ())
+}
+
+#[cfg(target_os = "macos")]
+fn open_folder(path: &Path, folder: &Path) -> std::io::Result<()> {
+    let mut command = std::process::Command::new("open");
+    if path.is_file() { command.arg("-R").arg(path); } else { command.arg(folder); }
+    command.spawn().map(|_| ())
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn open_folder(_path: &Path, folder: &Path) -> std::io::Result<()> {
+    std::process::Command::new("xdg-open").arg(folder).spawn().map(|_| ())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn summary_goes_next_to_the_source() {
+        let root = std::env::temp_dir().join(format!("phydog-summary-{}",uuid::Uuid::new_v4()));
+        fs::create_dir_all(root.join("other")).unwrap();
+        let source = root.join("群论 讲义.pdf"); fs::write(&source,"x").unwrap();
+        let first = summary_path(&source,None).unwrap();
+        assert_eq!(first.file_name().unwrap().to_str().unwrap(),"群论 讲义 · 总结.md");
+        assert_eq!(first.parent().unwrap(),root.canonicalize().unwrap());
+        fs::write(&first,"a").unwrap();
+        // 没有上一份：另起一个名字；有上一份而且就在旁边：覆盖它。
+        assert_eq!(summary_path(&source,None).unwrap().file_name().unwrap().to_str().unwrap(),"群论 讲义 · 总结 2.md");
+        assert_eq!(summary_path(&source,Some(&first)).unwrap(),first);
+        // 上一份在别的文件夹、不是 Markdown、或者就是原文档自己：都不覆盖。
+        let elsewhere = root.join("other").join("x.md"); fs::write(&elsewhere,"b").unwrap();
+        assert_ne!(summary_path(&source,Some(&elsewhere)).unwrap(),elsewhere);
+        assert_ne!(summary_path(&source,Some(&source)).unwrap(),source);
+        fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn asset_scope_and_limits() {
         let root = std::env::temp_dir().join(format!("phydog-assets-{}",uuid::Uuid::new_v4()));

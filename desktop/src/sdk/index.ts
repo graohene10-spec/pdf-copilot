@@ -27,6 +27,8 @@ const nativeLibrary: Library = {
   index: (id, text) => call('index_document', { id, text }),
   getSetting: key => call('get_setting', { key }),
   setSetting: (key, value) => call('set_setting', { key, value }),
+  saveSummary: (id, text, replace) => call('save_summary', { id, text, replace: replace || null }),
+  reveal: id => call('reveal_document', { id }),
 };
 export const library = isDesktop ? nativeLibrary : browserLibrary;
 export async function importDroppedDocuments(files: string[] | File[]): Promise<Doc[]> {

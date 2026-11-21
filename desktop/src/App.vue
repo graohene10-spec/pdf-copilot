@@ -35,6 +35,7 @@ import { covers, loadCovers, setCover, imageCover, pageCover, type Cover } from 
 const PdfReader = defineAsyncComponent(() => import('./components/PdfReader.vue'))
 const MarkdownReader = defineAsyncComponent(() => import('./components/MarkdownReader.vue'))
 const AiPane = defineAsyncComponent(() => import('./components/AiPane.vue'))
+const SummaryDraft = defineAsyncComponent(() => import('./components/SummaryDraft.vue'))
 const SettingsDialog = defineAsyncComponent(() => import('./components/SettingsDialog.vue'))
 const ConversationManager = defineAsyncComponent(() => import('./components/ConversationManager.vue'))
 const managerOpen = ref(false)
@@ -1106,6 +1107,48 @@ let focusAssistantPending: string | undefined
 function bindAi(key: string, value: any) {
   if (value) aiInstances.set(key, value); else aiInstances.delete(key)
   if (value && focusAssistantPending === key) { value.focusPrompt?.(); focusAssistantPending = undefined }
+  if (value && summarizePending) { summarizePending = false; void nextTick(() => value.summarize?.()) }
+}
+// ---- 总结 ----
+// 草稿面板：盖在阅读区上，显示某一段总结对话写出来的文档。只是一个开关，内容在对话里。
+const draft = ref<{ documentId: string; conversationId: string } | null>(null)
+const draftSaving = ref(false)
+const draftSummary = computed(() => draft.value ? chatState(draft.value.documentId, draft.value.conversationId).summary : undefined)
+const draftSaved = computed(() => { const id = draftSummary.value?.savedId; return id ? documents.value.find(item => item.id === id)?.name || '' : '' })
+function toggleDraft(documentId: string, value: { conversationId: string; open?: boolean }) {
+  const same = draft.value?.documentId === documentId && draft.value.conversationId === value.conversationId
+  if (value.open === false || (value.open === undefined && same)) { if (same || value.open === undefined) draft.value = null; return }
+  draft.value = { documentId, conversationId: value.conversationId }
+}
+/** 存入文档库：写成 Markdown 放在原文档的文件夹里。同一段对话再存是覆盖上次那份。 */
+async function saveDraft(text: string) {
+  const target = draft.value, summary = draftSummary.value
+  if (!target || !summary || draftSaving.value) return
+  draftSaving.value = true
+  try {
+    const doc = await library.saveSummary(target.documentId, text, summary.savedId)
+    summary.savedId = doc.id
+    const at = documents.value.findIndex(item => item.id === doc.id)
+    if (at >= 0) documents.value[at] = doc; else documents.value = [doc, ...documents.value]
+    notify(`已存为「${doc.name}」，在原文档的文件夹里。`)
+  } catch (error) { notify(reason(error)) }
+  finally { draftSaving.value = false }
+}
+function openSavedDraft() {
+  const doc = documents.value.find(item => item.id === draftSummary.value?.savedId)
+  if (!doc) { notify('存好的那份已经不在文档库里了。'); return }
+  draft.value = null
+  void openDocument(doc)
+}
+/** 三个入口（文档库右键、阅读区右键、/summary）最后都到这里：打开这份文档的阅读助手，开一段总结对话。 */
+let summarizePending = false
+async function summarizeDocument(doc?: Doc) {
+  if (doc && active.value?.id !== doc.id) await openDocument(doc)
+  if (!active.value) return
+  openAssistant(true)
+  const instance = focusedAssistant()
+  if (instance?.summarize) void nextTick(() => instance.summarize())
+  else summarizePending = true
 }
 /** The assistant window showing the focused document (a following one first). */
 function focusedAssistant() {
@@ -1332,6 +1375,7 @@ function appContextMenu(event: MouseEvent) {
     if (explainAt) items.push({ label: '解释', icon: 'book', hint: '鼠标中键', action: () => runExplain(explainAt, event.clientX, event.clientY) })
     if (explainAt) items.push({ label: '用图解释', icon: 'visual', hint: 'Shift + 中键', action: () => runExplain(explainAt, event.clientX, event.clientY, undefined, true) })
     if (active.value && target.closest('.reader-pane')) items.push({ label: '问阅读助手', icon: 'sparkle', action: () => openAssistant(true) })
+    if (active.value && target.closest('.reader-pane')) items.push({ label: '总结这份文档…', icon: 'doc', action: () => { void summarizeDocument() } })
     if (active.value && target.closest('.reader-pane')) { const pane = target.closest<HTMLElement>('[data-pane-id]')?.dataset.paneId; items.push({ label: '在这里加书签', icon: 'star', hint: shortcut('bookmark'), action: () => addBookmarkHere(pane || active.value?.id) }) }
     if (active.value && target.closest('.reader-pane')) items.push(...captureMenuItems(target))
   } else if (target.closest('[data-group-id]')) {
@@ -1351,7 +1395,9 @@ function appContextMenu(event: MouseEvent) {
     const cover = covers.get(sourceId(doc.id))?.kind ?? 'icon'
     items.push({ label: '打开', icon: 'book', action: () => { void openDocument(doc) } })
     items.push({ label: doc.starred ? '取消收藏' : '收藏', icon: 'star', action: () => { void toggleStar(doc) } })
+    items.push({ label: '总结…', icon: 'doc', action: () => { void summarizeDocument(doc) } })
     items.push({ label: '详情与标签…', icon: 'tag', action: () => { detailsId.value = doc.id } })
+    items.push({ label: '打开所在文件夹', icon: 'folder', action: () => { void library.reveal(doc.id).catch(error => notify(reason(error))) } })
     items.push(...groupMenuItems(picked.value.has(doc.id) && picked.value.size > 1 ? pickedDocs.value.map(item => item.id) : [doc.id]))
     // 显示封面：首页预览、自己的图片或默认图标；当前用的那一种标「当前」。
     items.push({ label: '封面：首页预览', icon: 'doc', hint: cover === 'page' ? '当前' : undefined, separator: true, action: () => { void changeCover(doc, 'page') } })
@@ -1407,6 +1453,7 @@ function tabMenu(payload: { id: string; x: number; y: number }) {
     items.push({ label: '在右侧再开一份', icon: 'split-add', action: () => openCopy(id), disabled: full, hint: full ? `最多 ${MAX_PANES} 份` : undefined })
   }
   items.push({ label: '详情与标签…', icon: 'tag', separator: true, action: () => { detailsId.value = id } })
+  items.push({ label: '打开所在文件夹', icon: 'folder', action: () => { void library.reveal(sourceId(id)).catch(error => notify(reason(error))) } })
   items.push({ label: '关闭标签', icon: 'close', action: () => closeTab(id) })
   if (tabs.value.length > 1) items.push({ label: '关闭其他标签', action: () => closeOtherTabs(id) })
   contextMenu.value = { x: payload.x, y: payload.y, items }
@@ -2185,8 +2232,9 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
             <section v-for="id in (multiPanel ? paneIds.filter(id => !readerCache.some(entry => entry.id === id)) : [])" :key="`pending:${id}`" class="reader-pane pending" :style="{ order: panelOrder(`doc:${id}`) }"><div class="reader-overlay"><span class="spinner"></span><p>正在打开 {{ tabDoc(id)?.name }}…</p></div></section>
             <section v-for="panel in stageAi" :key="panel.key" class="ai-panel" :class="{ lifted: draggingPanel === panel.key, 'with-side': (panel.side || 0) > 0, 'side-animating': sideAnimating.has(panel.key) }" :style="{ order: panelOrder(panel.key), width: `${panel.width + (panel.side || 0)}px`, '--panel-width': `${panel.width + (panel.side || 0)}px` }" :data-panel-key="panel.key">
               <div class="panel-resizer" :data-edge="panelOrder(panel.key) === 0 && multiPanel ? 'right' : 'left'" role="separator" aria-orientation="vertical" aria-label="拖动调整阅读助手宽度" data-tip="拖动调整宽度，双击恢复" @pointerdown.stop="startWidthDrag($event, panel.key)" @pointermove="moveWidthDrag" @pointerup="endWidthDrag" @pointercancel="endWidthDrag" @dblclick="resetPanelWidth(panel)" />
-              <AiPane v-if="aiDocument(panel)" :ref="value => bindAi(panel.key, value)" data-glass-interactive="panel" :document="aiDocument(panel)!" :context="aiContext(panel)" :conversation-id="panel.conversation" :draggable="multiPanel" :send-shortcut="preferences.shortcuts.aiSend ? shortcut('aiSend') : ''" :consume-capture="consumeSelection" @settings="openSettings('ai')" @manage="managerOpen = true" @close="closeAiPanel(panel.key)" @jump="jump" @clear-selection="clearSelection" @conversation="id => setPanelConversation(panel.key, id)" @grab="startPanelDrag($event, panel.key)" :alternatives="aiAlternatives(panel)" :library="libraryIndex" @switch-document="id => switchAiDocument(panel, id)" @open-conversation="openConversationAt" @side="width => setPanelSide(panel.key, width)" />
+              <AiPane v-if="aiDocument(panel)" :ref="value => bindAi(panel.key, value)" data-glass-interactive="panel" :document="aiDocument(panel)!" :context="aiContext(panel)" :conversation-id="panel.conversation" :draggable="multiPanel" :draft-open="!!draft && draft.documentId === aiDocument(panel)!.id" @draft="value => toggleDraft(aiDocument(panel)!.id, value)" :send-shortcut="preferences.shortcuts.aiSend ? shortcut('aiSend') : ''" :consume-capture="consumeSelection" @settings="openSettings('ai')" @manage="managerOpen = true" @close="closeAiPanel(panel.key)" @jump="jump" @clear-selection="clearSelection" @conversation="id => setPanelConversation(panel.key, id)" @grab="startPanelDrag($event, panel.key)" :alternatives="aiAlternatives(panel)" :library="libraryIndex" @switch-document="id => switchAiDocument(panel, id)" @open-conversation="openConversationAt" @side="width => setPanelSide(panel.key, width)" />
             </section>
+            <SummaryDraft v-if="draft && paneIds.some(id => sourceId(id) === draft!.documentId)" :key="draft.conversationId" :document-id="draft.documentId" :conversation-id="draft.conversationId" :title="documents.find(item => item.id === draft!.documentId)?.name || ''" :saving="draftSaving" :saved="draftSaved" @close="draft = null" @save="saveDraft" @open="openSavedDraft" @copied="notify('已复制')" />
           </TransitionGroup>
           <div v-if="selection && !captureQuick && !aiOpen && selection.image" class="selection-context"><AppIcon name="crop" :size="16" /><span>{{ selection.image ? `已框选第 ${selection.page} 页的图表或公式` : `已选择 ${selection.text.length} 个字符` }}</span><button @click="openAssistant(true)"><AppIcon name="sparkle" :size="15" />向 AI 提问</button><button class="icon-button" @click="clearSelection" data-tip="清除选区" aria-label="清除选区"><AppIcon name="close" :size="14" /></button></div>
         </section>

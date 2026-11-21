@@ -705,9 +705,11 @@ const tabs: Play = async (stage, scene, say) => {
   scene.doc = 'algebra'
   await stage.wait(500)
 
-  say({ text: '并排阅读两份文档', keys: ['Ctrl', '\\'] })
+  // 顶栏上已经没有并排按钮：入口是标签的右键菜单和快捷键。
+  say({ text: '右键标签，或按快捷键：并排阅读两份文档', keys: ['Ctrl', '\\'] })
   stage.look(null, 1)
-  await click(stage, '.tw-split')
+  await stage.move('.tw-t1', { at: [.5, .5] })
+  await stage.wait(900)
   scene.ai = false; scene.split = true
   await stage.wait(700)
   await stage.move('.tw-page.paper', { at: [.5, .4] })
