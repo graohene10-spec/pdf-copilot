@@ -14,6 +14,15 @@ const emit = defineEmits<{ start: []; cancel: [] }>()
 // 表格直接改这段对话自己的设置（options 是对话状态里的那个对象）。
 const options = props.options
 const open = ref<string>('scope')
+// 指着哪个选项：这一行下面立刻显示它是什么意思，方便一个个比着看。
+const hover = ref('')
+/** 展开的那一行下面的一句说明：指着的选项优先，其次是已经选中的那一个（只选了一个时），都没有就是这一项的提示。 */
+function noteOf(field: Field) {
+  if (hover.value && field.notes[hover.value]) return `${hover.value}：${field.notes[hover.value]}`
+  const list = own(field) || (field.key === 'scope' && chosen.size) ? [] : picked(field)
+  if (list.length === 1 && field.notes[list[0]!]) return `${list[0]}：${field.notes[list[0]!]}`
+  return field.hint
+}
 const SLIDER = { selector: "[aria-checked='true']", radius: '8px' }
 const choices = (field: Field) => field.key === 'scope' && props.hasSelection ? [...field.options, '选中的内容'] : field.options
 const picked = (field: Field) => options[field.key] ? options[field.key].split('、').filter(Boolean) : []
@@ -51,7 +60,8 @@ const on = (field: Field, option: string) => !own(field) && !(field.key === 'sco
           <AppIcon name="arrow" :size="11" class="sum-caret" />
         </button>
         <div v-if="open === field.key" class="sum-options">
-          <button v-for="option in choices(field)" :key="option" type="button" class="sum-chip" :aria-pressed="on(field, option)" @click="pick(field, option)">{{ option }}</button>
+          <button v-for="option in choices(field)" :key="option" type="button" class="sum-chip" :aria-pressed="on(field, option)" @click="pick(field, option)" @pointerenter="hover = option" @pointerleave="hover = ''" @focus="hover = option" @blur="hover = ''">{{ option }}</button>
+          <p class="sum-explain" aria-live="polite">{{ noteOf(field) }}</p>
           <!-- 范围：这份文档的章节，勾哪几章总结哪几章。 -->
           <div v-if="field.key === 'scope' && chapters.length" class="sum-chapters" role="group" aria-label="按章节选">
             <button v-for="(chapter, index) in chapters" :key="index" type="button" class="sum-chapter" :class="{ sub: chapter.level > 0 }" role="checkbox" :aria-checked="chosen.has(index)" @click="toggleChapter(index)"><i aria-hidden="true"></i><span>{{ chapter.title }}</span><small v-if="chapter.page">{{ chapter.page }}</small></button>
@@ -101,6 +111,8 @@ const on = (field: Field, option: string) => !own(field) && !(field.key === 'sco
 .sum-options{display:flex;flex-wrap:wrap;gap:6px;padding:0 0 13px;animation:sum-open var(--dur-2) var(--ease-out) both}
 @keyframes sum-open{from{opacity:0;translate:0 -4px}}
 .sum-chip{height:28px;padding:0 12px;border:1px solid color-mix(in srgb,var(--ink) 18%,transparent);border-radius:8px;background:none;box-shadow:none;color:var(--secondary);font:inherit;font-size:13px;white-space:nowrap;transition:background var(--dur-1) var(--ease-soft),border-color var(--dur-1) var(--ease-soft),color var(--dur-1) var(--ease-soft)}
+/* 选项下面的一句说明：指着哪个说哪个。占固定的两行高，换来换去下面的东西不跳。 */
+.sum-explain{flex:1 1 100%;min-height:3.1em;margin:1px 0 0;color:var(--secondary);font-size:12.5px;line-height:1.55}
 .sum-chip:hover{border-color:color-mix(in srgb,var(--ink) 40%,transparent);color:var(--ink)}
 .sum-chip[aria-pressed='true']{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--ink);font-weight:600}
 /* 章节：一个不高的小列表，自己滚；每行一个小方框、章名、页码。 */
