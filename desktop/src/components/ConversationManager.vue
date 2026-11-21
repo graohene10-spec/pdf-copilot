@@ -739,6 +739,6 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey, true); clea
 
 /* 草稿风格：红用红铅笔的红，线用铅笔的黑。 */
 :root[data-style='sketch'] .cm-page{--cm-red:var(--red-pencil,#c0392b);--cm-line:color-mix(in srgb,var(--pencil,#2b2a27) 70%,transparent)}
-:root[data-style='sketch'] :is(.cm-root-open,.cm-talk-open,.cm-act,.cm-tool,.cm-button,.cm-organize,.cm-menu button,.cm-targets button,.cm-flash button){border-radius:0}
+:root[data-style='sketch'] .cm-root-open,:root[data-style='sketch'] .cm-talk-open,:root[data-style='sketch'] .cm-act,:root[data-style='sketch'] .cm-tool,:root[data-style='sketch'] .cm-button,:root[data-style='sketch'] .cm-organize,:root[data-style='sketch'] .cm-menu button,:root[data-style='sketch'] .cm-targets button,:root[data-style='sketch'] .cm-flash button{border-radius:0}
 :root[data-style='sketch'] .cm-root-open:hover,:root[data-style='sketch'] .cm-talk-open:hover{background:none}
 </style>

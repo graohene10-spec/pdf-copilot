@@ -207,11 +207,38 @@ async function copy() {
 .draft-ask button{display:grid;place-items:center;flex:none;width:30px;height:30px;padding:0;border:0;border-radius:50%;background:var(--accent);box-shadow:none;color:var(--accent-on,#fff)}
 .draft-ask button:disabled{opacity:.35}
 @media (prefers-reduced-motion:reduce){.draft-pane,.draft-ask,.draft-blank-state i,.draft-lines i{animation:none}.draft-paper :deep(.draft-changed){animation-duration:.01s}}
-/* 草稿风格：这一块不用手写体，也不描铅笔边——是要读、要改的正式文档。标题同样用正经的字体。 */
-:root[data-style='sketch'] .draft-pane{font-family:var(--font-formal);background:var(--paper,#fdfaf0);border-color:color-mix(in srgb,var(--pencil,#2b2a27) 28%,transparent);border-radius:10px}
-:root[data-style='sketch'] .draft-pane :is(button,input){font-family:var(--font-formal)}
-:root[data-style='sketch'] .draft-pane button:hover:not(:disabled){rotate:none}
-:root[data-style='sketch'] .draft-save,:root[data-style='sketch'] .draft-icon{border-radius:8px}
-:root[data-style='sketch'] .draft-ask button{border-radius:50%}
-:root[data-style='sketch'] .draft-paper :deep(:is(h1,h2,h3,h4,h5,h6)){font-family:var(--font-formal);letter-spacing:0}
+/* 草稿风格：一张铅笔框的稿纸。面板的框、表头、按钮、空白时的示意都是手画手写的；
+   文档正文是要读、要改的东西，用正经字体，只在标题上留铅笔和荧光笔的痕迹。字都摆正。 */
+:root[data-style='sketch'] .draft-pane{border:1.5px solid var(--pencil);border-radius:var(--r-bar);background:var(--paper);box-shadow:3px 4px 0 color-mix(in srgb,var(--pencil) 15%,transparent);font-family:var(--font-formal)}
+:root[data-style='sketch'] .draft-head{height:56px;border-bottom:1.5px solid var(--pencil)}
+:root[data-style='sketch'] .draft-title{align-items:center;gap:14px}
+:root[data-style='sketch'] .draft-title h3{font-family:var(--font-display);font-size:24px;font-weight:400;line-height:1.1;letter-spacing:.06em;text-decoration:underline wavy var(--red-pencil) 1.1px;text-underline-offset:5px}
+:root[data-style='sketch'] .draft-title p{font-family:var(--font-formal)}
+:root[data-style='sketch'] .draft-state,:root[data-style='sketch'] .draft-link,:root[data-style='sketch'] .draft-warn{font-family:var(--font);font-size:17px}
+:root[data-style='sketch'] .draft-state.live{color:var(--red-pencil)}
+:root[data-style='sketch'] .draft-save{height:34px;padding:0 18px;border:1.5px solid var(--pencil);border-radius:var(--r-control);background:var(--pencil);box-shadow:2px 3px 0 color-mix(in srgb,var(--pencil) 26%,transparent);color:var(--paper);font-family:var(--font);font-size:17.5px;font-weight:400;letter-spacing:.05em}
+:root[data-style='sketch'] .draft-icon{border-radius:var(--r-control)}
+:root[data-style='sketch'] .draft-warn{height:30px;border:1.4px solid var(--red-pencil);border-radius:var(--r-control);background:none;color:var(--red-pencil)}
+/* 还没有字：标题下面一道铅笔线，等着的时候是几行波浪线——还没写出来的字。 */
+:root[data-style='sketch'] .draft-blank-kicker{font-family:var(--font);font-size:19px;font-weight:400;letter-spacing:.2em;color:var(--red-pencil)}
+:root[data-style='sketch'] .draft-blank h1{font-family:var(--font-formal);border-bottom:1.5px solid var(--pencil)}
+:root[data-style='sketch'] .draft-blank-state{font-family:var(--font);font-size:18px}
+:root[data-style='sketch'] .draft-blank-state i{width:10px;height:10px;border:1.5px solid var(--red-pencil);background:none}
+:root[data-style='sketch'] .draft-lines{gap:17px}
+:root[data-style='sketch'] .draft-lines i{height:8px;border-radius:0;background:color-mix(in srgb,var(--pencil) 34%,transparent);-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 44 8'%3E%3Cpath d='M0 4c5.500-4.200 11 4.200 16.500 0s11 4.200 16.500 0 5.500-2.100 11 0' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E") 0 50% / 44px 8px repeat-x;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 44 8'%3E%3Cpath d='M0 4c5.500-4.200 11 4.200 16.500 0s11 4.200 16.500 0 5.500-2.100 11 0' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E") 0 50% / 44px 8px repeat-x}
+:root[data-style='sketch'] .draft-steps li::before{border:1.5px solid var(--pencil);border-radius:48% 52% 50% 50% / 52% 48% 52% 48%;font-family:var(--font);font-size:16px;font-weight:400}
+:root[data-style='sketch'] .draft-steps b{font-family:var(--font);font-size:19px;font-weight:400;letter-spacing:.04em}
+/* 文档：一级标题下面一道铅笔线，二级标题像用荧光笔划过。 */
+:root[data-style='sketch'] .draft-paper{border:0;background:none;box-shadow:none}
+:root[data-style='sketch'] .draft-paper :deep(:is(h1,h2,h3,h4,h5,h6)){font-family:var(--font-formal);font-weight:650;letter-spacing:0}
+:root[data-style='sketch'] .draft-paper :deep(h1){padding-bottom:12px;border-bottom:1.5px solid var(--pencil)}
+:root[data-style='sketch'] .draft-paper :deep(h2){width:fit-content;max-width:100%;padding:0 8px 0 3px;margin-left:-3px;border:0;background:linear-gradient(transparent 56%,color-mix(in srgb,var(--sticky) 80%,transparent) 56% 94%,transparent 94%)}
+:root[data-style='sketch'][data-theme='dark'] .draft-paper :deep(h2){background:linear-gradient(transparent 56%,color-mix(in srgb,var(--sticky) 26%,transparent) 56% 94%,transparent 94%)}
+:root[data-style='sketch'] .draft-paper :deep(blockquote){border-left:2.5px solid var(--pencil);border-radius:0;background:none}
+:root[data-style='sketch'] .draft-paper :deep(hr){height:0;border:0;border-top:1.4px dashed color-mix(in srgb,var(--pencil) 45%,transparent);background:none}
+:root[data-style='sketch'] .draft-paper :deep(:is(th,td)){border-color:color-mix(in srgb,var(--pencil) 55%,transparent)}
+/* 划选后的小输入框：一张铅笔框的小纸条。 */
+:root[data-style='sketch'] .draft-ask{border:1.5px solid var(--pencil);border-radius:var(--r-control);background:var(--paper);box-shadow:2px 3px 0 color-mix(in srgb,var(--pencil) 22%,transparent)}
+:root[data-style='sketch'] .draft-ask input{font-size:16.5px}
+:root[data-style='sketch'] .draft-ask button{border-radius:50%;background:var(--pencil);color:var(--paper)}
 </style>

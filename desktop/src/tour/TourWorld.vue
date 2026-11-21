@@ -3,9 +3,14 @@
 import { computed } from 'vue'
 import AppIcon from '../components/AppIcon.vue'
 import { BOOKMARK_ARTS } from '../library/bookmark-art'
-import { MODELS, TEXT, replyLength, type Look, type Scene, type SlotId } from './lessons'
+import { MODELS, TEXT, SUM, sumLength, replyLength, type Look, type Scene, type SlotId } from './lessons'
 
 const props = defineProps<{ scene: Scene }>()
+const markBooks = computed(() => props.scene.markSwap ? ['paper', 'algebra'] as const : ['algebra', 'paper'] as const)
+const MEMORY = [{ id: 'book', label: '本书' }, { id: 'all', label: '全局' }, { id: 'off', label: '不用' }] as const
+// 总结草稿：按已经写了多少字，一块一块露出来。
+const sumBlocks = computed(() => { let left = props.scene.sumWords; return SUM.blocks.map(([kind, text]) => { const part = text.slice(0, Math.max(0, left)); left -= text.length; return { kind, text: part } }).filter(block => block.text) })
+const sumWriting = computed(() => props.scene.sumWords < sumLength || (props.scene.sumSent && !props.scene.sumFixed))
 const own = (document.documentElement.dataset.style || 'glass') as Look
 const look = computed(() => props.scene.look || own)
 const source = computed(() => props.scene.doc === 'paper' ? TEXT.english : TEXT.sentence)
@@ -103,9 +108,20 @@ const files = computed(() => {
       <p class="tw-row"><AppIcon name="folder" :size="15" />线性代数<b v-if="scene.grouped" class="tw-count">1</b></p>
       <p class="tw-row"><AppIcon name="folder" :size="15" />论文</p>
       <h6>书签</h6>
-      <p class="tw-mark"><svg class="tw-art" viewBox="0 0 96 40" preserveAspectRatio="xMaxYMid slice" v-html="ARTS[4].svg" />第 42 页</p>
-      <Transition name="tw-fade"><p v-if="scene.mark" class="tw-mark tw-mark-new"><svg :key="scene.art" class="tw-art" viewBox="0 0 96 40" preserveAspectRatio="xMaxYMid slice" v-html="ARTS[scene.art].svg" />第 87 页</p></Transition>
-      <p class="tw-mark"><svg class="tw-art" viewBox="0 0 96 40" preserveAspectRatio="xMaxYMid slice" v-html="ARTS[3].svg" />第 113 页</p>
+      <div class="tw-mkbooks" :class="{ still: scene.markStill }">
+        <div v-for="book in markBooks" :key="book" class="tw-mkbook" :class="[`tw-mkbook-${book}`, { lifted: book === 'paper' && scene.markDrag !== null }]" :style="{ translate: `0 ${book === 'paper' ? scene.markDrag || 0 : scene.markShift}px` }">
+          <template v-if="book === 'algebra'">
+            <p class="tw-mkname">线性代数讲义</p>
+            <p class="tw-mark"><svg class="tw-art" viewBox="0 0 96 40" preserveAspectRatio="xMaxYMid slice" v-html="ARTS[4].svg" />第 42 页</p>
+            <Transition name="tw-fade"><p v-if="scene.mark" class="tw-mark tw-mark-new"><svg :key="scene.art" class="tw-art" viewBox="0 0 96 40" preserveAspectRatio="xMaxYMid slice" v-html="ARTS[scene.art].svg" />第 87 页</p></Transition>
+            <p class="tw-mark"><svg class="tw-art" viewBox="0 0 96 40" preserveAspectRatio="xMaxYMid slice" v-html="ARTS[3].svg" />第 113 页</p>
+          </template>
+          <template v-else>
+            <p class="tw-mkname">Attention Is All You Need</p>
+            <p class="tw-mark"><svg class="tw-art" viewBox="0 0 96 40" preserveAspectRatio="xMaxYMid slice" v-html="ARTS[1].svg" />第 3 页</p>
+          </template>
+        </div>
+      </div>
       <div class="tw-foot"><span class="tw-set"><AppIcon name="settings" :size="15" />设置</span><span class="tw-dark"><AppIcon :name="scene.dark ? 'sun' : 'moon'" :size="15" /></span></div>
     </aside>
 
@@ -203,6 +219,19 @@ const files = computed(() => {
       </div>
     </main>
 
+    <Transition name="tw-fade"><section v-if="scene.sum === 'draft' && scene.view === 'reader'" class="tw-draft">
+      <header><b>总结草稿</b><small>线性代数讲义</small><em :class="{ live: sumWriting }">{{ sumWriting ? '正在写' : `${scene.sumWords + (scene.sumFixed ? SUM.added.length : 0)} 字` }}</em><span v-if="scene.sumSaved" class="tw-draft-saved">已存 · 打开</span><span class="tw-draft-save" :class="{ dim: sumWriting }">{{ scene.sumSaved ? '再存一次' : '存入文档库' }}</span></header>
+      <article>
+        <h1>{{ SUM.title }}</h1>
+        <template v-for="(block, index) in sumBlocks" :key="index">
+          <h2 v-if="block.kind === 'h2'">{{ block.text }}</h2>
+          <p v-else-if="index === 3" class="target"><i class="tw-sum-a"></i><span class="tw-sum-sel">{{ block.text.slice(0, scene.sumSel) }}</span>{{ block.text.slice(scene.sumSel) }}<i class="tw-sum-b"></i><Transition name="tw-pop"><span v-if="scene.sumAsk" class="tw-draft-ask"><span :class="{ typed: scene.sumNote }">{{ scene.sumNote || '这一段怎么改？' }}<i v-if="scene.sumNote" class="tw-caret"></i></span><b class="tw-draft-send"><AppIcon name="arrow-up" :size="12" /></b></span></Transition></p>
+          <p v-else>{{ block.text }}</p>
+        </template>
+        <p v-if="scene.sumFixed" class="tw-sum-new">{{ SUM.added }}</p>
+      </article>
+    </section></Transition>
+
     <Transition name="tw-view">
       <section v-if="scene.view === 'library'" class="tw-lib">
         <header><h2>全部文档<small>{{ files.length }}</small></h2><span class="tw-lib-search" :class="{ typed: scene.query }"><AppIcon name="search" :size="14" /><em>{{ scene.query || '搜索标题、标签或已索引内容' }}</em><i v-if="scene.query" class="tw-caret"></i></span></header>
@@ -214,7 +243,7 @@ const files = computed(() => {
             <span v-if="scene.grouped && file.id === 'algebra'" class="tw-tag">线性代数</span>
           </div>
         </TransitionGroup>
-        <Transition name="tw-pop"><div v-if="scene.fileMenu" class="tw-menu tw-file-menu"><span class="tw-fm-group"><AppIcon name="folder" :size="13" />放进分组：线性代数</span><span><AppIcon name="star" :size="13" />收藏</span><span class="line"><AppIcon name="trash" :size="13" />移出文库</span></div></Transition>
+        <Transition name="tw-pop"><div v-if="scene.fileMenu" class="tw-menu tw-file-menu"><span class="tw-fm-group"><AppIcon name="folder" :size="13" />放进分组：线性代数</span><span><AppIcon name="star" :size="13" />收藏</span><span class="tw-fm-sum line" :class="{ hot: scene.fileHover === 'sum' }"><AppIcon name="doc" :size="13" />总结…</span><span class="tw-fm-details" :class="{ hot: scene.fileHover === 'details' }"><AppIcon name="tag" :size="13" />详情与标签…</span><span class="tw-fm-reveal" :class="{ hot: scene.fileHover === 'reveal' }"><AppIcon name="folder" :size="13" />打开所在文件夹</span><span class="line"><AppIcon name="trash" :size="13" />移出文库</span></div></Transition>
       </section>
       <section v-else-if="scene.view === 'collection'" class="tw-lib">
         <header><h2>Intelligent UI<small>3</small></h2></header>
@@ -231,7 +260,33 @@ const files = computed(() => {
         <div class="tw-main">
           <header><AppIcon name="sparkle" :size="15" /><b>阅读助手</b><span v-if="scene.branch" class="tw-chip"><AppIcon name="branch" :size="12" />分支</span><AppIcon class="tw-history" name="history" :size="14" /></header>
           <div class="tw-chat">
-            <template v-if="scene.asked">
+            <template v-if="scene.sum === 'setup'">
+              <div class="tw-sum">
+                <h4>总结<small>线性代数讲义</small></h4>
+                <p class="tw-sum-row"><b>范围</b><em :class="{ none: !scene.sumPicked }">{{ scene.sumPicked ? `${scene.sumPicked} 节` : '不指定' }}</em></p>
+                <div class="tw-sum-list">
+                  <p class="tw-sum-ch"><AppIcon class="tw-sum-caret" name="arrow" :size="9" /><i></i><span>第4章 行列式</span><small>52–86</small></p>
+                  <p class="tw-sum-ch"><AppIcon class="tw-sum-caret tw-sum-unfold" :class="{ on: scene.sumFold }" name="arrow" :size="9" /><i :class="{ mixed: scene.sumPicked > 0 }"></i><span>第5章 特征值</span><small>87–120</small></p>
+                  <template v-if="scene.sumFold"><p v-for="(part, index) in SUM.parts" :key="part[0]" class="tw-sum-ch sub" :class="`tw-sum-part-${index}`"><i :class="{ on: index < scene.sumPicked }"></i><span>{{ part[0] }}</span><small>{{ part[1] }}</small></p></template>
+                  <p class="tw-sum-ch"><AppIcon class="tw-sum-caret" name="arrow" :size="9" /><i></i><span>第6章 二次型</span><small>121–150</small></p>
+                </div>
+                <p class="tw-sum-row"><b>长度</b><em class="none">不指定</em></p>
+                <p class="tw-sum-row"><b>写法</b><em class="none">不指定</em></p>
+                <p class="tw-sum-row tw-sum-full"><b class="wide">不遗漏知识点</b><i class="tw-switch" :class="{ on: scene.sumFull }"></i></p>
+                <p class="tw-sum-row"><b class="wide" :class="{ dim: scene.sumFull }">分多次写</b><i class="tw-switch" :class="{ on: scene.sumFull, dim: scene.sumFull }"></i></p>
+                <span class="tw-sum-go">开始总结</span>
+              </div>
+            </template>
+            <template v-else-if="scene.sum === 'draft'">
+              <div class="tw-sumreq"><b>总结<small>线性代数讲义</small></b><p><em>范围</em>「第5章 特征值」里的 5.1、5.2</p><p><em>覆盖</em>不遗漏知识点</p></div>
+              <p class="tw-say">{{ SUM.say }}</p>
+              <span class="tw-draftchip"><AppIcon name="doc" :size="12" />写入草稿 · {{ scene.sumWords }} 字</span>
+              <template v-if="scene.sumSent">
+                <p class="tw-me">{{ SUM.fix }}</p>
+                <span v-if="scene.sumFixed" class="tw-draftchip"><AppIcon name="doc" :size="12" />修改草稿 · 1 处</span>
+              </template>
+            </template>
+            <template v-else-if="scene.asked">
               <p class="tw-me">{{ TEXT.question }}</p>
               <p class="tw-say">{{ reply[0] }}<span class="tw-q" :class="{ on: scene.quote }">{{ reply[1] }}</span>{{ reply[2] }}</p>
               <p v-if="scene.answer >= replyLength" class="tw-meta"><AppIcon name="copy" :size="13" /><AppIcon name="retry" :size="13" /><AppIcon class="tw-branch" name="branch" :size="13" /></p>
@@ -242,7 +297,7 @@ const files = computed(() => {
               <div class="tw-me tw-me-shots"><span><b v-for="(text, index) in SHOTS" :key="index" class="tw-shot flat"><i>{{ text }}</i></b></span>{{ TEXT.shotAsk }}</div>
               <p class="tw-say">{{ TEXT.shotReply.slice(0, scene.shotAnswer) }}</p>
             </template>
-            <div v-else class="tw-empty"><AppIcon name="sparkle" :size="22" /><span>总结这一页</span><span>这个公式怎么来的</span></div>
+            <div v-else class="tw-empty"><AppIcon name="sparkle" :size="22" /><span>总结这一页</span><span>这个公式怎么来的</span><p class="tw-mem"><em>记忆</em><b v-for="item in MEMORY" :key="item.id" :class="[`tw-mem-${item.id}`, { on: scene.mem === item.id }]">{{ item.label }}</b></p></div>
           </div>
           <Transition name="tw-pop"><div v-if="scene.btw" class="tw-btw"><p><b>/btw</b>{{ TEXT.btwAsk }}</p><p>{{ TEXT.btwReply.slice(0, scene.btwAnswer) }}</p></div></Transition>
           <Transition name="tw-pop"><div v-if="scene.commands" class="tw-menu tw-cmds"><span class="tw-cmd-btw"><b>/btw</b>顺便问一句</span><span><b>/compress</b>压缩对话</span><span><b>/usage</b>查看用量</span></div></Transition>
@@ -606,6 +661,75 @@ const files = computed(() => {
 .tw-cm-side-list h4::before{content:'';width:14px;height:4px;background:var(--ink)}
 .tw-cm-side-list p{display:flex;align-items:center;height:26px;padding-left:9px;font-size:11.5px}
 .tw-file-menu{left:420px;top:178px}
+.tw-menu span.hot{background:color-mix(in srgb,var(--ink) 9%,transparent);color:var(--ink)}
+/* 总结：助手栏里的表、发出去的表、盖在书页上的草稿。 */
+.tw-sum{display:flex;flex-direction:column;padding:12px 13px 12px;border:1px solid var(--glass-outline);border-radius:12px;background:var(--surface);font-size:12.5px;animation:tw-page .3s var(--ease-out)}
+.tw-sum h4{display:flex;align-items:baseline;gap:8px;padding-bottom:8px;border-bottom:1px solid var(--line-soft);font-size:14px;font-weight:650}
+.tw-sum h4 small,.tw-sumreq small{color:var(--muted);font-size:11.5px;font-weight:400}
+.tw-sum-row{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:31px;border-bottom:1px solid var(--line-soft)}
+.tw-sum-row b{font-weight:550}
+.tw-sum-row b.dim{opacity:.55}
+.tw-sum-row em{color:var(--secondary);font-style:normal}
+.tw-sum-row em.none{color:var(--muted)}
+.tw-sum-list{display:grid;gap:1px;margin:2px 0 8px;padding:4px;border:1px solid var(--line-soft);border-radius:8px}
+.tw-sum-ch{display:flex;align-items:center;gap:7px;height:25px;font-size:12px}
+.tw-sum-ch.sub{padding-left:30px;color:var(--secondary);animation:tw-page .25s var(--ease-out)}
+.tw-sum-ch span{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.tw-sum-ch small{color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
+.tw-sum-ch i{position:relative;flex:none;width:12px;height:12px;border:1.5px solid color-mix(in srgb,var(--ink) 42%,transparent);border-radius:3px;transition:background-color .2s,border-color .2s}
+.tw-sum-ch i.on{border-color:var(--accent);background:var(--accent)}
+.tw-sum-ch i.on::after{content:'';position:absolute;left:3px;top:.5px;width:3px;height:6px;border:solid #fff;border-width:0 1.6px 1.6px 0;rotate:45deg}
+.tw-sum-ch i.mixed{border-color:var(--accent)}
+.tw-sum-ch i.mixed::after{content:'';position:absolute;left:2px;right:2px;top:calc(50% - 1px);height:2px;border-radius:1px;background:var(--accent)}
+.tw-sum-caret{flex:none;width:14px;color:var(--muted);rotate:180deg;transition:rotate .25s var(--ease-spring)}
+.tw-sum-caret.on{rotate:-90deg}
+.tw-switch{position:relative;flex:none;width:30px;height:18px;border-radius:999px;background:color-mix(in srgb,var(--ink) 20%,transparent);transition:background-color .25s}
+.tw-switch::after{content:'';position:absolute;left:2px;top:2px;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgb(0 0 0 / .25);transition:translate .3s var(--ease-spring)}
+.tw-switch.on{background:var(--accent)}
+.tw-switch.on::after{translate:12px 0}
+.tw-switch.dim{opacity:.55}
+.tw-sum-go{align-self:flex-end;display:grid;place-items:center;height:30px;margin-top:11px;padding:0 16px;border-radius:9px;background:var(--accent);color:#fff;font-size:12.5px;font-weight:600}
+.tw-sumreq{align-self:flex-end;display:grid;gap:4px;width:92%;padding:10px 12px;border:1px solid var(--line-soft);border-radius:11px;font-size:12px;animation:tw-page .3s var(--ease-out)}
+.tw-sumreq b{display:flex;align-items:baseline;gap:8px;padding-bottom:6px;border-bottom:1px solid var(--line-soft);font-size:13px}
+.tw-sumreq p{display:flex;gap:10px}
+.tw-sumreq em{flex:none;color:var(--muted);font-style:normal}
+.tw-draftchip{align-self:flex-start;display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border:1px solid color-mix(in srgb,var(--accent) 34%,transparent);border-radius:8px;background:color-mix(in srgb,var(--accent) 9%,transparent);font-size:12px;font-variant-numeric:tabular-nums;animation:tw-page .3s var(--ease-out)}
+.tw-draftchip svg{color:var(--accent)}
+.tw-draft{position:absolute;left:224px;right:330px;top:72px;bottom:14px;z-index:4;display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--glass-outline);border-radius:var(--tw-radius);background:var(--surface);box-shadow:0 18px 44px -24px rgb(0 0 0 / .3)}
+.tw-draft header{display:flex;align-items:center;gap:10px;flex:none;height:46px;padding:0 12px 0 20px;border-bottom:1px solid var(--line-soft);font-size:12.5px}
+.tw-draft header b{font-size:14px;font-weight:650}
+.tw-draft header small{flex:1;color:var(--muted)}
+.tw-draft header em{color:var(--muted);font-style:normal;font-variant-numeric:tabular-nums}
+.tw-draft header em.live{color:var(--accent)}
+.tw-draft-saved{color:var(--secondary);text-decoration:underline;text-underline-offset:3px;animation:tw-bump .4s var(--ease-spring)}
+.tw-draft-save{display:grid;place-items:center;height:30px;padding:0 14px;border-radius:9px;background:var(--accent);color:#fff;font-weight:600;transition:opacity .3s}
+.tw-draft-save.dim{opacity:.4}
+.tw-draft article{flex:1;padding:30px 44px;font-size:14px;line-height:1.8}
+.tw-draft h1{margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--line-soft);font-size:22px;font-weight:650;line-height:1.35}
+.tw-draft h2{margin:16px 0 6px;font-size:15.5px;font-weight:650}
+.tw-draft p{position:relative}
+.tw-sum-sel{border-radius:2px;background:color-mix(in srgb,var(--accent) 26%,transparent)}
+.tw-sum-a,.tw-sum-b{display:inline-block;width:0;height:1em;vertical-align:-.15em}
+.tw-sum-new{margin-top:8px;border-radius:4px;animation:tw-sum-new 2.2s ease-out both}
+@keyframes tw-sum-new{from{background:color-mix(in srgb,var(--accent) 22%,transparent);box-shadow:0 0 0 6px color-mix(in srgb,var(--accent) 22%,transparent)}to{background:transparent;box-shadow:0 0 0 6px transparent}}
+.tw-draft-ask{position:absolute;left:150px;top:calc(100% + 8px);z-index:2;display:flex;align-items:center;gap:8px;width:250px;height:38px;padding:0 5px 0 13px;border:1px solid color-mix(in srgb,var(--ink) 22%,transparent);border-radius:11px;background:var(--surface);box-shadow:0 12px 30px -12px rgb(0 0 0 / .4);color:var(--muted);font-size:12.5px;line-height:1}
+.tw-draft-ask>span{flex:1;white-space:nowrap;overflow:hidden}
+.tw-draft-ask>span.typed{color:var(--ink)}
+.tw-draft-send{display:grid;place-items:center;flex:none;width:26px;height:26px;border-radius:50%;background:var(--accent);color:#fff}
+/* 侧栏的书签按书分开；拿起一本时它浮起来，另一本让位。 */
+.tw-mkbooks{display:flex;flex-direction:column}
+.tw-mkbook{position:relative;border-radius:8px;transition:translate .34s var(--ease-spring),box-shadow .2s,background-color .2s}
+.tw-mkbook.lifted{z-index:2;background:var(--surface);box-shadow:0 10px 24px -10px rgb(0 0 0 / .45);transition:box-shadow .2s,background-color .2s}
+.tw-mkbooks.still .tw-mkbook{transition:none}
+.tw-mkname{margin:5px 10px 1px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--secondary);font-size:11.5px;font-weight:600}
+/* 新对话的记忆：三个词，选中的下面一道线。 */
+.tw-mem{display:flex;align-items:center;gap:14px;margin-top:14px;font-size:11.5px;letter-spacing:.08em}
+.tw-mem em{font-style:normal;opacity:.7}
+.tw-mem b{position:relative;padding:3px 1px;font-weight:400;transition:color .2s}
+.tw-mem b::after{content:'';position:absolute;left:1px;right:1px;bottom:0;height:1.5px;border-radius:1px;background:var(--accent);scale:0 1;transition:scale .3s var(--ease-spring)}
+.tw-mem b.on{color:var(--ink)}
+.tw-mem b.on::after{scale:1 1}
+.tw-world[data-look='sketch'] :is(.tw-sum,.tw-sumreq,.tw-draft,.tw-draft-ask){border-width:1.5px}
 .tw-options{left:14px;right:14px;top:calc(100% - 8px)}
 .tw-quote{left:26px;top:150px}
 .tw-cmds{left:0;right:0;bottom:52px}

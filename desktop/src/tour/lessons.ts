@@ -98,6 +98,27 @@ export type Scene = {
   cmMoved: boolean
   cmFlash: '' | 'moved' | 'undone'
   cmOpen: boolean
+  /** 新对话的记忆选哪一种。 */
+  mem: 'book' | 'all' | 'off'
+  /** 总结一课：停在哪一步（表、草稿）、第 5 章展开了没有、勾了几节、不遗漏开了没有、草稿写了多少字、划选了多少字、小输入框和里面的字、改好了没有、存了没有。 */
+  sum: '' | 'setup' | 'draft'
+  sumFold: boolean
+  sumPicked: number
+  sumFull: boolean
+  sumWords: number
+  sumSel: number
+  sumAsk: boolean
+  sumNote: string
+  sumSent: boolean
+  sumFixed: boolean
+  sumSaved: boolean
+  /** 书签一课最后：侧栏里拖书的顺序。拿着的那本挪了多少、另一本让了多少、换过来了没有、这一下不要过渡。 */
+  markDrag: number | null
+  markShift: number
+  markSwap: boolean
+  markStill: boolean
+  /** 文库一课：右键菜单里指着哪一项。 */
+  fileHover: '' | 'sum' | 'details' | 'reveal'
 }
 
 export const freshScene = (): Scene => ({
@@ -109,6 +130,7 @@ export const freshScene = (): Scene => ({
   files: 6, ghost: null, query: '', fileMenu: false, grouped: false, starred: false, outline: false, finding: false, find: '', clock: 'idle', minutes: 5, follow: 'page', hold: 0, desk: 0,
   crop: false, frame: null, quick: false, ctx: null, rightOn: false, quickOff: false, shots: 0, kept: 0, shotSent: false, shotAnswer: 0, asking: false, cardDraft: '', cardAsk: false, cardAnswer: 0,
   ribbonAt: null, ribbonFlip: false, ribbonLift: false, aiMenu: false, manager: false, cmPeek: false, cmDrag: null, cmSlot: false, cmMoved: false, cmFlash: '', cmOpen: false,
+  mem: 'book', sum: '', sumFold: false, sumPicked: 0, sumFull: false, sumWords: 0, sumSel: 0, sumAsk: false, sumNote: '', sumSent: false, sumFixed: false, sumSaved: false, fileHover: '', markDrag: null, markShift: 0, markSwap: false, markStill: false,
 })
 
 export const TEXT = {
@@ -127,6 +149,21 @@ export const TEXT = {
   shotAsk: '针对框选的内容解释「为什么」',
   shotReply: '三张图是同一条线索：定义给出 Av = λv，特征方程求出 λ，定理 5.2 保证实对称矩阵的 λ 都是实数。',
 }
+/* 总结一课里草稿上写的东西。 */
+export const SUM = {
+  title: '第5章 特征值与特征向量',
+  blocks: [
+    ['h2', '5.1 定义'],
+    ['p', '若存在非零向量 v 使 Av = λv，λ 叫 A 的特征值，v 是属于 λ 的特征向量。'],
+    ['h2', '5.2 特征方程'],
+    ['p', 'λ 是特征值，当且仅当 det(A − λI) = 0。'],
+  ] as ['h2' | 'p', string][],
+  parts: [['5.1 定义', '87–92'], ['5.2 特征方程', '92–101'], ['5.3 对角化', '101–120']],
+  say: '读了 5.1、5.2 两节，按原文的顺序写。',
+  fix: '加一个例子',
+  added: '例：A = diag(2, 3) 时，方程是 (2 − λ)(3 − λ) = 0，特征值是 2 和 3。',
+}
+export const sumLength = SUM.blocks.reduce((total, block) => total + block[1].length, 0)
 /* 后两个所属的服务在这一课里没有连接，菜单里是灰的。 */
 export const MODELS = ['DeepSeek Flash', 'DeepSeek V4 Pro', 'GPT-5.4（未连接）', 'Claude Opus 5.5（未连接）']
 export const replyLength = TEXT.reply.join('').length
@@ -307,8 +344,19 @@ const visual: Play = async (stage, scene, say) => {
 }
 
 const assistant: Play = async (stage, scene, say) => {
-  say({ text: '在右侧输入问题，提问时附带当前页', top: true })
+  say({ text: '新对话先选记忆：只用这本书的、所有书共用的，或者不用', top: true })
   stage.place({ x: 900, y: 790 })
+  stage.look('.tw-mem', 1.7, [.5, .5])
+  await stage.move('.tw-mem-all', { ms: 800 })
+  await stage.wait(250)
+  await stage.click()
+  scene.mem = 'all'
+  await stage.wait(900)
+  await click(stage, '.tw-mem-book')
+  scene.mem = 'book'
+  await stage.wait(900)
+
+  say({ text: '在右侧输入问题，提问时附带当前页', top: true })
   stage.look('.tw-ask', 1.6, [.5, -1.2])
   await click(stage, '.tw-ask')
   await stage.type(TEXT.question, value => { scene.draft = value })
@@ -601,6 +649,25 @@ const bookmark: Play = async (stage, scene, say) => {
   await carry({ x: page.width * .46, y: high + 40 }, 1100)
   stage.release(); scene.ribbonLift = false
   await stage.wait(1500)
+
+  // 侧栏里书签按书分开放：按住书名拖，别的书让开，松手就换了顺序。
+  say({ text: '侧栏里按住书名拖动，调整书的顺序', mouse: 'left' })
+  stage.look('.tw-mkbooks', 1.6, [.5, .5])
+  await stage.move('.tw-mkbook-paper .tw-mkname', { at: [.4, .5], ms: 900 })
+  await stage.wait(300)
+  stage.press()
+  await stage.wait(380)
+  const held = stage.locate('.tw-mkbook-paper .tw-mkname', [.4, .5])
+  const rise = stage.locate('.tw-mkbook-algebra', [0, 0]).y - stage.locate('.tw-mkbook-paper', [0, 0]).y
+  const room = stage.locate('.tw-mkbook-paper', [0, 1]).y - stage.locate('.tw-mkbook-paper', [0, 0]).y
+  scene.markDrag = 0
+  await stage.move({ x: held.x, y: held.y + rise }, { ms: 1200, step: k => { scene.markDrag = rise * k; scene.markShift = k > .5 ? room : 0 } })
+  await stage.wait(450)
+  stage.release()
+  scene.markStill = true; scene.markSwap = true; scene.markDrag = null; scene.markShift = 0
+  await stage.wait(80)
+  scene.markStill = false
+  await stage.wait(1500)
 }
 
 /* 管理对话：从「阅读助手」的右键菜单进去；树、悬停预览、拖动移动、撤销、记忆。 */
@@ -690,8 +757,88 @@ const library: Play = async (stage, scene, say) => {
   await click(stage, '.tw-file-1 .tw-star')
   scene.starred = true
   await stage.wait(700)
+
+  say({ text: '右键菜单里还有：总结、详情与标签、打开所在文件夹', mouse: 'right' })
+  await stage.move('.tw-file-1', { at: [.6, .4], ms: 500 })
+  await stage.click('right')
+  scene.fileMenu = true
+  await stage.wait(500)
+  for (const item of ['sum', 'details', 'reveal'] as const) {
+    await stage.move(`.tw-fm-${item}`, { ms: 420 })
+    scene.fileHover = item
+    await stage.wait(650)
+  }
+  scene.fileHover = ''; scene.fileMenu = false
   stage.look(null, 1)
   await stage.wait(700)
+}
+
+/* 总结：从文库右键进去；表里勾章节、开「不遗漏知识点」；草稿边写边看，划选一段让助手改，最后存进文库。 */
+const summary: Play = async (stage, scene, say) => {
+  scene.view = 'library'; scene.ai = false
+  say({ text: '右键文档，选「总结…」；在阅读助手里输入 /summary 也一样', mouse: 'right' })
+  stage.place({ x: 700, y: 620 })
+  stage.look('.tw-file-1', 1.5, [.7, .7])
+  await stage.move('.tw-file-1', { at: [.6, .4], ms: 800 })
+  await stage.wait(200)
+  await stage.click('right')
+  scene.fileMenu = true
+  await stage.wait(700)
+  await stage.move('.tw-fm-sum', { ms: 500 })
+  scene.fileHover = 'sum'
+  await stage.wait(300)
+  await stage.click()
+  scene.fileMenu = false; scene.fileHover = ''; scene.view = 'reader'; scene.ai = true; scene.sum = 'setup'
+  stage.look(null, 1)
+  await stage.wait(1000)
+
+  say('范围：勾一章是整章；点小箭头展开，可以只勾其中几节')
+  stage.look('.tw-sum-list', 1.55, [.5, .6])
+  await click(stage, '.tw-sum-unfold')
+  scene.sumFold = true
+  await stage.wait(500)
+  await click(stage, '.tw-sum-part-0 i')
+  scene.sumPicked = 1
+  await stage.wait(350)
+  await click(stage, '.tw-sum-part-1 i')
+  scene.sumPicked = 2
+  await stage.wait(1300)
+
+  say('要一条不落，打开「不遗漏知识点」；这时总是分多次写')
+  stage.look('.tw-sum-full', 1.55, [.5, .2])
+  await stage.wait(350)
+  await click(stage, '.tw-sum-full .tw-switch')
+  scene.sumFull = true
+  await stage.wait(1500)
+
+  say('开始后，原文让位给草稿，助手写到哪显示到哪')
+  await click(stage, '.tw-sum-go')
+  scene.sum = 'draft'
+  stage.look(null, 1)
+  await stage.wait(600)
+  stage.look('.tw-draft', 1.22, [.5, .2])
+  await stage.tween(2800, k => { scene.sumWords = Math.round(k * sumLength) }, true)
+  await stage.wait(800)
+
+  say({ text: '在草稿上划选一段，直接写怎么改；助手只改这一处', mouse: 'left' })
+  await stage.move('.tw-sum-a', { ms: 700 })
+  stage.press()
+  await stage.move('.tw-sum-b', { ms: 900, step: k => { scene.sumSel = Math.round(k * SUM.blocks[3]![1].length) } })
+  stage.release()
+  scene.sumAsk = true
+  await stage.wait(450)
+  await stage.type(SUM.fix, value => { scene.sumNote = value }, 130)
+  await stage.wait(250)
+  await click(stage, '.tw-draft-send')
+  scene.sumAsk = false; scene.sumSel = 0; scene.sumNote = ''; scene.sumSent = true
+  await stage.wait(1000)
+  scene.sumFixed = true
+  await stage.wait(1700)
+
+  say('满意后存入文档库：一份 Markdown，放在原文档的文件夹里')
+  await click(stage, '.tw-draft-save')
+  scene.sumSaved = true
+  await stage.wait(1900)
 }
 
 const tabs: Play = async (stage, scene, say) => {
@@ -802,13 +949,14 @@ export const LESSONS: Lesson[] = [
   { id: 'setup', title: '接入 AI', note: '连接服务，给每个功能选模型', steps: 4, play: setup },
   { id: 'explain', title: '快速解释', note: '选中文字后按中键', steps: 8, play: explain },
   { id: 'visual', title: '用图解释', note: '图解、可拖的图、合集', steps: 3, play: visual },
-  { id: 'assistant', title: '阅读助手', note: '提问、附属对话、分支、指令', steps: 5, play: assistant },
+  { id: 'assistant', title: '阅读助手', note: '记忆、提问、附属对话、分支、指令', steps: 6, play: assistant },
+  { id: 'summary', title: '总结', note: '勾章节、边写边改、存进文库', steps: 6, play: summary },
   { id: 'capture', title: '截图提问', note: '框选、右键拖动、固定多张', steps: 9, play: capture },
   { id: 'manage', title: '管理对话', note: '移动、排序、撤销，看记下了什么', steps: 5, play: manage },
   { id: 'translate', title: '翻译', note: '划词翻译与翻译栏', steps: 3, play: translate },
   { id: 'ink', title: '标记', note: 'Alt + 1 / 2 / 3 直接拿起工具', steps: 4, play: ink },
-  { id: 'bookmark', title: '书签', note: '夹在页边，可以拖，Ctrl + ↑ ↓ 跳转', steps: 8, play: bookmark },
-  { id: 'library', title: '文库', note: '导入、搜索、分组、收藏', steps: 3, play: library },
+  { id: 'bookmark', title: '书签', note: '夹在页边，可以拖，Ctrl + ↑ ↓ 跳转，书能排顺序', steps: 9, play: bookmark },
+  { id: 'library', title: '文库', note: '导入、搜索、分组、收藏、右键菜单', steps: 4, play: library },
   { id: 'tabs', title: '多文档', note: '标签页与并排阅读', steps: 2, play: tabs },
   { id: 'view', title: '阅读视图', note: '目录、搜索、缩放、收起界面', steps: 4, play: view },
   { id: 'focus', title: '计时', note: '倒计时与提醒', steps: 3, play: focus },
