@@ -1,13 +1,14 @@
 import { ContinuousPdfViewer as PageWindow } from '../../../extension/reader/continuous.mjs';
-import { clamp, renderPixelRatio, MAX_CANVAS_PIXELS } from '../../../extension/reader/geometry.mjs';
+import { clamp, renderPixelRatio, snapToDevice } from '../../../extension/reader/geometry.mjs';
 import { MAX_RENDERED_PAGES, PAGE_GAP, visiblePage } from '../../../extension/reader/scroll-layout.mjs';
 import { installDarkFilter, imageUnits, classifyImages, photoLayer, releasePhotoLayer } from './dark-pages.mjs';
 
-// Keep the former per-page resolution. A five-page desktop window and one
-// detached redraw buffer have a bounded 24M-pixel allocation. Inactive tabs
-// retain only their current committed page, with no background raster work.
+// 每页位图的像素上限。原来是 400 万：A4 页面只要在屏幕上宽过 1680 个物理像素（2K、4K 屏加上 125%～200% 缩放，
+// 铺满阅读区时很容易超过）就画不到屏幕的分辨率，再被拉伸显示，字是糊的。现在是 1200 万（A4 约 2900 像素宽），
+// 五页窗口加一张重画用的缓冲，最多 7200 万像素；只有页面真的铺得那么大时才会用到。
+// Inactive tabs retain only their current committed page, with no background raster work.
 export const DESKTOP_RENDERED_PAGES = 5;
-export const DESKTOP_PAGE_PIXELS = MAX_CANVAS_PIXELS / (MAX_RENDERED_PAGES + 1);
+export const DESKTOP_PAGE_PIXELS = 12_000_000;
 export const DESKTOP_CANVAS_PIXELS = DESKTOP_PAGE_PIXELS * (DESKTOP_RENDERED_PAGES + 1);
 // 双页时两页之间的缝；每页只有一半宽，窗口里多留几页（上一行、当前行、下一行）。
 export const SPREAD_GAP = 14;
@@ -212,6 +213,13 @@ export class ContinuousPdfViewer extends PageWindow {
     return { suspended: this.suspended, pages: this.views.size, pixels: [...this.views.values()].reduce((sum, view) => sum + view.canvas.width * view.canvas.height + (view.pending?.canvas?.width || 0) * (view.pending?.canvas?.height || 0), 0), maxPixels: DESKTOP_CANVAS_PIXELS };
   }
 
+  /** 屏幕的缩放比例变了（窗口拖到另一块屏幕，或改了系统缩放）：页面框重新对齐设备像素，已画好的页面按新的倍率重画。 */
+  repaint() {
+    if (this.suspended || !this.pdf) return;
+    this.layout();
+    for (const view of this.views.values()) if (!view.disposed) view.promise = this.paint(view).catch(error => { if (!view.disposed && !canceled(error)) this.onError?.(error); });
+  }
+
   getFitScale(availableWidth) {
     const style = getComputedStyle(this.container);
     const available = availableWidth ?? this.container.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
@@ -337,13 +345,18 @@ export class ContinuousPdfViewer extends PageWindow {
       buffer = { page, viewport, epoch, disposed: false, canvas: document.createElement('canvas'), text: document.createElement('div'), links: document.createElement('div') };
       view.pending = buffer;
       buffer.canvas.className = 'pdf-canvas'; buffer.text.className = 'textLayer'; buffer.links.className = 'link-layer';
-      const ratio = renderPixelRatio(viewport.width, viewport.height, window.devicePixelRatio || 1, DESKTOP_PAGE_PIXELS);
+      const device = window.devicePixelRatio || 1;
+      const ratio = renderPixelRatio(viewport.width, viewport.height, device, DESKTOP_PAGE_PIXELS);
+      // 位图的像素数取页面框（已对齐到整数个设备像素，见 layout）乘倍率：没被上限压低时，位图一个像素正好对屏幕一个像素。
+      const pixelWidth = Math.max(1, Math.round(snapToDevice(viewport.width, device) * ratio)), pixelHeight = Math.max(1, Math.round(snapToDevice(viewport.height, device) * ratio));
       // Zero the default height before assigning the width; even extremely
       // wide pages cannot transiently allocate width * the default 150px.
       buffer.canvas.height = 0;
-      buffer.canvas.width = Math.max(1, Math.floor(viewport.width * ratio));
-      buffer.canvas.height = Math.max(1, Math.floor(viewport.height * ratio));
-      buffer.task = page.render({ canvasContext: buffer.canvas.getContext('2d', { alpha: false }), viewport, transform: ratio === 1 ? null : [ratio, 0, 0, ratio, 0, 0], background: 'white' });
+      buffer.canvas.width = pixelWidth;
+      buffer.canvas.height = pixelHeight;
+      buffer.dpr = device;
+      const sx = pixelWidth / viewport.width, sy = pixelHeight / viewport.height;
+      buffer.task = page.render({ canvasContext: buffer.canvas.getContext('2d', { alpha: false }), viewport, transform: sx === 1 && sy === 1 ? null : [sx, 0, 0, sy, 0, 0], background: 'white' });
       await buffer.task.promise;
       // 图片位置直接取自这次渲染的操作列表（只是遍历一遍，不再向 worker 重新要），切到深色主题时就不用重画。
       // 深色主题里这一页之前判断过就立刻贴上照片层，否则提交后在空闲时再判断；浅色主题不读任何像素。

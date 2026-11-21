@@ -7,7 +7,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'v
 import AppIcon from './AppIcon.vue'
 import { library } from '../sdk'
 import { booksReady, conversationBooks, conversationBundle, conversations, deleteConversation, forgetBook, loadConversations, memorizeNow, moveConversation, rememberBook, renameConversation, restoreConversations, setConversationMemory, type ChatState } from '../ai/workspace'
-import { forgetItem, memory, memoryReady, restoreMemory } from '../ai/memory'
+import { forgetItem, memory, memoryMode, memoryReady, restoreMemory, type MemoryMode } from '../ai/memory'
 
 type Book = { id: string; title: string; kind: string }
 type Root = Book & { gone: boolean; list: ChatState[] }
@@ -146,14 +146,14 @@ function place(event: MouseEvent, items: Item[]) {
 function talkMenu(root: Root, talk: ChatState, event: MouseEvent) {
   const id = key(root.id, talk.id)
   if (!picked.has(id)) { picked.clear(); picked.add(id) }
-  const many = picked.size > 1, on = talk.memory !== false
+  const many = picked.size > 1, mode = memoryMode(talk)
   place(event, many ? [
     { label: `移到另一本书…`, icon: 'folder', run: () => { moving.value = pickedInOrder() } },
     { label: `删除所选 ${picked.size} 段`, icon: 'trash', danger: true, line: true, run: () => { doomed.value = [...picked] } },
   ] : [
     { label: '打开', icon: 'book', disabled: root.gone, run: () => { emit('openConversation', { documentId: root.id, conversationId: talk.id }); emit('close') } },
     { label: '重命名', icon: 'edit', run: () => startRename(root.id, talk) },
-    { label: on ? '不再记入记忆' : '记入记忆', icon: 'memory', run: () => toggleMemory(root.id, talk) },
+    ...MODES.map((item, index) => ({ label: `记忆：${item.label}`, icon: mode === item.id ? 'check' : 'memory', line: index === 0, run: () => setMode(root.id, talk, item.id) })),
     { label: '移到另一本书…', icon: 'folder', line: true, run: () => { moving.value = [id] } },
     { label: '删除', icon: 'trash', danger: true, run: () => { doomed.value = [id] } },
   ])
@@ -183,10 +183,12 @@ function endRename(save: boolean) {
   }
   version.value++
 }
-function toggleMemory(documentId: string, talk: ChatState) {
-  const on = talk.memory !== false, kept = clone(memory.entries[talk.id]), id = talk.id
-  flip(() => { setConversationMemory(documentId, id, !on); version.value++ })
-  record(on ? '改为不记入记忆' : '改为记入记忆', () => { setConversationMemory(documentId, id, on); if (kept) restoreMemory(id, kept) })
+const MODES: { id: MemoryMode; label: string }[] = [{ id: 'book', label: '只用本书的' }, { id: 'all', label: '用全局的' }, { id: 'off', label: '不用' }]
+function setMode(documentId: string, talk: ChatState, mode: MemoryMode) {
+  const before = memoryMode(talk), kept = clone(memory.entries[talk.id]), id = talk.id
+  if (before === mode) return
+  flip(() => { setConversationMemory(documentId, id, mode); version.value++ })
+  record(`记忆改为「${MODES.find(item => item.id === mode)!.label}」`, () => { setConversationMemory(documentId, id, before); if (kept) restoreMemory(id, kept) })
 }
 function forget(conversationId: string, index: number) {
   const kept = clone(memory.entries[conversationId])
@@ -342,9 +344,9 @@ function peekIn(talk: ChatState, event: PointerEvent) {
 function peekOut() { clearTimeout(peekTimer); peek.value = undefined }
 
 // ---- 右边一栏：现在记着的全部内容 ----
-const groups = computed(() => roots.value.map(root => ({ root, rows: root.list.flatMap(talk => talk.memory === false ? [] : itemsOf(talk.id).map((item, index) => ({ item, index, talk, id: key(root.id, talk.id) }))) })).filter(group => group.rows.length))
+const groups = computed(() => roots.value.map(root => ({ root, rows: root.list.flatMap(talk => memoryMode(talk) === 'off' ? [] : itemsOf(talk.id).map((item, index) => ({ item, index, talk, id: key(root.id, talk.id) }))) })).filter(group => group.rows.length))
 // 可以记、但还没整理过的对话（这个功能出来之前的那些）。
-const pending = computed(() => roots.value.flatMap(root => root.list.filter(talk => talk.memory !== false && !talk.request && talk.messages.length >= 2 && !memory.entries[talk.id]).map(talk => ({ root, talk }))))
+const pending = computed(() => roots.value.flatMap(root => root.list.filter(talk => memoryMode(talk) !== 'off' && !talk.request && talk.messages.length >= 2 && !memory.entries[talk.id]).map(talk => ({ root, talk }))))
 const organizing = ref('')
 async function organize() {
   if (organizing.value) return
@@ -441,14 +443,14 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey, true); clea
             <div v-if="!folded.has(root.id)" v-links class="cm-kids">
               <svg class="cm-links" aria-hidden="true"></svg>
               <div v-for="(talk, index) in root.list" :key="talk.id" class="cm-kid" :data-f="`c:${talk.id}`" :style="{ '--i': at + 1 + Math.min(index, 8) * .6 }">
-                <div class="cm-talk" :class="{ picked: picked.has(key(root.id, talk.id)), lifted: drag && picked.has(key(root.id, talk.id)), has: talk.memory !== false && itemsOf(talk.id).length, mute: talk.memory === false, lit: lit === key(root.id, talk.id) }" :data-key="key(root.id, talk.id)" :data-f="`t:${talk.id}`" @contextmenu.prevent.stop="talkMenu(root, talk, $event)" @pointerenter="peekIn(talk, $event)" @pointerleave="peekOut">
+                <div class="cm-talk" :class="{ picked: picked.has(key(root.id, talk.id)), lifted: drag && picked.has(key(root.id, talk.id)), has: memoryMode(talk) !== 'off' && itemsOf(talk.id).length, mute: memoryMode(talk) === 'off', lit: lit === key(root.id, talk.id) }" :data-key="key(root.id, talk.id)" :data-f="`t:${talk.id}`" @contextmenu.prevent.stop="talkMenu(root, talk, $event)" @pointerenter="peekIn(talk, $event)" @pointerleave="peekOut">
                   <input v-if="renaming === key(root.id, talk.id)" ref="field" v-model="draft" class="cm-rename" maxlength="60" aria-label="对话名称" @keydown.enter.prevent="!$event.isComposing && $event.keyCode !== 229 && endRename(true)" @keydown.esc.prevent.stop="endRename(false)" @blur="endRename(true)" @pointerdown.stop />
                   <button v-else type="button" class="cm-talk-open" @click="openTalk(root, talk, $event)">
                     <AppIcon v-if="talk.branchOf" name="branch" :size="12" /><span class="cm-title">{{ talk.title || '新对话' }}</span>
                     <small><template v-if="talk.request">回答中 · </template>{{ Math.ceil(talk.messages.length / 2) }} 问 · {{ relative(talk.updatedAt) }}</small>
                   </button>
                 </div>
-                <template v-if="talk.memory !== false && itemsOf(talk.id).length">
+                <template v-if="memoryMode(talk) !== 'off' && itemsOf(talk.id).length">
                   <button type="button" class="cm-act cm-knob has" :class="{ shut: !opened.has(talk.id) }" :data-f="`m:${talk.id}`" :aria-expanded="opened.has(talk.id)" :data-tip="opened.has(talk.id) ? '收起记忆' : '看这段对话记下了什么'" :aria-label="`记忆 ${itemsOf(talk.id).length} 条`" @click="toggle(opened, talk.id)"><AppIcon v-if="opened.has(talk.id)" name="arrow" :size="11" /><template v-else>{{ itemsOf(talk.id).length }}</template></button>
                   <div v-if="opened.has(talk.id)" v-links class="cm-kids">
                     <svg class="cm-links" aria-hidden="true"></svg>
@@ -504,7 +506,7 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey, true); clea
         <button v-if="pending.length" type="button" class="cm-organize" :disabled="!!organizing" @click="organize"><AppIcon name="memory" :size="15" />{{ organizing ? `正在整理 ${organizing}` : `整理 ${pending.length} 段还没整理的对话` }}</button>
         <section v-for="group in groups" :key="group.root.id" class="cm-group">
           <h4>{{ group.root.title }}</h4>
-          <ul><li v-for="row in group.rows" :key="row.id + row.item" :class="{ on: lit === row.id }" :data-tip="`来自「${row.talk.title || '新对话'}」`" @click="reveal(row.id)"><span><b>{{ parts(row.item)[0] }}</b><em v-if="parts(row.item)[1]">{{ parts(row.item)[1] }}</em></span><button type="button" class="cm-act" aria-label="忘掉这一条" data-tip="忘掉这一条" @click.stop="forget(row.talk.id, row.index)"><AppIcon name="close" :size="11" /></button></li></ul>
+          <ul><li v-for="row in group.rows" :key="row.id + row.item" :class="{ on: lit === row.id }" :data-tip="`来自「${row.talk.title || '新对话'}」 · ${memory.entries[row.talk.id]?.scope === 'book' ? '只留在本书' : '所有书共用'}`" @click="reveal(row.id)"><span><b>{{ parts(row.item)[0] }}</b><em v-if="parts(row.item)[1]">{{ parts(row.item)[1] }}</em></span><button type="button" class="cm-act" aria-label="忘掉这一条" data-tip="忘掉这一条" @click.stop="forget(row.talk.id, row.index)"><AppIcon name="close" :size="11" /></button></li></ul>
         </section>
       </div>
     </aside>

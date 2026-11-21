@@ -773,6 +773,23 @@ function suspend() {
   pendingPanelFit = false; prepareScheduled = false; suppressPanelFit = false
   releaseViewport(); releaseCommitWaiters()
 }
+// 屏幕缩放比例变了（窗口拖到另一块屏幕、在系统里改了缩放）：页面是按原来的倍率画的，得按新的重画，不然是糊的。
+// 媒体查询只在「不再等于当前这个值」时通知一次，所以每次变化后按新值重新挂一个。
+let paintedDpr = window.devicePixelRatio || 1, dprQuery: MediaQueryList | undefined
+function watchDpr() {
+  dprQuery?.removeEventListener('change', dprChanged)
+  dprQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`)
+  dprQuery.addEventListener('change', dprChanged)
+}
+function dprChanged() { watchDpr(); repaintForDpr() }
+function repaintForDpr() {
+  const now = window.devicePixelRatio || 1
+  if (!active || loading.value || now === paintedDpr) return
+  paintedDpr = now
+  viewer?.repaint?.()
+}
+onMounted(watchDpr)
+onBeforeUnmount(() => dprQuery?.removeEventListener('change', dprChanged))
 async function resume() {
   if (active) return
   active = true
@@ -782,6 +799,7 @@ async function resume() {
   viewer.resume()
   observer?.observe(viewportHost.value!)
   if (loading.value) return
+  repaintForDpr()
   if (error.value) { emit('error', error.value); return }
   if (!pdf) return
   if (cachedView && container.value && viewer.heights) {

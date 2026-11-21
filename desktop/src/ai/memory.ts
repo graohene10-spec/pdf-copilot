@@ -4,11 +4,24 @@
  * 每段对话各有一份记录（几行「学了哪个概念、掌握得怎样」），由小模型在对话告一段落后整理出来；
  * 对话删掉，它的记录跟着删掉。之后提问时，这些记录随请求带给模型，只用来判断讲解的起点和深度。
  * 快速解释、翻译不读也不写这份记忆。
+ *
+ * 记忆分两处放，免得不同的书互相串味：
+ * - 本书（book）：记录只留在这本书里，只有这本书的对话读得到；
+ * - 全局（all）：记录所有书共用。
+ * 一段对话选哪一种，读和写都按它来：选「本书」只读这本书里记下的（两种都算），写下的也只留在本书；
+ * 选「全局」读所有书的全局记录加上这本书自己的，写下的是全局记录；选「不用」既不读也不写。
  */
 import { reactive } from 'vue'
 import { library } from '../sdk'
 
-export type MemoryEntry = { documentId: string; documentTitle: string; title: string; at: number; items: string[]; /** 整理时这段对话有多少条消息。 */ count: number }
+export type MemoryMode = 'book' | 'all' | 'off'
+/** 一段对话用哪种记忆。老数据：没写是全局，false 是不用。 */
+export const memoryMode = (conversation: { memory?: unknown }): MemoryMode => conversation.memory === false || conversation.memory === 'off' ? 'off' : conversation.memory === 'book' ? 'book' : 'all'
+// 新对话默认用哪种：跟着上一次选的走，第一次是「本书」。
+const MODE_KEY = 'ai.memory.mode'
+export function defaultMemoryMode(): MemoryMode { try { const value = localStorage.getItem(MODE_KEY); return value === 'all' || value === 'off' ? value : 'book' } catch { return 'book' } }
+export function rememberMemoryMode(mode: MemoryMode) { try { localStorage.setItem(MODE_KEY, mode) } catch { /* 只在这次有效 */ } }
+export type MemoryEntry = { documentId: string; documentTitle: string; title: string; at: number; items: string[]; /** 整理时这段对话有多少条消息。 */ count: number; /** 只留在本书，还是所有书共用。老记录没有这一项，算共用。 */ scope?: 'book' | 'all' }
 const KEY = 'ai.memory.v1'
 const MAX_ITEMS = 8
 export const memory = reactive<{ entries: Record<string, MemoryEntry>; ready: boolean }>({ entries: {}, ready: false })
@@ -17,7 +30,7 @@ const loaded: Promise<void> = (async () => {
     const value = JSON.parse(await library.getSetting(KEY) || '{}')
     for (const [id, entry] of Object.entries<any>(value?.entries || {})) {
       if (!entry || !Array.isArray(entry.items)) continue
-      memory.entries[id] = { documentId: String(entry.documentId || ''), documentTitle: String(entry.documentTitle || ''), title: String(entry.title || ''), at: Number(entry.at) || 0, count: Number(entry.count) || 0, items: entry.items.filter((item: unknown) => typeof item === 'string' && item.trim()).slice(0, MAX_ITEMS) }
+      memory.entries[id] = { documentId: String(entry.documentId || ''), documentTitle: String(entry.documentTitle || ''), title: String(entry.title || ''), at: Number(entry.at) || 0, count: Number(entry.count) || 0, ...(entry.scope === 'book' ? { scope: 'book' as const } : {}), items: entry.items.filter((item: unknown) => typeof item === 'string' && item.trim()).slice(0, MAX_ITEMS) }
     }
   } catch { /* 读不到就从空的开始 */ }
   memory.ready = true
@@ -37,7 +50,7 @@ export function forgetItem(conversationId: string, index: number) {
 /** 对话换了书、改了名：记录跟着改。 */
 /** 撤销用：把一段对话的记忆原样放回去。 */
 export function restoreMemory(conversationId: string, entry: MemoryEntry) { memory.entries[conversationId] = entry; persist() }
-export function retagMemory(conversationId: string, patch: Partial<Pick<MemoryEntry, 'documentId' | 'documentTitle' | 'title'>>) {
+export function retagMemory(conversationId: string, patch: Partial<Pick<MemoryEntry, 'documentId' | 'documentTitle' | 'title' | 'scope'>>) {
   const entry = memory.entries[conversationId]
   if (entry) { Object.assign(entry, patch); persist() }
 }
@@ -65,9 +78,10 @@ const running = new Set<string>()
  * 把一段对话整理进记忆。消息数没变就不重复整理；整理失败不影响对话，下次再试。
  * turns 只要正式的问答（不含失败的、已压缩的）。
  */
-export async function memorize(conversation: { id: string; title: string; documentId: string }, documentTitle: string, turns: Turn[]) {
+export async function memorize(conversation: { id: string; title: string; documentId: string; memory?: unknown }, documentTitle: string, turns: Turn[]) {
   await loaded
   const previous = memory.entries[conversation.id]
+  if (memoryMode(conversation) === 'off') return
   if (running.has(conversation.id) || turns.length < 2 || previous?.count === turns.length) return
   running.add(conversation.id)
   const controller = new AbortController(), limit = window.setTimeout(() => controller.abort(), 60000)
@@ -78,7 +92,9 @@ export async function memorize(conversation: { id: string; title: string; docume
     const { complete } = await import('./complete')
     const items = parseMemory(await complete({ kind: 'memory', fast: true, signal: controller.signal, messages: [{ role: 'user', content: memoryPrompt(documentTitle, transcript, previous?.items || []) }] }))
     const kept = items.length ? items : previous?.items || []
-    if (kept.length) memory.entries[conversation.id] = { documentId: conversation.documentId, documentTitle, title: conversation.title, at: Date.now(), items: kept, count: turns.length }
+    // 整理要等模型回话，这期间读者可能改了设置：按现在的来。
+    const mode = memoryMode(conversation)
+    if (kept.length && mode !== 'off') memory.entries[conversation.id] = { documentId: conversation.documentId, documentTitle, title: conversation.title, at: Date.now(), items: kept, count: turns.length, scope: mode }
     persist()
   } catch { /* 没整理成：留着原来的，下次再来 */ }
   finally { clearTimeout(limit); running.delete(conversation.id) }
@@ -89,8 +105,11 @@ export async function memorize(conversation: { id: string; title: string; docume
  * 防的是模型形成路径依赖：沾一点边就往记录上靠。
  * current 是正在进行的这段对话（它自己的记录不用带，内容就在上文里）；同一本书的排在前面。
  */
-export function memoryInstructions(current: { id: string; documentId: string }, budget = 1800): string {
-  const entries = Object.entries(memory.entries).filter(([id, entry]) => id !== current.id && entry.items.length)
+export function memoryInstructions(current: { id: string; documentId: string; mode?: MemoryMode }, budget = 1800): string {
+  const mode = current.mode || 'all'
+  if (mode === 'off') return ''
+  // 本书：只要这本书里记下的。全局：所有书的共用记录，加上这本书自己的。别的书「只留在本书」的记录谁也读不到。
+  const entries = Object.entries(memory.entries).filter(([id, entry]) => id !== current.id && entry.items.length && (entry.documentId === current.documentId || (mode === 'all' && entry.scope !== 'book')))
     .sort(([, a], [, b]) => Number(b.documentId === current.documentId) - Number(a.documentId === current.documentId) || b.at - a.at)
   const lines: string[] = []
   let used = 0
@@ -106,7 +125,7 @@ export function memoryInstructions(current: { id: string; documentId: string }, 
   if (!lines.length) return ''
   return [
     '# 读者的学习记录',
-    '下面是读者以前在这个应用里学过的内容，由系统自动整理，可能不全，也可能过时。',
+    mode === 'book' ? '下面是读者以前在这本书里学过的内容，由系统自动整理，可能不全，也可能过时。' : '下面是读者以前在这个应用里学过的内容，由系统自动整理，可能不全，也可能过时。',
     lines.join('\n'),
     '这份记录首先用来判断讲解的起点和深浅：读者已弄懂的概念可以直接用、不必从头解释；还不熟或卡住过的，用到时多铺垫一步。',
     '也可以把当前的问题和读者学过的东西联系起来，但要过一道门槛：',

@@ -28,6 +28,12 @@ export function canvasCrop(rect, displayWidth, displayHeight, canvasWidth, canva
   return { x, y, width: endX - x, height: endY - y };
 }
 
+/** Rounds a CSS length to a whole number of device pixels, so a bitmap of that many pixels maps 1:1 onto the screen. */
+export function snapToDevice(value, deviceRatio = 1) {
+  const ratio = deviceRatio > 0 ? deviceRatio : 1;
+  return Math.max(1, Math.round(value * ratio)) / ratio;
+}
+
 export function renderPixelRatio(width, height, deviceRatio = 1, maxPixels = MAX_CANVAS_PIXELS) {
   if (!(width > 0 && height > 0)) throw new Error('PDF 页面尺寸无效。');
   return Math.min(Math.max(1, deviceRatio), Math.sqrt(maxPixels / (width * height)));

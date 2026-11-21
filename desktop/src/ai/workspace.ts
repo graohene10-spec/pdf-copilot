@@ -3,7 +3,7 @@ import { loadAiSettings, loadApiKey } from './settings.mjs'
 import { RequestScheduler } from './request-scheduler.mjs'
 import { library } from '../sdk'
 import { recordUsage } from './usage'
-import { forgetConversation, memorize, memoryInstructions, memoryReady, retagMemory } from './memory'
+import { defaultMemoryMode, forgetConversation, memorize, memoryInstructions, memoryMode, memoryReady, rememberMemoryMode, retagMemory, type MemoryMode } from './memory'
 
 export type Usage = { input?: number; output?: number; reasoning?: number; estimated: boolean }
 export type Message = {
@@ -36,7 +36,8 @@ export type ChatState = {
   /** 输入框里还没发出去的摘录。 */
   excerpts?: Excerpt[]
   /** 这段对话记不记进「记忆」（读者学过什么）。默认记；false 是读者关掉了。 */
-  memory?: boolean
+  /** 这段对话用哪种记忆：只留在本书、所有书共用、不用。没写是共用（老对话），false 是不用（老写法）。 */
+  memory?: MemoryMode | false
 }
 type DocumentChats = { list: ChatState[]; activeId: string; loaded: boolean; loading?: Promise<void> }
 
@@ -63,7 +64,7 @@ export function keepImage(key: string, image: string) {
 
 function blank(documentId: string): ChatState {
   const now = Date.now()
-  return reactive({ id: crypto.randomUUID(), documentId, title: '', createdAt: now, updatedAt: now, messages: [], draft: '', status: '', error: false, includeDocument: true, includeSelection: false, request: null, scrollTop: 0 }) as ChatState
+  return reactive({ id: crypto.randomUUID(), documentId, title: '', createdAt: now, updatedAt: now, messages: [], draft: '', status: '', error: false, includeDocument: true, includeSelection: false, request: null, scrollTop: 0, ...(defaultMemoryMode() === 'all' ? {} : { memory: defaultMemoryMode() }) }) as ChatState
 }
 function chats(documentId: string): DocumentChats {
   let entry = documents.get(documentId)
@@ -185,13 +186,15 @@ export function renameConversation(documentId: string, conversationId: string, t
   retagMemory(conversationId, { title: next })
   schedulePersist(documentId)
 }
-/** 这段对话记不记进记忆。关掉时把已经记下的也忘掉。 */
-export function setConversationMemory(documentId: string, conversationId: string, on: boolean) {
+/** 这段对话用哪种记忆。改成「不用」时把它已经记下的也忘掉；在「本书」和「全局」之间改，已有的记录跟着换地方。 */
+export function setConversationMemory(documentId: string, conversationId: string, mode: MemoryMode) {
   const conversation = chats(documentId).list.find(item => item.id === conversationId)
   if (!conversation) return
-  conversation.memory = on ? undefined : false
-  if (!on) { clearTimeout(memoryTimers.get(conversationId)); memoryTimers.delete(conversationId); forgetConversation(conversationId) }
-  else scheduleMemory(conversation, 1500)
+  conversation.memory = mode === 'all' ? undefined : mode
+  if (mode === 'off') { clearTimeout(memoryTimers.get(conversationId)); memoryTimers.delete(conversationId); forgetConversation(conversationId) }
+  else { retagMemory(conversationId, { scope: mode }); scheduleMemory(conversation, 1500) }
+  // 还没开始问的新对话上选的，就是下一段新对话的默认值。
+  if (!conversation.messages.length) rememberMemoryMode(mode)
   schedulePersist(documentId)
 }
 /** 管理界面删除前留底：一段对话连同它的附属对话。 */
@@ -207,7 +210,7 @@ export function restoreConversations(documentId: string, items: ChatState[]) {
 /** 现在就把一段对话整理进记忆（管理界面里「整理还没整理的对话」）。 */
 export function memorizeNow(documentId: string, conversationId: string): Promise<void> {
   const conversation = chats(documentId).list.find(item => item.id === conversationId)
-  if (!conversation || conversation.sideOf || conversation.memory === false || conversation.request) return Promise.resolve()
+  if (!conversation || conversation.sideOf || memoryMode(conversation) === 'off' || conversation.request) return Promise.resolve()
   const turns = conversation.messages.filter(message => !message.note && !message.summary && message.content && !(message.failed && message.role === 'assistant')).map(message => ({ role: message.role, content: message.content }))
   return memorize(conversation, conversationBooks[documentId]?.title || '', turns)
 }
@@ -251,13 +254,13 @@ export function forgetBook(documentId: string) { if (conversationBooks[documentI
 // ---- 记忆：对话告一段落后，整理出读者学了什么 ----
 const memoryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 function runMemory(conversation: ChatState) {
-  if (conversation.sideOf || conversation.memory === false || conversation.request) return
+  if (conversation.sideOf || memoryMode(conversation) === 'off' || conversation.request) return
   const turns = conversation.messages.filter(message => !message.note && !message.summary && message.content && !(message.failed && message.role === 'assistant')).map(message => ({ role: message.role, content: message.content }))
   void memorize(conversation, conversationBooks[conversation.documentId]?.title || '', turns)
 }
 /** 答完之后过一会儿再整理：接着追问的话，等这一串问完一起整理。 */
 function scheduleMemory(conversation: ChatState, delay = 40000) {
-  if (conversation.sideOf || conversation.memory === false) return
+  if (conversation.sideOf || memoryMode(conversation) === 'off') return
   clearTimeout(memoryTimers.get(conversation.id))
   memoryTimers.set(conversation.id, setTimeout(() => { memoryTimers.delete(conversation.id); runMemory(conversation) }, delay))
 }
@@ -389,7 +392,7 @@ export function loadConversations(documentId: string): Promise<void> {
       for (const item of Array.isArray(stored?.list) ? stored.list : []) {
         if (!item || typeof item.id !== 'string' || known.has(item.id) || !Array.isArray(item.messages)) continue
         const conversation = blank(documentId)
-        Object.assign(conversation, { id: item.id, title: String(item.title || ''), memory: item.memory === false ? false : undefined, sideOf: typeof item.sideOf === 'string' ? item.sideOf : undefined, inherited: Array.isArray(item.inherited) ? item.inherited.filter((entry: any) => entry && typeof entry.content === 'string' && (entry.role === 'user' || entry.role === 'assistant')) : undefined, branchOf: item.branchOf && typeof item.branchOf.conversationId === 'string' ? { conversationId: item.branchOf.conversationId, title: String(item.branchOf.title || '') } : undefined, createdAt: Number(item.createdAt) || Date.now(), updatedAt: Number(item.updatedAt) || Date.now(),
+        Object.assign(conversation, { id: item.id, title: String(item.title || ''), memory: item.memory === false || item.memory === 'off' ? 'off' : item.memory === 'book' ? 'book' : undefined, sideOf: typeof item.sideOf === 'string' ? item.sideOf : undefined, inherited: Array.isArray(item.inherited) ? item.inherited.filter((entry: any) => entry && typeof entry.content === 'string' && (entry.role === 'user' || entry.role === 'assistant')) : undefined, branchOf: item.branchOf && typeof item.branchOf.conversationId === 'string' ? { conversationId: item.branchOf.conversationId, title: String(item.branchOf.title || '') } : undefined, createdAt: Number(item.createdAt) || Date.now(), updatedAt: Number(item.updatedAt) || Date.now(),
           messages: item.messages.filter((message: any) => message && (message.role === 'user' || message.role === 'assistant')).map((message: any) => ({ ...message, content: String(message.content || ''), sources: Array.isArray(message.sources) ? message.sources : [] })) })
         entry.list.push(conversation)
       }
@@ -512,7 +515,8 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
     const { UI_INSTRUCTIONS } = await import('./intelligent-ui')
     // 读者的学习记录（记忆）：只给主对话和它的附属对话，用来定讲解的深浅。
     await memoryReady()
-    const remembered = memoryInstructions({ id: state.sideOf || state.id, documentId: descriptor.id })
+    const owner = state.sideOf ? chats(state.documentId).list.find(item => item.id === state.sideOf) || state : state
+    const remembered = memoryInstructions({ id: owner.id, documentId: descriptor.id, mode: memoryMode(owner) })
     const options = { ...snapshot, apiKey, signal, messages: history, extraInstructions: UI_INSTRUCTIONS.assistant + (remembered ? '\n\n' + remembered : ''),
       onDelta: (text: string) => { if (valid() && answer) { answer.firstTokenAt ||= Date.now(); answer.content += text; answer.activity = '正在回答'; output() } },
       onReasoning: (text: string) => { if (valid() && answer) { answer.reasoning = (answer.reasoning || '') + text; answer.activity = '思考中'; output() } },

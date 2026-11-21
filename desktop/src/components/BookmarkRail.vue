@@ -249,7 +249,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div ref="layer" class="bookmark-layer" tabindex="-1" aria-label="书签" @keydown="layerKey">
-    <Transition name="bookmark-guide"><i v-if="lines.length" class="bookmark-guide" :style="{ top: `${rail.top + 6}px`, height: `${Math.max(0, (rail.height || paneHeight - rail.top - 22) - 12)}px`, right: `${rail.right}px` }" aria-hidden="true"></i></Transition>
+    <Transition name="bookmark-guide"><i v-if="lines.length" class="bookmark-guide" :style="{ top: `${rail.top}px`, height: `${Math.max(0, rail.height || paneHeight - rail.top)}px`, right: `${rail.right}px` }" aria-hidden="true"></i></Transition>
     <TransitionGroup name="bookmark">
       <div v-for="item in lines" :key="item.key" class="bookmark" :class="{ picked: picked.has(item.mark.id) }" :data-mark="item.mark.id" :style="{ top: `${item.top}px`, right: `${rail.right}px` }">
         <button type="button" class="bookmark-hit" :aria-label="item.mark.name ? `书签：${item.mark.name}` : `书签 · ${item.mark.hint}`" :data-tip="`${item.mark.art.name} · ${item.mark.hint}`" @click="click(item.mark, $event)" @keydown.delete.prevent="remove(item.mark)" @contextmenu.prevent.stop="menu(item.mark, $event)">
@@ -288,7 +288,8 @@ onBeforeUnmount(() => {
 .bookmark-art svg{display:block;width:100%;height:100%}
 
 /* 贴着滚动条的那根发丝线：两头淡出。 */
-.bookmark-guide{position:absolute;width:1px;background:linear-gradient(180deg,transparent,color-mix(in srgb,var(--ink) 20%,transparent) 18px,color-mix(in srgb,var(--ink) 20%,transparent) calc(100% - 18px),transparent)}
+/* 书签轨道的细线：从阅读区顶到底一整条，两头不留空、不淡出。 */
+.bookmark-guide{position:absolute;width:1px;background:color-mix(in srgb,var(--ink) 20%,transparent)}
 .bookmark-guide-enter-active,.bookmark-guide-leave-active{transition:opacity var(--dur-3) var(--ease-out)}
 .bookmark-guide-enter-from,.bookmark-guide-leave-to{opacity:0}
 /* 不在视野里的书签：线上的一道刻度，一头搭在线上，另一头是个小圆点，颜色取自那幅画；指上去刻度变长，画从左边伸出来。 */
