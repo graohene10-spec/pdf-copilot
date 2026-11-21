@@ -243,10 +243,26 @@ function sortValue(a: Doc, b: Doc, key: SortKey) {
   }
 }
 // 排序菜单用应用自己的液态玻璃菜单，不用系统下拉框；当前那一项标出方向。
+// 点按钮弹出来的菜单：再点同一个按钮是收起。菜单自己在按下的那一刻就关了（点在它外面），紧跟着的这一下点击
+// 如果照常处理，就成了「关了又开」，看起来像点不掉。所以记下菜单是哪个按钮弹的；按下时它还开着，这一下点击就不再打开。
+let menuAnchor: { anchor: Element; menu: unknown } | null = null, menuShutBy: Element | null = null
+function menuPointerDown(event: PointerEvent) {
+  const anchored = menuAnchor && contextMenu.value === menuAnchor.menu ? menuAnchor.anchor : null
+  menuShutBy = anchored && event.target instanceof Node && anchored.contains(event.target) ? anchored : null
+}
+/** 这一下点击是不是只用来收起菜单的（是就别再打开）。 */
+function closesMenu(event: MouseEvent) {
+  const shut = menuShutBy === event.currentTarget
+  menuShutBy = null
+  return shut
+}
+function anchorMenu(event: MouseEvent) { menuAnchor = { anchor: event.currentTarget as Element, menu: contextMenu.value } }
 function openSortMenu(event: MouseEvent) {
+  if (closesMenu(event)) return
   const box = (event.currentTarget as HTMLElement).getBoundingClientRect()
   const arrow = librarySort.value.descending ? '↓' : '↑'
   contextMenu.value = { x: box.left, y: box.bottom + 6, items: SORTS.map(item => ({ label: item.label, icon: item.key === librarySort.value.key ? 'check' : undefined, hint: item.key === librarySort.value.key && item.key !== 'default' ? arrow : undefined, action: () => chooseSort(item.key) })) }
+  anchorMenu(event)
 }
 function chooseSort(key: SortKey) {
   // Picking the active key again flips the direction; names and kinds start A→Z, the rest newest / largest first.
@@ -434,7 +450,7 @@ function groupMenuItems(ids: string[]) {
   if (ids.some(id => members.value[id])) items.push({ label: '移出分组', icon: 'close', action: () => moveToGroup(ids, '') })
   return items
 }
-function groupPickedMenu(event: MouseEvent) { const box = (event.currentTarget as HTMLElement).getBoundingClientRect(); contextMenu.value = { x: box.left, y: box.top - 8, items: groupMenuItems(pickedDocs.value.map(doc => doc.id)).map((item, index) => ({ ...item, separator: index ? item.separator : false })) } }
+function groupPickedMenu(event: MouseEvent) { if (closesMenu(event)) return; const box = (event.currentTarget as HTMLElement).getBoundingClientRect(); contextMenu.value = { x: box.left, y: box.top - 8, items: groupMenuItems(pickedDocs.value.map(doc => doc.id)).map((item, index) => ({ ...item, separator: index ? item.separator : false })) }; anchorMenu(event) }
 // ---- 机翻：左侧的翻译栏 ----------------------------------------------------
 const translatePane = ref<{ focus: () => void }>()
 // 翻译栏宽度可拖：记在本机；开合或拖完后让 PDF 重新适应宽度，书紧贴着翻译栏铺满，不留空白。
@@ -2105,6 +2121,7 @@ onMounted(async () => {
   document.addEventListener('mouseup', hintOnSelection)
   document.addEventListener('mouseup', prewarmOnSelection)
   document.addEventListener('pointerdown', sideOutside, true)
+  document.addEventListener('pointerdown', menuPointerDown, true)
   window.addEventListener('kaizhi:open-ai-settings', openAiSettings)
   window.addEventListener('kaizhi:explain-menu', explainMenu as EventListener)
   document.addEventListener('wheel', wheel, { capture: true, passive: false })

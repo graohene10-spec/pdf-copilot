@@ -382,7 +382,8 @@ const vAnswer = {
   beforeUnmount: (el: HTMLElement) => { clearTimeout(renderTimers.get(el)); renderTimers.delete(el) },
 }
 function answerClick(event: MouseEvent) {
-  if ((event.target as Element).closest('[data-draft]')) { emit('draft', { conversationId: state.value.id, open: true }); return }
+  // 草稿牌子：点一下打开草稿，再点一下收起。
+  if ((event.target as Element).closest('[data-draft]')) { emit('draft', { conversationId: state.value.id }); return }
   const button = (event.target as Element).closest<HTMLButtonElement>('[data-copy]')
   if (!button) return
   const code = button.closest('.answer-code-block')?.querySelector('code')?.textContent || ''
@@ -1355,7 +1356,9 @@ button:disabled{opacity:.4;cursor:default}
 @media(prefers-reduced-motion:reduce){.lead-glyph{animation:none}}
 .ai-welcome-lead:lang(zh-CN){font-size:22px;letter-spacing:.06em;line-height:1.6}
 /* 屏幕外的消息不参与排版和绘制（浏览器记得它们的实际高度）：长对话里几十条带公式的回答不再拖慢每一次重排。 */
-.ai-message{margin-bottom:18px;animation:zg-rise-in var(--dur-3) var(--ease-out) backwards;content-visibility:auto;contain-intrinsic-size:auto 260px}
+/* 左右各留 5px 再用负边距收回来：消息这一层会把伸出去的东西裁掉（它只在看得见时才排版），
+   贴着左边的按钮获得焦点时，那一圈描边要有地方画，不然左边被齐齐切掉。 */
+.ai-message{padding-inline:5px;margin-inline:-5px;margin-bottom:18px;animation:zg-rise-in var(--dur-3) var(--ease-out) backwards;content-visibility:auto;contain-intrinsic-size:auto 260px}
 .ai-loading{display:grid;gap:10px;padding:18px 6px}
 .ai-loading i{display:block;height:10px;border-radius:5px;background:color-mix(in srgb,var(--ink) 7%,transparent)}
 .ai-loading i:nth-child(1){width:62%}.ai-loading i:nth-child(2){width:88%}.ai-loading i:nth-child(3){width:74%}
