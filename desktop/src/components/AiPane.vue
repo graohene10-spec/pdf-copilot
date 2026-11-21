@@ -6,8 +6,9 @@ import { nativeModelInventory, registerNativeModelInventory } from '../ai/native
 import { newSummaryConversation, cancelSummary, setConversationMemory, adoptTurns, addExcerpt, removeExcerpt, removeMessage, compressConversation, sideConversation, chatState, sendChat, stopChat, configureRequests, taskSummary, conversations, activeConversationId, selectConversation, newConversation, deleteConversation, loadConversations, conversationTokens, contextWindow, branchConversation, resendQuestion, watchConversation, allConversations, pinMessage, MAX_ATTACHMENTS, pendingImages, setPendingImages, keepImage, type Message, type ChatState } from '../ai/workspace'
 import { renderMarkdown, renderDiagrams } from '../ai/render'
 import { memoryMode, type MemoryMode } from '../ai/memory'
-import { summaryChat, summaryRequest, rememberSummaryOptions } from '../ai/summary'
+import { summaryChat, summaryRequest, parseSummaryRequest, rememberSummaryOptions } from '../ai/summary'
 import SummarySetup from './SummarySetup.vue'
+import { radioKeys } from '../ui/radio-keys'
 import { mountIntelligentUi } from '../ai/intelligent-ui'
 import { nudgeGlassMotion } from '../ui/glass-motion'
 import { vMarquee } from '../ui/marquee'
@@ -22,7 +23,7 @@ import { cropImageAsync } from '../reader/crop'
 const ModelPicker = defineAsyncComponent(() => import('./ModelPicker.vue'))
 const UsagePanel = defineAsyncComponent(() => import('./UsagePanel.vue'))
 
-const props = defineProps<{ /** 这段对话的总结草稿是不是正开着。 */ draftOpen?: boolean; document: { id: string; title: string; kind: string }; context: any; sendShortcut?: string; consumeCapture?: (value: { documentId: string; selection: any }) => void; conversationId?: string; draggable?: boolean
+const props = defineProps<{ /** 这段对话的总结草稿是不是正开着。 */ draftOpen?: boolean; /** 取这份文档的目录（总结的表格里按章节选范围用）。是个函数：只在表格显示时才去取。 */ getOutline?: (documentId: string) => { title: string; level: number; page?: number }[]; document: { id: string; title: string; kind: string }; context: any; sendShortcut?: string; consumeCapture?: (value: { documentId: string; selection: any }) => void; conversationId?: string; draggable?: boolean
   /** Other documents on screen beside this one (side-by-side), to switch which one the assistant reads. */
   alternatives?: { id: string; title: string }[]
   /** Every library document, for the history of all conversations. */
@@ -833,6 +834,15 @@ function startSummary() {
   void send(summaryRequest(props.document.title, summary.options, extra))
 }
 function cancelSetup() { cancelSummary(props.document.id, state.value.id) }
+/** 总结对话里发出去的那张表：显示成表格。 */
+const requestTable = (message: Message) => state.value.summary ? parseSummaryRequest(message.content) : null
+/** 草稿面板里划选了一段、写了怎么改：发给这段总结对话。助手正在写就先打断它。 */
+async function revise(conversationId: string, text: string) {
+  if (conversationId !== state.value.id) { useConversation(conversationId); await nextTick() }
+  if (busy.value) { stop(); for (let wait = 0; wait < 40 && state.value.request; wait++) await new Promise(resolve => setTimeout(resolve, 50)) }
+  follow = true
+  void send(text)
+}
 function send(question?: string) {
   // 斜杠命令在本地处理，不当作问题发出去。
   const command = question === undefined ? prompt.value.trim().match(/^\/(btw|compress|usage|summary)(?:\s+([\s\S]*))?$/i) : null
@@ -911,7 +921,7 @@ onMounted(() => {
   if (messageList.value) observer.observe(messageList.value)
 })
 onBeforeUnmount(() => { unwatch?.(); cancelAnimationFrame(scrollFrame); rememberScroll(); clearInterval(ticker); clearTimeout(predictTimer); predicting?.abort(); observer?.disconnect(); if (renderFrame) cancelAnimationFrame(renderFrame); pickerRequest?.abort(); document.removeEventListener('pointerdown', pickerOutside, true); window.removeEventListener('keydown', strayEscape, true); document.removeEventListener('pointerdown', historyOutside, true) })
-defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startConversation, closeSide, summarize })
+defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startConversation, closeSide, summarize, revise })
 </script>
 
 <template>
@@ -958,14 +968,14 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
     </header>
     <div class="ai-body">
       <div ref="messageList" class="ai-messages" data-glass-still @scroll.passive="onScroll" @click="answerClick">
-        <SummarySetup v-if="!messages.length && state.summary && !state.summary.started && !side" :title="document.title" :options="state.summary.options" :has-selection="Boolean(context?.selection?.text || context?.selection?.image)" @start="startSummary" @cancel="cancelSetup" />
+        <SummarySetup v-if="!messages.length && state.summary && !state.summary.started && !side" :title="document.title" :options="state.summary.options" :outline="getOutline?.(document.id)" :has-selection="Boolean(context?.selection?.text || context?.selection?.image)" @start="startSummary" @cancel="cancelSetup" />
         <div v-else-if="!messages.length" class="ai-welcome">
           <AssistantMark :kind="avatar.kind" :image="avatar.image" :size="56" class="ai-welcome-mark" />
           <!-- 问候语一个字一个字显出来，像刚写上去的；只在打开时写一遍。 -->
           <!-- 新对话用哪种记忆：一行小字三选一，选中的那个是墨色加一道细线。读什么、记到哪，指上去看。选的那种也是下一段新对话的默认。 -->
-          <div v-if="!side" class="memory-pick" role="radiogroup" aria-label="这段对话的记忆">
+          <div v-if="!side" class="memory-pick" role="radiogroup" aria-label="这段对话的记忆" @keydown="radioKeys">
             <span class="memory-label"><AppIcon name="memory" :size="12" />记忆</span>
-            <button v-for="item in MEMORY_MODES" :key="item.id" type="button" role="radio" :aria-checked="memoryNow === item.id" :data-tip="item.note" @click="setConversationMemory(document.id, state.id, item.id)">{{ item.label }}</button>
+            <button v-for="item in MEMORY_MODES" :key="item.id" type="button" role="radio" :aria-checked="memoryNow === item.id" :tabindex="memoryNow === item.id ? 0 : -1" :data-tip="item.note" @click="setConversationMemory(document.id, state.id, item.id)">{{ item.label }}</button>
           </div>
           <h2 class="ai-welcome-lead" :lang="greeting.lang === 'zh' ? 'zh-CN' : 'en'" :aria-label="greeting.text"><span v-for="(glyph, index) in Array.from(greeting.text)" :key="index" class="lead-glyph" aria-hidden="true" :style="{ '--i': Math.min(index, 60) }">{{ glyph }}</span></h2>
         </div>
@@ -982,7 +992,13 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
               <div class="editor-actions"><button class="frost-button" @click="cancelEdit">取消</button><button class="frost-button primary" :disabled="!editText.trim()" @click="submitEdit(message)">发送</button></div>
             </div>
             <template v-else>
-              <div class="user-question">{{ message.content }}</div>
+              <!-- 总结对话的第一问是那张设置表：照样显示成一张表，不是便签。 -->
+              <div v-if="requestTable(message)" class="sum-request">
+                <p class="sum-request-head"><b>总结</b><span>{{ requestTable(message)!.title }}</span></p>
+                <dl v-if="requestTable(message)!.rows.length"><template v-for="row in requestTable(message)!.rows" :key="row[0]"><dt>{{ row[0] }}</dt><dd>{{ row[1] }}</dd></template></dl>
+                <p v-else class="sum-request-none">没有另外的要求，由助手决定。</p>
+              </div>
+              <div v-else class="user-question">{{ message.content }}</div>
               <!-- 问题下面只占一行：左边是指上去才出现的「编辑」「复制」，右边是随问题发出的引文、图片、页码。 -->
               <div class="question-foot">
                 <div class="question-actions"><button v-if="!side || message.id === lastQuestionId" class="meta-button" :disabled="busy && message.id === lastQuestionId" aria-label="编辑问题" data-tip="编辑后重新回答" @click="startEdit(message)"><AppIcon name="edit" :size="13" /></button><button class="meta-button" aria-label="复制问题" data-tip="复制" @click="copy(message.content)"><AppIcon name="copy" :size="13" /></button></div>
@@ -1310,6 +1326,16 @@ button:disabled{opacity:.4;cursor:default}
 .answer-body :deep(.draft-chip:hover){border-color:color-mix(in srgb,var(--accent) 55%,transparent)}
 .answer-body :deep(.draft-chip svg){color:var(--accent)}
 .header-button.draft-toggle.on{background:var(--frost-hover);color:var(--accent)}
+/* 总结对话的第一问：一张小表。 */
+.sum-request{align-self:flex-end;width:min(100%,420px);margin-left:auto;padding:12px 16px 13px;border:1px solid var(--hairline);border-radius:12px;background:var(--surface,var(--canvas));color:var(--ink);font-size:13px;line-height:1.55;text-align:left;user-select:text}
+.sum-request-head{display:flex;align-items:baseline;gap:10px;margin:0 0 9px;padding-bottom:9px;border-bottom:1px solid var(--hairline)}
+.sum-request-head b{flex:none;font-size:14px;font-weight:650}
+.sum-request-head span{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--secondary)}
+.sum-request dl{display:grid;grid-template-columns:auto 1fr;gap:5px 16px;margin:0}
+.sum-request dt{color:var(--muted)}
+.sum-request dd{min-width:0;margin:0;overflow-wrap:anywhere}
+.sum-request-none{margin:0;color:var(--muted)}
+:root[data-style='sketch'] .sum-request{font-family:var(--font-formal);background:var(--paper,#fdfaf0);border-color:color-mix(in srgb,var(--pencil,#2b2a27) 30%,transparent);border-radius:10px}
 .memory-pick{order:3;display:inline-flex;align-items:center;gap:16px;margin-top:20px;color:var(--muted);font-size:12px;line-height:1}
 .memory-label{display:inline-flex;align-items:center;gap:6px;padding-right:16px;border-right:1px solid var(--hairline);letter-spacing:.14em;opacity:.85}
 .memory-label svg{opacity:.7}

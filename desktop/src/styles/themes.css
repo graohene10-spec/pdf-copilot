@@ -679,13 +679,10 @@
 :root[data-style='sketch'] .document-collection:not(.list) > .document-card {
   border-width: 1.5px;
   background-color: var(--paper);
-  rotate: -.7deg;
   transition: rotate var(--dur-spring) var(--spring-bouncy), translate var(--dur-spring) var(--spring-bouncy), scale var(--dur-bounce) var(--spring-snappy), box-shadow var(--dur-2) var(--ease-out);
   animation: sketch-drop var(--dur-bounce) var(--spring-bouncy) both;
 }
 
-:root[data-style='sketch'] .document-collection:not(.list) > .document-card:nth-child(2n) { rotate: .8deg; }
-:root[data-style='sketch'] .document-collection:not(.list) > .document-card:nth-child(3n) { rotate: -.3deg; }
 :root[data-style='sketch'] .document-collection:not(.list) > .document-card:nth-child(2) { animation-delay: 40ms; }
 :root[data-style='sketch'] .document-collection:not(.list) > .document-card:nth-child(3) { animation-delay: 80ms; }
 :root[data-style='sketch'] .document-collection:not(.list) > .document-card:nth-child(4) { animation-delay: 120ms; }
@@ -771,14 +768,12 @@
   background: var(--sticky);
   color: var(--pencil);
   border-radius: 1px;
-  rotate: -2deg;
   box-shadow: 1px 2px 3px rgb(60 50 30 / .22);
 }
 
 :root[data-style='sketch'] .document-tags > :nth-child(2n),
 :root[data-style='sketch'] .editable-tags > span:nth-child(2n) {
   background: var(--sticky-2);
-  rotate: 1.5deg;
 }
 
 :root[data-style='sketch'] .document-tags > :nth-child(3n),
@@ -793,7 +788,6 @@
   border: 0;
   border-radius: 2px;
   box-shadow: 1.5px 2.5px 4px rgb(60 50 30 / .22);
-  rotate: .6deg;
   font-family: var(--font-answer);
   font-size: 15.5px;
 }
@@ -929,7 +923,6 @@
 
 /* 侧栏是一张贴了胶带的纸，没有框线，只有纸的厚度与投影。 */
 :root[data-style='sketch'] .app-sidebar {
-  rotate: -.8deg;
   border-color: transparent;
   border-radius: 2px;
   box-shadow: 1px 2px 0 rgb(60 50 30 / .08), 4px 8px 18px -6px rgb(60 50 30 / .35);
@@ -958,13 +951,10 @@
   border: 0;
   border-radius: 3px 3px 0 0;
   box-shadow: 1px 2px 4px rgb(60 50 30 / .2);
-  rotate: -1deg;
   align-self: flex-end;
 }
 
 :root[data-style='sketch'][data-theme='dark'] :is(.tab-library, .tab-strip > .file-tab) { background-color: #3a3832; }
-:root[data-style='sketch'] .tab-strip > .file-tab:nth-child(2n) { rotate: 1.2deg; }
-:root[data-style='sketch'] .tab-strip > .file-tab:nth-child(3n) { rotate: -.4deg; }
 
 :root[data-style='sketch'] .tab-strip.liquid-group > .file-tab.selected,
 :root[data-style='sketch'] .tab-strip > .file-tab.selected,
@@ -972,7 +962,6 @@
   height: 46px;
   background-color: var(--paper);
   box-shadow: 2px 3px 8px rgb(60 50 30 / .3);
-  rotate: .6deg;
   z-index: 2;
 }
 
@@ -991,7 +980,6 @@
   background-image: none;
   border: 0;
   box-shadow: 1.5px 2px 0 rgb(60 50 30 / .16);
-  rotate: -1deg;
   color: var(--pencil);
   transition: background-color var(--dur-3) var(--ease-out), rotate var(--dur-spring) var(--spring-bouncy), box-shadow var(--dur-2) var(--ease-out);
 }
@@ -1001,7 +989,6 @@
 :root[data-style='sketch'] .topbar-actions .ai-toggle.active:hover:not(:disabled) {
   background-color: var(--sticky);
   box-shadow: 2px 3px 6px rgb(60 50 30 / .25);
-  rotate: -1.5deg;
 }
 
 /* 阅读工具条也没有底板：工具散放在桌上，各自用铅笔圈起来。 */
@@ -1033,7 +1020,6 @@
 :root[data-style='sketch'] .reader-tools button:is(.active, [aria-pressed='true'], [aria-expanded='true']),
 :root[data-style='sketch'] .reader-tools button:is(.active, [aria-pressed='true'], [aria-expanded='true']):hover:not(:disabled) {
   background-color: var(--sticky);
-  rotate: -1deg;
 }
 
 :root[data-style='sketch'] .reader-zoom > :not(button) { background: transparent; }
@@ -1085,7 +1071,6 @@
 
 /* 阅读助手：横线本的一页，左边红色页边线，上面别着回形针；整页微微歪着。 */
 :root[data-style='sketch'] .ai-pane {
-  rotate: .5deg;
   border-color: transparent;
   border-radius: 2px;
   box-shadow: 2px 3px 0 rgb(60 50 30 / .08), 6px 10px 22px -8px rgb(60 50 30 / .4);
@@ -1166,7 +1151,6 @@
   border-color: transparent;
   border-radius: 0;
   box-shadow: none;
-  rotate: -.6deg;
 }
 
 /* 头部像笔记里用笔框起来的重点：一个手画的矩形，外面再描一道没对齐的淡框。 */
@@ -1217,7 +1201,6 @@
 /* 用户的问题：一张歪着贴上去的黄色便利贴，手写。 */
 :root[data-style='sketch'] .user-question {
   background: #ffe7a6;
-  rotate: 1.6deg;
   box-shadow: 2px 4px 8px rgb(60 50 30 / .28);
   font-family: 'Long Cang', 'Caveat', cursive;
   font-size: 16px;
@@ -1229,7 +1212,6 @@
 /* 输入框：一张用蓝色胶带贴在本子下方的卡片。 */
 :root[data-style='sketch'] .composer-field {
   background-color: #fffdf8;
-  rotate: -.8deg;
   box-shadow: 3px 4px 10px rgb(60 50 30 / .25);
 }
 
@@ -1259,9 +1241,16 @@
 :root[data-style='sketch'] .send-button:disabled { background: transparent; color: var(--muted); }
 :root[data-style='sketch'] .send-button::before { border-radius: 50% 44% 52% 46%; }
 
-/* 设置：一张歪着放的纸，每组设置是一张描了边的小卡片。 */
+/* 文字一律不歪着放：纸张、便签、标签原来都转零点几度，转过的文字落不到像素格上，
+   同一屏里有的清楚有的发虚。手绘感留给铅笔描的边框、胶带、回形针和图标——那些可以歪。 */
+:root[data-style='sketch'] .settings-group:nth-of-type(2n)::before { rotate: .3deg; }
+:root[data-style='sketch'] .settings-group:nth-of-type(2n + 1)::before { rotate: -.25deg; }
+:root[data-style='sketch'] .summary-note:nth-child(2n)::before { rotate: .5deg; }
+:root[data-style='sketch'] .summary-note:nth-child(2n + 1)::before { rotate: -.4deg; }
+:root[data-style='sketch'] .composer-field::before { rotate: -.3deg; }
+
+/* 设置：每组设置是一张描了边的小卡片。 */
 :root[data-style='sketch'] .settings-dialog {
-  rotate: -.4deg;
   border-color: transparent;
   overflow: visible;
 }
@@ -1271,8 +1260,6 @@
   box-shadow: none;
 }
 
-:root[data-style='sketch'] .settings-group:nth-of-type(2n) { rotate: .3deg; }
-:root[data-style='sketch'] .settings-group:nth-of-type(2n + 1) { rotate: -.25deg; }
 
 /* 方格桌面上的文档库：搜索框、排序、视图切换都用铅笔圈出来，坐在纸面上。 */
 :root[data-style='sketch'] :is(.library-search, .library-sort, .view-switch, .summary-note) {
@@ -1283,10 +1270,7 @@
 
 :root[data-style='sketch'][data-theme='dark'] :is(.library-search, .library-sort, .view-switch, .summary-note) { background-color: rgb(46 44 40 / .7); }
 
-:root[data-style='sketch'] .summary-note:nth-child(2n) { rotate: .8deg; }
-:root[data-style='sketch'] .summary-note:nth-child(2n + 1) { rotate: -.6deg; }
 
-:root[data-style='sketch'] .import-button { rotate: -.6deg; }
 
 /* 手写字更宽：工具条收紧间距，让末尾的搜索框留在工具条里。 */
 :root[data-style='sketch'] .reader-tools { gap: 4px; padding-right: 10px; }
@@ -1348,7 +1332,7 @@
 /* 书签：夹在书页边上的小画签（画面见 library/bookmark-art.ts），略歪一点，指上去摆正；手写书签名写在黄色便签上。 */
 :root[data-style='sketch'] .bookmark-art { rotate: -3deg; transition: width var(--dur-3) var(--ease-out), height var(--dur-3) var(--ease-out), rotate var(--dur-2) var(--ease-out); }
 :root[data-style='sketch'] .bookmark-hit:is(:hover, :focus-visible) .bookmark-art { rotate: 0deg; }
-:root[data-style='sketch'] .bookmark-label { height: 22px; border: 1.5px solid var(--pencil); border-radius: 2px 5px 4px 2px; background: var(--sticky); -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: 1.5px 2px 0 rgb(60 50 30 / .22); color: var(--pencil); font: 400 14px/20px var(--font-ui); rotate: -1.5deg; }
+:root[data-style='sketch'] .bookmark-label { height: 22px; border: 1.5px solid var(--pencil); border-radius: 2px 5px 4px 2px; background: var(--sticky); -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: 1.5px 2px 0 rgb(60 50 30 / .22); color: var(--pencil); font: 400 14px/20px var(--font-ui); }
 :root[data-style='sketch'] .bookmark-field { border: 1.5px solid var(--pencil); border-radius: 3px; background: var(--paper); box-shadow: 2px 3px 0 rgb(60 50 30 / .2); font-family: var(--font-hand-input); }
 
 /* ---- 回答里的代码、表格、图示、引用 ------------------------------------------
@@ -1578,7 +1562,7 @@
 /* 选中的卡片像被红铅笔圈了一下，左上角打个勾。 */
 :root[data-style='sketch'] .document-card.picked { box-shadow: none; outline: 2px solid var(--red-pencil); outline-offset: 4px; border-radius: 6px 10px 7px 11px; }
 :root[data-style='sketch'] .card-pick { background: var(--paper); color: var(--red-pencil); border: 1.5px solid var(--red-pencil); box-shadow: none; rotate: -8deg; }
-:root[data-style='sketch'] .batch-bar { background: var(--paper); -webkit-backdrop-filter: none; backdrop-filter: none; border: 1.5px solid var(--pencil); border-radius: 8px 12px 9px 13px; box-shadow: 3px 4px 0 color-mix(in srgb, var(--pencil) 18%, transparent); rotate: -.4deg; }
+:root[data-style='sketch'] .batch-bar { background: var(--paper); -webkit-backdrop-filter: none; backdrop-filter: none; border: 1.5px solid var(--pencil); border-radius: 8px 12px 9px 13px; box-shadow: 3px 4px 0 color-mix(in srgb, var(--pencil) 18%, transparent); }
 :root[data-style='sketch'] .batch-bar button { border-radius: 6px; }
 
 /* ---- 阅读区上沿：工具条是一条撕下来的纸，页面从它的毛边底下滑过去，不再被一刀切断 ---------- */
@@ -1616,7 +1600,6 @@
 /* ---- 翻译栏：与阅读助手同一种纸 / 面板，放在左边所以线和回形针换到另一侧 ------------------ */
 :root[data-style='warm'] .translate-pane { border-left: 0; border-right: .5px solid var(--warm-rule); }
 :root[data-style='warm'] .translate-column.right .translate-pane { border-right: 0; border-left: .5px solid var(--warm-rule); }
-:root[data-style='sketch'] .translate-pane { rotate: -.5deg; }
 /* 回形针会压住右上角的按钮：翻译栏改用一条胶带贴在上沿。 */
 :root[data-style='sketch'] .translate-pane::after {
   top: -9px; left: 50%; width: 82px; height: 20px; margin-left: -41px;
@@ -1643,7 +1626,6 @@
   border-radius: 10px 14px 9px 13px / 13px 9px 14px 10px;
   box-shadow: 3px 4px 0 color-mix(in srgb, var(--pencil) 16%, transparent);
 }
-:root[data-style='sketch'] .usage-card { rotate: -.4deg; }
 :root[data-style='sketch'] .usage-card h3 { font-family: 'Caveat', var(--font-ui); font-size: 24px; font-weight: 600; }
 :root[data-style='sketch'] .usage-card :is(.usage-row b, .usage-grid dd, .usage-kind b) { font-family: 'Caveat', var(--font-ui); font-size: 17px; }
 :root[data-style='sketch'] :is(.usage-bar, .usage-mini) {
@@ -1659,7 +1641,7 @@
 :root[data-style='sketch'] .usage-bar.calm i { background: repeating-linear-gradient(-55deg, color-mix(in srgb, var(--pencil) 70%, transparent) 0 2px, transparent 2px 5px); }
 :root[data-style='sketch'] :is(.usage-grid div, .usage-breakdown .usage-row) { border-bottom: 1px dashed color-mix(in srgb, var(--pencil) 35%, transparent); }
 :root[data-style='sketch'] .summary-card { border: 1.5px dashed var(--pencil-soft); background: color-mix(in srgb, var(--sticky) 35%, transparent); border-radius: 4px 8px 5px 9px; }
-:root[data-style='sketch'] .btw-card { background: var(--sticky); border: 0; border-radius: 2px; rotate: -.6deg; box-shadow: 2px 3px 6px rgb(60 50 30 / .22); }
+:root[data-style='sketch'] .btw-card { background: var(--sticky); border: 0; border-radius: 2px; box-shadow: 2px 3px 6px rgb(60 50 30 / .22); }
 :root[data-style='sketch'][data-theme='dark'] .btw-card { background: var(--sticky); }
 :root[data-style='sketch'] .usage-bar:is(.warm) i { background: repeating-linear-gradient(-55deg, rgb(214 150 40 / .9) 0 2px, transparent 2px 5px); }
 :root[data-style='sketch'] .usage-bar:is(.hot) i { background: repeating-linear-gradient(-55deg, color-mix(in srgb, var(--red-pencil) 90%, transparent) 0 2px, transparent 2px 5px); }
@@ -1669,7 +1651,7 @@
 :root[data-style='warm'] .ai-pane.embedded { border-left: 0; background: none; }
 :root[data-style='sketch'] .ai-pane.embedded { rotate: 0deg; background: none; box-shadow: none; border: 0; }
 :root[data-style='sketch'] .ai-pane.embedded::after { content: none; }
-:root[data-style='sketch'] :is(.note-card, .excerpt-chip) { border-left: 2px solid var(--red-pencil); background: color-mix(in srgb, var(--sticky) 45%, transparent); rotate: .4deg; }
+:root[data-style='sketch'] :is(.note-card, .excerpt-chip) { border-left: 2px solid var(--red-pencil); background: color-mix(in srgb, var(--sticky) 45%, transparent); }
 :root[data-style='sketch'] .note-flyer { background: var(--sticky); color: var(--pencil); border-left: 0; border-radius: 2px; font-family: 'Caveat', var(--font-ui); font-size: 15px; }
 
 /* 草稿 · 列表视图：选中的行像被荧光笔涂过，左边一道红铅笔竖线，不画会压到邻行的圈。 */

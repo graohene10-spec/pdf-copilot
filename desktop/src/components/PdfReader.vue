@@ -824,7 +824,7 @@ async function resume() {
 }
 onActivated(resume)
 onDeactivated(suspend)
-defineExpose({ bookmarkPlace, bookmarkAt, goToPage, getPage: () => page.value, getPdf: () => pdf, isSuspended: () => !active, clearSelection: () => viewer?.clearOverlays(), getCaptureFrame, getCaptureElements, zoomIn, zoomOut, fitWidth, nextPage, previousPage, toggleOutline, toggleCapture, cancelCapture, toggleInk: ink.toggle, exitInk: ink.exit, pickInk: ink.pick, focusSearch, clearSearch, getDisplayScale: () => scale.value, getViewState, getBookmarkPosition, bookmarkRatio, goToBookmark, holdPanelResize, suspend, resume, getCacheStats: () => viewer?.getCacheStats() })
+defineExpose({ getOutline: () => outline.value.map(item => ({ title: item.title, level: item.depth, page: item.page })), bookmarkPlace, bookmarkAt, goToPage, getPage: () => page.value, getPdf: () => pdf, isSuspended: () => !active, clearSelection: () => viewer?.clearOverlays(), getCaptureFrame, getCaptureElements, zoomIn, zoomOut, fitWidth, nextPage, previousPage, toggleOutline, toggleCapture, cancelCapture, toggleInk: ink.toggle, exitInk: ink.exit, pickInk: ink.pick, focusSearch, clearSearch, getDisplayScale: () => scale.value, getViewState, getBookmarkPosition, bookmarkRatio, goToBookmark, holdPanelResize, suspend, resume, getCacheStats: () => viewer?.getCacheStats() })
 </script>
 
 <template>

@@ -3,7 +3,7 @@ import { loadAiSettings, loadApiKey } from './settings.mjs'
 import { RequestScheduler } from './request-scheduler.mjs'
 import { library } from '../sdk'
 import { recordUsage } from './usage'
-import { summaryDraft, summaryInstructions, summaryContinues, lastSummaryOptions, MAX_SUMMARY_ROUNDS, type SummaryState } from './summary'
+import { summaryDraft, summaryInstructions, summaryContinues, lastSummaryOptions, readSwitches, MAX_SUMMARY_ROUNDS, type SummaryState } from './summary'
 import { defaultMemoryMode, forgetConversation, memorize, memoryInstructions, memoryMode, memoryReady, rememberMemoryMode, retagMemory, type MemoryMode } from './memory'
 
 export type Usage = { input?: number; output?: number; reasoning?: number; estimated: boolean }
@@ -71,7 +71,7 @@ function readSummary(value: any): SummaryState | undefined {
   if (!value || typeof value !== 'object' || !value.options) return undefined
   const options = lastSummaryOptions()
   for (const key of ['scope', 'length', 'structure', 'tone', 'language', 'focus'] as const) options[key] = typeof value.options[key] === 'string' ? value.options[key].slice(0, 400) : ''
-  options.ui = value.options.ui === true; options.multi = value.options.multi === true
+  readSwitches(options, value.options)
   return { options, started: value.started !== false, savedId: typeof value.savedId === 'string' ? value.savedId : undefined, rounds: Number(value.rounds) || 0 }
 }
 function blank(documentId: string): ChatState {
