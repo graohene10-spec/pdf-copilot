@@ -196,7 +196,9 @@ const chromeCollapsed = ref(false)
 function collapseChrome() { chromeCollapsed.value = true; sidebarOpen.value = false }
 function expandChrome() { chromeCollapsed.value = false; sidebarOpen.value = true }
 function toggleSidebar() { if (chromeCollapsed.value) expandChrome(); else sidebarOpen.value = !sidebarOpen.value }
-const detailsOpen = ref(false)
+// 文档详情：从文档库或标签的右键菜单打开，是一张居中的卡片，不占阅读区。
+const detailsId = ref('')
+const detailsDoc = computed(() => detailsId.value ? documents.value.find(item => item.id === sourceId(detailsId.value)) || null : null)
 const removeTarget = ref<Doc | null>(null)
 /** 文档库里一次移除多份（框选后的批量操作）。 */
 const removeBatch = ref<Doc[] | null>(null)
@@ -617,7 +619,7 @@ async function showDocument(doc: Doc, reload = false) {
   let tab = tabs.value.find(tab => tab.doc.id === doc.id)
   if (!tab) { tab = { doc }; tabs.value.push(tab) }
   active.value = tab.doc; selection.value = tab.selection
-  opening.value = true; detailsOpen.value = false
+  opening.value = true
   try {
     const cached = readerCache.value.find(entry => entry.id === doc.id)
     if (cached) retainReaders(readerCache.value, doc.id)
@@ -655,7 +657,7 @@ async function loadGroupReaders(epoch: number) {
 }
 function closeReader() {
   libraryShown.value = true
-  suspendLeaving([]); pauseReader(); ++openEpoch; void flushProgress(); splitPicker.value = undefined; active.value = null; opening.value = false; selection.value = undefined; detailsOpen.value = false
+  suspendLeaving([]); pauseReader(); ++openEpoch; void flushProgress(); splitPicker.value = undefined; active.value = null; opening.value = false; selection.value = undefined;
   // 没有打开的文件时才真正清空工作区；否则读者与助手留在原处，回来即用。
   if (!tabs.value.length) clearWorkspace()
   void refresh()
@@ -735,7 +737,7 @@ function closeTab(id: string) {
   const rest = paneIndex >= 0 ? group.value.filter(item => item !== id) : []
   if (inGroup(id)) group.value = group.value.length > 2 ? group.value.filter(item => item !== id) : []
   aiPanels.value = aiPanels.value.filter(panel => panel.doc !== id)
-  if (selected) { pauseReader(); ++openEpoch; void flushProgress(); active.value = null; selection.value = undefined; detailsOpen.value = false; opening.value = false }
+  if (selected) { pauseReader(); ++openEpoch; void flushProgress(); active.value = null; selection.value = undefined; opening.value = false }
   evictReader(id)
   // 另一份同书标签还开着时，对话与密码留给它。
   if (!tabs.value.some(tab => tab.doc.id !== id && sourceId(tab.doc.id) === sourceId(id))) { closeChat(sourceId(id)); forgetPassword(sourceId(id)) }
@@ -1349,6 +1351,7 @@ function appContextMenu(event: MouseEvent) {
     const cover = covers.get(sourceId(doc.id))?.kind ?? 'icon'
     items.push({ label: '打开', icon: 'book', action: () => { void openDocument(doc) } })
     items.push({ label: doc.starred ? '取消收藏' : '收藏', icon: 'star', action: () => { void toggleStar(doc) } })
+    items.push({ label: '详情与标签…', icon: 'tag', action: () => { detailsId.value = doc.id } })
     items.push(...groupMenuItems(picked.value.has(doc.id) && picked.value.size > 1 ? pickedDocs.value.map(item => item.id) : [doc.id]))
     // 显示封面：首页预览、自己的图片或默认图标；当前用的那一种标「当前」。
     items.push({ label: '封面：首页预览', icon: 'doc', hint: cover === 'page' ? '当前' : undefined, separator: true, action: () => { void changeCover(doc, 'page') } })
@@ -1403,7 +1406,8 @@ function tabMenu(payload: { id: string; x: number; y: number }) {
     const full = (inGroup(active.value?.id) ? group.value.length : 1) >= MAX_PANES
     items.push({ label: '在右侧再开一份', icon: 'split-add', action: () => openCopy(id), disabled: full, hint: full ? `最多 ${MAX_PANES} 份` : undefined })
   }
-  items.push({ label: '关闭标签', icon: 'close', separator: true, action: () => closeTab(id) })
+  items.push({ label: '详情与标签…', icon: 'tag', separator: true, action: () => { detailsId.value = id } })
+  items.push({ label: '关闭标签', icon: 'close', action: () => closeTab(id) })
   if (tabs.value.length > 1) items.push({ label: '关闭其他标签', action: () => closeOtherTabs(id) })
   contextMenu.value = { x: payload.x, y: payload.y, items }
 }
@@ -1630,13 +1634,15 @@ function consumeSelection(value: { documentId: string; selection: any }) {
 function jump(value: { page?: number; rect?: any; line?: number }) { if (active.value?.kind === 'markdown') reader.value?.goToPage?.(value.line || value.page || 1); else if (value.page) reader.value?.goToPage?.(value.page, value.rect) }
 async function addTag() {
   const value = tagInput.value.trim().slice(0, 40)
-  if (!value || !active.value) return
-  try { updateLocal(await library.update(sourceId(active.value.id), { tags: [...new Set([...active.value.tags, value])] })); tagInput.value = '' }
+  const doc = detailsDoc.value
+  if (!value || !doc) return
+  try { updateLocal(await library.update(doc.id, { tags: [...new Set([...doc.tags, value])] })); tagInput.value = '' }
   catch (error) { notify(reason(error)) }
 }
 async function removeTag(value: string) {
-  if (!active.value) return
-  try { updateLocal(await library.update(sourceId(active.value.id), { tags: active.value.tags.filter(tag => tag !== value) })) }
+  const doc = detailsDoc.value
+  if (!doc) return
+  try { updateLocal(await library.update(doc.id, { tags: doc.tags.filter(tag => tag !== value) })) }
   catch (error) { notify(reason(error)) }
 }
 async function removeDocuments() {
@@ -1738,7 +1744,7 @@ async function setMarkdownFontSize(value: number) {
    窄屏下右侧面板是浮层，不占阅读宽度。 */
 const resizingPanels = new Map<Element, boolean>()
 let fitAfterPanelResize = false
-watch([sidebarOpen, aiOpen, detailsOpen, chromeCollapsed], () => {
+watch([sidebarOpen, aiOpen, chromeCollapsed], () => {
   if (pdfOnScreen() && !window.matchMedia('(max-width: 720px)').matches) for (const instance of visibleReaders()) instance.holdPanelResize?.(true)
 }, { flush: 'sync' })
 // Windows inside the workspace: only assistant windows change the documents' width when they come and go.
@@ -1849,7 +1855,7 @@ function keydown(event: KeyboardEvent) {
     else if (removeBatch.value) { removeBatch.value = null; event.preventDefault() }
     else if (!active.value && batchTag.value !== null) { batchTag.value = null; event.preventDefault() }
     else if (!active.value && picked.value.size) { clearPicked(); event.preventDefault() }
-    else if (detailsOpen.value) { detailsOpen.value = false; event.preventDefault() }
+    else if (detailsId.value) { detailsId.value = ''; event.preventDefault() }
     else if (reader.value?.cancelCapture?.()) event.preventDefault()
     else if (fullscreen.value) { event.preventDefault(); void exitFullscreen() }
     return
@@ -2105,11 +2111,12 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
         <button v-else class="breadcrumb breadcrumb-toggle" :class="{ open: libraryShown }" :aria-pressed="libraryShown" :data-tip="libraryShown ? '收起文档库，只留桌面' : '打开文档库'" @click="toggleLibrary"><AppIcon name="library" :size="15" /><b>{{ libraryShown ? currentTitle : '文档库' }}</b></button>
         <div class="topbar-actions">
           <ClockChip :collapsed="chromeCollapsed" />
-          <template v-if="active"><button class="icon-button" :class="{ 'is-starred': active.starred }" @click="toggleStar(active)" data-tip="收藏文档" aria-label="收藏文档"><AppIcon name="star" :size="18" /></button><button class="icon-button" :class="{ active: detailsOpen }" @click="detailsOpen = !detailsOpen" data-tip="文档详情与标签" aria-label="文档详情与标签" :aria-expanded="detailsOpen"><AppIcon name="tag" :size="18" /></button><button class="icon-button split-toggle" data-split-anchor :class="{ active: splitPicker || splitView }" @click="toggleSplitPicker($event)" data-tip="并排阅读" :data-tip-key="tipKey('split')" aria-label="并排阅读" :aria-expanded="!!splitPicker"><AppIcon name="split" :size="18" /><span v-if="splitView" class="split-count">{{ paneIds.length }}</span></button><button class="ai-toggle" data-tip="阅读助手" :data-tip-key="tipKey('ai')" :class="{ active: aiOpen }" @click="toggleAssistant" :aria-expanded="aiOpen"><ClaudeBurst :size="17" />阅读助手</button></template>
-          <button v-else class="icon-button" @click="toggleTheme" :data-tip="theme === 'dark' ? '切换浅色主题' : '切换深色主题'" :aria-label="theme === 'dark' ? '切换浅色主题' : '切换深色主题'"><AppIcon :name="theme === 'dark' ? 'sun' : 'moon'" :size="18" /></button>
+          <!-- 阅读助手居中，左右各两枚：左边是和这份文档有关的（收藏、翻译），右边是和窗口有关的（收起顶栏、全屏）；设置单独放在最右。 -->
+          <template v-if="active"><button class="icon-button" :class="{ 'is-starred': active.starred }" @click="toggleStar(active)" data-tip="收藏文档" aria-label="收藏文档"><AppIcon name="star" :size="18" /></button><button class="icon-button translate-toggle" :class="{ active: translator.open }" @click="toggleTranslate" data-tip="翻译" :data-tip-key="tipKey('translate')" aria-label="翻译" :aria-pressed="translator.open"><AppIcon name="translate" :size="18" /></button><button class="ai-toggle" data-tip="阅读助手" :data-tip-key="tipKey('ai')" :class="{ active: aiOpen }" @click="toggleAssistant" :aria-expanded="aiOpen"><ClaudeBurst :size="17" />阅读助手</button></template>
+          <template v-else><button class="icon-button" @click="toggleTheme" :data-tip="theme === 'dark' ? '切换浅色主题' : '切换深色主题'" :aria-label="theme === 'dark' ? '切换浅色主题' : '切换深色主题'"><AppIcon :name="theme === 'dark' ? 'sun' : 'moon'" :size="18" /></button><button class="icon-button translate-toggle" :class="{ active: translator.open }" @click="toggleTranslate" data-tip="翻译" :data-tip-key="tipKey('translate')" aria-label="翻译" :aria-pressed="translator.open"><AppIcon name="translate" :size="18" /></button></template>
           <button class="icon-button" @click="collapseChrome" data-tip="收起顶栏与侧栏，阅读区占满窗口" :data-tip-key="tipKey('chrome')" aria-label="收起顶栏与侧栏"><AppIcon name="collapse-up" :size="18" /></button>
           <button class="icon-button" @click="toggleFullscreen" :disabled="fullscreenPending" :aria-label="fullscreen ? '退出全屏' : '进入全屏'" :aria-pressed="fullscreen" :data-tip="fullscreen ? '退出全屏' : '进入全屏'" :data-tip-key="tipKey('fullscreen')"><AppIcon :name="fullscreen ? 'exit-fullscreen' : 'fullscreen'" :size="18" /></button>
-          <button class="icon-button translate-toggle" :class="{ active: translator.open }" @click="toggleTranslate" data-tip="翻译" :data-tip-key="tipKey('translate')" aria-label="翻译" :aria-pressed="translator.open"><AppIcon name="translate" :size="18" /></button>
+          <i class="topbar-rule" aria-hidden="true"></i>
           <button class="icon-button" @click="openSettings()" data-tip="设置" :data-tip-key="tipKey('settings')" aria-label="打开设置"><AppIcon name="settings" :size="18" /></button>
         </div>
       </header>
@@ -2184,7 +2191,7 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
           <div v-if="selection && !captureQuick && !aiOpen && selection.image" class="selection-context"><AppIcon name="crop" :size="16" /><span>{{ selection.image ? `已框选第 ${selection.page} 页的图表或公式` : `已选择 ${selection.text.length} 个字符` }}</span><button @click="openAssistant(true)"><AppIcon name="sparkle" :size="15" />向 AI 提问</button><button class="icon-button" @click="clearSelection" data-tip="清除选区" aria-label="清除选区"><AppIcon name="close" :size="14" /></button></div>
         </section>
         <Transition name="pane" @before-enter="paneResizeStart($event, true)" @before-leave="paneResizeStart($event, false)" @after-enter="paneResizeEnd" @after-leave="paneResizeEnd" @enter-cancelled="paneResizeEnd($event, true)" @leave-cancelled="paneResizeEnd($event, true)">
-          <aside v-if="detailsOpen && active" class="document-details pane-shell"><div class="details-heading"><h3>文档详情</h3><button class="icon-button" @click="detailsOpen = false" data-tip="关闭文档详情" aria-label="关闭文档详情"><AppIcon name="close" :size="17" /></button></div><div class="detail-icon"><AppIcon :name="active.kind === 'pdf' ? 'file' : 'markdown'" :size="30" /></div><h4>{{ stageDoc!.name }}</h4><dl><dt>格式</dt><dd>{{ active.kind === 'pdf' ? 'PDF' : 'Markdown' }}</dd><dt>文件大小</dt><dd>{{ size(active.size) }}</dd><dt>加入时间</dt><dd>{{ date(active.addedAt) }}</dd><dt>文件位置</dt><dd class="detail-path">{{ active.path }}</dd></dl><p class="eyebrow">标签</p><div class="editable-tags"><span v-for="tag in active.tags" :key="tag">{{ tag }}<button @click="removeTag(tag)" :data-tip="`移除标签 ${tag}`" :aria-label="`移除标签 ${tag}`"><AppIcon name="close" :size="12" /></button></span></div><form class="add-tag" @submit.prevent="addTag"><input v-model="tagInput" placeholder="添加标签" maxlength="40" /><button :disabled="!tagInput.trim()" data-tip="添加标签" aria-label="添加标签"><AppIcon name="plus" :size="16" /></button></form><button class="remove-document" @click="removeTarget = active"><AppIcon name="trash" :size="16" />从文档库移除</button></aside>
+
         </Transition>
       </div>
       </Transition>
@@ -2207,6 +2214,9 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
     </TransitionGroup>
     <Transition name="hint"><button v-if="currentHint" :key="currentHint.id" type="button" class="gesture-hint" aria-live="polite" @click="dismissHint"><svg v-if="currentHint.id === 'explain' || currentHint.id === 'visual-explain'" class="hint-mouse" viewBox="0 0 14 20" aria-hidden="true"><rect x="1" y="1" width="12" height="18" rx="6" /><line x1="7" y1="4.5" x2="7" y2="8.5" /></svg><kbd v-for="key in currentHint.keys" :key="key">{{ key }}</kbd><span>{{ currentHint.text }}</span></button></Transition>
     <Transition name="toast"><div v-if="toast" class="toast-message" role="status"><span>{{ toast }}</span><button @click="toast = ''" data-tip="关闭提示" aria-label="关闭提示"><AppIcon name="close" :size="15" /></button></div></Transition>
+    <Transition name="dialog">
+      <div v-if="detailsDoc" class="dialog-backdrop" @click.self="detailsId = ''"><aside class="document-details as-dialog" role="dialog" aria-modal="true" aria-label="文档详情"><div class="details-heading"><h3>文档详情</h3><button class="icon-button" @click="detailsId = ''" data-tip="关闭" aria-label="关闭文档详情"><AppIcon name="close" :size="17" /></button></div><div class="detail-icon"><AppIcon :name="detailsDoc.kind === 'pdf' ? 'file' : 'markdown'" :size="30" /></div><h4>{{ detailsDoc.name }}</h4><dl><dt>格式</dt><dd>{{ detailsDoc.kind === 'pdf' ? 'PDF' : 'Markdown' }}</dd><dt>文件大小</dt><dd>{{ size(detailsDoc.size) }}</dd><dt>加入时间</dt><dd>{{ date(detailsDoc.addedAt) }}</dd><dt>文件位置</dt><dd class="detail-path">{{ detailsDoc.path }}</dd></dl><p class="eyebrow">标签</p><div class="editable-tags"><span v-for="tag in detailsDoc.tags" :key="tag">{{ tag }}<button @click="removeTag(tag)" :data-tip="`移除标签 ${tag}`" :aria-label="`移除标签 ${tag}`"><AppIcon name="close" :size="12" /></button></span></div><form class="add-tag" @submit.prevent="addTag"><input v-model="tagInput" placeholder="添加标签" maxlength="40" /><button :disabled="!tagInput.trim()" data-tip="添加标签" aria-label="添加标签"><AppIcon name="plus" :size="16" /></button></form><button class="remove-document" @click="removeTarget = detailsDoc; detailsId = ''"><AppIcon name="trash" :size="16" />从文档库移除</button></aside></div>
+    </Transition>
     <Transition name="dialog">
       <div v-if="removeBatch" class="dialog-backdrop" @click.self="removeBatch = null"><section class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="remove-batch-title"><div class="dialog-icon"><AppIcon name="trash" :size="24" /></div><h2 id="remove-batch-title">移除 {{ removeBatch.length }} 份文档？</h2><p>{{ removeBatch.slice(0, 3).map(doc => `「${doc.name}」`).join('') }}{{ removeBatch.length > 3 ? ` 等 ${removeBatch.length} 份` : '' }}的阅读记录与标签会被移除，原文件仍保留在电脑上。</p><div class="dialog-actions"><button @click="removeBatch = null">取消</button><button class="danger-button" @click="removeDocuments">移除 {{ removeBatch.length }} 份</button></div></section></div>
       <div v-else-if="removeTarget" class="dialog-backdrop" @click.self="removeTarget = null"><section class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="remove-title"><div class="dialog-icon"><AppIcon name="trash" :size="24" /></div><h2 id="remove-title">从文档库移除？</h2><p>「{{ removeTarget.name }}」的阅读记录与标签会被移除，原文件仍保留在电脑上。</p><div class="dialog-actions"><button @click="removeTarget = null">取消</button><button class="danger-button" @click="removeDocument()">移除文档</button></div></section></div>

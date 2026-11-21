@@ -16,15 +16,18 @@ test('desktop five-page cache keeps the former per-page resolution and a bounded
   assert.equal(MAX_RENDERED_PAGES, 3, 'browser-plugin defaults remain unchanged');
   assert.equal(renderWindow(7, 20).length, 3);
   assert.deepEqual(renderWindow(7, 20, DESKTOP_RENDERED_PAGES), [5, 6, 7, 8, 9]);
-  assert.equal(DESKTOP_PAGE_PIXELS, MAX_CANVAS_PIXELS / 4);
+  assert.equal(DESKTOP_PAGE_PIXELS, 12_000_000);
+  // 2560×1440 at 125 % and 3840×2160 at 150 %: a fit-width A4 page gets the screen's full resolution.
+  assert.equal(renderPixelRatio(1500, 2121, 1.25, DESKTOP_PAGE_PIXELS), 1.25);
+  assert.equal(renderPixelRatio(1800, 2546, 1.5, DESKTOP_PAGE_PIXELS), 1.5);
   for (const [width, height, dpi] of [[1200, 1800, 2], [5000, 7000, 3], [720, 1024, 1.5]]) {
     const before = renderPixelRatio(width, height, dpi, MAX_CANVAS_PIXELS / 4);
     const after = renderPixelRatio(width, height, dpi, DESKTOP_PAGE_PIXELS);
-    assert.equal(after, before, 'wider prefetch must not reduce active-page clarity');
+    assert.ok(after >= before, 'wider prefetch must not reduce active-page clarity');
     const pixels = Math.floor(width * after) * Math.floor(height * after);
     assert.ok(pixels * 6 <= DESKTOP_CANVAS_PIXELS);
   }
-  assert.equal(DESKTOP_CANVAS_PIXELS, 24_000_000);
+  assert.equal(DESKTOP_CANVAS_PIXELS, 72_000_000);
 });
 
 test('inactive reader retains its current bitmap, drops neighbors, cancels queued work and resumes without reloading', async () => {

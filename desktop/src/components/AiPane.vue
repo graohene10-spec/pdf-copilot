@@ -5,6 +5,7 @@ import { getProvider, getNativeModels, getNativeStatus } from '../ai/providers.m
 import { nativeModelInventory, registerNativeModelInventory } from '../ai/native-models'
 import { setConversationMemory, adoptTurns, addExcerpt, removeExcerpt, removeMessage, compressConversation, sideConversation, chatState, sendChat, stopChat, configureRequests, taskSummary, conversations, activeConversationId, selectConversation, newConversation, deleteConversation, loadConversations, conversationTokens, contextWindow, branchConversation, resendQuestion, watchConversation, allConversations, pinMessage, MAX_ATTACHMENTS, pendingImages, setPendingImages, keepImage, type Message, type ChatState } from '../ai/workspace'
 import { renderMarkdown, renderDiagrams } from '../ai/render'
+import { memoryMode, type MemoryMode } from '../ai/memory'
 import { mountIntelligentUi } from '../ai/intelligent-ui'
 import { nudgeGlassMotion } from '../ui/glass-motion'
 import { vMarquee } from '../ui/marquee'
@@ -306,6 +307,13 @@ function clock(message: Message) {
   return `${at.getFullYear() === today.getFullYear() ? '' : `${at.getFullYear()}年`}${at.getMonth() + 1}月${at.getDate()}日 ${time}`
 }
 function thinkingTime(message: Message) { return seconds((message.firstTokenAt || message.finishedAt || now.value) - (message.startedAt || now.value)) }
+// 记忆的三种用法。说明里把「读」和「记」都说到，免得只知道一半。
+const MEMORY_MODES: { id: MemoryMode; label: string; note: string }[] = [
+  { id: 'book', label: '本书', note: '只读这本书里记下的，新记的也只留在这本书' },
+  { id: 'all', label: '全局', note: '读所有书共用的记忆，新记的所有书都能用' },
+  { id: 'off', label: '不用', note: '不读记忆，这段对话也不记' },
+]
+const memoryNow = computed(() => memoryMode(state.value))
 const expanded = ref(new Set<string>())
 function toggleReasoning(id: string) { const next = new Set(expanded.value); if (next.has(id)) next.delete(id); else next.add(id); expanded.value = next }
 const contextUsed = computed(() => conversationTokens(state.value))
@@ -920,8 +928,12 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
         <div v-if="!messages.length" class="ai-welcome">
           <AssistantMark :kind="avatar.kind" :image="avatar.image" :size="56" class="ai-welcome-mark" />
           <!-- 问候语一个字一个字显出来，像刚写上去的；只在打开时写一遍。 -->
-          <!-- 新对话记不记进记忆：默认记，在这里点一下关掉。 -->
-          <button v-if="!side" type="button" class="memory-chip" :class="{ off: state.memory === false }" role="switch" :aria-checked="state.memory !== false" data-tip="记忆只记你学过什么，用来调整讲解的深浅；删除对话时一起忘掉" @click="setConversationMemory(document.id, state.id, state.memory === false)"><AppIcon name="memory" :size="13" />{{ state.memory === false ? '这段对话不记入记忆' : '这段对话记入记忆' }}</button>
+          <!-- 新对话用哪种记忆：三选一，下面一行说清楚这一种读什么、记到哪。选的那种也是下一段新对话的默认。 -->
+          <div v-if="!side" class="memory-pick" :class="{ off: memoryNow === 'off' }" role="radiogroup" aria-label="这段对话的记忆">
+            <span><AppIcon name="memory" :size="13" />记忆</span>
+            <button v-for="item in MEMORY_MODES" :key="item.id" type="button" role="radio" :aria-checked="memoryNow === item.id" @click="setConversationMemory(document.id, state.id, item.id)">{{ item.label }}</button>
+          </div>
+          <p v-if="!side" class="memory-note">{{ MEMORY_MODES.find(item => item.id === memoryNow)!.note }}</p>
           <h2 class="ai-welcome-lead" :lang="greeting.lang === 'zh' ? 'zh-CN' : 'en'" :aria-label="greeting.text"><span v-for="(glyph, index) in Array.from(greeting.text)" :key="index" class="lead-glyph" aria-hidden="true" :style="{ '--i': Math.min(index, 60) }">{{ glyph }}</span></h2>
         </div>
         <div v-if="!contentReady && messages.length" class="ai-loading" aria-hidden="true"><i></i><i></i><i></i></div>
@@ -1260,11 +1272,15 @@ button:disabled{opacity:.4;cursor:default}
 .rail-pop-leave-active{transition:opacity var(--dur-1) var(--ease-out)}
 .rail-pop-enter-from,.rail-pop-leave-to{opacity:0;translate:6px 0}
 .ai-welcome{display:flex;flex-direction:column;align-items:center;text-align:center;padding:8vh 6px 8px;animation:zg-rise-in var(--dur-bounce) var(--spring-snappy) both}
-.memory-chip{order:3;display:inline-flex;align-items:center;gap:6px;height:26px;margin-top:16px;padding:0 11px 0 9px;border:1px solid var(--hairline);border-radius:999px;background:none;box-shadow:none;color:var(--secondary);font:inherit;font-size:11.5px;cursor:pointer;transition:color var(--dur-2) var(--ease-out),border-color var(--dur-2) var(--ease-out),opacity var(--dur-2) var(--ease-out)}
-.memory-chip svg{color:var(--accent)}
-.memory-chip.off{color:var(--muted);border-style:dashed}
-.memory-chip.off svg{color:var(--muted);opacity:.6}
-.memory-chip:hover{border-color:color-mix(in srgb,var(--ink) 30%,transparent);color:var(--ink)}
+.memory-pick{order:3;display:inline-flex;align-items:center;gap:2px;height:30px;margin-top:16px;padding:0 3px 0 11px;border:1px solid var(--hairline);border-radius:999px;color:var(--secondary);font-size:11.5px}
+.memory-pick>span{display:inline-flex;align-items:center;gap:6px;margin-right:7px;letter-spacing:.04em}
+.memory-pick svg{color:var(--accent);transition:opacity var(--dur-2) var(--ease-soft)}
+.memory-pick.off svg{color:var(--muted);opacity:.6}
+.memory-pick button{height:24px;padding:0 11px;border:0;border-radius:999px;background:none;box-shadow:none;color:var(--secondary);font:inherit;transition:background var(--dur-1) var(--ease-soft),color var(--dur-1) var(--ease-soft)}
+.memory-pick button:hover{color:var(--ink)}
+.memory-pick button[aria-checked='true']{background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--ink);font-weight:650}
+.memory-pick.off button[aria-checked='true']{background:color-mix(in srgb,var(--ink) 9%,transparent)}
+.memory-note{order:4;margin:9px 0 0;color:var(--muted);font-size:11.5px;line-height:1.5}
 .ai-welcome-mark{margin-bottom:16px;animation:zg-pop-in var(--dur-bounce) var(--spring-bouncy) both}
 /* 问候固定用内置的 Anthropic Serif（不随阅读字体设置变化），像 Claude 的「Good afternoon」；
    古诗没有对应的西文字形，退到宋体 / 思源宋体，仍是衬线。 */

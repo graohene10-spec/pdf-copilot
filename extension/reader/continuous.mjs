@@ -1,4 +1,4 @@
-import { clamp, renderPixelRatio, MAX_CANVAS_PIXELS } from './geometry.mjs';
+import { clamp, renderPixelRatio, snapToDevice, MAX_CANVAS_PIXELS } from './geometry.mjs';
 import { rectangleSelector } from './selection.mjs';
 import { pageOffsets, visiblePage, renderWindow, PAGE_GAP, MAX_RENDERED_PAGES } from './scroll-layout.mjs';
 
@@ -80,8 +80,11 @@ export class ContinuousPdfViewer {
     this.displayScale = this.scale ?? clamp(width / this.defaultSize.width, 0.25, 4);
     this.heights = this.slots.map((slot, index) => {
       const size = this.sizes.get(index + 1) || this.defaultSize;
-      const height = size.height * this.displayScale;
-      slot.style.width = `${size.width * this.displayScale}px`;
+      // Page boxes cover a whole number of device pixels. At 125% / 150% / 175% display scaling a box that ends
+      // mid-pixel makes the browser stretch the page bitmap by a fraction of a pixel, which softens every glyph.
+      const ratio = globalThis.devicePixelRatio || 1;
+      const height = snapToDevice(size.height * this.displayScale, ratio);
+      slot.style.width = `${snapToDevice(size.width * this.displayScale, ratio)}px`;
       slot.style.height = `${height}px`;
       return height;
     });

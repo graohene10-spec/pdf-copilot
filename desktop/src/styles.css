@@ -3065,6 +3065,18 @@ kbd {
   overflow: auto;
 }
 
+/* 文档详情现在是一张居中的卡片（从文档库或标签的右键菜单打开）。玻璃风格下用不透明一些的底，免得透出后面的封面。 */
+.document-details.as-dialog {
+  flex: none;
+  width: min(360px, 92vw);
+  max-height: min(640px, 88vh);
+  background-color: var(--popup-glass, var(--glass-3));
+  box-shadow: var(--shadow-3, var(--shadow-pane)), var(--glass-edge);
+}
+
+/* 顶栏按钮组里的一道细分隔：设置和前面几枚隔开。 */
+.topbar-rule { flex: none; width: 1px; height: 18px; margin: 0 3px; background: color-mix(in srgb, var(--control-ink, var(--ink)) 18%, transparent); }
+
 .details-heading {
   display: flex;
   align-items: center;
