@@ -11,7 +11,7 @@ import { documentMarkdown } from '../reader/markdown-document'
 import { mountIntelligentUi } from '../ai/intelligent-ui'
 
 const props = defineProps<{ documentId: string; conversationId: string; title: string; saving?: boolean; saved?: string }>()
-const emit = defineEmits<{ close: []; save: [text: string]; open: []; copied: []; revise: [value: { quote: string; instruction: string }] }>()
+const emit = defineEmits<{ close: []; save: [text: string]; open: []; copied: []; revise: [value: { quote: string; instruction: string }]; /** 有修改没对上原文：让助手把那几处重新给一遍。 */ retry: [] }>()
 const state = computed(() => chatState(props.documentId, props.conversationId))
 const draft = computed(() => summaryDraft(state.value.messages))
 const size = computed(() => draft.value.text.replace(/\s+/g, '').length)
@@ -53,9 +53,26 @@ function render() {
   shown = text
   // 重排之后原来划选的那一段已经不在了。
   ask.value = null
+  // 局部修改：记下改之前每一块的字，改完比一比，哪几块变了就标出来，并把第一块带到眼前。
+  const before = draft.value.last === 'edit' ? [...element.children].map(node => node.textContent || '') : null
   element.innerHTML = markdown.render(text)
   if (text.includes('```ui')) mountIntelligentUi(element, { streaming: writing })
-  if (writing && atEnd) view.scrollTop = view.scrollHeight
+  if (before?.length) showChange(element, view, before)
+  else if (writing && atEnd) view.scrollTop = view.scrollHeight
+}
+let lastChanged = -1
+function showChange(element: HTMLElement, view: HTMLElement, before: string[]) {
+  const now = [...element.children] as HTMLElement[]
+  let head = 0, tail = 0
+  while (head < now.length && head < before.length && now[head]!.textContent === before[head]) head++
+  while (tail < now.length - head && tail < before.length - head && now[now.length - 1 - tail]!.textContent === before[before.length - 1 - tail]) tail++
+  const changed = now.slice(head, now.length - tail)
+  if (!changed.length) { if (head < now.length && before.length > now.length) lastChanged = -1; return }
+  for (const node of changed.slice(0, 40)) node.classList.add('draft-changed')
+  // 同一处一直在写的时候不反复滚；换了地方、或者它不在眼前，才滚过去。
+  const box = changed[0]!.getBoundingClientRect(), frame = view.getBoundingClientRect()
+  if (head !== lastChanged || box.bottom < frame.top + 40 || box.top > frame.bottom - 40) view.scrollTo({ top: view.scrollTop + box.top - frame.top - frame.height * .3 })
+  lastChanged = head
 }
 watch(() => [draft.value.text, draft.value.writing] as const, ([, writing]) => {
   if (!writing) { clearTimeout(timer); timer = 0; void nextTick(render) }
@@ -112,7 +129,8 @@ async function copy() {
   <section ref="root" class="draft-pane" :style="{ left: `${box.left}px`, width: `${box.width}px` }" role="region" aria-label="总结草稿" @keydown.esc.stop="ask ? (ask = null) : emit('close')">
     <header class="draft-head">
       <div class="draft-title"><h3>总结草稿</h3><p :title="title">{{ name }}</p></div>
-      <span class="draft-state" :class="{ live: busy }" role="status">{{ busy ? (draft.writing ? '正在写' : activity) : size ? `${size} 字` : '' }}</span>
+      <button v-if="!busy && draft.missed" type="button" class="draft-warn" data-tip="助手抄的原文和草稿对不上，那几处没有改动。点一下让它对照草稿重新给" @click="emit('retry')">{{ draft.missed }} 处没改成 · 让助手重来</button>
+      <span class="draft-state" :class="{ live: busy }" role="status">{{ busy ? (draft.writing ? (draft.last === 'edit' ? '正在改' : '正在写') : activity) : size ? `${size} 字` : '' }}</span>
       <button v-if="saved" type="button" class="draft-link" :data-tip="`已存为 ${saved}`" @click="emit('open')">已存 · 打开</button>
       <button type="button" class="draft-icon" :disabled="!size" aria-label="复制" data-tip="复制 Markdown 原文" @click="copy"><AppIcon name="copy" :size="15" /></button>
       <button type="button" class="draft-save" :disabled="!size || busy || saving" :data-tip="saved ? '再存一次，覆盖上次存的那份' : '存成 Markdown，放在原文档的文件夹里，并加入文档库'" @click="emit('save', draft.text)">{{ saving ? '正在存…' : saved ? '再存一次' : '存入文档库' }}</button>
@@ -152,6 +170,11 @@ async function copy() {
 .draft-title p{min-width:0;margin:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--muted);font-size:12.5px}
 .draft-state{flex:none;max-width:40%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--muted);font-size:12.5px;font-variant-numeric:tabular-nums}
 .draft-state.live{color:var(--accent)}
+.draft-warn{flex:none;height:28px;padding:0 10px;border:1px solid color-mix(in srgb,#c0392b 55%,transparent);border-radius:8px;background:color-mix(in srgb,#c0392b 8%,transparent);box-shadow:none;color:#b03a2e;font:inherit;font-size:12.5px}
+.draft-warn:hover{background:color-mix(in srgb,#c0392b 14%,transparent)}
+/* 刚改过的那几块：淡淡地亮一下，再褪掉。 */
+.draft-paper :deep(.draft-changed){border-radius:4px;animation:draft-changed 2.4s ease-out 1 both}
+@keyframes draft-changed{from{background:color-mix(in srgb,var(--accent) 20%,transparent);box-shadow:0 0 0 6px color-mix(in srgb,var(--accent) 20%,transparent)}to{background:transparent;box-shadow:0 0 0 6px transparent}}
 .draft-save{flex:none;height:32px;padding:0 16px;border:0;border-radius:9px;background:var(--accent);box-shadow:none;color:var(--accent-on,#fff);font:inherit;font-size:13px;font-weight:600}
 .draft-save:hover:not(:disabled){filter:brightness(1.06)}
 .draft-save:disabled{opacity:.4}
@@ -183,7 +206,7 @@ async function copy() {
 .draft-ask input::placeholder{color:var(--muted)}
 .draft-ask button{display:grid;place-items:center;flex:none;width:30px;height:30px;padding:0;border:0;border-radius:50%;background:var(--accent);box-shadow:none;color:var(--accent-on,#fff)}
 .draft-ask button:disabled{opacity:.35}
-@media (prefers-reduced-motion:reduce){.draft-pane,.draft-ask,.draft-blank-state i,.draft-lines i{animation:none}}
+@media (prefers-reduced-motion:reduce){.draft-pane,.draft-ask,.draft-blank-state i,.draft-lines i{animation:none}.draft-paper :deep(.draft-changed){animation-duration:.01s}}
 /* 草稿风格：这一块不用手写体，也不描铅笔边——是要读、要改的正式文档。标题同样用正经的字体。 */
 :root[data-style='sketch'] .draft-pane{font-family:var(--font-formal);background:var(--paper,#fdfaf0);border-color:color-mix(in srgb,var(--pencil,#2b2a27) 28%,transparent);border-radius:10px}
 :root[data-style='sketch'] .draft-pane :is(button,input){font-family:var(--font-formal)}

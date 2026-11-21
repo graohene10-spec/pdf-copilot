@@ -129,7 +129,7 @@ function wireText(message: Message) {
 }
 // 总结对话里，以前各轮写的文档不逐份带给模型（改一次就多一份，很快超出上限、被截掉）：
 // 每轮的文档块换成一句占位，最新的整份草稿随这一问带一次。
-const withoutDrafts = (text: string) => text.replace(/<summary-(doc|add)>[\s\S]*?(?:<\/summary-\1>|$)/g, '[这一轮把内容写进了草稿]')
+const withoutDrafts = (text: string) => text.replace(/<summary-(doc|add|edit)>[\s\S]*?(?:<\/summary-\1>|$)/g, '[这一轮把内容写进了草稿]')
 function excerptText(excerpts: Excerpt[] | undefined) {
   return excerpts?.length ? excerpts.map(item => `\n\n[${NOTE_LABEL[item.from]}]\n${item.text}`).join('') : ''
 }

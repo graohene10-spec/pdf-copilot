@@ -1162,6 +1162,16 @@ function reviseDraft(value: { quote: string; instruction: string }) {
   if (!instance?.revise) { notify('先打开这份文档的阅读助手。'); return }
   void instance.revise(target.conversationId, `修改草稿里的这一段：\n> ${value.quote.replace(/\s*\n+\s*/g, '\n> ')}\n\n要求：${value.instruction}`)
 }
+/** 有几处修改没对上原文：让助手对照草稿把它们重新给一遍。 */
+async function retryDraftEdits() {
+  const target = draft.value
+  if (!target) return
+  const panel = visibleAi.value.find(item => aiDocument(item)?.id === target.documentId)
+  const instance = panel && aiInstances.get(panel.key)
+  if (!instance?.revise) { notify('先打开这份文档的阅读助手。'); return }
+  const { RETRY_EDITS } = await import('./ai/summary')
+  void instance.revise(target.conversationId, RETRY_EDITS)
+}
 function openSavedDraft() {
   const doc = documents.value.find(item => item.id === draftSummary.value?.savedId)
   if (!doc) { notify('存好的那份已经不在文档库里了。'); return }
@@ -2269,7 +2279,7 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
               <div class="panel-resizer" :data-edge="panelOrder(panel.key) === 0 && multiPanel ? 'right' : 'left'" role="separator" aria-orientation="vertical" aria-label="拖动调整阅读助手宽度" data-tip="拖动调整宽度，双击恢复" @pointerdown.stop="startWidthDrag($event, panel.key)" @pointermove="moveWidthDrag" @pointerup="endWidthDrag" @pointercancel="endWidthDrag" @dblclick="resetPanelWidth(panel)" />
               <AiPane v-if="aiDocument(panel)" :ref="value => bindAi(panel.key, value)" data-glass-interactive="panel" :document="aiDocument(panel)!" :context="aiContext(panel)" :conversation-id="panel.conversation" :draggable="multiPanel" :get-outline="outlineOf" :draft-open="!!draft && draft.documentId === aiDocument(panel)!.id" @draft="value => toggleDraft(aiDocument(panel)!.id, value)" :send-shortcut="preferences.shortcuts.aiSend ? shortcut('aiSend') : ''" :consume-capture="consumeSelection" @settings="openSettings('ai')" @manage="managerOpen = true" @close="closeAiPanel(panel.key)" @jump="jump" @clear-selection="clearSelection" @conversation="id => setPanelConversation(panel.key, id)" @grab="startPanelDrag($event, panel.key)" :alternatives="aiAlternatives(panel)" :library="libraryIndex" @switch-document="id => switchAiDocument(panel, id)" @open-conversation="openConversationAt" @side="width => setPanelSide(panel.key, width)" />
             </section>
-            <SummaryDraft v-if="draft && paneIds.some(id => sourceId(id) === draft!.documentId)" :key="draft.conversationId" :document-id="draft.documentId" :conversation-id="draft.conversationId" :title="documents.find(item => item.id === draft!.documentId)?.name || ''" :saving="draftSaving" :saved="draftSaved" @close="draft = null" @save="saveDraft" @open="openSavedDraft" @copied="notify('已复制')" @revise="reviseDraft" />
+            <SummaryDraft v-if="draft && paneIds.some(id => sourceId(id) === draft!.documentId)" :key="draft.conversationId" :document-id="draft.documentId" :conversation-id="draft.conversationId" :title="documents.find(item => item.id === draft!.documentId)?.name || ''" :saving="draftSaving" :saved="draftSaved" @close="draft = null" @save="saveDraft" @open="openSavedDraft" @copied="notify('已复制')" @revise="reviseDraft" @retry="retryDraftEdits" />
           </TransitionGroup>
           <div v-if="selection && !captureQuick && !aiOpen && selection.image" class="selection-context"><AppIcon name="crop" :size="16" /><span>{{ selection.image ? `已框选第 ${selection.page} 页的图表或公式` : `已选择 ${selection.text.length} 个字符` }}</span><button @click="openAssistant(true)"><AppIcon name="sparkle" :size="15" />向 AI 提问</button><button class="icon-button" @click="clearSelection" data-tip="清除选区" aria-label="清除选区"><AppIcon name="close" :size="14" /></button></div>
         </section>
