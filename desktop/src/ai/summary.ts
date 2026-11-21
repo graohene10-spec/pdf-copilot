@@ -26,7 +26,7 @@ export const SUMMARY_FIELDS: { key: TextKey; label: string; options: string[]; m
   { key: 'length', label: '长度', options: ['一页以内', '约原文的 5%', '约原文的 10%'], placeholder: '比如：800 字、每章三五句', hint: '不选由助手按文档长短决定。',
     notes: { 一页以内: '几百字，只留最要紧的。', '约原文的 5%': '原文一百页，大约写五页。', '约原文的 10%': '更细一些，主要的论证也留着。' } },
   { key: 'structure', label: '写法', options: ['提纲', '连贯成文', '按原章节', '问答'], placeholder: '比如：先结论后推导', hint: '这份总结排成什么样子。',
-    notes: { 提纲: '分点分层列出来，一眼看到骨架，适合复习。', 连贯成文: '写成一篇能从头读到尾的文章，前后有交代。', 按原章节: '跟着原文的章节顺序，一章一段。', 问答: '一问一答，适合拿来自测。' } },
+    notes: { 提纲: '分点分层列出来，一眼看到骨架，适合复习。', 连贯成文: '每一节里用成段的文字把道理讲通，不是一条条的列表；照样分节、有小标题。', 按原章节: '跟着原文的章节顺序，一章一段。', 问答: '一问一答，适合拿来自测。' } },
   { key: 'tone', label: '语风', options: ['平实', '学术', '口语讲解'], placeholder: '比如：像给同学讲题', hint: '用什么口气写。',
     notes: { 平实: '直接说事，不绕弯。', 学术: '用术语，表述严谨。', 口语讲解: '像当面给人讲，会打比方。' } },
   { key: 'language', label: '语言', options: ['中文', 'English', '跟随原文'], placeholder: '比如：中文，术语附英文', hint: '不选就跟着你提问用的语言。',
@@ -111,6 +111,7 @@ export function summaryInstructions(title: string, options: SummaryOptions, uiGu
     `你现在的任务是为读者把《${bare(title)}》写成一份总结文档。这份文档单独显示在草稿面板里，读者满意后会存成 Markdown 文件放进文档库，以后当作一份独立的文档来读。`,
     '怎么写：',
     '- 文档正文放在 <summary-doc> 和 </summary-doc> 之间，两个标签各占一行。里面是完整的 Markdown：以一个一级标题开头，公式写成 $…$ 或 $$…$$，不要写 HTML 标签。',
+    '- 不管选的是哪种写法，文档都要有清楚的 Markdown 结构：一个一级标题；按内容分成几节，每节一个二级标题，节里内容多再用三级标题；该强调的术语加粗，公式单独成行时用 $$…$$，并列的几项用列表，成组的对比用表格。「连贯成文」说的是每一节里面用成段的文字讲，不是把标题也去掉——没有标题的一大片文字不算合格的文档。',
     '- 标签外面只用一两句话交代你做了什么、认定的范围、哪里拿不准。不要在标签外重复正文，也不要把正文放进代码块。',
     '- 文档里不要写 [S1a2b-3] 这类来源编号：那是对话里用来跳转的标记，放进一份独立的文档里只是一串乱码。这一条优先于前面关于标注来源的要求。读者要出处时写页码，例如（第 38 页）。',
     '- 读者要你修改时：只发改动的地方，不要把整篇重新输出一遍。每一处改动写一个块：<summary-edit>，里面先是 <old>…</old>，再是 <new>…</new>，最后 </summary-edit>。<old> 里从草稿的 Markdown 原文里原样抄下要被换掉的那一段（一个字、一个符号都不要改，长短以能唯一确定位置为准，一般是一两句或一个小节）；<new> 里写换成的内容。删掉一段就让 <new> 空着；在某处后面加内容，就把那处的原文抄进 <old>，<new> 里写「原文 + 新增的部分」。一次回复可以有好几个这样的块。草稿的全文每次都会随读者的话带给你，以它为准。',
@@ -123,7 +124,7 @@ export function summaryInstructions(title: string, options: SummaryOptions, uiGu
     ...(chosenNotes(options).length ? ['读者在表格里选的这几项，意思是：', ...chosenNotes(options)] : []),
     options.multi
       ? '这份文档比较长，分多次写：每次回复只读、只写一部分（大约一章或几十页）。第一次用 <summary-doc> 写出标题和第一部分，之后每次用 <summary-add> 把新的一部分接在文档末尾，不要重复已经写过的内容。每次回复的最后单独一行写 [[继续]]（后面还有没写的）或 [[完成]]（全部写完了）。收到「继续」就接着写下一部分。'
-      : '一次回复里把整份总结写完。文档太长、一次读不完时，按上面的范围尽量读到，并在标签外说明哪些部分没有覆盖到。',
+      : '一次回复里把整份总结写完。一次大约能读四十页；范围比这大、读不完时，按顺序尽量读到，在标签外说明哪些部分没有覆盖到，并提醒读者可以在表里打开「分多次写」。',
     uiGuide ? `这份文档可以用图解和可交互的界面（Intelligent UI），它们同样写在 <summary-doc> 里面。\n- 放多少：${AMOUNT_RULE[options.uiAmount]}\n- 用哪类：${LEAN_RULE[options.uiLean]}\n${uiGuide}` : '这份文档只用文字、公式、列表和表格，不要写 ui 代码块，也不要写 mermaid。',
   ].join('\n')
 }
@@ -208,5 +209,7 @@ export function summaryChat(content: string): string {
 export const RETRY_EDITS = '上一轮有修改没有改成：<old> 里的文字和草稿对不上。请对照现在的草稿全文，把没改成的那几处重新给一遍，<old> 必须从草稿里原样抄。'
 /** 分多次写：这条回答的最后是不是「后面还有」。 */
 export const summaryContinues = (content: string) => /\[\[继续\]\]\s*$/.test(content.trimEnd())
+/** 总结对话每一问的阅读预算：都放到设置里允许的上限。 */
+export const SUMMARY_READING = { pages: 40, characters: 120000, calls: 60, rounds: 8 }
 /** 最多自动接着写这么多轮，免得没完没了。 */
 export const MAX_SUMMARY_ROUNDS = 40

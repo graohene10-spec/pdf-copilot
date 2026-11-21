@@ -97,3 +97,9 @@ test('summary: an edit shows live while it streams and is dropped if cut off', (
   assert.equal(cut.text, '# 标题\n\n旧的一段。\n\n结尾。'); assert.equal(cut.missed, 1)
   assert.match(summaryChat(typing.content), /修改草稿 · 1 处 · 正在改/)
 })
+
+test('summary: every style of writing still gets headings', () => {
+  const text = summaryInstructions('群论', { ...emptySummaryOptions(), structure: '连贯成文' }, '')
+  assert.match(text, /每节一个二级标题/)
+  assert.match(text, /写法「连贯成文」：每一节里用成段的文字[^\n]*照样分节、有小标题/)
+})

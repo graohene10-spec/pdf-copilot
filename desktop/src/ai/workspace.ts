@@ -3,7 +3,7 @@ import { loadAiSettings, loadApiKey } from './settings.mjs'
 import { RequestScheduler } from './request-scheduler.mjs'
 import { library } from '../sdk'
 import { recordUsage } from './usage'
-import { summaryDraft, summaryInstructions, summaryContinues, lastSummaryOptions, readSwitches, MAX_SUMMARY_ROUNDS, type SummaryState } from './summary'
+import { SUMMARY_READING, summaryDraft, summaryInstructions, summaryContinues, lastSummaryOptions, readSwitches, MAX_SUMMARY_ROUNDS, type SummaryState } from './summary'
 import { defaultMemoryMode, forgetConversation, memorize, memoryInstructions, memoryMode, memoryReady, rememberMemoryMode, retagMemory, type MemoryMode } from './memory'
 
 export type Usage = { input?: number; output?: number; reasoning?: number; estimated: boolean }
@@ -481,6 +481,8 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
   const settings: any = loadAiSettings()
   configureRequests(settings)
   const snapshot = { ...settings, documentLimits: { ...settings.documentLimits } }
+  // 总结要把整个范围读过才能写：每题的阅读预算放到上限（平时每题只读八页左右，一章都读不完）。
+  if (state.summary) Object.assign(snapshot.documentLimits, SUMMARY_READING)
   const includeDocument = sendOptions.includeDocument ?? state.includeDocument
   const includeSelection = sendOptions.includeSelection ?? state.includeSelection
   // 输入框里攒的摘录随这个问题发出；重新回答时用原问题带过的那几段。
