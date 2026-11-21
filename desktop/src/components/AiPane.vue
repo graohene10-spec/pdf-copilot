@@ -3,9 +3,11 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, defineAsync
 import 'katex/dist/katex.min.css'
 import { getProvider, getNativeModels, getNativeStatus } from '../ai/providers.mjs'
 import { nativeModelInventory, registerNativeModelInventory } from '../ai/native-models'
-import { setConversationMemory, adoptTurns, addExcerpt, removeExcerpt, removeMessage, compressConversation, sideConversation, chatState, sendChat, stopChat, configureRequests, taskSummary, conversations, activeConversationId, selectConversation, newConversation, deleteConversation, loadConversations, conversationTokens, contextWindow, branchConversation, resendQuestion, watchConversation, allConversations, pinMessage, MAX_ATTACHMENTS, pendingImages, setPendingImages, keepImage, type Message, type ChatState } from '../ai/workspace'
+import { newSummaryConversation, cancelSummary, setConversationMemory, adoptTurns, addExcerpt, removeExcerpt, removeMessage, compressConversation, sideConversation, chatState, sendChat, stopChat, configureRequests, taskSummary, conversations, activeConversationId, selectConversation, newConversation, deleteConversation, loadConversations, conversationTokens, contextWindow, branchConversation, resendQuestion, watchConversation, allConversations, pinMessage, MAX_ATTACHMENTS, pendingImages, setPendingImages, keepImage, type Message, type ChatState } from '../ai/workspace'
 import { renderMarkdown, renderDiagrams } from '../ai/render'
 import { memoryMode, type MemoryMode } from '../ai/memory'
+import { summaryChat, summaryRequest, rememberSummaryOptions } from '../ai/summary'
+import SummarySetup from './SummarySetup.vue'
 import { mountIntelligentUi } from '../ai/intelligent-ui'
 import { nudgeGlassMotion } from '../ui/glass-motion'
 import { vMarquee } from '../ui/marquee'
@@ -20,7 +22,7 @@ import { cropImageAsync } from '../reader/crop'
 const ModelPicker = defineAsyncComponent(() => import('./ModelPicker.vue'))
 const UsagePanel = defineAsyncComponent(() => import('./UsagePanel.vue'))
 
-const props = defineProps<{ document: { id: string; title: string; kind: string }; context: any; sendShortcut?: string; consumeCapture?: (value: { documentId: string; selection: any }) => void; conversationId?: string; draggable?: boolean
+const props = defineProps<{ /** 这段对话的总结草稿是不是正开着。 */ draftOpen?: boolean; document: { id: string; title: string; kind: string }; context: any; sendShortcut?: string; consumeCapture?: (value: { documentId: string; selection: any }) => void; conversationId?: string; draggable?: boolean
   /** Other documents on screen beside this one (side-by-side), to switch which one the assistant reads. */
   alternatives?: { id: string; title: string }[]
   /** Every library document, for the history of all conversations. */
@@ -31,7 +33,9 @@ const props = defineProps<{ document: { id: string; title: string; kind: string 
   arrived?: string }>()
 const emit = defineEmits<{ jump: [value: { page: number; rect?: any; line?: number }]; close: []; settings: []; error: [value: string]; clearSelection: []; conversation: [id: string]; manage: []; grab: [event: PointerEvent]; switchDocument: [id: string]; openConversation: [value: { documentId: string; conversationId: string }]
   /** 侧边对话打开 / 收起：整个助手窗口要加宽（或收回）的像素数，0 表示收起。 */
-  side: [width: number] }>()
+  side: [width: number]
+  /** 总结草稿：打开、收起，或者（不给 open）切换。 */
+  draft: [value: { conversationId: string; open?: boolean }] }>()
 const settings = ref<any>(loadAiSettings())
 // A window that follows the active tab may carry a conversation id from the previous document;
 // only an id that belongs to this document is honoured.
@@ -42,7 +46,7 @@ const messages = computed(() => state.value.messages)
 // 打开助手栏时：面板先弹出来，等展开动画走完再把对话填进去——最近几条先出，更早的随后补上。
 // 以前一打开就把几十条带公式的回答全部排版，动画开头先卡一两秒，公式还在动画里被拉扯。
 const contentReady = ref(false), revealAll = ref(false)
-const shownMessages = computed(() => !contentReady.value ? [] : revealAll.value ? messages.value : messages.value.slice(-6))
+const shownMessages = computed(() => (!contentReady.value ? [] : revealAll.value ? messages.value : messages.value.slice(-6)).filter(message => !message.auto))
 function whenSettled(done: () => void) {
   const panel = pane.value?.closest<HTMLElement>('.ai-panel')
   let finished = false
@@ -331,7 +335,8 @@ function renderAnswer(element: HTMLElement, message: Message) {
   renderedKeys.set(element, answerKey(message))
   // 读者点开的折叠段落：回答重画（还在写、换主题）后保持原样。
   const unfolded = [...element.querySelectorAll('details')].map(item => item.open)
-  element.innerHTML = renderMarkdown(message.content)
+  // 总结对话：文档正文在草稿面板里，这里只留一枚小牌子。
+  element.innerHTML = renderMarkdown(state.value.summary ? summaryChat(message.content) : message.content)
   if (unfolded.includes(true)) element.querySelectorAll('details').forEach((item, index) => { if (unfolded[index]) item.open = true })
   // 模型有时引用前几轮回答里的来源，甚至写出不存在的编号：先在整场对话的来源里找，找不到就把编号去掉，绝不把 [S…] 原样留在正文里。
   const sourceMap = new Map([...messages.value.flatMap(item => item.sources || []), ...message.sources].map(source => [source.sourceId, source]))
@@ -376,6 +381,7 @@ const vAnswer = {
   beforeUnmount: (el: HTMLElement) => { clearTimeout(renderTimers.get(el)); renderTimers.delete(el) },
 }
 function answerClick(event: MouseEvent) {
+  if ((event.target as Element).closest('[data-draft]')) { emit('draft', { conversationId: state.value.id, open: true }); return }
   const button = (event.target as Element).closest<HTMLButtonElement>('[data-copy]')
   if (!button) return
   const code = button.closest('.answer-code-block')?.querySelector('code')?.textContent || ''
@@ -713,6 +719,7 @@ const COMMANDS = [
   { name: '/btw', args: '问题', label: '顺便问一句', hint: '快速问一个旁支问题，回答不写进对话记录' },
   { name: '/compress', args: '要求（可选）', label: '压缩对话', hint: '把目前的对话写成摘要，之后只带摘要发送，省上下文' },
   { name: '/usage', args: '', label: '查看用量', hint: '本次会话的 token 用量、上下文占用与明细' },
+  { name: '/summary', args: '', label: '总结文档', hint: '把这份文档写成一份总结，存进文档库' },
 ]
 const commandIndex = ref(0)
 // 只有还在输入命令名（以 / 开头、还没有空格）时才弹出命令列表。
@@ -787,6 +794,7 @@ onBeforeUnmount(() => clearInterval(btwTicker))
 async function runCommand(name: string, args: string) {
   state.value.error = false; state.value.status = ''
   if (name === 'usage') { usageOpen.value = true; return }
+  if (name === 'summary') { summarize(args); return }
   if (name === 'compress') {
     if (busy.value || compressing.value) { attachNote('请等这一轮回答结束再压缩。'); return }
     const controller = new AbortController(); compressing.value = controller
@@ -803,10 +811,34 @@ async function runCommand(name: string, args: string) {
   }
 }
 const compressedBefore = (message: Message) => { const index = messages.value.indexOf(message); return messages.value.slice(0, index).filter(item => item.compressed && !item.summary).length }
+// ---- 总结模式 ----
+/** 开一段总结对话，停在设置表格上。extra 是跟在 /summary 后面写的要求，放进输入框里等读者确认。 */
+function summarize(extra = '') {
+  if (props.side) return
+  if (busy.value) { attachNote('请等这一轮回答结束再开始总结。'); return }
+  const fresh = newSummaryConversation(props.document.id)
+  useConversation(fresh.id)
+  if (extra) prompt.value = extra
+  focusPrompt()
+}
+function startSummary() {
+  const summary = state.value.summary
+  if (!summary || summary.started || busy.value) return
+  const extra = prompt.value.trim()
+  summary.started = true; prompt.value = ''
+  rememberSummaryOptions(summary.options)
+  // 范围选了「选中的内容」才把选区带上；其余情况让助手自己去读。
+  if (summary.options.scope === '选中的内容') includeSelection.value = true
+  emit('draft', { conversationId: state.value.id, open: true })
+  void send(summaryRequest(props.document.title, summary.options, extra))
+}
+function cancelSetup() { cancelSummary(props.document.id, state.value.id) }
 function send(question?: string) {
   // 斜杠命令在本地处理，不当作问题发出去。
-  const command = question === undefined ? prompt.value.trim().match(/^\/(btw|compress|usage)(?:\s+([\s\S]*))?$/i) : null
+  const command = question === undefined ? prompt.value.trim().match(/^\/(btw|compress|usage|summary)(?:\s+([\s\S]*))?$/i) : null
   if (command) { prompt.value = ''; void runCommand(command[1]!.toLowerCase(), (command[2] || '').trim()); return }
+  // 总结对话还停在设置表格上：按发送就是开始，输入框里写的算作「其他要求」。
+  if (question === undefined && state.value.summary && !state.value.summary.started) { startSummary(); return }
   // 输入框空着而有预判的问题时，按发送键直接发送它。
   if (preferences.value.assistant.predictQuestions && question === undefined && !prompt.value.trim() && prediction.value) question = prediction.value
   const id = props.document.id
@@ -879,7 +911,7 @@ onMounted(() => {
   if (messageList.value) observer.observe(messageList.value)
 })
 onBeforeUnmount(() => { unwatch?.(); cancelAnimationFrame(scrollFrame); rememberScroll(); clearInterval(ticker); clearTimeout(predictTimer); predicting?.abort(); observer?.disconnect(); if (renderFrame) cancelAnimationFrame(renderFrame); pickerRequest?.abort(); document.removeEventListener('pointerdown', pickerOutside, true); window.removeEventListener('keydown', strayEscape, true); document.removeEventListener('pointerdown', historyOutside, true) })
-defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startConversation, closeSide })
+defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startConversation, closeSide, summarize })
 </script>
 
 <template>
@@ -920,12 +952,14 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
       </div>
       <span v-if="taskSummary.running || taskSummary.queued" class="task-summary" :data-tip="`同时最多 ${taskSummary.limits.concurrent} 题，Codex ${taskSummary.limits.codex} 题`">{{ taskSummary.running }} 运行<template v-if="taskSummary.queued"> · {{ taskSummary.queued }} 等待</template></span>
       <button class="header-button side-toggle" :class="{ on: sideOpen, has: hasSideContent && !sideOpen }" :aria-pressed="sideOpen" :aria-label="sideOpen ? '收起附属对话' : '打开附属对话'" :data-tip="sideOpen ? '收起附属对话' : hasSideContent ? '打开附属对话（有内容）' : '打开附属对话'" @click="toggleSide"><AppIcon name="branch" :size="15" /></button>
+      <button v-if="state.summary?.started" class="header-button draft-toggle" :class="{ on: draftOpen }" :aria-pressed="draftOpen" :aria-label="draftOpen ? '收起总结草稿' : '打开总结草稿'" :data-tip="draftOpen ? '收起总结草稿，回到原文' : '打开总结草稿'" @click="emit('draft', { conversationId: state.id })"><AppIcon name="doc" :size="16" /></button>
       <button class="header-button" aria-label="新对话" data-tip="新对话" :disabled="!messages.length" @click="startConversation"><AppIcon name="compose" :size="16" /></button>
       <button class="header-button close-assistant" data-tip="关闭阅读助手" aria-label="关闭阅读助手" @click="emit('close')"><AppIcon name="close" :size="15" /></button>
     </header>
     <div class="ai-body">
       <div ref="messageList" class="ai-messages" data-glass-still @scroll.passive="onScroll" @click="answerClick">
-        <div v-if="!messages.length" class="ai-welcome">
+        <SummarySetup v-if="!messages.length && state.summary && !state.summary.started && !side" :title="document.title" :options="state.summary.options" :has-selection="Boolean(context?.selection?.text || context?.selection?.image)" @start="startSummary" @cancel="cancelSetup" />
+        <div v-else-if="!messages.length" class="ai-welcome">
           <AssistantMark :kind="avatar.kind" :image="avatar.image" :size="56" class="ai-welcome-mark" />
           <!-- 问候语一个字一个字显出来，像刚写上去的；只在打开时写一遍。 -->
           <!-- 新对话用哪种记忆：一行小字三选一，选中的那个是墨色加一道细线。读什么、记到哪，指上去看。选的那种也是下一段新对话的默认。 -->
@@ -1271,6 +1305,11 @@ button:disabled{opacity:.4;cursor:default}
 .rail-pop-leave-active{transition:opacity var(--dur-1) var(--ease-out)}
 .rail-pop-enter-from,.rail-pop-leave-to{opacity:0;translate:6px 0}
 .ai-welcome{display:flex;flex-direction:column;align-items:center;text-align:center;padding:8vh 6px 8px;animation:zg-rise-in var(--dur-bounce) var(--spring-snappy) both}
+/* 总结对话里文档块的替身：点它打开草稿。 */
+.answer-body :deep(.draft-chip){display:inline-flex;align-items:center;gap:8px;height:32px;margin:2px 0 10px;padding:0 13px 0 11px;border:1px solid var(--hairline);border-radius:10px;background:color-mix(in srgb,var(--accent) 7%,transparent);box-shadow:none;color:var(--ink);font:inherit;font-size:12.5px;cursor:pointer}
+.answer-body :deep(.draft-chip:hover){border-color:color-mix(in srgb,var(--accent) 55%,transparent)}
+.answer-body :deep(.draft-chip svg){color:var(--accent)}
+.header-button.draft-toggle.on{background:var(--frost-hover);color:var(--accent)}
 .memory-pick{order:3;display:inline-flex;align-items:center;gap:16px;margin-top:20px;color:var(--muted);font-size:12px;line-height:1}
 .memory-label{display:inline-flex;align-items:center;gap:6px;padding-right:16px;border-right:1px solid var(--hairline);letter-spacing:.14em;opacity:.85}
 .memory-label svg{opacity:.7}

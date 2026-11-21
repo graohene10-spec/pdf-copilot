@@ -23,4 +23,8 @@ export interface Library {
   index(id: string, text: string): Promise<void>;
   getSetting(key: string): Promise<string | null>;
   setSetting(key: string, value: string): Promise<void>;
+  /** 把一份总结存成 Markdown，放在原文档所在的文件夹里，并加入文档库。replace 是上次存出来的那份，还在就覆盖。 */
+  saveSummary(id: string, text: string, replace?: string): Promise<Doc>;
+  /** 在系统的文件管理器里打开文档所在的文件夹。 */
+  reveal(id: string): Promise<void>;
 }

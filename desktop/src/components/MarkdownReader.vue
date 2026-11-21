@@ -1,19 +1,16 @@
 <script setup lang="ts">
 import { restoreNotes } from '../ai/explain'
 import { ref, watch, onMounted, onActivated, onDeactivated, onBeforeUnmount, nextTick } from 'vue'
-import MarkdownIt from 'markdown-it'
 import 'katex/dist/katex.min.css'
-import { installMarkdownMath } from './markdown-math'
-import { installGithubFlavor } from './markdown-github'
-import { installCjkEmphasis } from './markdown-cjk'
 import { library } from '../sdk'
+import { documentMarkdown } from '../reader/markdown-document'
+import { mountIntelligentUi } from '../ai/intelligent-ui'
 import { clampMarkdownFontSize, clampMarkdownContentWidth, clampMarkdownZoom, readingScrollTarget } from '../reader/layout.mjs'
 import { markdownTextIndex, markdownSearchRanges, markdownSearchHighlighter } from '../reader/markdown-search'
 import { rectangleSelector } from '../../../extension/reader/selection.mjs'
 import { regionText, captureRegion } from '../reader/markdown-capture'
 import { usePdfInk } from '../reader/ink/use-ink'
 import AppIcon from './AppIcon.vue'
-import { highlightCode } from '../ai/highlight'
 import ReaderSearch from './ReaderSearch.vue'
 import InkButton from './ink/InkButton.vue'
 import InkPalette from './ink/InkPalette.vue'
@@ -62,10 +59,7 @@ let searchTimer: ReturnType<typeof setTimeout> | undefined
 let searchPending = false
 let searchIndex: ReturnType<typeof markdownTextIndex> | undefined
 const transientMarkers = new Set<() => void>()
-const markdown = new MarkdownIt({ html: false, linkify: true, typographer: true, highlight: (code, language) => highlightCode(code, language.trim().split(/\s+/)[0].toLowerCase()) })
-installMarkdownMath(markdown)
-installGithubFlavor(markdown)
-installCjkEmphasis(markdown)
+const markdown = documentMarkdown()
 function selectedText() {
   if (!active) return
   const selection = window.getSelection()
@@ -345,6 +339,8 @@ async function renderDocument() {
   if (active) { emit('ready', { text, headings: headings.value }); emit('text', text) }
   await nextTick()
   if (epoch !== current) return
+  // 文档里的 ui 代码块（总结文档里的图解、可交互界面）：先画出来再恢复滚动位置，它们会撑开高度。
+  if (body.value && !raw.value && text.includes('```ui')) mountIntelligentUi(body.value)
   if (active && scroll.value) scroll.value.scrollTop = Math.max(0, scroll.value.scrollHeight - scroll.value.clientHeight) * targetProgress
   cachedProgress = targetProgress
   rendered = true

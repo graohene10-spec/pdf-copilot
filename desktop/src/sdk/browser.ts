@@ -86,4 +86,13 @@ export const browserLibrary: Library = {
   async index(id, text) { const record = await get(id); record.text = text.slice(0,2000000); await put(record); },
   async getSetting(key) { return (await request<string | undefined>('settings', 'readonly', s => s.get(key))) ?? null; },
   async setSetting(key,value) { await request('settings', 'readwrite', s => s.put(value,key)); },
+  // 浏览器预览没有文件夹：总结直接放进这里的文档库。
+  async saveSummary(id, text, replace) {
+    const source = (await get(id)).doc;
+    if (replace) await request('documents', 'readwrite', s => s.delete(replace)).catch(() => {});
+    const [doc] = await importFiles([new File([text], `${source.name.replace(/\.[^.]+$/, '')} · 总结.md`, { type: 'text/markdown' })]);
+    if (!doc) throw new Error('总结没有加入文档库');
+    return doc;
+  },
+  async reveal() { throw new Error('浏览器预览里没有文件夹；桌面版本可以打开。'); },
 };
