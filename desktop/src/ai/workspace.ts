@@ -3,7 +3,7 @@ import { loadAiSettings, loadApiKey } from './settings.mjs'
 import { RequestScheduler } from './request-scheduler.mjs'
 import { library } from '../sdk'
 import { recordUsage } from './usage'
-import { SUMMARY_READING, summaryDraft, summaryInstructions, summaryContinues, lastSummaryOptions, readSwitches, MAX_SUMMARY_ROUNDS, type SummaryState } from './summary'
+import { SUMMARY_READING, summaryDraft, summaryInstructions, summaryContinues, lastSummaryOptions, readSwitches, MAX_SUMMARY_ROUNDS, type SummaryState, type SummaryOptions } from './summary'
 import { defaultMemoryMode, forgetConversation, memorize, memoryInstructions, memoryMode, memoryReady, rememberMemoryMode, retagMemory, type MemoryMode } from './memory'
 
 export type Usage = { input?: number; output?: number; reasoning?: number; estimated: boolean }
@@ -70,7 +70,7 @@ export function keepImage(key: string, image: string) {
 function readSummary(value: any): SummaryState | undefined {
   if (!value || typeof value !== 'object' || !value.options) return undefined
   const options = lastSummaryOptions()
-  for (const key of ['scope', 'length', 'structure', 'tone', 'language', 'focus'] as const) options[key] = typeof value.options[key] === 'string' ? value.options[key].slice(0, 400) : ''
+  for (const key of ['scope', 'length', 'structure', 'tone', 'language', 'focus'] as const) options[key] = typeof value.options[key] === 'string' ? value.options[key].slice(0, key === 'scope' ? 1200 : 400) : ''
   readSwitches(options, value.options)
   return { options, started: value.started !== false, savedId: typeof value.savedId === 'string' ? value.savedId : undefined, rounds: Number(value.rounds) || 0 }
 }
@@ -595,7 +595,7 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
       state.status = ''
       // 分多次写的总结：这一段写完、后面还有，就自己接着发「继续」，直到写完、出错或读者按停止。
       const summary = state.summary
-      if (summary?.options.multi && answer && summaryContinues(answer.content) && (summary.rounds || 0) < MAX_SUMMARY_ROUNDS) { summary.rounds = (summary.rounds || 0) + 1; again = true }
+      if ((summary?.options.multi || summary?.options.complete) && answer && summaryContinues(answer.content) && (summary.rounds || 0) < MAX_SUMMARY_ROUNDS) { summary.rounds = (summary.rounds || 0) + 1; again = true }
       else { noticeFinished(state, descriptor.title); scheduleMemory(state) }
     }
   } catch (error: any) {
@@ -623,7 +623,7 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
  * The latest question is replaced in place; an earlier one continues in a new branch so nothing is lost.
  * Returns the conversation that carries the new answer.
  */
-export function resendQuestion(descriptor: { id: string; title: string; kind: string }, conversationId: string, userMessageId: string, question: string, onSettings: () => void): string | undefined {
+export function resendQuestion(descriptor: { id: string; title: string; kind: string }, conversationId: string, userMessageId: string, question: string, onSettings: () => void, /** 总结对话改了那张表：新的设置。 */ summaryOptions?: SummaryOptions): string | undefined {
   const state = chatState(descriptor.id, conversationId)
   const index = state.messages.findIndex(message => message.id === userMessageId)
   const user = state.messages[index]
@@ -634,6 +634,12 @@ export function resendQuestion(descriptor: { id: string; title: string; kind: st
   if (inPlace && state.request) return
   const target = inPlace ? state : branchConversation(descriptor.id, state.id, index > 0 ? state.messages[index - 1].id : null)
   if (inPlace) { state.status = ''; state.error = false }
+  // 总结对话：另开的分支仍然是总结对话；从头重写时把续写的轮数清零，改过的设置放到要用的那一段对话上。
+  if (state.summary) {
+    if (!inPlace) { target.summary = { options: { ...state.summary.options }, started: true }; target.memory = 'off' }
+    if (index === 0) target.summary!.rounds = 0
+    if (summaryOptions) Object.assign(target.summary!.options, summaryOptions)
+  }
   const ask = user.ask
   void sendChat(descriptor, { page: ask?.page || 1, selection: ask?.text ? { text: ask.text, page: ask.page } : {} }, onSettings, undefined, question.trim(), {
     conversationId: target.id, replace: inPlace ? user.id : undefined, includeDocument: ask?.includeDocument ?? target.includeDocument, includeSelection: Boolean(ask?.text), selectionOnly: ask?.selectionOnly, images: user.images?.length ? [user.images[0]!] : undefined, attachments: user.images?.slice(1), excerpts: user.excerpts || [],

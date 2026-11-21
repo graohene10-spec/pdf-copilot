@@ -45,7 +45,7 @@ test('summary: source ids never reach the document; chapters become a scope sent
   const outline = [{ title: '第一章 质点', level: 1, page: 12 }, { title: '1.1 位置', level: 2, page: 13 }, { title: '1.1.1 细节', level: 3, page: 14 }, { title: '第二章 位形空间', level: 1, page: 38 }]
   const chapters = summaryChapters(outline)
   assert.deepEqual(chapters.map(item => [item.title, item.level]), [['第一章 质点', 0], ['1.1 位置', 1], ['第二章 位形空间', 0]])
-  assert.equal(chapterScope([chapters[0], chapters[2]]), '「第一章 质点」（第 12 页起）、「第二章 位形空间」（第 38 页起）')
+  assert.equal(chapterScope(chapters, [0, 1, 2]), '「第一章 质点」（第 12–37 页）；「第二章 位形空间」（第 38 页起）')
   assert.deepEqual(summaryChapters([]), [])
 })
 
@@ -102,4 +102,35 @@ test('summary: every style of writing still gets headings', () => {
   const text = summaryInstructions('群论', { ...emptySummaryOptions(), structure: '连贯成文' }, '')
   assert.match(text, /每节一个二级标题/)
   assert.match(text, /写法「连贯成文」：每一节里用成段的文字[^\n]*照样分节、有小标题/)
+})
+
+test('summary: a ticked chapter is the whole chapter, ticked sections are only those sections', async () => {
+  const { summaryChapters, chapterScope, chapterLabel, chosenFromScope, chapterGroups } = await import('../src/ai/summary.ts')
+  // 最上面孤零零的一条是书名：不算一章。
+  const chapters = summaryChapters([{ title: '经典力学', level: 0, page: 1 }, { title: '第8章 对称', level: 1, page: 150 }, { title: '第9章 微扰展开', level: 1, page: 175 }, { title: '9.1 线性化', level: 2, page: 175 }, { title: '9.2 函数的展开', level: 2, page: 175 }, { title: '9.3 作用量', level: 2, page: 177 }, { title: '第10章 碰撞', level: 1, page: 194 }])
+  assert.deepEqual(chapters.map(item => [item.title, item.level, item.end]), [['第8章 对称', 0, 174], ['第9章 微扰展开', 0, 193], ['9.1 线性化', 1, 175], ['9.2 函数的展开', 1, 177], ['9.3 作用量', 1, 194], ['第10章 碰撞', 0, undefined]])
+  assert.deepEqual(chapterGroups(chapters), [{ at: 0, parts: [] }, { at: 1, parts: [2, 3, 4] }, { at: 5, parts: [] }])
+  assert.equal(chapterScope(chapters, [1, 2, 3, 4]), '「第9章 微扰展开」（第 175–193 页）')
+  assert.equal(chapterLabel(chapters, [1, 2, 3, 4]), '第9章 微扰展开')
+  const part = chapterScope(chapters, [2, 3])
+  assert.equal(part, '「第9章 微扰展开」里的「9.1 线性化」（第 175 页）、「9.2 函数的展开」（第 175–177 页）')
+  assert.equal(chapterLabel(chapters, [2, 3]), '2 节')
+  assert.equal(chapterLabel(chapters, [0, 2, 3]), '1 章 2 节')
+  assert.deepEqual(chosenFromScope(chapters, part), [2, 3])
+  assert.deepEqual(chosenFromScope(chapters, chapterScope(chapters, [0, 1, 2, 3, 4])), [0, 1, 2, 3, 4])
+  assert.equal(chosenFromScope(chapters, '讲同态的那部分'), null)
+})
+
+test('summary: nothing left out is an option of its own and always writes in rounds', async () => {
+  const { requestExtra, parseSummaryRequest } = await import('../src/ai/summary.ts')
+  const options = { ...emptySummaryOptions(), complete: true }
+  const text = summaryInstructions('群论', options, '')
+  assert.match(text, /不遗漏知识点/)
+  assert.match(text, /每一条都要写到/)
+  assert.match(text, /\[\[继续\]\]/)
+  assert.doesNotMatch(summaryInstructions('群论', emptySummaryOptions(), ''), /每一条都要写到/)
+  const request = summaryRequest('群论', options, '每节出两道题')
+  assert.deepEqual(parseSummaryRequest(request).rows, [['覆盖', '不遗漏知识点'], ['其他要求', '每节出两道题']])
+  assert.equal(requestExtra(request), '每节出两道题')
+  assert.equal(requestExtra('总结《群论》'), '')
 })

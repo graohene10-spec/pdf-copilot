@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import AppIcon from './AppIcon.vue'
 
 // 输入栏下沿拉出的抽屉：上面一行是模型（可横向滑动的胶囊），下面一行是思考强度滑杆。
@@ -50,30 +50,49 @@ function chipKey(event: KeyboardEvent) {
 }
 function chipWheel(event: WheelEvent) {
   const strip = chips.value
+  if (strip && strip.scrollWidth > strip.clientWidth) learned()
   if (!strip || strip.scrollWidth <= strip.clientWidth || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return
   event.preventDefault()
   strip.scrollLeft += event.deltaY
 }
+/** 速度档画几道闪电：快速一道，比它更快的超快两道；标准和省额度不画。 */
+const boltsOf = (id: string) => id === 'ultrafast' ? 2 : id === 'priority' || id === 'fast' ? 1 : 0
+// 模型多了一行放不下，这一行可以用滚轮横着翻——看不出来，所以头一回打开时在行尾说一声；翻过一次就不再提。
+const WHEEL_KEY = 'ai.picker.wheel'
+const wheelHint = ref(false)
+function measureHint() {
+  const strip = chips.value
+  let seen = false
+  try { seen = localStorage.getItem(WHEEL_KEY) === '1' } catch { /* 读不到就当没见过 */ }
+  wheelHint.value = !seen && Boolean(strip && strip.scrollWidth > strip.clientWidth + 8)
+}
+function learned() {
+  if (!wheelHint.value) return
+  wheelHint.value = false
+  try { localStorage.setItem(WHEEL_KEY, '1') } catch { /* 只在这次有效 */ }
+}
+watch(() => props.models.length, () => void nextTick(measureHint))
 function escape(event: KeyboardEvent) {
   if (event.key !== 'Escape' || event.defaultPrevented) return
   event.preventDefault(); event.stopPropagation()
   emit('close')
 }
-onMounted(() => chips.value?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest', inline: 'center' }))
+onMounted(() => { chips.value?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest', inline: 'center' }); window.setTimeout(measureHint, 350) })
 </script>
 
 <template>
   <div class="model-drawer" role="group" aria-label="模型与思考强度" @keydown="escape">
-    <div class="drawer-row">
-      <span class="drawer-label">模型</span>
+    <span class="drawer-label">模型</span>
+    <div class="drawer-field">
       <div ref="chips" class="model-chips" role="listbox" aria-label="模型" aria-orientation="horizontal" @keydown="chipKey" @wheel="chipWheel">
         <button v-for="item in models" :key="item.id || 'default'" type="button" role="option" :aria-selected="item.id === model" :tabindex="item.id === model ? 0 : -1" @click="emit('model', item.id)">{{ item.name || item.id }}</button>
         <span v-if="loading" class="chips-note">正在读取本机模型…</span>
       </div>
       <button v-if="canRefresh" type="button" class="drawer-icon" :disabled="loading" data-tip="重新读取本机模型" aria-label="重新读取本机模型" @click="emit('refresh')"><AppIcon name="reset" :size="13" /></button>
     </div>
-    <div class="drawer-row">
-      <span class="drawer-label">思考</span>
+    <Transition name="wheel-hint"><p v-if="wheelHint" class="wheel-hint" role="note"><svg viewBox="0 0 12 16" width="10" height="14" aria-hidden="true"><rect x="1" y="1" width="10" height="14" rx="5" /><path class="wheel-dot" d="M6 4v3" /></svg>模型不止这几个：滚轮可以左右翻</p></Transition>
+    <span class="drawer-label">思考</span>
+    <div class="drawer-field">
       <!-- 分段选择：每一档直接写出名字，选中的那一档下面滑过一块玻璃；档位越高，旁边的强度格亮得越多。 -->
       <div class="effort-segments" role="radiogroup" aria-label="思考强度" :style="{ '--count': steps.length, '--index': index }" @keydown="key">
         <span class="effort-thumb" aria-hidden="true" />
@@ -82,23 +101,26 @@ onMounted(() => chips.value?.querySelector<HTMLElement>('[aria-selected="true"]'
       <span class="effort-meter" aria-hidden="true" :title="label(effort)"><i v-for="bar in 4" :key="bar" :class="{ lit: index > 0 && bar <= Math.ceil(index / Math.max(1, steps.length - 1) * 4) }" /></span>
       <button v-if="fast !== undefined && !speeds.length" type="button" class="fast-toggle" :class="{ on: fast }" role="switch" :aria-checked="fast" aria-label="Fast" :data-tip="fast ? 'Fast 已开：更快，额度消耗更多' : 'Fast：更快出字，额度消耗更多'" @click="emit('fast', !fast)"><AppIcon name="bolt" :size="12" />Fast</button>
     </div>
-    <div v-if="speeds.length" class="drawer-row">
+    <template v-if="speeds.length">
       <span class="drawer-label">速度</span>
-      <div class="effort-segments" role="radiogroup" aria-label="响应速度" :style="{ '--count': speeds.length, '--index': speedIndex }" @keydown="speedKey">
-        <span class="effort-thumb" aria-hidden="true" />
-        <button v-for="(item, i) in speeds" :key="item.id || 'standard'" type="button" role="radio" :aria-checked="i === speedIndex" :tabindex="i === speedIndex ? 0 : -1" :class="{ on: i === speedIndex }" :data-tip="item.tip || undefined" @click="emit('tier', item.id)"><AppIcon v-if="item.id" name="bolt" :size="11" class="speed-bolt" />{{ item.name }}</button>
+      <div class="drawer-field">
+        <div class="effort-segments" role="radiogroup" aria-label="响应速度" :style="{ '--count': speeds.length, '--index': speedIndex }" @keydown="speedKey">
+          <span class="effort-thumb" aria-hidden="true" />
+          <button v-for="(item, i) in speeds" :key="item.id || 'standard'" type="button" role="radio" :aria-checked="i === speedIndex" :tabindex="i === speedIndex ? 0 : -1" :class="{ on: i === speedIndex }" :data-tip="item.tip || undefined" @click="emit('tier', item.id)"><span v-if="boltsOf(item.id)" class="speed-bolt" :class="{ twin: boltsOf(item.id) > 1 }"><AppIcon v-for="n in boltsOf(item.id)" :key="n" name="bolt" :size="11" /></span>{{ item.name }}</button>
+        </div>
       </div>
-    </div>
+    </template>
     <p v-if="error" class="drawer-status" role="status">{{ error }}</p>
   </div>
 </template>
 
 <style scoped>
 /* 抽屉在输入栏玻璃之内，用输入栏自己的墨色；两行之间只有很轻的分隔。 */
-.model-drawer{display:grid;gap:4px;padding:8px 2px 2px;border-top:1px solid var(--hairline);color:var(--ink);font-family:var(--font-ui)}
+.model-drawer{display:grid;grid-template-columns:max-content minmax(0,1fr);align-items:center;gap:5px 12px;padding:9px 2px 3px 6px;border-top:1px solid var(--hairline);color:var(--ink);font-family:var(--font-ui)}
 button{font:inherit;color:inherit;cursor:pointer}
-.drawer-row{display:flex;align-items:center;gap:8px;min-width:0;height:32px}
-.drawer-label{flex:0 0 auto;width:28px;font-size:11.5px;font-weight:600;color:var(--muted)}
+/* 左边一列栏名：一列对齐，各占一格，绝不换行（字体换大了也不会竖着叠成一串）。 */
+.drawer-label{font-size:11.5px;font-weight:600;line-height:1;letter-spacing:.14em;color:var(--muted);white-space:nowrap}
+.drawer-field{position:relative;display:flex;align-items:center;gap:8px;min-width:0;height:32px}
 .model-chips{display:flex;align-items:center;gap:4px;flex:1;min-width:0;height:32px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;scroll-behavior:smooth;padding:0 10px 0 6px}
 .model-chips::-webkit-scrollbar{display:none}
 .model-chips button{flex:0 0 auto;height:26px;padding:0 11px;border:1px solid transparent;border-radius:var(--r-sm);background:none;box-shadow:none;font-size:12px;font-weight:550;color:var(--secondary);white-space:nowrap;transition:background var(--dur-1) var(--ease-soft),color var(--dur-1) var(--ease-soft),transform var(--dur-press) var(--spring-press)}
@@ -122,9 +144,21 @@ button{font:inherit;color:inherit;cursor:pointer}
 .effort-meter i:nth-child(1){height:5px}.effort-meter i:nth-child(2){height:8px}.effort-meter i:nth-child(3){height:11px}.effort-meter i:nth-child(4){height:14px}
 .effort-meter i.lit{background:var(--accent)}
 .fast-toggle{display:inline-flex;align-items:center;gap:3px;flex:0 0 auto;height:26px;padding:0 8px;border:1px solid transparent;border-radius:var(--r-sm);background:none;box-shadow:none;font-size:11.5px;font-weight:600;color:var(--muted);transition:background var(--dur-1) var(--ease-soft),color var(--dur-1) var(--ease-soft)}
-.speed-bolt{margin-right:3px;vertical-align:-1px;color:var(--accent)}
+.speed-bolt{display:inline-flex;align-items:center;margin-right:3px;vertical-align:-1px;color:var(--accent)}
+.speed-bolt.twin svg+svg{margin-left:-5px}
+/* 头一回的提示：模型那一行下面一行小字，鼠标滚一下就走。 */
+.wheel-hint{grid-column:2;display:flex;align-items:center;gap:6px;height:18px;margin:-3px 0 1px 6px;color:var(--muted);font-size:11.5px;white-space:nowrap}
+.wheel-hint svg{flex:none;fill:none;stroke:currentColor;stroke-width:1.3;stroke-linecap:round}
+.wheel-hint .wheel-dot{stroke:var(--accent);stroke-width:1.6;animation:wheel-dot 1.2s var(--ease-out) 4 both}
+@keyframes wheel-dot{from{translate:0 -1px;opacity:1}to{translate:0 4px;opacity:0}}
+.wheel-hint-enter-active,.wheel-hint-leave-active{transition:opacity var(--dur-2) var(--ease-out),translate var(--dur-2) var(--ease-out)}
+.wheel-hint-enter-from,.wheel-hint-leave-to{opacity:0;translate:0 -4px}
 .fast-toggle:hover{background:var(--frost);color:var(--ink)}
 .fast-toggle.on{background:color-mix(in srgb,var(--accent) 14%,transparent);border-color:color-mix(in srgb,var(--accent) 30%,transparent);color:var(--accent)}
-.drawer-status{margin:0 0 2px 36px;font-size:11px;color:var(--muted)}
-@media(prefers-reduced-motion:reduce){.effort-thumb,.model-chips button{transition:none}.model-chips{scroll-behavior:auto}}
+.drawer-status{grid-column:2;margin:0 0 2px;font-size:11px;color:var(--muted)}
+@media(prefers-reduced-motion:reduce){.effort-thumb,.model-chips button{transition:none}.model-chips{scroll-behavior:auto}.wheel-hint .wheel-dot{animation:none}}
+/* 草稿风格：栏名是手写的。 */
+:root[data-style='sketch'] .drawer-label{font-size:17px;font-weight:400;letter-spacing:.06em;color:var(--ink)}
+:root[data-style='sketch'] .model-drawer{gap:6px 14px}
+:root[data-style='sketch'] .wheel-hint{height:22px;color:var(--secondary);font-size:15.5px}
 </style>

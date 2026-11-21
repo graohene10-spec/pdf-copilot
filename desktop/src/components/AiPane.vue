@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, defineAsyncComponent } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, reactive, defineAsyncComponent } from 'vue'
 import 'katex/dist/katex.min.css'
 import { getProvider, getNativeModels, getNativeStatus } from '../ai/providers.mjs'
 import { nativeModelInventory, registerNativeModelInventory } from '../ai/native-models'
 import { newSummaryConversation, cancelSummary, setConversationMemory, adoptTurns, addExcerpt, removeExcerpt, removeMessage, compressConversation, sideConversation, chatState, sendChat, stopChat, configureRequests, taskSummary, conversations, activeConversationId, selectConversation, newConversation, deleteConversation, loadConversations, conversationTokens, contextWindow, branchConversation, resendQuestion, watchConversation, allConversations, pinMessage, MAX_ATTACHMENTS, pendingImages, setPendingImages, keepImage, type Message, type ChatState } from '../ai/workspace'
 import { renderMarkdown, renderDiagrams } from '../ai/render'
 import { memoryMode, type MemoryMode } from '../ai/memory'
-import { summaryChat, summaryRequest, parseSummaryRequest, rememberSummaryOptions } from '../ai/summary'
+import { summaryChat, summaryRequest, parseSummaryRequest, requestExtra, rememberSummaryOptions, type SummaryOptions } from '../ai/summary'
 import SummarySetup from './SummarySetup.vue'
 import { radioKeys } from '../ui/radio-keys'
 import { mountIntelligentUi } from '../ai/intelligent-ui'
@@ -250,8 +250,32 @@ watch(() => state.value.id, id => { unwatch?.(); unwatch = watchConversation(id,
 const editing = ref<string | null>(null)
 const editText = ref('')
 const editor = ref<HTMLTextAreaElement[]>([])
-function startEdit(message: Message) { editing.value = message.id; editText.value = message.content; void nextTick(() => { const field = editor.value[0]; field?.focus(); field?.setSelectionRange(field.value.length, field.value.length) }) }
-function cancelEdit() { editing.value = null }
+// 总结对话的第一问是那张表：改它时还是一张表，不是一段带横杠的文字。
+const editOptions = ref<SummaryOptions | null>(null)
+const editExtra = ref('')
+function startEdit(message: Message) {
+  if (state.value.summary && parseSummaryRequest(message.content) && messages.value.find(item => item.role === 'user' && !item.note)?.id === message.id) {
+    editOptions.value = reactive({ ...state.value.summary.options }); editExtra.value = requestExtra(message.content); editing.value = message.id
+    return
+  }
+  editOptions.value = null
+  startEditText(message)
+}
+function submitSetupEdit(message: Message) {
+  const options = editOptions.value
+  editing.value = null; editOptions.value = null
+  if (!options || !state.value.summary) return
+  const text = summaryRequest(props.document.title, options, editExtra.value)
+  if (text === message.content.trim() && JSON.stringify(options) === JSON.stringify(state.value.summary.options)) return
+  rememberSummaryOptions(options)
+  follow = true
+  const id = resendQuestion({ ...props.document }, state.value.id, message.id, text, () => emit('settings'), options)
+  if (!id) return
+  if (id !== state.value.id) useConversation(id)
+  emit('draft', { conversationId: id, open: true })
+}
+function startEditText(message: Message) { editing.value = message.id; editText.value = message.content; void nextTick(() => { const field = editor.value[0]; field?.focus(); field?.setSelectionRange(field.value.length, field.value.length) }) }
+function cancelEdit() { editing.value = null; editOptions.value = null }
 function resend(message: Message, question: string) {
   // 重新回答最后一问才跟到底部；换的是中间某一条时，画面留在原处。
   follow = message.id === lastQuestionId.value
@@ -573,7 +597,9 @@ const tierChoice = computed(() => {
   const want = (settings.value as any).tier || (settings.value.fast ? 'priority' : '')
   return tiers.some(item => item.id === want) ? want : ''
 })
-const speedy = computed(() => settings.value.provider === 'codex' && pickerModels.value.find(item => item.id === (settings.value.model || ''))?.tiers?.length ? tierChoice.value !== '' : Boolean(fastChoice.value))
+const speedyTier = computed(() => settings.value.provider === 'codex' && pickerModels.value.find(item => item.id === (settings.value.model || ''))?.tiers?.length ? tierChoice.value !== '' : Boolean(fastChoice.value))
+/** 模型按钮上画几道闪电：快速一道，超快两道，标准和省额度不画。 */
+const bolts = computed(() => !speedyTier.value ? 0 : tierChoice.value === 'flex' ? 0 : tierChoice.value === 'ultrafast' ? 2 : 1)
 // Codex：面板一出现就把小助手拉起来，第一次提问不用等冷启动。
 onMounted(() => { if (!props.side && settings.value.provider === 'codex') void warmNative() })
 function chooseModel(id: string) {
@@ -989,7 +1015,8 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
             <button type="button" class="note-remove" aria-label="移除这条摘录" @click="removeMessage(document.id, state.id, message.id)"><AppIcon name="close" :size="10" /></button>
           </div>
           <template v-else-if="message.role === 'user'">
-            <div v-if="editing === message.id" class="question-editor">
+            <SummarySetup v-if="editing === message.id && editOptions" v-model:extra="editExtra" editing :title="document.title" :options="editOptions" :outline="getOutline?.(document.id)" @start="submitSetupEdit(message)" @cancel="cancelEdit" />
+            <div v-else-if="editing === message.id" class="question-editor">
               <textarea ref="editor" v-model="editText" rows="3" aria-label="编辑问题" @keydown="editKeydown($event, message)" />
               <div class="editor-actions"><button class="frost-button" @click="cancelEdit">取消</button><button class="frost-button primary" :disabled="!editText.trim()" @click="submitEdit(message)">发送</button></div>
             </div>
@@ -1119,7 +1146,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
           <span class="composer-space" />
           <span class="context-ring" :data-tip="`上下文约 ${count(contextUsed)} / ${count(contextLimit)} tokens`" aria-hidden="true" :style="{ '--ratio': contextRatio }"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5" /><circle class="ring-value" cx="10" cy="10" r="7.5" pathLength="100" /></svg></span>
           <div ref="pickerHost" class="model-picker-host">
-            <button type="button" class="model-picker" :disabled="busy" :aria-expanded="pickerOpen" :aria-controls="`model-drawer-${state.id}`" aria-label="选择模型与思考强度" data-tip="模型与思考强度" @click="pickerOpen = !pickerOpen"><span class="picker-model">{{ modelLabel }}</span><span class="picker-effort">{{ EFFORT_LABELS[settings.effort || ''] || settings.effort }}</span><AppIcon v-if="speedy" name="bolt" :size="11" class="picker-fast" /><AppIcon name="down" :size="12" class="picker-chevron" /></button>
+            <button type="button" class="model-picker" :disabled="busy" :aria-expanded="pickerOpen" :aria-controls="`model-drawer-${state.id}`" aria-label="选择模型与思考强度" data-tip="模型与思考强度" @click="pickerOpen = !pickerOpen"><span class="picker-model">{{ modelLabel }}</span><span class="picker-effort">{{ EFFORT_LABELS[settings.effort || ''] || settings.effort }}</span><span v-if="bolts" class="picker-fast" :class="{ twin: bolts > 1 }"><AppIcon v-for="n in bolts" :key="n" name="bolt" :size="11" /></span><AppIcon name="down" :size="12" class="picker-chevron" /></button>
           </div>
           <Transition name="send-swap" mode="out-in">
             <button v-if="busy" key="stop" class="send-button stop" aria-label="停止" data-tip="停止回答" @click="stop"><span class="stop-square" /></button>
@@ -1337,7 +1364,14 @@ button:disabled{opacity:.4;cursor:default}
 .sum-request dt{color:var(--muted)}
 .sum-request dd{min-width:0;margin:0;overflow-wrap:anywhere}
 .sum-request-none{margin:0;color:var(--muted)}
-:root[data-style='sketch'] .sum-request{font-family:var(--font-formal);background:var(--paper,#fdfaf0);border-color:color-mix(in srgb,var(--pencil,#2b2a27) 30%,transparent);border-radius:10px}
+/* 草稿风格：铅笔打的一张表。框和格线是手画的，栏名是手写的，填的内容用正经字体。 */
+:root[data-style='sketch'] .sum-request{padding:13px 17px 12px;border:1.5px solid var(--pencil);border-radius:var(--r-bar);background:var(--paper);box-shadow:3px 4px 0 color-mix(in srgb,var(--pencil) 15%,transparent);font-family:var(--font-formal)}
+:root[data-style='sketch'] .sum-request-head{gap:12px;margin-bottom:4px;padding-bottom:10px;border-bottom:1.5px solid var(--pencil)}
+:root[data-style='sketch'] .sum-request-head b{font-family:var(--font-display);font-size:22px;font-weight:400;line-height:1.1;letter-spacing:.06em;text-decoration:underline wavy var(--red-pencil) 1.1px;text-underline-offset:5px}
+:root[data-style='sketch'] .sum-request dl{gap:0 16px}
+:root[data-style='sketch'] .sum-request :is(dt,dd){padding:6px 0;border-bottom:1.2px dashed color-mix(in srgb,var(--pencil) 30%,transparent)}
+:root[data-style='sketch'] .sum-request :is(dt,dd):nth-last-child(-n+2){border-bottom:0;padding-bottom:2px}
+:root[data-style='sketch'] .sum-request dt{font-family:var(--font);font-size:17px;line-height:1.2;color:var(--ink)}
 .memory-pick{order:3;display:inline-flex;align-items:center;gap:16px;margin-top:20px;color:var(--muted);font-size:12px;line-height:1}
 .memory-label{display:inline-flex;align-items:center;gap:6px;padding-right:16px;border-right:1px solid var(--hairline);letter-spacing:.14em;opacity:.85}
 .memory-label svg{opacity:.7}
@@ -1578,7 +1612,8 @@ textarea::placeholder{color:var(--muted);font-family:'Anthropic Serif','Source H
 .model-picker:hover:not(:disabled),.model-picker[aria-expanded='true']{background:var(--frost);border-color:var(--hairline);color:var(--ink)}
 .picker-model{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
 .picker-effort{flex:0 0 auto;font-weight:500;color:var(--muted)}
-.picker-fast{flex:none;margin-left:-2px;color:var(--accent)}
+.picker-fast{display:inline-flex;align-items:center;flex:none;margin-left:-2px;color:var(--accent)}
+.picker-fast.twin svg+svg{margin-left:-5px}
 .picker-chevron{flex:0 0 auto;opacity:.55;transition:transform var(--dur-3) var(--spring-snappy)}
 .model-picker[aria-expanded='true'] .picker-chevron{transform:rotate(180deg)}
 .send-button{display:grid;place-items:center;flex:0 0 32px;width:32px;height:32px;padding:0;border:1px solid transparent;border-radius:var(--r-control);background:color-mix(in srgb,var(--accent) 84%,transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / .25);color:var(--accent-on,#fff);transition:transform var(--dur-press) var(--spring-press),opacity var(--dur-1) var(--ease-soft),background var(--dur-1) var(--ease-soft)}
