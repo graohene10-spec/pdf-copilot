@@ -39,6 +39,9 @@ export async function renameGroup(id: string, name: string) {
   await save()
 }
 /** 删掉分组，里面的书回到「未分组」，书本身不动。 */
+/** 撤销用：记下现在的分组和成员，之后可以原样放回去。 */
+export const snapshotGroups = () => ({ groups: groups.value.map(group => ({ ...group })), members: { ...members.value } })
+export async function restoreGroups(snapshot: ReturnType<typeof snapshotGroups>) { groups.value = snapshot.groups; members.value = snapshot.members; await save() }
 export async function removeGroup(id: string) {
   groups.value = groups.value.filter(group => group.id !== id)
   members.value = Object.fromEntries(Object.entries(members.value).filter(([, group]) => group !== id))

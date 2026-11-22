@@ -100,10 +100,12 @@ function selected() {
   if (!text || !last) return
   mark(range)
   // 小输入框放在选区最后一行的下面，别伸出面板。
-  ask.value = { quote: text.slice(0, 800), left: Math.max(12, Math.min(base.width - 372, last.right - base.left - 180)), top: Math.min(base.height - 64, last.bottom - base.top + 8) }
+  ask.value = { quote: text.slice(0, 800), left: Math.max(16, Math.min(base.width - ASK_WIDTH - 16, last.right - base.left - ASK_WIDTH / 2)), top: Math.min(base.height - 64, last.bottom - base.top + 8) }
   instruction.value = ''
   void nextTick(() => field.value?.focus({ preventScroll: true }))
 }
+// 小输入框的宽：面板窄的时候跟着收。
+const ASK_WIDTH = 440
 function send() {
   const text = instruction.value.trim()
   if (!ask.value || !text) return
@@ -127,10 +129,12 @@ async function copy() {
 
 <template>
   <section ref="root" class="draft-pane" :style="{ left: `${box.left}px`, width: `${box.width}px` }" role="region" aria-label="总结草稿" @keydown.esc.stop="ask ? (ask = null) : emit('close')">
-    <header class="draft-head">
+    <header class="draft-head" :class="{ running: busy }">
       <div class="draft-title"><h3>总结草稿</h3><p :title="title">{{ name }}</p></div>
       <button v-if="!busy && draft.missed" type="button" class="draft-warn" data-tip="助手抄的原文和草稿对不上，那几处没有改动。点一下让它对照草稿重新给" @click="emit('retry')">{{ draft.missed }} 处没改成 · 让助手重来</button>
-      <span class="draft-state" :class="{ live: busy }" role="status">{{ busy ? (draft.writing ? (draft.last === 'edit' ? '正在改' : '正在写') : activity) : size ? `${size} 字` : '' }}</span>
+      <!-- 助手在忙的时候不在这里写它读到第几段：表头下沿一道流光就够了（和快速解释卡片上的那道一样）。 -->
+      <span v-if="!busy && size" class="draft-state">{{ size }} 字</span>
+      <span v-else-if="busy" class="draft-live" role="status">{{ draft.writing ? (draft.last === 'edit' ? '正在改' : '正在写') : '助手在忙' }}</span>
       <button v-if="saved" type="button" class="draft-link" :data-tip="`已存为 ${saved}`" @click="emit('open')">已存 · 打开</button>
       <button type="button" class="draft-icon" :disabled="!size" aria-label="复制" data-tip="复制 Markdown 原文" @click="copy"><AppIcon name="copy" :size="15" /></button>
       <button type="button" class="draft-save" :disabled="!size || busy || saving" :data-tip="saved ? '再存一次，覆盖上次存的那份' : '存成 Markdown，放在原文档的文件夹里，并加入文档库'" @click="emit('save', draft.text)">{{ saving ? '正在存…' : saved ? '再存一次' : '存入文档库' }}</button>
@@ -154,7 +158,7 @@ async function copy() {
       <article v-show="size" ref="paper" class="markdown-paper draft-paper" @mouseup="selected"></article>
     </div>
     <form v-if="ask" class="draft-ask" :style="{ left: `${ask.left}px`, top: `${ask.top}px` }" @submit.prevent="send">
-      <input ref="field" v-model="instruction" type="text" maxlength="400" placeholder="这一段怎么改？比如：展开讲、换个例子、删掉" aria-label="这一段怎么改" @keydown.enter="($event.isComposing || $event.keyCode === 229) && $event.stopPropagation()" @keydown.esc.prevent.stop="ask = null" />
+      <input ref="field" v-model="instruction" type="text" maxlength="400" placeholder="这一段怎么改？比如：展开讲、换个例子" aria-label="这一段怎么改" @keydown.enter="($event.isComposing || $event.keyCode === 229) && $event.stopPropagation()" @keydown.esc.prevent.stop="ask = null" />
       <button type="submit" :disabled="!instruction.trim()" aria-label="让助手改" data-tip="让助手改这一段"><AppIcon name="arrow-up" :size="14" /></button>
     </form>
   </section>
@@ -169,7 +173,11 @@ async function copy() {
 .draft-title h3{flex:none;margin:0;font-size:14.5px;font-weight:650}
 .draft-title p{min-width:0;margin:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--muted);font-size:12.5px}
 .draft-state{flex:none;max-width:40%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--muted);font-size:12.5px;font-variant-numeric:tabular-nums}
-.draft-state.live{color:var(--accent)}
+/* 只给读屏听的：正在写 / 正在改。看得见的是表头下沿那道流光。 */
+.draft-live{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.draft-head{position:relative}
+.draft-head.running::after{content:'';position:absolute;left:0;bottom:-1px;width:38%;height:2px;border-radius:1px;background:linear-gradient(90deg,transparent,var(--accent),transparent);animation:draft-run 1.15s cubic-bezier(.45,0,.55,1) infinite;pointer-events:none}
+@keyframes draft-run{from{translate:-110% 0}to{translate:290% 0}}
 .draft-warn{flex:none;height:28px;padding:0 10px;border:1px solid color-mix(in srgb,#c0392b 55%,transparent);border-radius:8px;background:color-mix(in srgb,#c0392b 8%,transparent);box-shadow:none;color:#b03a2e;font:inherit;font-size:12.5px}
 .draft-warn:hover{background:color-mix(in srgb,#c0392b 14%,transparent)}
 /* 刚改过的那几块：淡淡地亮一下，再褪掉。 */
@@ -201,12 +209,12 @@ async function copy() {
 .draft-steps li::before{content:counter(step);position:absolute;left:0;top:1px;display:grid;place-items:center;width:24px;height:24px;border:1px solid color-mix(in srgb,var(--ink) 26%,transparent);border-radius:50%;color:var(--ink);font-size:12.5px;font-weight:600}
 .draft-steps b{display:block;color:var(--ink);font-weight:650}
 /* 划选之后冒出来的小输入框。 */
-.draft-ask{position:absolute;z-index:3;display:flex;align-items:center;gap:6px;width:360px;height:44px;padding:0 6px 0 14px;border:1px solid color-mix(in srgb,var(--ink) 22%,transparent);border-radius:12px;background:var(--surface,var(--canvas));box-shadow:0 12px 30px -12px rgb(0 0 0 / .4);animation:draft-in var(--dur-2) var(--ease-out) both}
-.draft-ask input{flex:1;min-width:0;height:100%;padding:0;border:0;background:none;box-shadow:none;color:var(--ink);font:inherit;font-size:13.5px;outline:0}
+.draft-ask{position:absolute;z-index:3;display:flex;align-items:center;gap:8px;box-sizing:border-box;width:min(440px,calc(100% - 32px));height:46px;padding:0 7px 0 16px;border:1px solid color-mix(in srgb,var(--ink) 22%,transparent);border-radius:12px;background:var(--surface,var(--canvas));box-shadow:0 12px 30px -12px rgb(0 0 0 / .4);animation:draft-in var(--dur-2) var(--ease-out) both}
+.draft-ask input{flex:1;min-width:0;height:100%;padding:0;border:0;border-radius:0;background:none;box-shadow:none;color:var(--ink);font:inherit;font-size:13.5px;outline:0;text-overflow:ellipsis}
 .draft-ask input::placeholder{color:var(--muted)}
-.draft-ask button{display:grid;place-items:center;flex:none;width:30px;height:30px;padding:0;border:0;border-radius:50%;background:var(--accent);box-shadow:none;color:var(--accent-on,#fff)}
+.draft-ask button{display:grid;place-items:center;flex:none;width:32px;height:32px;padding:0;border:0;border-radius:50%;background:var(--accent);box-shadow:none;color:var(--accent-on,#fff)}
 .draft-ask button:disabled{opacity:.35}
-@media (prefers-reduced-motion:reduce){.draft-pane,.draft-ask,.draft-blank-state i,.draft-lines i{animation:none}.draft-paper :deep(.draft-changed){animation-duration:.01s}}
+@media (prefers-reduced-motion:reduce){.draft-head.running::after{animation:none;width:100%;opacity:.5}.draft-pane,.draft-ask,.draft-blank-state i,.draft-lines i{animation:none}.draft-paper :deep(.draft-changed){animation-duration:.01s}}
 /* 草稿风格：一张铅笔框的稿纸。面板的框、表头、按钮、空白时的示意都是手画手写的；
    文档正文是要读、要改的东西，用正经字体，只在标题上留铅笔和荧光笔的痕迹。字都摆正。 */
 :root[data-style='sketch'] .draft-pane{border:1.5px solid var(--pencil);border-radius:var(--r-bar);background:var(--paper);box-shadow:3px 4px 0 color-mix(in srgb,var(--pencil) 15%,transparent);font-family:var(--font-formal)}
@@ -215,7 +223,7 @@ async function copy() {
 :root[data-style='sketch'] .draft-title h3{font-family:var(--font-display);font-size:24px;font-weight:400;line-height:1.1;letter-spacing:.06em;text-decoration:underline wavy var(--red-pencil) 1.1px;text-underline-offset:5px}
 :root[data-style='sketch'] .draft-title p{font-family:var(--font-formal)}
 :root[data-style='sketch'] .draft-state,:root[data-style='sketch'] .draft-link,:root[data-style='sketch'] .draft-warn{font-family:var(--font);font-size:17px}
-:root[data-style='sketch'] .draft-state.live{color:var(--red-pencil)}
+:root[data-style='sketch'] .draft-head.running::after{bottom:-2px;height:2.5px;background:linear-gradient(90deg,transparent,var(--red-pencil),transparent)}
 :root[data-style='sketch'] .draft-save{height:34px;padding:0 18px;border:1.5px solid var(--pencil);border-radius:var(--r-control);background:var(--pencil);box-shadow:2px 3px 0 color-mix(in srgb,var(--pencil) 26%,transparent);color:var(--paper);font-family:var(--font);font-size:17.5px;font-weight:400;letter-spacing:.05em}
 :root[data-style='sketch'] .draft-icon{border-radius:var(--r-control)}
 :root[data-style='sketch'] .draft-warn{height:30px;border:1.4px solid var(--red-pencil);border-radius:var(--r-control);background:none;color:var(--red-pencil)}
@@ -239,6 +247,7 @@ async function copy() {
 :root[data-style='sketch'] .draft-paper :deep(:is(th,td)){border-color:color-mix(in srgb,var(--pencil) 55%,transparent)}
 /* 划选后的小输入框：一张铅笔框的小纸条。 */
 :root[data-style='sketch'] .draft-ask{border:1.5px solid var(--pencil);border-radius:var(--r-control);background:var(--paper);box-shadow:2px 3px 0 color-mix(in srgb,var(--pencil) 22%,transparent)}
-:root[data-style='sketch'] .draft-ask input{font-size:16.5px}
+:root[data-style='sketch'] .draft-ask input{font-family:var(--font-formal);font-size:14px}
+:root[data-style='sketch'] .draft-ask button:disabled{background:color-mix(in srgb,var(--pencil) 35%,transparent);opacity:1}
 :root[data-style='sketch'] .draft-ask button{border-radius:50%;background:var(--pencil);color:var(--paper)}
 </style>

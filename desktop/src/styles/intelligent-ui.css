@@ -69,6 +69,9 @@
 .iui-dia-card{--dia-line:color-mix(in srgb,var(--surface-ink,var(--ink)) 46%,transparent);--dia-faint:color-mix(in srgb,var(--surface-ink,var(--ink)) 16%,transparent);--dia-hot:var(--accent);--dia-hot-soft:color-mix(in srgb,var(--accent) 16%,transparent)}
 :root[data-style='sketch'] .iui-dia-card{--dia-line:color-mix(in srgb,var(--pencil,#2b2a27) 78%,transparent);--dia-faint:color-mix(in srgb,var(--pencil,#2b2a27) 32%,transparent);--dia-hot:var(--red-pencil,#c0392b);--dia-hot-soft:color-mix(in srgb,var(--red-pencil,#c0392b) 14%,transparent)}
 .iui-dia{position:relative;width:100%}
+/* 图是等比缩放的：放在很宽的文档栏里会被撑得老大，里面却只有几个圈。限一个上限，居中放。 */
+.iui-dia{max-width:560px;margin-inline:auto}
+.markdown-paper .iui-plot{max-width:680px;margin-inline:auto}
 .iui-dia>svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
 :root:not([data-style='sketch']) .iui-dia .ink{filter:none}
 .iui-dia-labels{position:absolute;inset:0;pointer-events:none}

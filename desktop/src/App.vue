@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, shallowRef, computed, watch, onMounted, onBeforeUnmount, nextTick, defineAsyncComponent, toRaw, triggerRef } from 'vue'
 import { library, isDesktop, importDroppedDocuments, renderGuard } from './sdk'
-import { groups, members, groupFilter, currentGroup, loadGroups, createGroup, renameGroup, removeGroup, assignGroup } from './library/groups'
+import { groups, members, groupFilter, currentGroup, loadGroups, createGroup, renameGroup, removeGroup, assignGroup, snapshotGroups, restoreGroups } from './library/groups'
 import type { Doc } from './sdk/types'
 import AppIcon from './components/AppIcon.vue'
 import ClockChip from './components/ClockChip.vue'
@@ -16,7 +16,7 @@ import { restoreLeavingPanel } from './ui/panel-transition'
 import BookmarkRail from './components/BookmarkRail.vue'
 import ClaudeBurst from './components/ClaudeBurst.vue'
 import { nudgeGlassMotion } from './ui/glass-motion'
-import { bookmarks, loadBookmarks, addBookmark, removeBookmark, clearBookmarks, renameBookmark, restyleBookmark, neighbour, type BookmarkPosition, placeBookmark } from './library/bookmarks'
+import { bookmarks, loadBookmarks, addBookmark, removeBookmark, clearBookmarks, restoreBookmarks, renameBookmark, restyleBookmark, neighbour, type BookmarkPosition, placeBookmark } from './library/bookmarks'
 import { BOOKMARK_ARTS, artOf, addCustomArt, customArtList, loadCustomArts, removeCustomArt } from './library/bookmark-art'
 import { useFullscreen } from './ui/fullscreen'
 import { vLiquidSelection } from './ui/liquid-selection'
@@ -395,6 +395,29 @@ function notify(message: string) { toast.value = message; clearTimeout(toastTime
 const { fullscreen, fullscreenPending, toggleFullscreen, exitFullscreen } = useFullscreen(isDesktop, notify)
 watch(fullscreen, value => { if (!value && chromeCollapsed.value) expandChrome() })
 function reason(error: any) { return error?.message || String(error) }
+// ---- 撤销（Ctrl + Z）：删分组、删书签、移出文档库 ----
+const undoSteps: { label: string; run: () => void | Promise<void> }[] = []
+/** 做完一件可以反悔的事：提示里带上怎么撤销。 */
+function undoable(label: string, run: () => void | Promise<void>) { undoSteps.push({ label, run }); if (undoSteps.length > 30) undoSteps.shift(); notify(`${label}　Ctrl + Z 撤销`) }
+async function undoLast() {
+  const step = undoSteps.pop()
+  if (!step) return
+  try { await step.run(); notify(`已撤销：${step.label}`) } catch (error) { notify(reason(error)) }
+}
+/** 删书签之前记下这几份文档的书签，撤销时整个放回去。 */
+function dropMarks(pairs: [string, string][]) {
+  if (!pairs.length) return
+  const before = new Map<string, any[]>()
+  for (const [id] of pairs) if (!before.has(id)) before.set(id, [...(bookmarks.get(id) || [])])
+  for (const [id, markId] of pairs) removeBookmark(id, markId)
+  bookmarkTick.value++
+  undoable(pairs.length > 1 ? `已删除 ${pairs.length} 个书签` : '已删除书签', () => { for (const [id, list] of before) restoreBookmarks(id, list); bookmarkTick.value++ })
+}
+// 移出文档库：先从列表里拿掉，过一会儿才真的删记录——这段时间里 Ctrl + Z 能原样拿回来（阅读进度、标签、书签都在）。
+const leaving = new Map<string, number>()
+const REMOVE_AFTER = 30000
+function reallyRemove(id: string) { clearTimeout(leaving.get(id)); if (leaving.delete(id)) void library.remove(id).catch(() => { /* 下次打开它还在，不算丢 */ }) }
+window.addEventListener('pagehide', () => { for (const id of [...leaving.keys()]) reallyRemove(id) })
 function size(bytes: number) { return bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB` }
 function date(value: number) {
   if (!value) return '尚未阅读'
@@ -418,7 +441,7 @@ function updateLocal(doc: Doc) {
 }
 async function refresh() {
   const epoch = ++listEpoch
-  try { const list = await library.list(query.value); if (epoch === listEpoch) documents.value = list }
+  try { const list = await library.list(query.value); if (epoch === listEpoch) documents.value = leaving.size ? list.filter((doc: Doc) => !leaving.has(doc.id)) : list }
   catch (error) { notify(`文档库加载失败：${reason(error)}`) }
   finally { loading.value = false }
 }
@@ -928,7 +951,7 @@ function bookmarkMenu(id: string, markId: string, event: MouseEvent) {
   contextMenu.value = { x, y, items: [
     { label: '命名…', icon: 'edit', action: () => { editingBookmark.value = markId } },
     { label: '换画风…', icon: 'image', action: () => chooseBookmarkArt(source, markId, x, y) },
-    { label: '删除书签', icon: 'trash', danger: true, separator: true, action: () => { removeBookmark(source, markId); bookmarkTick.value++ } },
+    { label: '删除书签', icon: 'trash', danger: true, separator: true, action: () => dropMarks([[source, markId]]) },
     ...(count > 1 ? [{ label: `删除全部 ${count} 个书签…`, icon: 'trash', danger: true, action: () => confirmClearBookmarks(source, count, x, y) }] : []),
   ] }
 }
@@ -1059,7 +1082,9 @@ function groupClick(id: string, event: MouseEvent) {
 }
 function removeGroups(ids: string[]) {
   pickedGroups.value = new Set()
-  void Promise.all(ids.map(id => removeGroup(id))).then(() => { if (ids.length > 1) notify(`已删除 ${ids.length} 个分组，书都还在文档库里`) }).catch(error => notify(reason(error)))
+  if (!ids.length) return
+  const before = snapshotGroups()
+  void Promise.all(ids.map(id => removeGroup(id))).then(() => undoable(ids.length > 1 ? `已删除 ${ids.length} 个分组，书都还在` : '已删除分组，书都还在', () => restoreGroups(before))).catch(error => notify(reason(error)))
 }
 function markClick(doc: Doc, mark: { id: string; position: BookmarkPosition }, event: MouseEvent) {
   // 刚拖完框松手时落在某一行上的那一下不算点击。
@@ -1070,9 +1095,8 @@ function markClick(doc: Doc, mark: { id: string; position: BookmarkPosition }, e
   void openBookmark(doc, mark.position)
 }
 function removeMarks(keys: string[]) {
-  for (const key of keys) { const at = key.lastIndexOf(':'); removeBookmark(key.slice(0, at), key.slice(at + 1)) }
-  pickedMarks.value = new Set(); bookmarkTick.value++
-  if (keys.length > 1) notify(`已删除 ${keys.length} 个书签`)
+  dropMarks(keys.map(key => { const at = key.lastIndexOf(':'); return [key.slice(0, at), key.slice(at + 1)] as [string, string] }))
+  pickedMarks.value = new Set()
 }
 function sideKeydown(event: KeyboardEvent) {
   if ((event.target as HTMLElement).closest('input, textarea, select')) return
@@ -1105,13 +1129,13 @@ async function openBookmark(doc: Doc, position: BookmarkPosition) {
 function confirmClearBookmarks(source: string, count: number, x: number, y: number) {
   void nextTick(() => {
     contextMenu.value = { x, y, items: [
-      { label: `确定删除全部 ${count} 个书签`, icon: 'trash', danger: true, action: () => { clearBookmarks(source); bookmarkTick.value++; notify(`已删除 ${count} 个书签`) } },
+      { label: `确定删除全部 ${count} 个书签`, icon: 'trash', danger: true, action: () => { const before = [...(bookmarks.get(source) || [])]; clearBookmarks(source); bookmarkTick.value++; undoable(`已删除 ${count} 个书签`, () => { restoreBookmarks(source, before); bookmarkTick.value++ }) } },
       { label: '取消', icon: 'close', separator: true, action: () => {} },
     ] }
   })
 }
-function deleteBookmark(id: string, markId: string) { removeBookmark(sourceId(id), markId); bookmarkTick.value++ }
-function deleteBookmarks(id: string, markIds: string[]) { for (const markId of markIds) removeBookmark(sourceId(id), markId); bookmarkTick.value++ }
+function deleteBookmark(id: string, markId: string) { dropMarks([[sourceId(id), markId]]) }
+function deleteBookmarks(id: string, markIds: string[]) { dropMarks(markIds.map(markId => [sourceId(id), markId] as [string, string])) }
 /** 书签在书页那一层里的位置（阅读器还没排好版时没有）。 */
 function bookmarkPlace(id: string, markId: string) {
   const mark = bookmarks.get(sourceId(id))?.find(item => item.id === markId)
@@ -1448,7 +1472,7 @@ function appContextMenu(event: MouseEvent) {
     else {
       clearSidePicks()
       items.push({ label: '重命名', icon: 'edit', action: () => editGroup(id, group.name) })
-      items.push({ label: '删除分组', icon: 'trash', danger: true, hint: '书留在文档库', action: () => { void removeGroup(id).catch(error => notify(reason(error))) } })
+      items.push({ label: '删除分组', icon: 'trash', danger: true, hint: '书留在文档库', action: () => removeGroups([id]) })
     }
   } else if (!active.value && target.closest('.document-card')) {
     const card = target.closest<HTMLElement>('.document-card')!
@@ -1762,11 +1786,19 @@ async function removeDocuments() {
   removeBatch.value = null
   for (const target of targets) await removeDocument(true, target)
   clearPicked()
-  notify(`已从文档库移除 ${targets.length} 份文档，原文件保留。`)
+  const ids = targets.map(target => target.id)
+  undoable(`已移出 ${targets.length} 份文档，原文件还在`, () => bringBack(ids))
+}
+/** 撤销移出：还没真删的直接拿回来。已经过了时限的拿不回来，说一声。 */
+async function bringBack(ids: string[]) {
+  let back = 0
+  for (const id of ids) if (leaving.has(id)) { clearTimeout(leaving.get(id)); leaving.delete(id); back++ }
+  await refresh()
+  if (back < ids.length) throw new Error(back ? `只拿回了 ${back} 份，其余的已经移出，重新加入即可。` : '已经移出，重新加入即可。')
 }
 async function removeDocument(quiet = false, target = removeTarget.value) {
   if (!target) return
-  try { if (active.value?.id === target.id) rememberReader(); await flushProgress(); await progressWrites.get(target.id); clearTimeout(indexTimers.get(target.id)); indexTimers.delete(target.id); await library.remove(target.id); for (const tab of [...tabs.value]) if (sourceId(tab.doc.id) === target.id) closeTab(tab.doc.id); removeTarget.value = null; await refresh(); if (!quiet) notify('已从文档库移除，原文件保留。') }
+  try { if (active.value?.id === target.id) rememberReader(); await flushProgress(); await progressWrites.get(target.id); clearTimeout(indexTimers.get(target.id)); indexTimers.delete(target.id); for (const tab of [...tabs.value]) if (sourceId(tab.doc.id) === target.id) closeTab(tab.doc.id); removeTarget.value = null; const id = target.id; leaving.set(id, window.setTimeout(() => reallyRemove(id), REMOVE_AFTER)); documents.value = documents.value.filter(doc => doc.id !== id); if (!quiet) undoable('已移出文档库，原文件还在', () => bringBack([id])) }
   catch (error) { notify(reason(error)) }
 }
 let appliedBackground: string | undefined
@@ -1971,6 +2003,8 @@ function keydown(event: KeyboardEvent) {
     else if (fullscreen.value) { event.preventDefault(); void exitFullscreen() }
     return
   }
+  // Ctrl + Z：撤销刚才的删除。输入框里是它自己的撤销；标记工具开着时归它管（它会先拦下这一下）。
+  if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.code === 'KeyZ' && undoSteps.length && !managerOpen.value && !settingsOpen.value && !(event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])'))) { setTimeout(() => { if (!event.defaultPrevented) void undoLast() }, 0); return }
   const binding = shortcutFromEvent(event)
   // 文档库：Ctrl+A 全选，Delete 移除选中的文档（焦点在输入框里时不管）。
   if (!active.value && !settingsOpen.value && !detailsId.value && !removeTarget.value && !removeBatch.value && !(event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])'))) {

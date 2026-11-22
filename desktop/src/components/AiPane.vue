@@ -873,6 +873,12 @@ function startSummary() {
   void send(summaryRequest(props.document.title, summary.options, extra))
 }
 function cancelSetup() { cancelSummary(props.document.id, state.value.id) }
+/** 草稿上划选后发来的修改请求：拆成划选的原文和要求。不是这种消息就是 null。 */
+function reviseParts(message: Message) {
+  if (!state.value.summary) return null
+  const match = /^修改草稿里的这一段：\n((?:>.*\n?)+)\n要求：([\s\S]+)$/.exec(message.content)
+  return match ? { quote: match[1]!.split('\n').map(line => line.replace(/^> ?/, '')).join('\n').trim(), instruction: match[2]!.trim() } : null
+}
 /** 总结对话里发出去的那张表：显示成表格。 */
 const requestTable = (message: Message) => state.value.summary ? parseSummaryRequest(message.content) : null
 /** 草稿面板里划选了一段、写了怎么改：发给这段总结对话。助手正在写就先打断它。 */
@@ -1040,6 +1046,8 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
                 <dl v-if="requestTable(message)!.rows.length"><template v-for="row in requestTable(message)!.rows" :key="row[0]"><dt>{{ row[0] }}</dt><dd>{{ row[1] }}</dd></template></dl>
                 <p v-else class="sum-request-none">没有另外的要求，由助手决定。</p>
               </div>
+              <!-- 草稿上划选后发来的修改：对话栏里只显示要求，划选的原文缩成一行（指上去看全文）。原文照样整段发给助手。 -->
+              <div v-else-if="reviseParts(message)" class="user-question revise-ask"><span class="revise-quote" :data-tip="reviseParts(message)!.quote.slice(0, 400)"><AppIcon name="doc" :size="12" />{{ reviseParts(message)!.quote.replace(/\s+/g, ' ').slice(0, 26) }}{{ reviseParts(message)!.quote.length > 26 ? '…' : '' }}</span>{{ reviseParts(message)!.instruction }}</div>
               <div v-else class="user-question">{{ message.content }}</div>
               <!-- 问题下面只占一行：左边是指上去才出现的「编辑」「复制」，右边是随问题发出的引文、图片、页码。 -->
               <div class="question-foot">
@@ -1370,6 +1378,8 @@ button:disabled{opacity:.4;cursor:default}
 .answer-body :deep(.draft-chip svg){color:var(--accent)}
 .header-button.draft-toggle.on{background:var(--frost-hover);color:var(--accent)}
 /* 总结对话的第一问：一张小表。 */
+.revise-quote{display:flex;align-items:center;gap:6px;max-width:100%;margin-bottom:5px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--muted);font-size:.86em}
+.revise-quote svg{flex:none}
 .sum-request{align-self:flex-end;width:min(100%,420px);margin-left:auto;padding:12px 16px 13px;border:1px solid var(--hairline);border-radius:12px;background:var(--surface,var(--canvas));color:var(--ink);font-size:13px;line-height:1.55;text-align:left;user-select:text}
 .sum-request-head{display:flex;align-items:baseline;gap:10px;margin:0 0 9px;padding-bottom:9px;border-bottom:1px solid var(--hairline)}
 .sum-request-head b{flex:none;font-size:14px;font-weight:650}
@@ -1591,6 +1601,9 @@ textarea::placeholder{color:var(--muted);font-family:'Anthropic Serif','Source H
 .excerpt-chip.arrived{animation:note-arrive 1.1s var(--ease-out)}
 .excerpt-enter-active,.excerpt-leave-active{transition:opacity var(--dur-2) var(--ease-out),translate var(--dur-2) var(--ease-out)}
 .excerpt-enter-from{opacity:0;translate:0 6px}.excerpt-leave-to{opacity:0}
+/* 拿掉一条引文：它先脱出排版再淡掉，后面的顺势滑过来，不是等它淡完才一下子跳上去。 */
+.excerpt-leave-active{position:absolute}
+.excerpt-move{transition:translate var(--dur-2) var(--ease-out)}
 .sent-context .sent-excerpt{display:inline-flex;gap:4px}
 .attach-button{display:grid;place-items:center;flex-shrink:0;width:30px;height:30px;padding:0;border:0;border-radius:var(--r-control);background:transparent;box-shadow:none;color:var(--muted)}
 .attach-button:hover:not(:disabled){background:var(--frost-hover);color:var(--ink)}
