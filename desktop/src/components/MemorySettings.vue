@@ -90,6 +90,12 @@ function flipScope(row: Row) { retagMemory(row.id, { scope: row.scope === 'book'
 .mem-book li{display:flex;align-items:center;gap:6px;min-height:34px;border-bottom:1px solid var(--separator)}
 .mem-text{flex:1;min-width:0;height:auto;min-height:32px;padding:5px 6px;border:0;border-radius:6px;background:none;box-shadow:none;color:var(--ink);font:inherit;font-size:13px;line-height:1.5;text-align:left;white-space:normal;overflow-wrap:anywhere;cursor:text;user-select:text}
 .mem-text{display:block;justify-content:flex-start}
+/* 这一页是拿来读和改的：不管哪种主题，条目、说明、书名都用正经字体；长的条目换行，不伸到右边的按钮底下。 */
+.mem,.mem :is(button,textarea){font-family:var(--font-formal)}
+.mem .mem-text,:root[data-style='sketch'] .mem .mem-text{white-space:normal;overflow:visible;overflow-wrap:anywhere;text-overflow:clip;letter-spacing:0}
+.mem-book li{align-items:flex-start}
+.mem-scope,.mem-x{margin-top:5px}
+.mem-scope{margin-top:8px}
 :root[data-style='sketch'] .mem-text:hover:not(:disabled){rotate:none}
 .mem-text:hover{background:color-mix(in srgb,var(--ink) 6%,transparent)}
 .mem-book textarea{flex:1;min-width:0;margin:4px 0;padding:5px 7px;border:1px solid var(--accent);border-radius:6px;background:none;box-shadow:none;color:var(--ink);font:inherit;font-size:13px;line-height:1.5;resize:none;outline:0}
