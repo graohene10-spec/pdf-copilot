@@ -101,6 +101,8 @@ onBeforeUnmount(() => {
   shared.previewAppearance(null)
   if (previousFocus?.isConnected) previousFocus.focus()
 })
+// 点到对话框外面：没改过东西才关。改过的要么保存，要么点取消或按 Esc——免得手一滑一屋子设置全没了。
+function backdropClose() { if (JSON.stringify(draft.value) === baseline) close() }
 function close() {
   if (saving.value || closing) return
   closing = true; imageRequest++
@@ -338,7 +340,7 @@ function failureText(item: RenderFailure) {
 </script>
 
 <template>
-  <div class="settings-backdrop" :class="{ peeking, scene: scenePreview }" @click.self="!scenePreview && close()" @pointerup="peek(false)" @pointercancel="peek(false)">
+  <div class="settings-backdrop" :class="{ peeking, scene: scenePreview }" @click.self="!scenePreview && backdropClose()" @pointerup="peek(false)" @pointercancel="peek(false)">
     <Transition name="scene-bar"><div v-if="scenePreview" class="scene-bar" role="dialog" aria-label="预览新底板" @keydown="sceneKeydown"><span>新底板效果预览</span><button type="button" class="scene-reject" @click="rejectScene">不采用</button><button ref="sceneAccept" type="button" class="scene-accept" @click="acceptScene">采用</button></div></Transition>
     <section ref="dialog" class="settings-dialog" data-glass-interactive="panel" role="dialog" aria-modal="true" aria-labelledby="settings-title" tabindex="-1" @keydown="dialogKeydown">
       <header class="dialog-header"><h2 id="settings-title">设置</h2><button class="settings-close" :disabled="saving" @click="close" aria-label="关闭设置"><AppIcon name="close" :size="18" /></button></header>

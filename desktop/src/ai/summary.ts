@@ -135,9 +135,9 @@ export function summaryRequest(title: string, options: SummaryOptions, extra = '
 }
 
 const AMOUNT_RULE: Record<UiAmount, string> = {
-  less: '全篇最多一两处，只放在最关键、文字确实讲不清的地方。',
-  normal: '大约每个主要章节一处；确实比文字清楚才放，没有合适的就不放。',
-  more: '只要一张图或一个演示能帮上忙就放，每一节都可以有；但不要重复，也不要为了凑数硬放。',
+  less: '全篇一到两处，放在最关键的概念上。',
+  normal: '每个二级标题下面一般一处，全篇不少于三处（文档只有一两节时至少一处）。',
+  more: '每个二级标题下面至少一处；一节里既有结构又有变化的，放两处。全篇不少于五处（文档只有一两节时至少两处）。',
 }
 const LEAN_RULE: Record<UiLean, string> = {
   diagram: '以图解为主，讲清概念的结构和关系；可交互的只在量确实随参数连续变化时才用。',
@@ -186,7 +186,15 @@ export function summaryInstructions(title: string, options: SummaryOptions, uiGu
     options.multi || options.complete
       ? '这份文档比较长，分多次写：每次回复只读、只写一部分（大约一章或几十页）。第一次用 <summary-doc> 写出标题和第一部分，之后每次用 <summary-add> 把新的一部分接在文档末尾，不要重复已经写过的内容。每次回复的最后单独一行写 [[继续]]（后面还有没写的）或 [[完成]]（全部写完了）。收到「继续」就接着写下一部分。'
       : '一次回复里把整份总结写完。一次大约能读四十页；范围比这大、读不完时，按顺序尽量读到，在标签外说明哪些部分没有覆盖到，并提醒读者可以在表里打开「分多次写」。',
-    uiGuide ? `这份文档可以用图解和可交互的界面（Intelligent UI），它们同样写在 <summary-doc> 里面。\n- 放多少：${AMOUNT_RULE[options.uiAmount]}\n- 用哪类：${LEAN_RULE[options.uiLean]}\n${uiGuide}` : '这份文档只用文字、公式、列表和表格，不要写 ui 代码块，也不要写 mermaid。',
+    uiGuide ? [
+      '读者打开了「图解与可交互」（Intelligent UI）。这是对这份文档的要求，不是一个可用可不用的选项：没有 ui 代码块的文档不合格。',
+      `- 放多少：${AMOUNT_RULE[options.uiAmount]}`,
+      `- 用哪类：${LEAN_RULE[options.uiLean]}`,
+      '- 放在哪：ui 代码块直接写在 <summary-doc>（或 <summary-add>）里面的正文中间，紧跟在它讲的那段文字后面。前面说的「不要把正文放进代码块」指的是整篇文档，不包括这些 ui 代码块。',
+      '- 画什么：概念之间的包含、层级、分类、对应用图解；推导和流程用带步骤的图解；公式里有参数、量随量变化用 sim；几样东西的对比用 table 或 chart。每一节动笔前先想这一节哪一处最值得画。',
+      '- 写完一节（或整篇）回头数一遍 ui 代码块的个数，不够就在最合适的地方补上再结束。分多次写时每一次回复都按这个数量来。读者后来要求修改时，除非他说不要图，改完仍要保持这个数量。',
+      uiGuide,
+    ].join('\n') : '这份文档只用文字、公式、列表和表格，不要写 ui 代码块，也不要写 mermaid。',
   ].join('\n')
 }
 

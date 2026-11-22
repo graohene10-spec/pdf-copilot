@@ -24,7 +24,10 @@ function keydown(event: KeyboardEvent) {
   list[(index + (event.key === 'ArrowDown' ? 1 : -1) + list.length) % list.length]?.focus()
 }
 function outside(event: Event) { if (!(event.target instanceof Node) || !menu.value?.contains(event.target)) emit('close') }
+// 菜单关掉后把焦点还给原来的地方（比如书页），方向键、翻页键接着能用。
+let before: Element | null = null
 onMounted(async () => {
+  before = document.activeElement
   document.addEventListener('pointerdown', outside, true)
   window.addEventListener('blur', outside as any)
   window.addEventListener('resize', outside as any)
@@ -32,7 +35,11 @@ onMounted(async () => {
   if (menu.value) size.value = { width: menu.value.offsetWidth, height: menu.value.offsetHeight }
   buttons()[0]?.focus({ preventScroll: true })
 })
-onBeforeUnmount(() => { document.removeEventListener('pointerdown', outside, true); window.removeEventListener('blur', outside as any); window.removeEventListener('resize', outside as any) })
+onBeforeUnmount(() => {
+  const back = before
+  // 菜单项自己把焦点带去了别处（比如打开了一个输入框）就不抢。
+  setTimeout(() => { if ((!document.activeElement || document.activeElement === document.body) && back instanceof HTMLElement && back.isConnected) back.focus({ preventScroll: true }) }, 0)
+  document.removeEventListener('pointerdown', outside, true); window.removeEventListener('blur', outside as any); window.removeEventListener('resize', outside as any) })
 </script>
 
 <template>

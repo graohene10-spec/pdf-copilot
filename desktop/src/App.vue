@@ -206,6 +206,8 @@ const removeBatch = ref<Doc[] | null>(null)
 const theme = ref('light')
 const systemTheme = window.matchMedia('(prefers-color-scheme: dark)')
 const tagInput = ref('')
+// 没加成的半截标签不带到下一份文档的详情里。
+watch(detailsId, () => { tagInput.value = '' })
 const toast = ref('')
 const search = ref<HTMLInputElement>()
 let focusSearchPending = false
@@ -1465,6 +1467,7 @@ function appContextMenu(event: MouseEvent) {
     items.push({ label: '封面：默认图标', icon: doc.kind === 'pdf' ? 'file' : 'markdown', hint: cover === 'icon' ? '当前' : undefined, disabled: cover === 'icon', action: () => { void changeCover(doc, 'icon') } })
     items.push({ label: '从文档库移除', icon: 'trash', danger: true, separator: true, action: () => { removeTarget.value = doc } })
   } else if (active.value) {
+    if (target.closest('.reader-pane')) { const pane = target.closest<HTMLElement>('[data-pane-id]')?.dataset.paneId; items.push({ label: '在这里加书签', icon: 'star', hint: shortcut('bookmark'), action: () => addBookmarkHere(pane || undefined) }) }
     if (!aiOpen.value) items.push({ label: '打开阅读助手', icon: 'sparkle', hint: shortcut('ai'), action: () => openAssistant(true) })
     if (target.closest('.reader-pane')) items.push({ label: '总结这份文档…', icon: 'doc', action: () => { void summarizeDocument() } })
     items.push({ label: '并排阅读…', icon: 'split', hint: shortcut('split'), action: () => toggleSplitPicker() })
@@ -1961,16 +1964,16 @@ function keydown(event: KeyboardEvent) {
     else if (captureQuick.value) { dismissCaptureQuick(); event.preventDefault() }
     else if (removeTarget.value) { removeTarget.value = null; event.preventDefault() }
     else if (removeBatch.value) { removeBatch.value = null; event.preventDefault() }
+    else if (detailsId.value) { detailsId.value = ''; event.preventDefault() }
     else if (!active.value && batchTag.value !== null) { batchTag.value = null; event.preventDefault() }
     else if (!active.value && picked.value.size) { clearPicked(); event.preventDefault() }
-    else if (detailsId.value) { detailsId.value = ''; event.preventDefault() }
     else if (reader.value?.cancelCapture?.()) event.preventDefault()
     else if (fullscreen.value) { event.preventDefault(); void exitFullscreen() }
     return
   }
   const binding = shortcutFromEvent(event)
   // 文档库：Ctrl+A 全选，Delete 移除选中的文档（焦点在输入框里时不管）。
-  if (!active.value && !settingsOpen.value && !removeTarget.value && !removeBatch.value && !(event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])'))) {
+  if (!active.value && !settingsOpen.value && !detailsId.value && !removeTarget.value && !removeBatch.value && !(event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])'))) {
     if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.code === 'KeyA' && visibleDocuments.value.length) { event.preventDefault(); pickAll(); return }
     if (event.key === 'Delete' && picked.value.size) { event.preventDefault(); removePicked(); return }
   }
@@ -2225,7 +2228,6 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
           <template v-else><button class="icon-button" @click="toggleTheme" :data-tip="theme === 'dark' ? '切换浅色主题' : '切换深色主题'" :aria-label="theme === 'dark' ? '切换浅色主题' : '切换深色主题'"><AppIcon :name="theme === 'dark' ? 'sun' : 'moon'" :size="18" /></button><button class="icon-button translate-toggle" :class="{ active: translator.open }" @click="toggleTranslate" data-tip="翻译" :data-tip-key="tipKey('translate')" aria-label="翻译" :aria-pressed="translator.open"><AppIcon name="translate" :size="18" /></button></template>
           <button class="icon-button" @click="collapseChrome" data-tip="收起顶栏与侧栏，阅读区占满窗口" :data-tip-key="tipKey('chrome')" aria-label="收起顶栏与侧栏"><AppIcon name="collapse-up" :size="18" /></button>
           <button class="icon-button" @click="toggleFullscreen" :disabled="fullscreenPending" :aria-label="fullscreen ? '退出全屏' : '进入全屏'" :aria-pressed="fullscreen" :data-tip="fullscreen ? '退出全屏' : '进入全屏'" :data-tip-key="tipKey('fullscreen')"><AppIcon :name="fullscreen ? 'exit-fullscreen' : 'fullscreen'" :size="18" /></button>
-          <i class="topbar-rule" aria-hidden="true"></i>
           <button class="icon-button" @click="openSettings()" data-tip="设置" :data-tip-key="tipKey('settings')" aria-label="打开设置"><AppIcon name="settings" :size="18" /></button>
         </div>
       </header>
@@ -2247,7 +2249,7 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
         <div v-if="loading" class="library-empty"><span class="spinner"></span><p>正在读取文档库…</p></div>
         <div v-else-if="!visibleDocuments.length" class="library-empty"><div class="empty-art"><svg viewBox="0 0 120 96" aria-hidden="true"><path class="ea-shade" d="M14 80c16-5 30-5 45 1 16-6 30-6 47-1l1 6c-17-4-31-4-47 2-16-6-30-6-45-2z" /><path class="ea-page" d="M15 22c14-6 29-6 44 2v56c-15-7-30-7-45-2z" /><path class="ea-page ea-right" d="M59 24c15-8 30-8 46-3l1 57c-16-5-31-5-47 2z" /><path class="ea-line" d="M15 22c14-6 29-6 44 2 15-8 30-8 46-3l1 57c-16-5-31-5-47 2-15-7-30-7-45-2z M59 24.500c.4 18 .2 37 .1 55.300 M24 35c8-2.500 17-2 26 1 M24 46.500c8-2.400 17-2 26 1.200 M24.500 58c7-2 14-2 21 .300 M69 36c9-3.200 18-3.400 27-1.400 M69 47.500c9-3 18-3.300 27-1.300 M69.500 59c6-2 12-2.400 18-1.500" /><path class="ea-star" d="M97 6.500c1 5 3 7.200 8 8.500-5 1.200-7 3.400-8.200 8.500-1-5-3.200-7.300-8.300-8.500 5-1.300 7.300-3.500 8.500-8.500z" /><path class="ea-line" d="M112 21.500l.4 5 M109.500 24l5.400.200 M83 4.500l.300 3.600 M81.200 6.300l3.900.100" /></svg></div><h2>{{ query ? '没有匹配的文档' : category === 'starred' ? '暂无收藏' : groupFilter ? '这个分组还是空的' : tagFilter ? '此标签下暂无文档' : '暂无文档' }}</h2><p>{{ query ? '可搜索标题、标签和已读取的文档内容。' : '点击“加入文档”添加 PDF 或 Markdown，可一次选择多个文件。' }}</p><button v-if="query" @click="query = ''; refresh()">查看全部文档</button><small>导入不会移动或修改原文件</small></div>
         <div v-else ref="collection" class="document-collection" :class="[display, { arrangeable: canArrange }]" :aria-description="canArrange ? '拖动卡片或按 Alt+方向键调整位置' : undefined">
-          <article v-for="doc in visibleDocuments" :key="doc.id" class="document-card" :class="[doc.kind, { 'reorder-lifted': reorderLibrary.dragging.value === doc.id, picked: picked.has(doc.id), grouped: groupMarks.has(doc.id), 'group-start': groupMarks.get(doc.id)?.start, 'group-end': groupMarks.get(doc.id)?.end }]" :data-reorder-id="doc.id" tabindex="0" role="button" :aria-label="`打开 ${doc.name}`" :aria-selected="picked.size ? picked.has(doc.id) : undefined" @click="cardClick($event, doc)" @keydown.enter="openDocument(doc)" @keydown="reorderLibrary.keydown($event, doc.id)" @pointerdown="reorderLibrary.pointerdown($event, doc.id)">
+          <article v-for="doc in visibleDocuments" :key="doc.id" class="document-card" :class="[doc.kind, { 'reorder-lifted': reorderLibrary.dragging.value === doc.id, picked: picked.has(doc.id), grouped: groupMarks.has(doc.id), 'group-start': groupMarks.get(doc.id)?.start, 'group-end': groupMarks.get(doc.id)?.end }]" :data-reorder-id="doc.id" tabindex="0" role="button" :aria-label="`打开 ${doc.name}`" :aria-selected="picked.size ? picked.has(doc.id) : undefined" @click="cardClick($event, doc)" @keydown.enter.self="openDocument(doc)" @keydown="reorderLibrary.keydown($event, doc.id)" @pointerdown="reorderLibrary.pointerdown($event, doc.id)">
             <i v-if="groupMarks.has(doc.id)" class="group-thread" aria-hidden="true"></i><span v-if="groupMarks.get(doc.id)?.start" class="group-chip">{{ groupMarks.get(doc.id)!.name }}</span>
             <div class="document-cover" :class="{ 'has-image': covers.has(sourceId(doc.id)) }"><img v-if="covers.has(sourceId(doc.id))" class="cover-image" :class="covers.get(sourceId(doc.id))!.kind" :src="covers.get(sourceId(doc.id))!.image" alt="" draggable="false" /><template v-else><div class="cover-lines"><i></i><i></i><i></i><i></i></div><div class="document-type-icon"><AppIcon :name="doc.kind === 'pdf' ? 'file' : 'markdown'" :size="display === 'list' ? 23 : 30" /></div></template><button class="card-star" :class="{ 'is-starred': doc.starred }" @click.stop="toggleStar(doc)" :data-tip="doc.starred ? '取消收藏' : '收藏文档'" :aria-label="doc.starred ? '取消收藏' : '收藏文档'"><AppIcon name="star" :size="17" /></button></div>
             <div class="document-card-body"><div class="document-card-title"><h3 :data-tip="doc.name">{{ doc.name.replace(/\.(pdf|md|markdown)$/i, '') }}</h3><span class="format-pill">{{ doc.kind === 'pdf' ? 'PDF' : 'MD' }}</span></div><p class="document-meta">{{ size(doc.size) }}<span>·</span>{{ doc.lastOpenedAt ? `阅读于 ${date(doc.lastOpenedAt)}` : `加入于 ${date(doc.addedAt)}` }}</p><div class="document-tags"><span v-for="tag in doc.tags.slice(0, 3)" :key="tag">{{ tag }}</span><span v-if="doc.tags.length > 3">+{{ doc.tags.length - 3 }}</span></div><div class="document-progress"><div><i :style="{ width: `${progressPercent(doc)}%` }"></i></div><span>{{ doc.progress ? `${progressPercent(doc)}%` : '未读' }}</span></div></div>
@@ -2262,7 +2264,7 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
             <span class="batch-divider" aria-hidden="true"></span>
             <button @click="openPicked" data-tip="第一份打开，其余放进标签页"><AppIcon name="book" :size="15" />打开</button>
             <button @click="starPicked"><AppIcon name="star" :size="15" />{{ pickedDocs.some(doc => !doc.starred) ? '收藏' : '取消收藏' }}</button>
-            <form v-if="batchTag !== null" class="batch-tag" @submit.prevent="tagPicked"><input v-model="batchTag" placeholder="标签名，回车添加" maxlength="40" aria-label="批量添加的标签" @vue:mounted="({ el }: any) => el.focus()" @blur="tagPicked" /></form>
+            <form v-if="batchTag !== null" class="batch-tag" @submit.prevent="tagPicked"><input v-model="batchTag" placeholder="标签名，回车添加" maxlength="40" aria-label="批量添加的标签" @vue:mounted="({ el }: any) => el.focus()" @blur="batchTag = null" /></form>
             <button v-else @click="batchTag = ''"><AppIcon name="tag" :size="15" />加标签</button>
             <button @click="groupPickedMenu"><AppIcon name="folder" :size="15" />分组</button>
             <button class="batch-danger" @click="removePicked" data-tip-key="Delete"><AppIcon name="trash" :size="15" />移除</button>

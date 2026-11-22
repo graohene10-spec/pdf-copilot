@@ -3075,7 +3075,6 @@ kbd {
 }
 
 /* 顶栏按钮组里的一道细分隔：设置和前面几枚隔开。 */
-.topbar-rule { flex: none; width: 1px; height: 18px; margin: 0 3px; background: color-mix(in srgb, var(--control-ink, var(--ink)) 18%, transparent); }
 
 .details-heading {
   display: flex;

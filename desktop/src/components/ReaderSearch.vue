@@ -5,11 +5,14 @@ import AppIcon from './AppIcon.vue'
 withDefaults(defineProps<{ modelValue: string; busy?: boolean; current: number; total: number; status?: string; shortcut?: string }>(), { busy: false, status: '', shortcut: 'Ctrl + F' })
 const emit = defineEmits<{ 'update:modelValue': [value: string]; next: []; previous: []; clear: [] }>()
 const input = ref<HTMLInputElement>()
+let escaped = false
 function focus() { input.value?.focus(); input.value?.select(); input.value?.scrollIntoView({ block: 'nearest', inline: 'nearest' }) }
 function keydown(event: KeyboardEvent) {
   if (event.isComposing) return
   if (event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); if (event.shiftKey) emit('previous'); else emit('next') }
-  if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); emit('clear'); input.value?.blur() }
+  // Esc 第一下只是离开搜索框，结果和高亮留着接着看；框里已经空了才算清掉。再按一次搜索快捷键回来，Esc 两下清空。
+  if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); if (!input.value?.value || escaped) emit('clear'); escaped = true; input.value?.blur() }
+  else escaped = false
 }
 defineExpose({ focus })
 </script>

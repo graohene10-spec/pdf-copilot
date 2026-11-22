@@ -103,6 +103,7 @@ function openAny(item: ChatState) {
 }
 watch(historyOpen, open => { if (!open) historyScope.value = 'document' })
 function useConversation(id: string) {
+  if (id !== conversationId.value) { editing.value = null; editOptions.value = null }
   conversationId.value = id
   if (!props.conversationId) selectConversation(props.document.id, id)
   emit('conversation', id)
@@ -113,7 +114,13 @@ function startConversation() {
   const fresh = newConversation(props.document.id)
   useConversation(fresh.id)
 }
+// 对话记录里的删除：第一下只是把按钮变成「再点一次」，三秒内再点才真的删。删掉的对话和它记下的东西找不回来。
+const deleteArmed = ref('')
+let deleteTimer = 0
 function removeConversation(id: string) {
+  clearTimeout(deleteTimer)
+  if (deleteArmed.value !== id) { deleteArmed.value = id; deleteTimer = window.setTimeout(() => { deleteArmed.value = '' }, 3000); return }
+  deleteArmed.value = ''
   deleteConversation(props.document.id, id)
   if (id === conversationId.value) useConversation(activeConversationId(props.document.id))
 }
@@ -357,6 +364,9 @@ const renderedKeys = new WeakMap<HTMLElement, string>()
 const uiStyle = computed(() => effectiveAppearance.value.style === 'crystal' ? 'glass' : effectiveAppearance.value.style)
 const answerKey = (message: Message) => `${message.content.length}:${message.content.slice(-24)}:${message.finishedAt || 0}:${message.sources.length}:${dark.value}:${uiStyle.value}`
 function renderAnswer(element: HTMLElement, message: Message) {
+  // 读者正在这条还在写的回答里划选：先不重画（重画会把选区冲掉），选完或答完再补上。
+  const picking = window.getSelection()
+  if (!message.finishedAt && renderedKeys.has(element) && picking && !picking.isCollapsed && picking.anchorNode && element.contains(picking.anchorNode)) return
   renderedKeys.set(element, answerKey(message))
   // 读者点开的折叠段落：回答重画（还在写、换主题）后保持原样。
   const unfolded = [...element.querySelectorAll('details')].map(item => item.open)
@@ -649,8 +659,9 @@ function drawerEscape(event: KeyboardEvent) { if (!pickerOpen.value || event.def
 // 抽屉里的按钮在读取模型时会暂时禁用，焦点随之落回页面：这时 Esc 仍然收起抽屉。
 function strayEscape(event: KeyboardEvent) { if (event.key === 'Escape' && (document.activeElement === document.body || !document.activeElement)) drawerEscape(event) }
 function closePicker() { pickerOpen.value = false; void nextTick(() => pickerHost.value?.querySelector<HTMLElement>('.model-picker')?.focus()) }
+function historyEscape(event: KeyboardEvent) { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); historyOpen.value = false; pane.value?.querySelector<HTMLElement>('.history-host button')?.focus() } }
 function historyOutside(event: PointerEvent) { if (!(event.target as Element)?.closest?.('.history-host')) historyOpen.value = false }
-watch(historyOpen, open => { if (open) document.addEventListener('pointerdown', historyOutside, true); else document.removeEventListener('pointerdown', historyOutside, true) })
+watch(historyOpen, open => { deleteArmed.value = ''; if (open) { document.addEventListener('pointerdown', historyOutside, true); window.addEventListener('keydown', historyEscape, true) } else { document.removeEventListener('pointerdown', historyOutside, true); window.removeEventListener('keydown', historyEscape, true) } })
 
 // 框选截图可能晚一点才编码好（同一个选区对象补上 image），到时也自动勾上。
 watch([() => props.context?.selection, () => Boolean(props.context?.selection?.image)], ([selection]) => { includeSelection.value = Boolean(selection?.text || selection?.image) }, { immediate: true })
@@ -663,6 +674,7 @@ function keydown(event: KeyboardEvent) {
     const total = commandMatches.value.length
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); commandIndex.value = (commandIndex.value + (event.key === 'ArrowDown' ? 1 : total - 1)) % total; return }
     if (event.key === 'Tab' || event.key === 'Enter') { event.preventDefault(); pickCommand(); return }
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); prompt.value = ''; return }
   }
   if (event.key === 'Escape' && btw.value && !prompt.value) { event.preventDefault(); event.stopPropagation(); closeBtw(); return }
   if (preferences.value.assistant.predictQuestions && prediction.value && !prompt.value) {
@@ -871,6 +883,7 @@ async function revise(conversationId: string, text: string) {
   void send(text)
 }
 function send(question?: string) {
+  if (question === undefined && busy.value && prompt.value.trim()) { attachNote('这一轮还没答完。等它答完，或者先按停止。'); return }
   // 斜杠命令在本地处理，不当作问题发出去。
   const command = question === undefined ? prompt.value.trim().match(/^\/(btw|compress|usage|summary)(?:\s+([\s\S]*))?$/i) : null
   if (command) { prompt.value = ''; void runCommand(command[1]!.toLowerCase(), (command[2] || '').trim()); return }
@@ -981,7 +994,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
             <div v-else class="history-list">
               <div v-for="item in history" :key="item.id" class="history-item" :class="{ current: item.id === conversationId }">
                 <button v-marquee class="history-open" @click="useConversation(item.id)"><span><AppIcon v-if="item.branchOf" name="branch" :size="12" class="branch-mark" /><span class="marquee-text">{{ item.title || '新对话' }}</span></span><small>{{ relative(item.updatedAt) }} · {{ Math.ceil(item.messages.length / 2) }} 问<template v-if="item.request"> · 回答中</template></small></button>
-                <button v-if="item.messages.length" class="history-delete" :aria-label="`删除对话 ${item.title}`" data-tip="删除这段对话" @click.stop="removeConversation(item.id)"><AppIcon name="trash" :size="13" /></button>
+                <button v-if="item.messages.length" class="history-delete" :class="{ armed: deleteArmed === item.id }" :aria-label="deleteArmed === item.id ? `再点一次，删除对话 ${item.title}` : `删除对话 ${item.title}`" :data-tip="deleteArmed === item.id ? '再点一次删除，删了找不回来' : '删除这段对话'" @click.stop="removeConversation(item.id)"><template v-if="deleteArmed === item.id">再点一次</template><AppIcon v-else name="trash" :size="13" /></button>
               </div>
               <p v-if="!history.length" class="history-empty">还没有对话。</p>
             </div>
@@ -1030,7 +1043,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
               <div v-else class="user-question">{{ message.content }}</div>
               <!-- 问题下面只占一行：左边是指上去才出现的「编辑」「复制」，右边是随问题发出的引文、图片、页码。 -->
               <div class="question-foot">
-                <div class="question-actions"><button v-if="!side || message.id === lastQuestionId" class="meta-button" :disabled="busy && message.id === lastQuestionId" aria-label="编辑问题" data-tip="编辑后重新回答" @click="startEdit(message)"><AppIcon name="edit" :size="13" /></button><button class="meta-button" aria-label="复制问题" data-tip="复制" @click="copy(message.content)"><AppIcon name="copy" :size="13" /></button></div>
+                <div class="question-actions"><button v-if="!side || message.id === lastQuestionId" class="meta-button" :disabled="busy && message.id === lastQuestionId" aria-label="编辑问题" data-tip="编辑后重新回答；改的不是最后一问时，会另开一个分支" @click="startEdit(message)"><AppIcon name="edit" :size="13" /></button><button class="meta-button" aria-label="复制问题" data-tip="复制" @click="copy(message.content)"><AppIcon name="copy" :size="13" /></button></div>
                 <div v-if="message.ask?.text || message.images?.length || message.ask?.includeDocument || message.excerpts?.length" class="sent-context" aria-label="随问题发送的上下文">
                   <span v-for="item in message.excerpts || []" :key="item.id" class="sent-quote sent-excerpt" :data-tip="`${excerptLabel(item.from)}：${item.text.slice(0, 300)}`"><AppIcon :name="item.from === 'self' ? 'pin' : 'branch'" :size="10" />{{ item.text.slice(0, 40) }}{{ item.text.length > 40 ? '…' : '' }}</span>
                   <img v-for="(image, index) in (message.images || []).slice(0, 5)" :key="index" :src="image" alt="随问题发送的图片" data-tip="双击放大" @dblclick="zoomed = image" />
@@ -1240,6 +1253,7 @@ button:disabled{opacity:.4;cursor:default}
 .history-open small{font-size:10.5px;color:var(--muted)}
 .history-delete{display:grid;place-items:center;width:28px;height:28px;margin-right:6px;padding:0;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--muted);opacity:0}
 .history-item:hover .history-delete,.history-delete:focus-visible{opacity:1}
+.history-delete.armed{width:auto;padding:0 8px;background:color-mix(in srgb,var(--danger) 14%,transparent);color:var(--danger);font-size:12px;white-space:nowrap;opacity:1}
 .history-delete:hover{background:color-mix(in srgb,var(--danger) 12%,transparent);color:var(--danger)}
 .history-empty{margin:10px;font-size:12px;color:var(--muted)}
 .history-pop-enter-active{transition:opacity var(--dur-2) var(--ease-out),transform var(--dur-bounce) var(--spring-snappy)}
