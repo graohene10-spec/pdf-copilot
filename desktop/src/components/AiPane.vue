@@ -637,9 +637,12 @@ async function refreshPickerModels() {
     if (!request.signal.aborted && pickerRequest === request) pickerError.value = cause?.message || String(cause)
   } finally { if (pickerRequest === request) { pickerRequest = undefined; pickerLoading.value = false } }
 }
+const pickerPanel = ref<{ hintWheel: () => void }>()
 watch(pickerOpen, open => {
   if (open) {
     drawerMounted.value = true
+    // 抽屉拉开、模型排好之后再问要不要提醒滚轮（头一回打开时组件还在加载，多等一会儿）。
+    window.setTimeout(() => { if (pickerOpen.value) pickerPanel.value?.hintWheel() }, 700)
     window.addEventListener('keydown', strayEscape, true)
     document.addEventListener('pointerdown', pickerOutside, true)
     if (settings.value.provider === 'codex' && !nativeModelInventory.value.length) void refreshPickerModels()
@@ -1176,7 +1179,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
         </div>
         <!-- 点模型按钮时，输入栏下沿顺势拉长，露出模型与思考强度；再点一次或按 Esc 收回。 -->
         <div :id="`model-drawer-${state.id}`" class="composer-drawer" :class="{ open: pickerOpen }" :inert="!pickerOpen || undefined">
-          <ModelPicker v-if="drawerMounted" :model="settings.model || ''" :effort="settings.effort || ''" :models="pickerModels" :loading="pickerLoading" :error="pickerError" :can-refresh="settings.provider === 'codex'" :fast="fastChoice" :tier="tierChoice" @model="chooseModel" @effort="chooseEffort" @fast="chooseFast" @tier="chooseTier" @refresh="refreshPickerModels" @close="closePicker" />
+          <ModelPicker v-if="drawerMounted" ref="pickerPanel" :model="settings.model || ''" :effort="settings.effort || ''" :models="pickerModels" :loading="pickerLoading" :error="pickerError" :can-refresh="settings.provider === 'codex'" :fast="fastChoice" :tier="tierChoice" @model="chooseModel" @effort="chooseEffort" @fast="chooseFast" @tier="chooseTier" @refresh="refreshPickerModels" @close="closePicker" />
         </div>
       </div>
     </div>

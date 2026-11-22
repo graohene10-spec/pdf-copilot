@@ -3,7 +3,8 @@
 // 左边名字，右边现在的值（没填是淡淡的「不指定」）。点哪一行哪一行展开，各开各的——开一行不会把别的行收起来，
 // 所以点下去的那一行不会在手底下挪位置。别的要求读者直接写在下面的输入框里，和这张表一起发出去。
 // 同一张表也用来改已经发出去的那一问（editing）：这时多一行「其他要求」，按钮换成「重新总结」。
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { offerSpaced } from '../ui/hints'
 import AppIcon from './AppIcon.vue'
 import { vLiquidSelection } from '../ui/liquid-selection'
 import { radioKeys } from '../ui/radio-keys'
@@ -16,6 +17,7 @@ const props = defineProps<{ title: string; options: SummaryOptions; hasSelection
 const emit = defineEmits<{ start: []; cancel: []; 'update:extra': [value: string] }>()
 // 表格直接改这段对话自己的设置（options 是对话状态里的那个对象；改的时候是它的一份副本）。
 const options = props.options
+onMounted(() => { if (!props.editing) offerSpaced('summary-setup', ['都可以不填'], '别的要求写进输入框，按发送开始') })
 const open = reactive(new Set<string>(props.editing ? [] : ['scope']))
 function toggleRow(key: string) { if (open.has(key)) open.delete(key); else open.add(key) }
 // 指着哪个选项：这一行下面立刻显示它是什么意思，方便一个个比着看。
@@ -102,7 +104,7 @@ function toggleMulti() { if (!options.complete) options.multi = !options.multi }
               </template>
             </template>
           </div>
-          <p v-else-if="field.key === 'scope'" class="sum-nochapters">这份文档没有目录。说个大概就行，助手自己去找。</p>
+          <p v-else-if="field.key === 'scope'" class="sum-nochapters">这份文档没有目录。</p>
           <input :value="own(field) ? options[field.key] : ''" type="text" maxlength="200" :placeholder="field.placeholder" :aria-label="`${field.label}：自己写`" @input="write(field, ($event.target as HTMLInputElement).value)" @keydown.enter.prevent="!$event.isComposing && $event.keyCode !== 229 && emit('start')" />
         </div></div>
       </div>
@@ -130,7 +132,6 @@ function toggleMulti() { if (!options.complete) options.multi = !options.multi }
       <label v-if="editing" class="sum-row sum-extra"><span class="sum-label wide">其他要求</span><textarea :value="extra" rows="2" maxlength="2000" placeholder="表里没有的，写在这里" @input="emit('update:extra', ($event.target as HTMLTextAreaElement).value)"></textarea></label>
     </div>
     <footer class="sum-foot"><button type="button" class="sum-cancel" @click="emit('cancel')">{{ editing ? '取消' : '不总结了' }}</button><button type="button" class="sum-start" @click="emit('start')">{{ editing ? '重新总结' : '开始总结' }}</button></footer>
-    <p class="sum-note">{{ editing ? '按新的设置从头写一遍。' : '都可以不填。别的要求写在下面的输入框里，按发送也是开始。' }}</p>
   </section>
 </template>
 
@@ -215,7 +216,6 @@ button.sum-unfold:hover{background:color-mix(in srgb,var(--ink) 8%,transparent);
 .sum-start{height:34px;padding:0 20px;border:0;border-radius:9px;background:var(--accent);box-shadow:none;color:var(--accent-on,#fff);font:inherit;font-size:13.5px;font-weight:600;transition:filter var(--dur-1) var(--ease-soft),scale var(--dur-2) var(--spring-snappy)}
 .sum-start:hover{filter:brightness(1.06)}
 .sum-start:active{scale:.97}
-.sum-note{margin:10px 0 0;color:var(--muted);font-size:12px;line-height:1.6}
 @media (prefers-reduced-motion:reduce){.sum-card,.sum-sub,.sum-chapter.sub{animation:none}.sum-fold,.sum-options{transition:none}}
 
 /* 草稿风格：一张用胶带贴着的表。框、方框、开关、选中的记号都是铅笔画的，名字和按钮是手写的；

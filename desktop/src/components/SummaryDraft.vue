@@ -5,6 +5,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import 'katex/dist/katex.min.css'
 import AppIcon from './AppIcon.vue'
+import { hintLearned, offerSpaced } from '../ui/hints'
 import { chatState } from '../ai/workspace'
 import { summaryDraft } from '../ai/summary'
 import { documentMarkdown } from '../reader/markdown-document'
@@ -106,9 +107,12 @@ function selected() {
 }
 // 小输入框的宽：面板窄的时候跟着收。
 const ASK_WIDTH = 440
+// 草稿写完一回提一句：划选一段可以直接让助手改（隔几次提一回，用过就不提）。
+watch(busy, (now, before) => { if (before && !now && size.value) offerSpaced('draft-revise', ['划选一段'], '直接写怎么改') })
 function send() {
   const text = instruction.value.trim()
   if (!ask.value || !text) return
+  hintLearned('draft-revise')
   emit('revise', { quote: ask.value.quote, instruction: text })
   ask.value = null; window.getSelection()?.removeAllRanges()
 }
@@ -149,11 +153,6 @@ async function copy() {
           <p class="draft-blank-state"><i aria-hidden="true"></i>{{ activity }}</p>
           <div class="draft-lines" aria-hidden="true"><i v-for="n in 7" :key="n" :style="{ '--w': `${[92, 78, 86, 64, 90, 72, 48][n - 1]}%`, '--i': n }"></i></div>
         </template>
-        <ol v-else class="draft-steps">
-          <li><b>开始</b>在右边的表里选好范围和要求，点「开始总结」。</li>
-          <li><b>边写边改</b>助手写到哪，这里显示到哪。可以随时打断它，接着提要求；也可以在纸上划选一段，直接写怎么改。</li>
-          <li><b>存下来</b>满意后点右上角「存入文档库」，存成 Markdown，放在原文档的文件夹里。</li>
-        </ol>
       </div>
       <article v-show="size" ref="paper" class="markdown-paper draft-paper" @mouseup="selected"></article>
     </div>
@@ -204,10 +203,6 @@ async function copy() {
 .draft-lines{display:flex;flex-direction:column;gap:14px}
 .draft-lines i{width:var(--w);height:11px;border-radius:6px;background:color-mix(in srgb,var(--ink) 8%,transparent);animation:draft-line 1.4s ease-in-out 30 alternate;animation-delay:calc(var(--i) * 90ms)}
 @keyframes draft-line{from{opacity:.45}to{opacity:1}}
-.draft-steps{display:flex;flex-direction:column;gap:16px;margin:0;padding:0;list-style:none;counter-reset:step;color:var(--secondary);font-size:14px;line-height:1.75}
-.draft-steps li{position:relative;padding-left:40px;counter-increment:step}
-.draft-steps li::before{content:counter(step);position:absolute;left:0;top:1px;display:grid;place-items:center;width:24px;height:24px;border:1px solid color-mix(in srgb,var(--ink) 26%,transparent);border-radius:50%;color:var(--ink);font-size:12.5px;font-weight:600}
-.draft-steps b{display:block;color:var(--ink);font-weight:650}
 /* 划选之后冒出来的小输入框。 */
 .draft-ask{position:absolute;z-index:3;display:flex;align-items:center;gap:8px;box-sizing:border-box;width:min(440px,calc(100% - 32px));height:46px;padding:0 7px 0 16px;border:1px solid color-mix(in srgb,var(--ink) 22%,transparent);border-radius:12px;background:var(--surface,var(--canvas));box-shadow:0 12px 30px -12px rgb(0 0 0 / .4);animation:draft-in var(--dur-2) var(--ease-out) both}
 .draft-ask input{flex:1;min-width:0;height:100%;padding:0;border:0;border-radius:0;background:none;box-shadow:none;color:var(--ink);font:inherit;font-size:13.5px;outline:0;text-overflow:ellipsis}
@@ -234,8 +229,6 @@ async function copy() {
 :root[data-style='sketch'] .draft-blank-state i{width:10px;height:10px;border:1.5px solid var(--red-pencil);background:none}
 :root[data-style='sketch'] .draft-lines{gap:17px}
 :root[data-style='sketch'] .draft-lines i{height:8px;border-radius:0;background:color-mix(in srgb,var(--pencil) 34%,transparent);-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 44 8'%3E%3Cpath d='M0 4c5.500-4.200 11 4.200 16.500 0s11 4.200 16.500 0 5.500-2.100 11 0' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E") 0 50% / 44px 8px repeat-x;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 44 8'%3E%3Cpath d='M0 4c5.500-4.200 11 4.200 16.500 0s11 4.200 16.500 0 5.500-2.100 11 0' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E") 0 50% / 44px 8px repeat-x}
-:root[data-style='sketch'] .draft-steps li::before{border:1.5px solid var(--pencil);border-radius:48% 52% 50% 50% / 52% 48% 52% 48%;font-family:var(--font);font-size:16px;font-weight:400}
-:root[data-style='sketch'] .draft-steps b{font-family:var(--font);font-size:19px;font-weight:400;letter-spacing:.04em}
 /* 文档：一级标题下面一道铅笔线，二级标题像用荧光笔划过。 */
 :root[data-style='sketch'] .draft-paper{border:0;background:none;box-shadow:none}
 :root[data-style='sketch'] .draft-paper :deep(:is(h1,h2,h3,h4,h5,h6)){font-family:var(--font-formal);font-weight:650;letter-spacing:0}

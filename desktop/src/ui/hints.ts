@@ -16,6 +16,21 @@ export function offerHint(id: string, keys: string[], text: string) {
   currentHint.value = { id, keys, text }
   clearTimeout(timer); timer = window.setTimeout(dismissHint, STAY)
 }
+/**
+ * 隔几次才提一回的提醒：每到用得上的时候（比如打开某个面板）叫一次，只在第 1、4、9 次冒出来，一共三回；
+ * 不是头三次连着提。用过一次（hintLearned）就不再提。
+ */
+const TRIES = 'kaizhi.hints.tries.v1', WHEN = [1, 4, 9]
+const tries: Record<string, number> = (() => { try { const value = JSON.parse(localStorage.getItem(TRIES) || '{}'); return value && typeof value === 'object' ? value : {} } catch { return {} } })()
+export function offerSpaced(id: string, keys: string[], text: string) {
+  if (counts[id] === LEARNED) return
+  tries[id] = (tries[id] || 0) + 1
+  try { localStorage.setItem(TRIES, JSON.stringify(tries)) } catch { /* 存不了就算了 */ }
+  if (!WHEN.includes(tries[id]!) || currentHint.value) return
+  lastAt = Date.now()
+  currentHint.value = { id, keys, text }
+  clearTimeout(timer); timer = window.setTimeout(dismissHint, STAY)
+}
 export function dismissHint() { clearTimeout(timer); currentHint.value = null }
 /** 用户已经自己用过这个功能：以后不再提。 */
 export function hintLearned(id: string) {

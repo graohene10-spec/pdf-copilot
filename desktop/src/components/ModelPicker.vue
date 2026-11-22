@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { hintLearned, offerSpaced } from '../ui/hints'
 import AppIcon from './AppIcon.vue'
 
 // 输入栏下沿拉出的抽屉：上面一行是模型（可横向滑动的胶囊），下面一行是思考强度滑杆。
@@ -50,34 +51,22 @@ function chipKey(event: KeyboardEvent) {
 }
 function chipWheel(event: WheelEvent) {
   const strip = chips.value
-  if (strip && strip.scrollWidth > strip.clientWidth) learned()
+  if (strip && strip.scrollWidth > strip.clientWidth) hintLearned('picker-wheel')
   if (!strip || strip.scrollWidth <= strip.clientWidth || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return
   event.preventDefault()
   strip.scrollLeft += event.deltaY
 }
 /** 速度档画几道闪电：快速一道，比它更快的超快两道；标准和省额度不画。 */
 const boltsOf = (id: string) => id === 'ultrafast' ? 2 : id === 'priority' || id === 'fast' ? 1 : 0
-// 模型多了一行放不下，这一行可以用滚轮横着翻——看不出来，所以头一回打开时在行尾说一声；翻过一次就不再提。
-const WHEEL_KEY = 'ai.picker.wheel'
-const wheelHint = ref(false)
-function measureHint() {
-  const strip = chips.value
-  let seen = false
-  try { seen = localStorage.getItem(WHEEL_KEY) === '1' } catch { /* 读不到就当没见过 */ }
-  wheelHint.value = !seen && Boolean(strip && strip.scrollWidth > strip.clientWidth + 8)
-}
-function learned() {
-  if (!wheelHint.value) return
-  wheelHint.value = false
-  try { localStorage.setItem(WHEEL_KEY, '1') } catch { /* 只在这次有效 */ }
-}
-watch(() => props.models.length, () => void nextTick(measureHint))
 function escape(event: KeyboardEvent) {
   if (event.key !== 'Escape' || event.defaultPrevented) return
   event.preventDefault(); event.stopPropagation()
   emit('close')
 }
-onMounted(() => { chips.value?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest', inline: 'center' }); window.setTimeout(measureHint, 350) })
+onMounted(() => chips.value?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest', inline: 'center' }))
+/** 模型一行放不下、要用滚轮横着翻：抽屉每打开一次问一下，由提醒那边决定这回冒不冒气泡。 */
+function hintWheel() { const strip = chips.value; if (strip && strip.scrollWidth > strip.clientWidth + 8) offerSpaced('picker-wheel', ['滚轮'], '左右翻看更多模型') }
+defineExpose({ hintWheel })
 </script>
 
 <template>
@@ -90,7 +79,6 @@ onMounted(() => { chips.value?.querySelector<HTMLElement>('[aria-selected="true"
       </div>
       <button v-if="canRefresh" type="button" class="drawer-icon" :disabled="loading" data-tip="重新读取本机模型" aria-label="重新读取本机模型" @click="emit('refresh')"><AppIcon name="reset" :size="13" /></button>
     </div>
-    <Transition name="wheel-hint"><p v-if="wheelHint" class="wheel-hint" role="note"><svg viewBox="0 0 12 16" width="10" height="14" aria-hidden="true"><rect x="1" y="1" width="10" height="14" rx="5" /><path class="wheel-dot" d="M6 4v3" /></svg>模型不止这几个：滚轮可以左右翻</p></Transition>
     <span class="drawer-label">思考</span>
     <div class="drawer-field">
       <!-- 分段选择：每一档直接写出名字，选中的那一档下面滑过一块玻璃；档位越高，旁边的强度格亮得越多。 -->
@@ -146,19 +134,11 @@ button{font:inherit;color:inherit;cursor:pointer}
 .fast-toggle{display:inline-flex;align-items:center;gap:3px;flex:0 0 auto;height:26px;padding:0 8px;border:1px solid transparent;border-radius:var(--r-sm);background:none;box-shadow:none;font-size:11.5px;font-weight:600;color:var(--muted);transition:background var(--dur-1) var(--ease-soft),color var(--dur-1) var(--ease-soft)}
 .speed-bolt{display:inline-flex;align-items:center;margin-right:3px;vertical-align:-1px;color:var(--accent)}
 .speed-bolt.twin svg+svg{margin-left:-5px}
-/* 头一回的提示：模型那一行下面一行小字，鼠标滚一下就走。 */
-.wheel-hint{grid-column:2;display:flex;align-items:center;gap:6px;height:18px;margin:-3px 0 1px 6px;color:var(--muted);font-size:11.5px;white-space:nowrap}
-.wheel-hint svg{flex:none;fill:none;stroke:currentColor;stroke-width:1.3;stroke-linecap:round}
-.wheel-hint .wheel-dot{stroke:var(--accent);stroke-width:1.6;animation:wheel-dot 1.2s var(--ease-out) 4 both}
-@keyframes wheel-dot{from{translate:0 -1px;opacity:1}to{translate:0 4px;opacity:0}}
-.wheel-hint-enter-active,.wheel-hint-leave-active{transition:opacity var(--dur-2) var(--ease-out),translate var(--dur-2) var(--ease-out)}
-.wheel-hint-enter-from,.wheel-hint-leave-to{opacity:0;translate:0 -4px}
 .fast-toggle:hover{background:var(--frost);color:var(--ink)}
 .fast-toggle.on{background:color-mix(in srgb,var(--accent) 14%,transparent);border-color:color-mix(in srgb,var(--accent) 30%,transparent);color:var(--accent)}
 .drawer-status{grid-column:2;margin:0 0 2px;font-size:11px;color:var(--muted)}
-@media(prefers-reduced-motion:reduce){.effort-thumb,.model-chips button{transition:none}.model-chips{scroll-behavior:auto}.wheel-hint .wheel-dot{animation:none}}
+@media(prefers-reduced-motion:reduce){.effort-thumb,.model-chips button{transition:none}.model-chips{scroll-behavior:auto}}
 /* 草稿风格：栏名是手写的。 */
 :root[data-style='sketch'] .drawer-label{font-size:17px;font-weight:400;letter-spacing:.06em;color:var(--ink)}
 :root[data-style='sketch'] .model-drawer{gap:6px 14px}
-:root[data-style='sketch'] .wheel-hint{height:22px;color:var(--secondary);font-size:15.5px}
 </style>

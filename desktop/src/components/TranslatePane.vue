@@ -3,6 +3,7 @@
 // 与阅读助手共用外壳的主题样式（.ai-pane），内部元素用 tp- 前缀，互不干扰。
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import AppIcon from './AppIcon.vue'
+import { offerSpaced } from '../ui/hints'
 import { renderMarkdown } from '../ai/render'
 import ModelPicker from './ModelPicker.vue'
 import { getProvider, getNativeModels } from '../ai/providers.mjs'
@@ -14,6 +15,8 @@ import { warmTranslation } from '../ai/complete'
 import { translator, translate, stopTranslation, removeTranslation, clearTranslations, credential, saveCredential, TARGETS, ENGINES, type Translation } from '../ai/translate'
 
 defineProps<{ shortcut?: string }>()
+// 翻译栏空着打开时提一句怎么用（隔几次提一回）。
+if (!translator.items.length) offerSpaced('translate-how', ['右键'], '选中文字后选「机翻」')
 const emit = defineEmits<{ close: []; settings: []; grab: [event: PointerEvent] }>()
 // 按住标题栏空白处拖动：把整个翻译栏拖到阅读区的另一侧。
 function grab(event: PointerEvent) { if (event.button === 0 && !(event.target as HTMLElement).closest('button, input, textarea, select, a')) emit('grab', event) }
@@ -125,8 +128,6 @@ defineExpose({ focus })
     <div ref="list" class="tp-list" data-glass-still>
       <div v-if="!translator.items.length" class="tp-empty">
         <AppIcon name="translate" :size="34" />
-        <p>在文档里选中一段文字，右键选「机翻」<template v-if="shortcut">，或按 <kbd>{{ shortcut }}</kbd></template>。</p>
-        <p class="tp-muted">也可以把文字粘贴到下面的输入框里。</p>
       </div>
       <article v-for="item in translator.items" :key="item.id" class="tp-card" :class="item.status">
         <p class="tp-source" :title="item.source">{{ item.source }}</p>

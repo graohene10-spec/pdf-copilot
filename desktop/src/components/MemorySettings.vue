@@ -51,14 +51,9 @@ function flipScope(row: Row) { retagMemory(row.id, { scope: row.scope === 'book'
 
 <template>
   <section class="mem" aria-label="记忆">
-    <div class="mem-head"><h3>记忆</h3><span v-if="total">{{ total }} 条</span><button type="button" class="text-action" @click="emit('manage')">管理对话…</button></div>
-    <ol class="mem-how">
-      <li><b>记什么</b>一段对话答完，助手把你在里面学了什么、掌握得怎样整理成几行。只记学习内容，不记你是谁。</li>
-      <li><b>怎么用</b>你下次提问时，助手先看这些，决定从哪讲起、讲多细：已弄懂的一笔带过，还不熟的多讲两句。</li>
-      <li><b>读哪些</b>新对话下面选「本书」只用这本书里记的，「全局」连别的书里共用的也用，「不用」既不读也不记。</li>
-    </ol>
+    <div class="mem-head"><h3>记忆</h3><i class="mem-what" tabindex="0" role="note" aria-label="记忆是什么" data-tip="一段对话答完，助手把你学了什么、掌握得怎样整理成几行；下次提问时先看这些，决定从哪讲起、讲多细。新对话下面的「本书 / 全局 / 不用」决定这段对话读哪些、记到哪">?</i><span v-if="total">{{ total }} 条</span><button type="button" class="text-action" @click="emit('manage')">管理对话…</button></div>
     <p v-if="!memory.ready" class="mem-empty">正在读取…</p>
-    <p v-else-if="!total" class="mem-empty">还没有记忆。和助手聊过几轮之后，这里会出现它记下的内容。</p>
+    <p v-else-if="!total" class="mem-empty">还没有记忆。</p>
     <div v-for="book in books" :key="book.title" class="mem-book">
       <h4 :title="book.title">{{ book.title }}</h4>
       <ul>
@@ -79,10 +74,7 @@ function flipScope(row: Row) { retagMemory(row.id, { scope: row.scope === 'book'
 .mem-head h3{margin:0}
 .mem-head span{margin-right:auto;color:var(--muted);font-size:12.5px;font-variant-numeric:tabular-nums}
 .mem-head h3:last-of-type:not(:has(+span)){margin-right:auto}
-/* 三句说明：左边一个短词，右边一句话。 */
-.mem-how{display:grid;gap:7px;margin:0 0 20px;padding:13px 15px;border:1px solid var(--separator);border-radius:var(--r-md,10px);list-style:none;color:var(--secondary);font-size:12.5px;line-height:1.65}
-.mem-how li{display:grid;grid-template-columns:4.2em 1fr;gap:6px}
-.mem-how b{color:var(--ink);font-weight:600;white-space:nowrap}
+.mem-what{display:grid;place-items:center;flex:none;width:16px;height:16px;border:1px solid var(--separator);border-radius:50%;color:var(--muted);font-family:var(--font-formal);font-size:11px;font-style:normal;line-height:1;cursor:help}
 .mem-empty{margin:0;color:var(--muted);font-size:13px}
 .mem-book{margin-top:16px}
 .mem-book h4{margin:0 0 4px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:12.5px;font-weight:650;color:var(--secondary)}
