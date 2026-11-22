@@ -378,6 +378,12 @@ async function destination(dest: any) {
   const number = typeof dest[0] === 'number' ? dest[0] + 1 : (await pdf.getPageIndex(dest[0])) + 1
   await goToPage(number)
 }
+// 页码框：空的、不是数字的不跳；跳完把框里的数改回真正到的那一页（输 999 不会一直留着 999）。
+async function typedPage() {
+  const wanted = Number(pageInput.value)
+  if (Number.isFinite(wanted) && wanted >= 1) await goToPage(Math.min(total.value || wanted, Math.trunc(wanted)))
+  pageInput.value = page.value
+}
 async function goToPage(number: number, rect?: any) {
   if (!active) return
   const view = await viewer?.goToPage(number)
@@ -831,7 +837,7 @@ defineExpose({ getOutline: () => outline.value.map(item => ({ title: item.title,
   <div class="pdf-reader reader-engine">
     <div class="reader-tools">
       <button class="quiet-button" :class="{ active: outlineOpen }" @click="toggleOutline" data-tip="文档目录" :data-tip-key="shortcuts?.outline"><AppIcon name="list" :size="17" />目录</button>
-      <div class="reader-page-control"><button @click="previousPage" :disabled="page <= 1" data-tip="上一页" aria-label="上一页" :data-tip-key="shortcuts?.previousPage">‹</button><input aria-label="页码" v-model.number="pageInput" type="number" min="1" :max="total" @change="goToPage(pageInput)" @keydown.enter="goToPage(pageInput)" /><span>/ {{ total || '—' }}</span><button @click="nextPage" :disabled="page >= total" data-tip="下一页" aria-label="下一页" :data-tip-key="shortcuts?.nextPage">›</button></div>
+      <div class="reader-page-control"><button @click="previousPage" :disabled="page <= 1" data-tip="上一页" aria-label="上一页" :data-tip-key="shortcuts?.previousPage">‹</button><input aria-label="页码" v-model.number="pageInput" type="number" min="1" :max="total" @change="typedPage" /><span>/ {{ total || '—' }}</span><button @click="nextPage" :disabled="page >= total" data-tip="下一页" aria-label="下一页" :data-tip-key="shortcuts?.nextPage">›</button></div>
       <div class="reader-zoom"><button data-tip="缩小" aria-label="缩小" :data-tip-key="shortcuts?.zoomOut" @click="zoomOut">−</button><button @click="fitWidth" data-tip="适应宽度" :data-tip-key="shortcuts?.fitWidth">{{ scale >= .01 ? Math.round(scale * 100) : Math.round(scale * 1000) / 10 }}%</button><button data-tip="放大" aria-label="放大" :data-tip-key="shortcuts?.zoomIn" @click="zoomIn">＋</button></div>
       <button class="quiet-button crop-toggle" :class="{ active: capture }" @click="toggleCapture" data-tip="框选公式或图表作为 AI 上下文" :data-tip-key="shortcuts?.capture"><AppIcon name="crop" :size="17" />{{ capture ? '拖动框选' : '框选' }}</button>
       <InkButton :active="ink.state.enabled" @click="ink.toggle" />
