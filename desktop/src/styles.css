@@ -1398,6 +1398,23 @@ kbd {
   min-width: 0;
 }
 
+.card-rename {
+  flex: 1;
+  min-width: 0;
+  margin: -2px 0;
+  padding: 1px 0;
+  border: 0;
+  border-bottom: 1px solid var(--accent, currentColor);
+  border-radius: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
 .document-card-title .format-pill {
   display: none;
 }

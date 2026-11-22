@@ -27,7 +27,8 @@ const nativeLibrary: Library = {
   index: (id, text) => call('index_document', { id, text }),
   getSetting: key => call('get_setting', { key }),
   setSetting: (key, value) => call('set_setting', { key, value }),
-  saveSummary: (id, text, replace) => call('save_summary', { id, text, replace: replace || null }),
+  saveSummary: (id, text, replace, name) => call('save_summary', { id, text, replace: replace || null, name: name || null }),
+  rename: (id, name) => call('rename_document', { id, name }),
   reveal: id => call('reveal_document', { id }),
 };
 export const library = isDesktop ? nativeLibrary : browserLibrary;

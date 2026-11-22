@@ -30,7 +30,19 @@ pub fn resolve_asset(document: &Path, relative_path: &str) -> Result<PathBuf> {
 
 /// 总结存在哪：原文档所在的文件夹，文件名「原名 · 总结.md」，重名就加序号。
 /// `previous` 是这段对话上一次存出来的那份；它还在同一个文件夹里、也是 Markdown 时就覆盖它，不再多出一份。
-pub fn summary_path(source: &Path, previous: Option<&Path>) -> Result<PathBuf> {
+/// 把读者或助手给的名字收拾成能当文件名用的：去掉路径分隔符和系统不认的字符，不带扩展名。
+pub fn clean_stem(name: &str) -> Result<String> {
+    let kept: String = name.chars().filter(|c| !c.is_control() && !matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*')).take(120).collect();
+    let cleaned = kept.trim().trim_end_matches(|c: char| c == '.' || c == ' ').to_string();
+    if cleaned.is_empty() { return Err("名字不能为空".into()); }
+    let head = cleaned.split('.').next().unwrap_or("").trim().to_ascii_uppercase();
+    let numbered = head.len() == 4 && (head.starts_with("COM") || head.starts_with("LPT")) && head.as_bytes()[3].is_ascii_digit();
+    if numbered || matches!(head.as_str(), "CON" | "PRN" | "AUX" | "NUL") { return Err("这个名字是系统保留的，换一个".into()); }
+    Ok(cleaned)
+}
+
+/// `name` 是助手给这份总结起的名字；没有或者不能用，就叫「原名 · 总结」。
+pub fn summary_path(source: &Path, previous: Option<&Path>, name: Option<&str>) -> Result<PathBuf> {
     let folder = source.parent().ok_or("文档目录无效")?.canonicalize().map_err(|_| "原文档所在的文件夹已不存在")?;
     if let Some(previous) = previous {
         let same_folder = previous.parent().and_then(|parent| parent.canonicalize().ok()).is_some_and(|parent| parent == folder);
@@ -40,8 +52,9 @@ pub fn summary_path(source: &Path, previous: Option<&Path>) -> Result<PathBuf> {
     let stem = source.file_stem().and_then(|s| s.to_str()).ok_or("文件名不是有效的 Unicode")?;
     // Windows 的文件名最长 255 个字符，给后缀留出余地。
     let stem: String = stem.chars().take(180).collect();
+    let base = name.and_then(|name| clean_stem(name).ok()).unwrap_or_else(|| format!("{stem} · 总结"));
     for index in 1..200 {
-        let name = if index == 1 { format!("{stem} · 总结.md") } else { format!("{stem} · 总结 {index}.md") };
+        let name = if index == 1 { format!("{base}.md") } else { format!("{base} {index}.md") };
         let path = folder.join(name);
         if !path.exists() { return Ok(path); }
     }
@@ -89,17 +102,21 @@ mod tests {
         let root = std::env::temp_dir().join(format!("phydog-summary-{}",uuid::Uuid::new_v4()));
         fs::create_dir_all(root.join("other")).unwrap();
         let source = root.join("群论 讲义.pdf"); fs::write(&source,"x").unwrap();
-        let first = summary_path(&source,None).unwrap();
+        let first = summary_path(&source,None,None).unwrap();
         assert_eq!(first.file_name().unwrap().to_str().unwrap(),"群论 讲义 · 总结.md");
         assert_eq!(first.parent().unwrap(),root.canonicalize().unwrap());
         fs::write(&first,"a").unwrap();
         // 没有上一份：另起一个名字；有上一份而且就在旁边：覆盖它。
-        assert_eq!(summary_path(&source,None).unwrap().file_name().unwrap().to_str().unwrap(),"群论 讲义 · 总结 2.md");
-        assert_eq!(summary_path(&source,Some(&first)).unwrap(),first);
+        assert_eq!(summary_path(&source,None,None).unwrap().file_name().unwrap().to_str().unwrap(),"群论 讲义 · 总结 2.md");
+        assert_eq!(summary_path(&source,Some(&first),Some("别的名字")).unwrap(),first);
+        // 助手起了名字就用它，去掉不能当文件名的字符；起不出能用的就退回原来的叫法。
+        assert_eq!(summary_path(&source,None,Some("群的定义: 置换/同态?")).unwrap().file_name().unwrap().to_str().unwrap(),"群的定义 置换同态.md");
+        assert_eq!(summary_path(&source,None,Some(" .. ")).unwrap().file_name().unwrap().to_str().unwrap(),"群论 讲义 · 总结 2.md");
+        assert!(clean_stem("con").is_err() && clean_stem("COM1.txt").is_err() && clean_stem("common").is_ok());
         // 上一份在别的文件夹、不是 Markdown、或者就是原文档自己：都不覆盖。
         let elsewhere = root.join("other").join("x.md"); fs::write(&elsewhere,"b").unwrap();
-        assert_ne!(summary_path(&source,Some(&elsewhere)).unwrap(),elsewhere);
-        assert_ne!(summary_path(&source,Some(&source)).unwrap(),source);
+        assert_ne!(summary_path(&source,Some(&elsewhere),None).unwrap(),elsewhere);
+        assert_ne!(summary_path(&source,Some(&source),None).unwrap(),source);
         fs::remove_dir_all(root).unwrap();
     }
     #[test]

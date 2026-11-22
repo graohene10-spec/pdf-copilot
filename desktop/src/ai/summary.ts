@@ -125,6 +125,22 @@ export function chosenFromScope(chapters: Chapter[], scope: string): number[] | 
 }
 
 /** 读者点「开始」后发出去的第一句话：把表格里填的列出来，读者自己也看得到问了什么。 */
+/** 助手给总结起的文件名收拾一下：只要第一行，去掉引号、扩展名和不能当文件名的字符。起不出来返回空。 */
+export function cleanFileName(raw: string) {
+  const line = raw.split('\n').map(item => item.trim()).find(Boolean) || ''
+  const name = line.replace(/^(文件名|标题)\s*[:：]\s*/, '').replace(/\.(md|markdown)$/i, '').replace(/[<>:"/\\|?*\x00-\x1f`#]/g, '').replace(/^[「『《“'\s]+|[」』》”'\s。.，,]+$/g, '').trim()
+  return name.length >= 2 && name.length <= 40 ? name : ''
+}
+export const fileNamePrompt = (source: string, text: string) => `给下面这份读书总结起一个文件名，让人在一堆文件里一眼认出它讲的是哪本书的哪部分。
+要求：不超过 20 个字；先写书名的简称，再写总结的范围或主题；书名很长就缩成通用的叫法，去掉作者、出版信息、网站名；用总结本身的语言。
+只输出文件名这一行，不带扩展名、引号、解释。
+
+原文档的文件名：${source}
+
+总结的开头：
+"""
+${text.slice(0, 2400)}
+"""`
 export const COMPLETE = '不遗漏知识点'
 const bare = (title: string) => title.replace(/\.(pdf|md|markdown|mdown)$/i, '')
 export function summaryRequest(title: string, options: SummaryOptions, extra = ''): string {
