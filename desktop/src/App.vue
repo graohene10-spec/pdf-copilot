@@ -2225,7 +2225,6 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
           <template v-else><button class="icon-button" @click="toggleTheme" :data-tip="theme === 'dark' ? '切换浅色主题' : '切换深色主题'" :aria-label="theme === 'dark' ? '切换浅色主题' : '切换深色主题'"><AppIcon :name="theme === 'dark' ? 'sun' : 'moon'" :size="18" /></button><button class="icon-button translate-toggle" :class="{ active: translator.open }" @click="toggleTranslate" data-tip="翻译" :data-tip-key="tipKey('translate')" aria-label="翻译" :aria-pressed="translator.open"><AppIcon name="translate" :size="18" /></button></template>
           <button class="icon-button" @click="collapseChrome" data-tip="收起顶栏与侧栏，阅读区占满窗口" :data-tip-key="tipKey('chrome')" aria-label="收起顶栏与侧栏"><AppIcon name="collapse-up" :size="18" /></button>
           <button class="icon-button" @click="toggleFullscreen" :disabled="fullscreenPending" :aria-label="fullscreen ? '退出全屏' : '进入全屏'" :aria-pressed="fullscreen" :data-tip="fullscreen ? '退出全屏' : '进入全屏'" :data-tip-key="tipKey('fullscreen')"><AppIcon :name="fullscreen ? 'exit-fullscreen' : 'fullscreen'" :size="18" /></button>
-          <i class="topbar-rule" aria-hidden="true"></i>
           <button class="icon-button" @click="openSettings()" data-tip="设置" :data-tip-key="tipKey('settings')" aria-label="打开设置"><AppIcon name="settings" :size="18" /></button>
         </div>
       </header>
