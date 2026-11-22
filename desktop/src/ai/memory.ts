@@ -33,6 +33,8 @@ const loaded: Promise<void> = (async () => {
       memory.entries[id] = { documentId: String(entry.documentId || ''), documentTitle: String(entry.documentTitle || ''), title: String(entry.title || ''), at: Number(entry.at) || 0, count: Number(entry.count) || 0, ...(entry.scope === 'book' ? { scope: 'book' as const } : {}), items: entry.items.filter((item: unknown) => typeof item === 'string' && item.trim()).slice(0, MAX_ITEMS) }
     }
   } catch { /* 读不到就从空的开始 */ }
+  // 以前各段对话各记各的，同一件事会记好几遍：打开时先清一遍。
+  try { let removed = 0; for (const id of new Set(Object.values(memory.entries).map(entry => entry.documentId))) removed += tidy(id); if (removed) persist() } catch { /* 清不了就留着 */ }
   memory.ready = true
 })()
 export const memoryReady = () => loaded
@@ -104,7 +106,7 @@ export function parseRevision(text: string, count: number): { id: number; text: 
 export async function reviseMemory(instruction: string, signal: AbortSignal, only?: string) {
   await loaded
   const rows: { n: number; id: string; index: number; book: string; text: string }[] = []
-  for (const [id, entry] of Object.entries(memory.entries)) if (!only || entry.documentId === only) entry.items.forEach((text, index) => rows.push({ n: rows.length + 1, id, index, book: entry.documentTitle || '已移除的文档', text }))
+  for (const [id, entry] of Object.entries(memory.entries).sort(([, a], [, b]) => b.at - a.at)) if (!only || entry.documentId === only) entry.items.forEach((text, index) => rows.push({ n: rows.length + 1, id, index, book: entry.documentTitle || '已移除的文档', text }))
   if (!rows.length) throw new Error('还没有记忆可以改。')
   const { complete } = await import('./complete')
   const result = parseRevision(await complete({ kind: 'memory', signal, messages: [{ role: 'user', content: revisePrompt(instruction.slice(0, 500), rows) }] }), rows.length)
@@ -127,7 +129,7 @@ export function retagMemory(conversationId: string, patch: Partial<Pick<MemoryEn
 }
 
 /** 整理用的提示词：只记学了什么、掌握得怎样，不猜读者是谁。 */
-export function memoryPrompt(documentTitle: string, transcript: string, previous: string[]) {
+export function memoryPrompt(documentTitle: string, transcript: string, previous: string[], elsewhere: string[] = []) {
   return [
     `下面是读者和阅读助手围绕《${documentTitle}》的一段对话。请整理出读者在这段对话里学了什么，供以后判断讲解的起点和深度。`,
     '要求：',
@@ -136,6 +138,7 @@ export function memoryPrompt(documentTitle: string, transcript: string, previous
     '- 只写对话里确实出现的内容。不要推测读者的身份、目的、水平或情绪，不要记姓名、联系方式等个人信息；',
     '- 寒暄、怎么用软件、与学习无关的闲聊不记；没有值得记的就只回复「无」。',
     previous.length ? `\n此前为这段对话整理过的记录（在它的基础上更新，合并重复的，掌握情况有变化就改）：\n${previous.map(item => `- ${item}`).join('\n')}` : '',
+    elsewhere.length ? `\n这本书的其他对话里已经记过下面这些。同一个概念不要换个说法再记一遍：这段对话没有带来新情况就不写；掌握情况变了，就照它原来的说法写出现在的情况（会替换掉旧的那条）：\n${elsewhere.map(item => `- ${item}`).join('\n')}` : '',
     `\n对话：\n"""\n${transcript}\n"""`,
   ].filter(Boolean).join('\n')
 }
@@ -144,6 +147,46 @@ export function parseMemory(text: string): string[] {
 }
 
 type Turn = { role: 'user' | 'assistant'; content: string }
+/** 一条记录说的是哪件事：去掉末尾的掌握情况和标点空白，用来认出「同一件事记了两遍」。 */
+export const topicOf = (item: string) => item.replace(/[，,。；;：:、\s]*(已弄懂|问过还不熟|反复卡住)[。.\s]*$/, '').replace(/[\s，,。；;：:、「」《》()（）]/g, '').toLowerCase()
+/**
+ * 一本书里说同一件事的记录只留一条：留最新整理的那段对话里的（keep 给了就以它为准）。
+ * 不问模型，只认「去掉掌握情况后一字不差」或者一条完全包含另一条。返回删了几条。
+ */
+export function tidy(documentId: string, keep?: string): number {
+  const entries = Object.entries(memory.entries).filter(([, entry]) => entry.documentId === documentId)
+    .sort(([a, x], [b, y]) => Number(b === keep) - Number(a === keep) || y.at - x.at)
+  const seen: string[] = []
+  let removed = 0
+  for (const [id, entry] of entries) {
+    const kept = entry.items.filter(item => {
+      const topic = topicOf(item)
+      if (topic.length < 4) return true
+      if (seen.some(other => other === topic || (Math.min(other.length, topic.length) >= 8 && (other.includes(topic) || topic.includes(other))))) { removed++; return false }
+      seen.push(topic); return true
+    })
+    if (kept.length !== entry.items.length) { if (kept.length) entry.items = kept; else delete memory.entries[id] }
+  }
+  return removed
+}
+// 条目多了以后自动合并：每本书一天最多一次，在后台做，失败了就算了。
+const MERGE_KEY = 'ai.memory.merged', MERGE_OVER = 12, DAY = 86400000
+const merging = new Set<string>()
+export async function consolidate(documentId: string, force = false) {
+  const count = Object.values(memory.entries).filter(entry => entry.documentId === documentId).reduce((sum, entry) => sum + entry.items.length, 0)
+  if (merging.has(documentId) || count < (force ? 4 : MERGE_OVER)) return
+  let stamps: Record<string, number> = {}
+  try { stamps = JSON.parse(localStorage.getItem(MERGE_KEY) || '{}') || {} } catch { /* 当作没合并过 */ }
+  if (!force && Date.now() - (stamps[documentId] || 0) < DAY) return
+  merging.add(documentId)
+  const controller = new AbortController(), limit = window.setTimeout(() => controller.abort(), 90000)
+  try {
+    await reviseMemory('把说同一个概念、同一种方法的几条合并成一条，掌握情况取其中最新的那个（列表里越靠前越新）；彼此无关的条目原样保留，不要为了少而硬并。', controller.signal, documentId)
+    stamps[documentId] = Date.now()
+    try { localStorage.setItem(MERGE_KEY, JSON.stringify(stamps)) } catch { /* 下次再合并一遍也无妨 */ }
+  } catch { /* 没合并成：下次整理时再试 */ }
+  finally { clearTimeout(limit); merging.delete(documentId) }
+}
 const running = new Set<string>()
 /**
  * 把一段对话整理进记忆。消息数没变就不重复整理；整理失败不影响对话，下次再试。
@@ -161,12 +204,16 @@ export async function memorize(conversation: { id: string; title: string; docume
     const fresh = turns.slice(Math.max(0, (previous?.count || 0) - 2)).slice(-16)
     const transcript = fresh.map(turn => `${turn.role === 'user' ? '读者' : '助手'}：${turn.content.slice(0, turn.role === 'user' ? 1500 : 2500)}`).join('\n\n').slice(0, 24000)
     const { complete } = await import('./complete')
-    const items = parseMemory(await complete({ kind: 'memory', fast: true, signal: controller.signal, messages: [{ role: 'user', content: memoryPrompt(documentTitle, transcript, previous?.items || []) }] }))
+    const elsewhere = Object.entries(memory.entries).filter(([id, entry]) => id !== conversation.id && entry.documentId === conversation.documentId).flatMap(([, entry]) => entry.items).slice(0, 60)
+    const items = parseMemory(await complete({ kind: 'memory', fast: true, signal: controller.signal, messages: [{ role: 'user', content: memoryPrompt(documentTitle, transcript, previous?.items || [], elsewhere) }] }))
     const kept = items.length ? items : previous?.items || []
     // 整理要等模型回话，这期间读者可能改了设置：按现在的来。
     const mode = memoryMode(conversation)
     if (kept.length && mode !== 'off') memory.entries[conversation.id] = { documentId: conversation.documentId, documentTitle, title: conversation.title, at: Date.now(), items: kept, count: turns.length, scope: mode }
+    // 同一件事只留最新的一条；条目攒多了，让助手在后台把说同一件事的合并掉。读者不用自己动手。
+    tidy(conversation.documentId, conversation.id)
     persist()
+    void consolidate(conversation.documentId)
   } catch { /* 没整理成：留着原来的，下次再来 */ }
   finally { clearTimeout(limit); running.delete(conversation.id) }
 }

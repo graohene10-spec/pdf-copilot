@@ -3,7 +3,7 @@
 // 左键进入；右键选中并弹出操作；按住节点拖动：拖到别的书是移动，拖到同一本书的另一个位置是排序，红线标出会落在哪。
 // 空白处按住拖动是框选，点一下空白取消选中。每一步都能 Ctrl + Z 撤销。
 // 书和对话的顺序是定住的（自己排的），不会因为刚动过哪一段就跳到前面。书从文档库移除后对话和记忆还在，根节点打上阴影。
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import AppIcon from './AppIcon.vue'
 import { hintLearned, offerSpaced } from '../ui/hints'
 import { library } from '../sdk'
@@ -365,14 +365,23 @@ const groups = computed(() => roots.value.map(root => ({ root, rows: root.list.f
 // 可以记、但还没整理过的对话（这个功能出来之前的那些）。
 const pending = computed(() => roots.value.flatMap(root => root.list.filter(talk => memoryMode(talk) !== 'off' && !talk.request && talk.messages.length >= 2 && !memory.entries[talk.id]).map(talk => ({ root, talk }))))
 const organizing = ref('')
-async function organize() {
+async function organize(list = pending.value) {
   if (organizing.value) return
-  const list = pending.value, had = remembered.value
+  const had = remembered.value
   let done = 0
   for (const { root, talk } of list) { organizing.value = `${++done} / ${list.length}`; await memorizeNow(root.id, talk.id).catch(() => {}) }
   organizing.value = ''; version.value++
-  say(remembered.value > had ? `整理出 ${remembered.value - had} 条记忆` : '没有整理出内容。检查一下 AI 设置里阅读助手用的服务。')
+  if (remembered.value > had) say(`整理出 ${remembered.value - had} 条记忆`)
 }
+// 还没整理过的对话不用读者来点：管理页一打开就在后台整理，每段对话这次打开应用只试一回。
+const triedOrganize = new Set<string>()
+watch([ready, () => pending.value.length], () => {
+  if (!ready.value || organizing.value) return
+  const fresh = pending.value.filter(item => !triedOrganize.has(item.talk.id))
+  if (!fresh.length) return
+  for (const item of fresh) triedOrganize.add(item.talk.id)
+  void organize(fresh)
+}, { immediate: true })
 const lit = ref('')
 onMounted(() => offerSpaced('manager-gestures', ['右键'], '操作，拖动是移动和排序'))
 // 右边一栏：哪几本书的记忆收起来了。
@@ -380,17 +389,22 @@ const foldedMem = reactive(new Set<string>())
 function foldMem(id: string) { if (foldedMem.has(id)) foldedMem.delete(id); else foldedMem.add(id) }
 // 让助手改记忆：一句话说要怎么改。
 const memAsk = ref(''), memBusy = ref(false)
+// 输入框下面的一行字：发出去之后说它在干什么，改完说改了什么（留几秒）。
+const memNote = ref<{ text: string; undo?: boolean; bad?: boolean } | null>(null)
+let memNoteTimer = 0
+function noteMemory(text: string, extra: { undo?: boolean; bad?: boolean } = {}) { clearTimeout(memNoteTimer); memNote.value = { text, ...extra }; memNoteTimer = window.setTimeout(() => { memNote.value = null }, 9000) }
 let memRequest: AbortController | undefined
 async function askMemory() {
   const text = memAsk.value.trim()
   if (!text || memBusy.value) return
   const before = snapshotMemory()
-  memBusy.value = true; memRequest = new AbortController()
+  memBusy.value = true; memRequest = new AbortController(); clearTimeout(memNoteTimer); memNote.value = null
   try {
     const { changed, removed } = await reviseMemory(text, memRequest.signal)
     memAsk.value = ''
-    if (changed || removed) record(`让助手改了记忆：改 ${changed} 条，删 ${removed} 条`, () => replaceMemory(before)); else say('助手看过了，没有需要改的')
-  } catch (error: any) { if (memRequest?.signal.aborted) say('已停下，记忆没有改动'); else say(error?.message || String(error)) }
+    if (changed || removed) { record(`让助手改了记忆：改 ${changed} 条，删 ${removed} 条`, () => replaceMemory(before)); noteMemory(`改好了：改写 ${changed} 条，去掉 ${removed} 条`, { undo: true }) }
+    else noteMemory('助手看过了，没有需要改的')
+  } catch (error: any) { if (memRequest?.signal.aborted) noteMemory('已停下，记忆没有改动'); else noteMemory(error?.message || String(error), { bad: true }) }
   finally { memBusy.value = false; memRequest = undefined }
 }
 function stopMemory() { memRequest?.abort() }
@@ -617,8 +631,9 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey, true); clea
       <header class="cm-side-head"><h3 data-tip="一段对话答完，助手把你学了什么、掌握得怎样整理成几行；下次提问时先看这些，决定从哪讲起、讲多细。新对话下面的「本书 / 全局 / 不用」决定这段对话读哪些、记到哪">记忆</h3><b>{{ remembered }}</b><span>条</span></header>
       <div class="cm-shelf">
         <p v-if="ready && !remembered" class="cm-side-note">还没有记忆。</p>
-        <button v-if="pending.length" type="button" class="cm-organize" :disabled="!!organizing" @click="organize"><AppIcon name="memory" :size="15" />{{ organizing ? `正在整理 ${organizing}` : `整理 ${pending.length} 段还没整理的对话` }}</button>
+        <p v-if="organizing" class="cm-organizing" role="status"><AppIcon name="memory" :size="13" />正在整理 {{ organizing }}</p>
         <form v-if="remembered" class="cm-mem-ask" :class="{ busy: memBusy }" :aria-busy="memBusy" @submit.prevent="askMemory"><input v-model="memAsk" :readonly="memBusy" maxlength="500" placeholder="让助手改：比如 把循环相关的合并成一条" aria-label="让助手改记忆" @keydown.enter="($event.isComposing || $event.keyCode === 229) && $event.preventDefault()" @keydown.esc.prevent.stop="!$event.isComposing && memAskEsc($event)" /><button v-if="memBusy" type="button" class="cm-act" aria-label="停下" data-tip="助手正在改，点一下停下" @click="stopMemory"><AppIcon name="stop" :size="13" /></button><button v-else type="submit" class="cm-act" :disabled="!memAsk.trim()" aria-label="让助手改" :data-tip="memAsk.trim() ? '让助手按这句话改记忆；改完可以撤销' : '先写一句要怎么改'"><AppIcon name="arrow-up" :size="13" /></button></form>
+        <p v-if="memBusy || memNote" class="cm-mem-note" :class="{ bad: memNote?.bad }" role="status">{{ memBusy ? '助手正在看这些记忆，按你说的改…' : memNote!.text }}<button v-if="!memBusy && memNote?.undo" type="button" @click="undoLast(); memNote = null">撤销</button></p>
         <section v-for="group in groups" :key="group.root.id" class="cm-group" :class="{ folded: foldedMem.has(group.root.id) }">
           <h4><button type="button" class="cm-fold" :aria-expanded="!foldedMem.has(group.root.id)" :data-tip="foldedMem.has(group.root.id) ? '展开' : '收起'" @click="foldMem(group.root.id)"><span>{{ group.root.title }}</span><small>{{ group.rows.length }}</small><AppIcon name="arrow" :size="10" /></button></h4>
           <ul v-if="!foldedMem.has(group.root.id)"><li v-for="row in group.rows" :key="row.id + row.item" :class="{ on: lit === row.id, lifted: memDrag?.key === `${row.talk.id}:${row.index}`, 'drop-before': memDrop === `${row.talk.id}:${row.index}:before`, 'drop-after': memDrop === `${row.talk.id}:${row.index}:after` }" :style="memDrag?.key === `${row.talk.id}:${row.index}` ? { translate: `0 ${memDrag.dy}px` } : undefined" tabindex="0" :data-mem="`${row.talk.id}:${row.index}`" @pointerdown="memDown($event, row, group)" @keydown="memKey($event, row, group)" :data-tip="`来自「${row.talk.title || '新对话'}」 · ${memory.entries[row.talk.id]?.scope === 'book' ? '只留在本书' : '所有书共用'}`" @click="!memDragged && reveal(row.id)"><AppIcon name="grip" :size="12" class="cm-grip" aria-hidden="true" /><input v-if="memEdit === `${row.talk.id}:${row.index}`" v-model="memText" class="cm-mem-edit" maxlength="80" aria-label="修改这条记忆" @click.stop @keydown.enter.prevent="!$event.isComposing && $event.keyCode !== 229 && (saveMemEdit(row), focusMem(`${row.talk.id}:${row.index}`))" @keydown.esc.prevent.stop="memEdit = ''; focusMem(`${row.talk.id}:${row.index}`)" @blur="saveMemEdit(row)" /><span v-else><b>{{ parts(row.item)[0] }}</b><em v-if="parts(row.item)[1]">{{ parts(row.item)[1] }}</em></span><button type="button" class="cm-act" aria-label="修改这一条" data-tip="修改这一条" @click.stop="startMemEdit(row)"><AppIcon name="edit" :size="11" /></button><button type="button" class="cm-act" aria-label="忘掉这一条" data-tip="忘掉这一条" @click.stop="forget(row.talk.id, row.index)"><AppIcon name="close" :size="11" /></button></li></ul>
@@ -807,6 +822,7 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey, true); clea
 .cm-side-head span{color:var(--muted);font-size:11.5px}
 .cm-shelf{flex:1;min-height:0;overflow:auto;padding:0 24px 28px}
 .cm-side-note{margin:4px 0 16px;color:var(--secondary);font-size:12.5px;line-height:1.7}
+.cm-organizing{display:flex;align-items:center;gap:7px;margin:0 0 14px;color:var(--muted);font-family:var(--font-formal);font-size:12px}
 .cm-organize{display:flex;align-items:center;gap:8px;width:100%;height:38px;margin-bottom:18px;padding:0 13px;border:1.5px solid var(--ink);border-radius:0;background:none;box-shadow:none;color:var(--ink);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
 .cm-organize:hover:not(:disabled){background:var(--ink);color:var(--canvas)}
 .cm-organize:disabled{opacity:.6;cursor:default}
@@ -828,7 +844,16 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey, true); clea
 .cm-mem-ask input{flex:1;min-width:0;height:32px;padding:0 2px;border:0;border-radius:0;background:none;box-shadow:none;color:var(--ink);font:inherit;font-size:12.5px;outline:0}
 .cm-mem-ask input::placeholder{color:var(--muted)}
 /* 助手在改：底线变红，字变淡，按钮换成停下。 */
-.cm-mem-ask.busy{border-bottom-color:var(--cm-red)}
+.cm-mem-ask{position:relative}
+.cm-mem-ask:has(+ .cm-mem-note){margin-bottom:6px}
+/* 在改的时候：底线上一道红色流光来回扫，下面一行字说它在干什么。 */
+.cm-mem-ask.busy::after{content:'';position:absolute;left:0;bottom:-1.5px;width:36%;height:1.5px;background:linear-gradient(90deg,transparent,var(--cm-red),transparent);animation:cm-mem-run 1.15s cubic-bezier(.45,0,.55,1) infinite;pointer-events:none}
+@keyframes cm-mem-run{from{translate:-110% 0}to{translate:290% 0}}
+.cm-mem-note{display:flex;align-items:baseline;gap:10px;margin:0 0 16px;color:var(--secondary);font-family:var(--font-formal);font-size:12px;line-height:1.5}
+.cm-mem-note.bad{color:var(--cm-red)}
+.cm-mem-note button{flex:none;padding:0;border:0;border-radius:0;background:none;box-shadow:none;color:var(--ink);font:inherit;font-weight:700;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+@media (prefers-reduced-motion:reduce){.cm-mem-ask.busy::after{animation:none;width:100%}}
+.cm-mem-ask.busy{border-bottom-color:color-mix(in srgb,var(--ink) 30%,transparent)}
 .cm-mem-ask.busy input{color:var(--muted)}
 /* 指着或停在一条记忆上：左边冒出一个抓手，告诉你它能拖。 */
 .cm-grip{position:absolute;left:-2px;top:50%;translate:0 -50%;color:var(--muted);opacity:0;cursor:grab;transition:opacity .14s var(--ease-out)}
