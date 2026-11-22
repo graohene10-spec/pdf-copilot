@@ -52,6 +52,8 @@ export function removeBookmark(id: string, markId: string) {
   bookmarks.set(id, (bookmarks.get(id) || []).filter(mark => mark.id !== markId))
   save(id)
 }
+/** 撤销用：把一份文档的书签整个放回去。 */
+export function restoreBookmarks(id: string, list: Bookmark[]) { bookmarks.set(id, list); save(id) }
 /** Removes every bookmark of a document; returns how many were removed. */
 export function clearBookmarks(id: string) {
   const count = bookmarks.get(id)?.length || 0

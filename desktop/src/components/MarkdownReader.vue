@@ -258,6 +258,9 @@ function inkViewer() {
 const ink = usePdfInk({ container: body, viewer: inkViewer, documentId: () => props.documentId, page: inkPage, capture, cancelCapture, scope: 'document' })
 function inkSchedule() { ink.schedule() }
 watch(raw, value => { if (value) ink.exit() })
+// 切换「查看源码 / 阅读视图」：两边高度不一样，按比例恢复会跳到别处。记下现在读到的源码行，画完后回到同一行。
+let keepLine = 0
+watch(raw, () => { keepLine = currentLine }, { flush: 'sync' })
 function toggleInk() { if (raw.value) raw.value = false; ink.toggle() }
 
 // ---- 书签：位置就是整篇的滚动比例 ----
@@ -341,8 +344,20 @@ async function renderDocument() {
   if (epoch !== current) return
   // 文档里的 ui 代码块（总结文档里的图解、可交互界面）：先画出来再恢复滚动位置，它们会撑开高度。
   if (body.value && !raw.value && text.includes('```ui')) mountIntelligentUi(body.value)
-  if (active && scroll.value) scroll.value.scrollTop = Math.max(0, scroll.value.scrollHeight - scroll.value.clientHeight) * targetProgress
-  cachedProgress = targetProgress
+  const line = keepLine; keepLine = 0
+  if (line && active && scroll.value && body.value) {
+    const view = scroll.value, room = Math.max(0, view.scrollHeight - view.clientHeight)
+    if (raw.value) view.scrollTop = room * (Math.max(1, line) - 1) / Math.max(1, totalLines - 1)
+    else {
+      const blocks = [...body.value.querySelectorAll<HTMLElement>('[data-source-line]')]
+      const target = blocks.filter(block => Number(block.dataset.sourceLine) <= line).at(-1) || blocks[0]
+      if (target) view.scrollTop += target.getBoundingClientRect().top - view.getBoundingClientRect().top - 16
+    }
+    cachedProgress = room ? view.scrollTop / room : 0
+  } else {
+    if (active && scroll.value) scroll.value.scrollTop = Math.max(0, scroll.value.scrollHeight - scroll.value.clientHeight) * targetProgress
+    cachedProgress = targetProgress
+  }
   rendered = true
   if (body.value) restoreNotes(body.value, props.documentId)
   if (searchQuery.value.trim()) runSearch(true, false)
