@@ -54,6 +54,70 @@ export function editItem(conversationId: string, index: number, text: string) {
   entry.items[index] = next
   persist()
 }
+/** 把一条挪到另一条前面（可以跨对话）。toIndex 等于那段对话的条数就是放到最后。 */
+export function moveItem(fromId: string, fromIndex: number, toId: string, toIndex: number) {
+  const from = memory.entries[fromId], to = memory.entries[toId]
+  if (!from || !to || from.items[fromIndex] === undefined) return
+  const [item] = from.items.splice(fromIndex, 1)
+  to.items.splice(fromId === toId && toIndex > fromIndex ? toIndex - 1 : toIndex, 0, item!)
+  if (!from.items.length) delete memory.entries[fromId]
+  persist()
+}
+/** 撤销用：整份记忆的副本，和把它放回去。 */
+export const snapshotMemory = (): Record<string, MemoryEntry> => JSON.parse(JSON.stringify(memory.entries))
+export function replaceMemory(entries: Record<string, MemoryEntry>) {
+  for (const id of Object.keys(memory.entries)) delete memory.entries[id]
+  Object.assign(memory.entries, JSON.parse(JSON.stringify(entries)))
+  persist()
+}
+/** 读者用一句话让助手改记忆（合并、改掌握情况、删掉某一类、调顺序）。只改给它看的这些条目，不新增内容。 */
+export function revisePrompt(instruction: string, rows: { n: number; book: string; text: string }[]) {
+  return [
+    '下面是阅读助手记下的读者学习记录，每条前面是编号，括号里是哪本书。',
+    `读者的要求：${instruction}`,
+    '按要求修改这份记录，然后只输出一个 JSON 数组，不要任何别的话，也不要放进代码块：[{"id": 编号, "text": "这一条现在的写法"}]',
+    '- 要求没有涉及的条目原样保留，照抄进数组；',
+    '- 要删掉的条目不要出现在数组里；把几条合并成一条时，留其中一个编号，其余的不出现；',
+    '- 每条不超过 40 个字；掌握情况仍然只用「已弄懂、问过还不熟、反复卡住」这三种说法；',
+    '- 不要添加记录里没有的内容，不要推测读者的身份和水平；',
+    '- 数组里的先后就是之后显示的先后。',
+    '\n记录：',
+    ...rows.map(row => `${row.n}（《${row.book}》）${row.text}`),
+  ].join('\n')
+}
+export function parseRevision(text: string, count: number): { id: number; text: string }[] | null {
+  const start = text.indexOf('['), end = text.lastIndexOf(']')
+  if (start < 0 || end <= start) return null
+  try {
+    const list = JSON.parse(text.slice(start, end + 1))
+    if (!Array.isArray(list)) return null
+    const seen = new Set<number>(), out: { id: number; text: string }[] = []
+    for (const item of list) {
+      const id = Number(item?.id), value = typeof item?.text === 'string' ? item.text.replace(/\s+/g, ' ').trim().slice(0, 80) : ''
+      if (!Number.isInteger(id) || id < 1 || id > count || seen.has(id) || !value) continue
+      seen.add(id); out.push({ id, text: value })
+    }
+    return out
+  } catch { return null }
+}
+/** 让助手按一句话改记忆。only 给了就只改这本书的。返回改了、删了几条。 */
+export async function reviseMemory(instruction: string, signal: AbortSignal, only?: string) {
+  await loaded
+  const rows: { n: number; id: string; index: number; book: string; text: string }[] = []
+  for (const [id, entry] of Object.entries(memory.entries)) if (!only || entry.documentId === only) entry.items.forEach((text, index) => rows.push({ n: rows.length + 1, id, index, book: entry.documentTitle || '已移除的文档', text }))
+  if (!rows.length) throw new Error('还没有记忆可以改。')
+  const { complete } = await import('./complete')
+  const result = parseRevision(await complete({ kind: 'memory', signal, messages: [{ role: 'user', content: revisePrompt(instruction.slice(0, 500), rows) }] }), rows.length)
+  if (!result) throw new Error('助手没有按格式回话，记忆没有动。再试一次，或者换个说法。')
+  // 每段对话的条目按助手给的先后重排；没出现的就是删掉了。
+  const next = new Map<string, string[]>()
+  let changed = 0
+  for (const item of result) { const row = rows[item.id - 1]!; if (item.text !== row.text) changed++; next.set(row.id, [...(next.get(row.id) || []), item.text]) }
+  const removed = rows.length - result.length
+  for (const id of new Set(rows.map(row => row.id))) { const items = next.get(id); if (items?.length) memory.entries[id]!.items = items; else delete memory.entries[id] }
+  persist()
+  return { changed, removed }
+}
 /** 对话换了书、改了名：记录跟着改。 */
 /** 撤销用：把一段对话的记忆原样放回去。 */
 export function restoreMemory(conversationId: string, entry: MemoryEntry) { memory.entries[conversationId] = entry; persist() }
