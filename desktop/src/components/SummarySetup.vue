@@ -22,13 +22,12 @@ const open = reactive(new Set<string>(props.editing ? [] : ['scope']))
 function toggleRow(key: string) { if (open.has(key)) open.delete(key); else open.add(key) }
 // 指着哪个选项：这一行下面立刻显示它是什么意思，方便一个个比着看。
 const hover = ref('')
-const SCOPE_HINT = '勾一章就是整章。点章名前的小箭头展开，可以只勾其中几节。都不勾就是全文。'
 /** 展开的那一行下面的一句说明：指着的选项优先，其次是已经选中的那一个（只选了一个时），都没有就是这一项的提示。 */
 function noteOf(field: Field) {
   if (hover.value && field.notes[hover.value]) return `${hover.value}：${field.notes[hover.value]}`
   const list = own(field) || (field.key === 'scope' && chosen.size) ? [] : picked(field)
   if (list.length === 1 && field.notes[list[0]!]) return `${list[0]}：${field.notes[list[0]!]}`
-  return field.key === 'scope' && chapters.value.length ? SCOPE_HINT : field.hint
+  return field.hint
 }
 const SLIDER = { selector: "[aria-checked='true']", radius: '8px' }
 const choices = (field: Field) => field.key === 'scope' && props.hasSelection ? [...field.options, '选中的内容'] : field.options
@@ -57,6 +56,29 @@ function togglePart(group: Group, index: number) {
   commit()
 }
 function toggleFold(at: number) { if (unfolded.has(at)) unfolded.delete(at); else unfolded.add(at) }
+// 键盘：整棵目录只占一个 Tab 位；↑↓ 换一行，→ 展开（再按进到第一节），← 收起（在节上是回到它的章），空格勾选。
+const cursor = ref(-1)
+const shownRow = (index: number) => groups.value.some(group => group.at === index || unfolded.has(group.at) && group.parts.includes(index))
+function tabOf(index: number) {
+  const at = cursor.value >= 0 && shownRow(cursor.value) ? cursor.value : cursor.value >= 0 ? groups.value.find(group => group.parts.includes(cursor.value))?.at : groups.value[0]?.at
+  return at === index ? 0 : -1
+}
+function treeKey(event: KeyboardEvent) {
+  const el = (event.target as HTMLElement).closest<HTMLElement>('.sum-chapter')
+  if (!el || event.altKey || event.ctrlKey || event.metaKey) return
+  const list = [...(event.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('.sum-chapter')], at = list.indexOf(el), index = Number(el.dataset.index)
+  const group = groups.value.find(item => item.at === index), parent = group ? undefined : groups.value.find(item => item.parts.includes(index))
+  let next: HTMLElement | undefined
+  if (event.key === 'ArrowDown') next = list[at + 1]
+  else if (event.key === 'ArrowUp') next = list[at - 1]
+  else if (event.key === 'Home') next = list[0]
+  else if (event.key === 'End') next = list.at(-1)
+  else if (event.key === 'ArrowRight') { if (group?.parts.length) { if (unfolded.has(index)) next = list[at + 1]; else unfolded.add(index) } }
+  else if (event.key === 'ArrowLeft') { if (group && unfolded.has(index)) unfolded.delete(index); else if (parent) next = list.find(item => Number(item.dataset.index) === parent.at) }
+  else return
+  event.preventDefault()
+  next?.focus()
+}
 const pagesOf = (chapter: Chapter) => chapter.page ? chapter.end && chapter.end > chapter.page ? `${chapter.page}–${chapter.end}` : String(chapter.page) : ''
 /** 这一项的值是读者自己写的（不在现成的选项里，也不是勾出来的章节）。 */
 const own = (field: Field) => !(field.key === 'scope' && chosen.size) && picked(field).some(item => !choices(field).includes(item))
@@ -92,15 +114,15 @@ function toggleMulti() { if (!options.complete) options.multi = !options.multi }
           <button v-for="option in choices(field)" :key="option" type="button" class="sum-chip" :aria-pressed="on(field, option)" @click="pick(field, option)" @pointerenter="hover = option" @pointerleave="hover = ''" @focus="hover = option" @blur="hover = ''">{{ option }}</button>
           <p class="sum-explain" :class="{ short: field.key === 'scope' }" aria-live="polite">{{ noteOf(field) }}</p>
           <!-- 范围：这份文档的章，每章前面一个小箭头，展开是它的节。 -->
-          <div v-if="field.key === 'scope' && chapters.length" class="sum-chapters" role="group" aria-label="按章节选">
+          <div v-if="field.key === 'scope' && chapters.length" class="sum-chapters" role="group" aria-label="按章节选" @keydown="treeKey">
             <template v-for="group in groups" :key="group.at">
               <div class="sum-chapter-row">
-                <button v-if="group.parts.length" type="button" class="sum-unfold" :aria-expanded="unfolded.has(group.at)" :aria-label="`${unfolded.has(group.at) ? '收起' : '展开'}「${chapters[group.at]!.title}」的小节`" @click="toggleFold(group.at)"><AppIcon name="arrow" :size="10" /></button>
+                <button v-if="group.parts.length" type="button" class="sum-unfold" tabindex="-1" :aria-expanded="unfolded.has(group.at)" :aria-label="`${unfolded.has(group.at) ? '收起' : '展开'}「${chapters[group.at]!.title}」的小节`" @click="toggleFold(group.at)"><AppIcon name="arrow" :size="10" /></button>
                 <span v-else class="sum-unfold" aria-hidden="true"></span>
-                <button type="button" class="sum-chapter" role="checkbox" :aria-checked="stateOf(group)" @click="toggleGroup(group)"><i aria-hidden="true"></i><span>{{ chapters[group.at]!.title }}</span><small v-if="pagesOf(chapters[group.at]!)">{{ pagesOf(chapters[group.at]!) }}</small></button>
+                <button type="button" class="sum-chapter" role="checkbox" :aria-checked="stateOf(group)" :aria-expanded="group.parts.length ? unfolded.has(group.at) : undefined" :data-index="group.at" :tabindex="tabOf(group.at)" @focus="cursor = group.at" @click="toggleGroup(group)"><i aria-hidden="true"></i><span>{{ chapters[group.at]!.title }}</span><small v-if="pagesOf(chapters[group.at]!)">{{ pagesOf(chapters[group.at]!) }}</small></button>
               </div>
               <template v-if="unfolded.has(group.at)">
-                <button v-for="index in group.parts" :key="index" type="button" class="sum-chapter sub" role="checkbox" :aria-checked="chosen.has(index)" @click="togglePart(group, index)"><i aria-hidden="true"></i><span>{{ chapters[index]!.title }}</span><small v-if="pagesOf(chapters[index]!)">{{ pagesOf(chapters[index]!) }}</small></button>
+                <button v-for="index in group.parts" :key="index" type="button" class="sum-chapter sub" role="checkbox" :aria-checked="chosen.has(index)" :data-index="index" :tabindex="tabOf(index)" @focus="cursor = index" @click="togglePart(group, index)"><i aria-hidden="true"></i><span>{{ chapters[index]!.title }}</span><small v-if="pagesOf(chapters[index]!)">{{ pagesOf(chapters[index]!) }}</small></button>
               </template>
             </template>
           </div>

@@ -140,7 +140,8 @@ function startResize(event: PointerEvent, edge: 'e' | 's' | 'se') {
 }
 // 中键是「解释」：不当作点了外面。
 function outside(event: Event) { if (props.card.pinned || (event as PointerEvent).button === 1) return; if (!box.value?.contains(event.target as Node)) emit('close') }
-function key(event: KeyboardEvent) { if (event.key === 'Escape' && !props.card.pinned) emit('close') }
+// 别处已经用掉的 Esc（例如收起标题里的提问框）不再顺带关掉卡片。
+function key(event: KeyboardEvent) { if (event.key === 'Escape' && !event.defaultPrevented && !props.card.pinned) emit('close') }
 onMounted(() => {
   settle(); document.addEventListener('pointerdown', outside, true); document.addEventListener('wheel', outside, { capture: true, passive: true }); document.addEventListener('keydown', key)
   if (showFrom.value) void nextTick(() => requestAnimationFrame(() => { showFrom.value = false }))

@@ -592,6 +592,10 @@ kbd {
   color: inherit;
 }
 
+/* 按钮只有 22px：点击范围向外放宽一圈，样子不变。 */
+.tag-heading .group-add { position: relative; }
+.tag-heading .group-add::after { content: ''; position: absolute; inset: -6px; }
+
 .tag-heading .group-add:hover {
   background: var(--frost);
   color: var(--ink);
@@ -1814,6 +1818,11 @@ kbd {
   color: var(--muted);
   margin-top: 17px;
 }
+
+.library-empty h2 + button { margin-top: 10px; }
+
+/* 对话框本身拿到焦点（点在没有控件的地方）时不画焦点框。 */
+[data-trap]:focus { outline: none; }
 
 /* ---- 阅读工作区 ------------------------------------------------------ */
 

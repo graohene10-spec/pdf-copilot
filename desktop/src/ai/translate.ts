@@ -35,7 +35,9 @@ function load(): { items: Translation[]; target: TranslateTarget; engine: Transl
 const stored = load()
 export const translator = reactive({ open: false, items: stored.items as Translation[], target: stored.target as TranslateTarget, engine: stored.engine as TranslateEngine,
   /** 翻译模式：选中文字后自动翻译，译文显示在鼠标旁。 */
-  auto: stored.auto })
+  auto: stored.auto,
+  /** 翻译栏输入框里还没发出的字：只留在内存里，关掉翻译栏再打开还在。 */
+  draft: '' })
 watch(() => [translator.items.map(item => item.status + item.result.length).join(), translator.target, translator.engine, translator.auto], () => {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ target: translator.target, engine: translator.engine, auto: translator.auto, items: translator.items.filter(item => item.status !== 'running').slice(-KEEP) })) } catch { /* 存不下就只留在内存里 */ }
 })

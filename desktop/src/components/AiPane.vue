@@ -9,6 +9,7 @@ import { memoryMode, type MemoryMode } from '../ai/memory'
 import { summaryChat, summaryRequest, parseSummaryRequest, requestExtra, rememberSummaryOptions, type SummaryOptions } from '../ai/summary'
 import SummarySetup from './SummarySetup.vue'
 import { radioKeys } from '../ui/radio-keys'
+import { hintLearned, offerSpaced } from '../ui/hints'
 import { mountIntelligentUi } from '../ai/intelligent-ui'
 import { nudgeGlassMotion } from '../ui/glass-motion'
 import { vMarquee } from '../ui/marquee'
@@ -46,8 +47,20 @@ const state = computed(() => chatState(props.document.id, conversationId.value))
 const messages = computed(() => state.value.messages)
 // 打开助手栏时：面板先弹出来，等展开动画走完再把对话填进去——最近几条先出，更早的随后补上。
 // 以前一打开就把几十条带公式的回答全部排版，动画开头先卡一两秒，公式还在动画里被拉扯。
-const contentReady = ref(false), revealAll = ref(false)
-const shownMessages = computed(() => (!contentReady.value ? [] : revealAll.value ? messages.value : messages.value.slice(-6)).filter(message => !message.auto))
+// 更早的消息分几帧往上补，每帧十来条；补的时候按离底部的距离把画面钉住，读者看着的那条不动。
+const contentReady = ref(false), revealCount = ref(6)
+const shownMessages = computed(() => (!contentReady.value ? [] : revealCount.value >= messages.value.length ? messages.value : messages.value.slice(-revealCount.value)).filter(message => !message.auto))
+let revealFrame = 0
+function revealRest(done: () => void) {
+  const step = () => {
+    revealFrame = 0
+    if (revealCount.value >= messages.value.length) { revealCount.value = Infinity; done(); return }
+    const list = messageList.value, fromBottom = list ? list.scrollHeight - list.scrollTop : 0
+    revealCount.value += 12
+    void nextTick(() => { if (list) list.scrollTop = list.scrollHeight - fromBottom; revealFrame = requestAnimationFrame(step) })
+  }
+  step()
+}
 function whenSettled(done: () => void) {
   const panel = pane.value?.closest<HTMLElement>('.ai-panel')
   let finished = false
@@ -406,7 +419,8 @@ function scheduleRender(element: HTMLElement, message: Message) {
   if (message.finishedAt || !renderTimers.has(element)) {
     clearTimeout(renderTimers.get(element)); renderTimers.delete(element)
     renderAnswer(element, message)
-    if (!message.finishedAt) renderTimers.set(element, setTimeout(() => { renderTimers.delete(element); renderAnswer(element, message) }, 90))
+    // 每次重画都要把整篇回答再解析一遍：超过四千字的长回答隔得久一点，滚动和输入不被拖住。
+    if (!message.finishedAt) renderTimers.set(element, setTimeout(() => { renderTimers.delete(element); renderAnswer(element, message) }, message.content.length > 4000 ? 180 : 90))
     return
   }
 }
@@ -427,6 +441,17 @@ function answerClick(event: MouseEvent) {
     setTimeout(() => { button.classList.remove('copied'); button.setAttribute('aria-label', '复制代码'); button.dataset.tip = '复制代码' }, 1400)
   })
 }
+// 复制问题、复制回答：图标换成对勾一会儿，知道已经复制了。
+const copiedId = ref('')
+let copiedTimer = 0
+function copyMessage(message: Message) {
+  void copy(message.content).then(ok => {
+    if (!ok) return
+    copiedId.value = message.id; clearTimeout(copiedTimer)
+    copiedTimer = window.setTimeout(() => { copiedId.value = '' }, 1400)
+  })
+}
+onBeforeUnmount(() => clearTimeout(copiedTimer))
 async function copy(text: string) {
   try { await navigator.clipboard.writeText(text); return true } catch { state.value.status = '复制失败，请手动选择文字。'; state.value.error = true; return false }
 }
@@ -464,7 +489,7 @@ const tickColumn = ref<HTMLElement>()
 const tickPointer = ref<number | null>(null)
 const hoverTop = ref(0)
 // 每条刻度占一整格、格与格首尾相接，指针在两条之间也落在某一条上，没有点不到的空隙。
-const tickSlot = computed(() => { const room = (messageList.value?.clientHeight || 400) - 96; return Math.max(4, Math.min(10, room / Math.max(1, marks.value.length))) })
+const tickSlot = computed(() => { const room = (messageList.value?.clientHeight || 400) - 96; return Math.max(8, Math.min(10, room / Math.max(1, marks.value.length))) })
 // 预览卡对准某一个刻度：按屏幕上的实际位置算。刻度栏是 top:50% 再 translateY(-50%) 居中的，
 // offsetTop 不算这段位移，用它会让卡片整体往下偏半个刻度栏。
 function railTop(tick: HTMLElement) {
@@ -491,15 +516,27 @@ function tickHover(event: PointerEvent) {
 // 离开刻度后卡片多留一会儿，指针能移到卡片上点「钉住」。
 let previewTimer: ReturnType<typeof setTimeout> | undefined
 function tickLeave() { tickPointer.value = null; hidePreviewSoon() }
-function hidePreviewSoon() { clearTimeout(previewTimer); previewTimer = setTimeout(() => { hoverMark.value = null }, 220) }
+// 用键盘从刻度移到卡片上的「钉住」时，焦点还在卡片里就不收起。
+const previewEl = ref<HTMLElement>()
+function hidePreviewSoon() { clearTimeout(previewTimer); previewTimer = setTimeout(() => { if (!previewEl.value?.querySelector(':focus-visible')) hoverMark.value = null }, 220) }
 function keepPreview() { clearTimeout(previewTimer) }
+// Esc 先收起预览卡，不去关掉整个助手；焦点回到那条刻度上。
+function previewEscape(event: KeyboardEvent) {
+  const mark = hoverMark.value
+  if (!mark) return
+  event.preventDefault(); event.stopPropagation()
+  const fromPreview = previewEl.value?.contains(document.activeElement)
+  hoverMark.value = null
+  if (fromPreview) { quietFocus = true; tickColumn.value?.querySelector<HTMLElement>(`.rail-mark[data-id="${CSS.escape(mark.id)}"]`)?.focus(); quietFocus = false }
+}
+let quietFocus = false
 function togglePin(mark: Mark) {
   mark.pinned = !mark.pinned
   pinMessage(props.document.id, conversationId.value, mark.id, mark.pinned)
   updateRail()
   hoverMark.value = marks.value.find(item => item.id === mark.id) || null
 }
-function tickFocus(mark: Mark, event: FocusEvent) { const tick = event.target as HTMLElement; hoverMark.value = mark; hoverTop.value = railTop(tick) }
+function tickFocus(mark: Mark, event: FocusEvent) { if (quietFocus) return; clearTimeout(previewTimer); const tick = event.target as HTMLElement; hoverMark.value = mark; hoverTop.value = railTop(tick) }
 // 右侧导航条代替滚动条：细滑块表示当前视口，刻度是每一轮提问。
 const thumb = ref({ top: 0, height: 1, visible: false })
 /** 每一问在列表里的位置（像素），内容变化时重算，滚动时只拿来判断当前是哪一问。 */
@@ -682,7 +719,7 @@ function keydown(event: KeyboardEvent) {
   if (event.key === 'Escape' && btw.value && !prompt.value) { event.preventDefault(); event.stopPropagation(); closeBtw(); return }
   if (preferences.value.assistant.predictQuestions && prediction.value && !prompt.value) {
     // Tab 或回车：采用预判的问题，放进输入框里可以再改；发送仍用发送键。
-    if ((event.key === 'Tab' || event.key === 'Enter') && plain) { event.preventDefault(); prompt.value = prediction.value; return }
+    if ((event.key === 'Tab' || event.key === 'Enter') && plain) { event.preventDefault(); prompt.value = prediction.value; hintLearned('predict-accept'); return }
     if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); dismissed = predictionKey(predictContext()); prediction.value = ''; return }
   }
   if (event.key === 'Enter' && plain && !props.sendShortcut) { event.preventDefault(); void send() }
@@ -730,7 +767,20 @@ async function imageToDataUrl(file: Blob) {
   try { return await cropImageAsync(canvas, { x: 0, y: 0, width: canvas.width, height: canvas.height }, canvas.width, canvas.height) }
   finally { canvas.width = canvas.height = 0 }
 }
-function attachNote(text: string) { state.value.status = text; state.value.error = true }
+// 这类提醒几秒后自己收起，读者接着打字时也收起；收起前若已换成别的错误就不动它。
+let noteTimer = 0, note: { target: ChatState; text: string } | null = null
+function attachNote(text: string) {
+  const target = state.value
+  target.status = text; target.error = true
+  note = { target, text }
+  clearTimeout(noteTimer); noteTimer = window.setTimeout(clearNote, 4000)
+}
+function clearNote() {
+  clearTimeout(noteTimer)
+  if (note && note.target.error && note.target.status === note.text) { note.target.error = false; note.target.status = '' }
+  note = null
+}
+onBeforeUnmount(() => clearTimeout(noteTimer))
 async function addImages(files: File[]) {
   for (const file of files) {
     if (attachments.value.length >= MAX_ATTACHMENTS) { attachNote(`一次最多附 ${MAX_ATTACHMENTS} 张图片。`); return }
@@ -899,7 +949,7 @@ function send(question?: string) {
   // 总结对话还停在设置表格上：按发送就是开始，输入框里写的算作「其他要求」。
   if (question === undefined && state.value.summary && !state.value.summary.started) { startSummary(); return }
   // 输入框空着而有预判的问题时，按发送键直接发送它。
-  if (preferences.value.assistant.predictQuestions && question === undefined && !prompt.value.trim() && prediction.value) question = prediction.value
+  if (preferences.value.assistant.predictQuestions && question === undefined && !prompt.value.trim() && prediction.value) { question = prediction.value; hintLearned('predict-accept') }
   const id = props.document.id
   const selection = props.context?.selection
   // 发出去的选区就算交给了 AI：输入框上方的选区随之清空，改在问题气泡下面显示。
@@ -930,17 +980,8 @@ function predictContext() {
 // 只有真正的上下文——已经有对话，或选中了文字——才预判；空白的新对话不猜。输入、发送、换页都会取消在途请求。
 // 总结对话里不猜下一问：输入框是用来写怎么改的，冒出一个不相干的问题只会添乱。
 const predictable = computed(() => !props.side && !state.value.summary && preferences.value.assistant.predictQuestions && !busy.value && !prompt.value && (Boolean(selected.value.text) || messages.value.some(item => item.content && !item.failed)))
-// 「Tab / Enter 采用」只在前三次出现预判时提示，之后只留淡色的问题本身。
-const HINT_KEY = 'kaizhi.predictionHints.v1'
-const showHint = ref(false)
-watch(prediction, (value, previous) => {
-  if (!value) { showHint.value = false; return }
-  if (previous) return
-  let shown = 3
-  try { shown = Number(localStorage.getItem(HINT_KEY)) || 0 } catch { /* 读不到计数时不再提示 */ }
-  showHint.value = shown < 3
-  if (showHint.value) try { localStorage.setItem(HINT_KEY, String(shown + 1)) } catch { /* 私有窗口等情况下只是多提示一次 */ }
-})
+// 「Tab 采用」交给隔几次才冒一回的提醒气泡；输入框里只留淡色的问题本身。采用过一次就不再提。
+watch(prediction, (value, previous) => { if (value && !previous) offerSpaced('predict-accept', ['Tab'], '采用猜到的下一问') })
 watch(() => [predictable.value, state.value.id, props.document.id, props.context?.page, selected.value.text, messages.value.length, messages.value.at(-1)?.finishedAt] as const, () => {
   clearTimeout(predictTimer); predicting?.abort(); predicting = undefined
   const context = predictContext(), key = predictionKey(context)
@@ -965,12 +1006,12 @@ onMounted(() => {
   whenSettled(() => {
     contentReady.value = true
     void nextTick(place)
-    setTimeout(() => { revealAll.value = true; void nextTick(place) }, 260)
+    setTimeout(() => revealRest(() => void nextTick(place)), 260)
   })
   observer = new ResizeObserver(() => updateRail())
   if (messageList.value) observer.observe(messageList.value)
 })
-onBeforeUnmount(() => { unwatch?.(); cancelAnimationFrame(scrollFrame); rememberScroll(); clearInterval(ticker); clearTimeout(predictTimer); predicting?.abort(); observer?.disconnect(); if (renderFrame) cancelAnimationFrame(renderFrame); pickerRequest?.abort(); document.removeEventListener('pointerdown', pickerOutside, true); window.removeEventListener('keydown', strayEscape, true); document.removeEventListener('pointerdown', historyOutside, true) })
+onBeforeUnmount(() => { unwatch?.(); cancelAnimationFrame(scrollFrame); cancelAnimationFrame(revealFrame); rememberScroll(); clearInterval(ticker); clearTimeout(predictTimer); predicting?.abort(); observer?.disconnect(); if (renderFrame) cancelAnimationFrame(renderFrame); pickerRequest?.abort(); document.removeEventListener('pointerdown', pickerOutside, true); window.removeEventListener('keydown', strayEscape, true); document.removeEventListener('pointerdown', historyOutside, true) })
 defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startConversation, closeSide, summarize, revise })
 </script>
 
@@ -1013,7 +1054,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
       <span v-if="taskSummary.running || taskSummary.queued" class="task-summary" :data-tip="`同时最多 ${taskSummary.limits.concurrent} 题，Codex ${taskSummary.limits.codex} 题`">{{ taskSummary.running }} 运行<template v-if="taskSummary.queued"> · {{ taskSummary.queued }} 等待</template></span>
       <button class="header-button side-toggle" :class="{ on: sideOpen, has: hasSideContent && !sideOpen }" :aria-pressed="sideOpen" :aria-label="sideOpen ? '收起附属对话' : '打开附属对话'" :data-tip="sideOpen ? '收起附属对话' : hasSideContent ? '打开附属对话（有内容）' : '打开附属对话'" @click="toggleSide"><AppIcon name="branch" :size="15" /></button>
       <button v-if="state.summary?.started" class="header-button draft-toggle" :class="{ on: draftOpen }" :aria-pressed="draftOpen" :aria-label="draftOpen ? '收起总结草稿' : '打开总结草稿'" :data-tip="draftOpen ? '收起总结草稿，回到原文' : '打开总结草稿'" @click="emit('draft', { conversationId: state.id })"><AppIcon name="doc" :size="16" /></button>
-      <button class="header-button" aria-label="新对话" data-tip="新对话" :disabled="!messages.length" @click="startConversation"><AppIcon name="compose" :size="16" /></button>
+      <button class="header-button" aria-label="新对话" :data-tip="messages.length ? '新对话' : '这已经是一段新对话'" :disabled="!messages.length" @click="startConversation"><AppIcon name="compose" :size="16" /></button>
       <button class="header-button close-assistant" data-tip="关闭阅读助手" aria-label="关闭阅读助手" @click="emit('close')"><AppIcon name="close" :size="15" /></button>
     </header>
     <div class="ai-body">
@@ -1054,7 +1095,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
               <div v-else class="user-question">{{ message.content }}</div>
               <!-- 问题下面只占一行：左边是指上去才出现的「编辑」「复制」，右边是随问题发出的引文、图片、页码。 -->
               <div class="question-foot">
-                <div class="question-actions"><button v-if="!side || message.id === lastQuestionId" class="meta-button" :disabled="busy && message.id === lastQuestionId" aria-label="编辑问题" data-tip="编辑后重新回答；改的不是最后一问时，会另开一个分支" @click="startEdit(message)"><AppIcon name="edit" :size="13" /></button><button class="meta-button" aria-label="复制问题" data-tip="复制" @click="copy(message.content)"><AppIcon name="copy" :size="13" /></button></div>
+                <div class="question-actions"><button v-if="!side || message.id === lastQuestionId" class="meta-button" :disabled="busy && message.id === lastQuestionId" aria-label="编辑问题" :data-tip="busy && message.id === lastQuestionId ? '正在回答，答完才能编辑' : '编辑后重新回答；改的不是最后一问时，会另开一个分支'" @click="startEdit(message)"><AppIcon name="edit" :size="13" /></button><button class="meta-button" :aria-label="copiedId === message.id ? '已复制' : '复制问题'" :data-tip="copiedId === message.id ? '已复制' : '复制'" @click="copyMessage(message)"><AppIcon :name="copiedId === message.id ? 'check' : 'copy'" :size="13" /></button></div>
                 <div v-if="message.ask?.text || message.images?.length || message.ask?.includeDocument || message.excerpts?.length" class="sent-context" aria-label="随问题发送的上下文">
                   <span v-for="item in message.excerpts || []" :key="item.id" class="sent-quote sent-excerpt" :data-tip="`${excerptLabel(item.from)}：${item.text.slice(0, 300)}`"><AppIcon :name="item.from === 'self' ? 'pin' : 'branch'" :size="10" />{{ item.text.slice(0, 40) }}{{ item.text.length > 40 ? '…' : '' }}</span>
                   <img v-for="(image, index) in (message.images || []).slice(0, 5)" :key="index" :src="image" alt="随问题发送的图片" data-tip="双击放大" @dblclick="zoomed = image" />
@@ -1082,8 +1123,8 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
             <div v-if="message.sources.length && expanded.has(message.id)" class="source-list"><p class="source-heading">参考原文 · {{ message.sources.length }} 段</p><button v-for="source in message.sources" :key="source.sourceId" @click="jump(source)"><span>{{ source.line ? `第 ${source.line} 行` : `第 ${source.page} 页` }}</span><small>{{ source.text }}</small></button></div>
             <div v-if="message.content" v-answer="message" class="answer-body" />
             <div v-if="!live(message)" class="answer-meta">
-              <button v-if="message.content" class="meta-button" aria-label="复制回答" data-tip="复制回答" @click="copy(message.content)"><AppIcon name="copy" :size="13" /></button>
-              <button v-if="!side || isLastAnswer(message)" class="meta-button" :disabled="busy" aria-label="重新生成" data-tip="重新生成" @click="regenerate(message)"><AppIcon name="retry" :size="13" /></button>
+              <button v-if="message.content" class="meta-button" :aria-label="copiedId === message.id ? '已复制' : '复制回答'" :data-tip="copiedId === message.id ? '已复制' : '复制回答'" @click="copyMessage(message)"><AppIcon :name="copiedId === message.id ? 'check' : 'copy'" :size="13" /></button>
+              <button v-if="!side || isLastAnswer(message)" class="meta-button" :disabled="busy" aria-label="重新生成" :data-tip="busy ? '正在回答，答完才能重新生成' : '重新生成'" @click="regenerate(message)"><AppIcon name="retry" :size="13" /></button>
               <button v-if="!side" class="meta-button" aria-label="从这里分支" data-tip="从这里开一个分支对话" @click="branchFrom(message)"><AppIcon name="branch" :size="13" /></button>
               <span v-if="message.stopped" class="meta-flag">已停止</span>
 
@@ -1099,10 +1140,10 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
       <div v-show="thumb.visible" class="scroll-rail" :class="{ marked: marks.length }" aria-label="问题导航" @pointerdown="railDown" @pointermove="railMove" @pointerup="railUp" @pointercancel="railUp">
         <span class="rail-thumb" :style="{ top: `calc(8px + ${thumb.top} * (100% - 16px))`, height: `calc(${thumb.height} * (100% - 16px))` }" aria-hidden="true" />
       </div>
-      <div v-if="marks.length" ref="tickColumn" class="rail-ticks" :class="{ hovering: tickPointer !== null }" :style="{ '--slot': `${tickSlot}px` }" aria-label="问题导航" @pointermove="tickHover" @pointerleave="tickLeave">
-        <button v-for="(mark, index) in marks" :key="mark.id" class="rail-mark" :class="{ current: mark.current, hot: hoverMark?.id === mark.id, pinned: mark.pinned }" :style="{ '--grow': tickGrow(index) }" :aria-label="`跳到问题：${mark.text.slice(0, 30)}`" @click="goToMark(mark)" @focus="tickFocus(mark, $event)" @blur="hidePreviewSoon" />
+      <div v-if="marks.length" ref="tickColumn" class="rail-ticks" :class="{ hovering: tickPointer !== null }" :style="{ '--slot': `${tickSlot}px` }" aria-label="问题导航" @pointermove="tickHover" @pointerleave="tickLeave" @keydown.esc="previewEscape">
+        <button v-for="(mark, index) in marks" :key="mark.id" class="rail-mark" :data-id="mark.id" :class="{ current: mark.current, hot: hoverMark?.id === mark.id, pinned: mark.pinned }" :style="{ '--grow': tickGrow(index) }" :aria-label="`跳到问题：${mark.text.slice(0, 30)}`" @click="goToMark(mark)" @focus="tickFocus(mark, $event)" @blur="hidePreviewSoon" />
       </div>
-      <Transition name="rail-pop"><div v-if="hoverMark" class="rail-preview" :style="{ top: `clamp(56px, ${hoverTop}px, calc(100% - 56px))` }" @pointerenter="keepPreview" @pointerleave="hidePreviewSoon">
+      <Transition name="rail-pop"><div v-if="hoverMark" ref="previewEl" class="rail-preview" :style="{ top: `clamp(56px, ${hoverTop}px, calc(100% - 56px))` }" @pointerenter="keepPreview" @pointerleave="hidePreviewSoon" @focusin="keepPreview" @focusout="hidePreviewSoon" @keydown.esc="previewEscape">
         <button type="button" class="rail-pin" :class="{ on: hoverMark.pinned }" :aria-pressed="hoverMark.pinned" :aria-label="hoverMark.pinned ? '取消钉住' : '钉住这一问'" :data-tip="hoverMark.pinned ? '取消钉住' : '钉住这一问'" @click="togglePin(hoverMark)"><AppIcon name="pin" :size="13" /></button>
         <strong>{{ hoverMark.text }}</strong><p v-if="hoverMark.answer">{{ hoverMark.answer }}</p>
       </div></Transition>
@@ -1141,7 +1182,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
         <i v-if="settled" class="composer-wave" aria-hidden="true"></i>
         <div class="composer-resize" role="separator" aria-orientation="horizontal" aria-label="拖动调整输入框高度" data-tip="拖动调整高度，双击恢复" @pointerdown="startResize" @pointermove="resize" @pointerup="endResize" @pointercancel="endResize" @dblclick="resetResize" />
         <div v-if="hasSelection && !selected.image" class="ai-selection-context">
-          <label class="selection-chip" :class="{ off: !includeSelection }"><input v-model="includeSelection" type="checkbox" :disabled="busy" aria-label="使用所选文字" /><span class="selection-text">{{ selected.text.slice(0, 80) }}</span><small>{{ selected.rect?.space === 'markdown' ? '框选区域的文字' : '所选文字' }}</small></label>
+          <label class="selection-chip" :class="{ off: !includeSelection }" :data-tip="busy ? '正在回答，答完才能切换' : undefined"><input v-model="includeSelection" type="checkbox" :disabled="busy" aria-label="使用所选文字" /><span class="selection-text">{{ selected.text.slice(0, 80) }}</span><small>{{ selected.rect?.space === 'markdown' ? '框选区域的文字' : '所选文字' }}</small></label>
           <button class="chip-remove" data-tip="清除选区" aria-label="清除选区" @click="emit('clearSelection')"><AppIcon name="close" :size="11" /></button>
         </div>
         <TransitionGroup v-if="excerpts.length" tag="div" name="excerpt" class="ai-excerpts" aria-label="随下一个问题发送的摘录">
@@ -1159,18 +1200,18 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
           </span>
         </TransitionGroup>
         <div class="prompt-box">
-          <textarea ref="input" v-model="prompt" @paste="pasteImages" :style="{ height: `${composerHeight}px` }" :placeholder="prediction ? '' : placeholder" aria-label="向 AI 提问" :aria-describedby="prediction ? `prediction-${state.id}` : undefined" @keydown="keydown" />
+          <textarea ref="input" v-model="prompt" @paste="pasteImages" :style="{ height: `${composerHeight}px` }" :placeholder="prediction ? '' : placeholder" aria-label="向 AI 提问" :aria-describedby="prediction ? `prediction-${state.id}` : undefined" @keydown="keydown" @input="clearNote" />
           <!-- 预判的问题：像 Claude Code 一样以淡色出现在空输入框里，按 Tab 或回车采用。 -->
-          <p v-if="prediction && !prompt" :id="`prediction-${state.id}`" class="prompt-ghost"><span>{{ prediction }}</span><template v-if="showHint"><kbd>Tab</kbd><small>/</small><kbd>Enter</kbd><small>采用</small></template><span v-else class="visually-hidden">，按 Tab 或回车采用</span></p>
+          <p v-if="prediction && !prompt" :id="`prediction-${state.id}`" class="prompt-ghost"><span>{{ prediction }}</span><span class="visually-hidden">，按 Tab 或回车采用</span></p>
         </div>
         <div class="composer-actions">
-          <button type="button" class="attach-button" :disabled="busy || attachments.length >= MAX_ATTACHMENTS" aria-label="添加图片" data-tip="添加图片（也可以 Ctrl+V 粘贴或拖进来）" @click="attachInput?.click()"><AppIcon name="image" :size="16" /></button>
+          <button type="button" class="attach-button" :disabled="busy || attachments.length >= MAX_ATTACHMENTS" aria-label="添加图片" :data-tip="busy ? '正在回答，答完才能添加图片' : attachments.length >= MAX_ATTACHMENTS ? `一次最多附 ${MAX_ATTACHMENTS} 张图片` : '添加图片（也可以 Ctrl+V 粘贴或拖进来）'" @click="attachInput?.click()"><AppIcon name="image" :size="16" /></button>
           <input ref="attachInput" class="attach-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple tabindex="-1" aria-hidden="true" @change="pickImages" />
-          <label class="context-switch" :class="{ on: includeDocument }" :data-tip="includeDocument ? '已开启：提问时附带当前页与文档检索' : '已关闭：只发送问题与选区'"><input v-model="includeDocument" type="checkbox" role="switch" :disabled="busy" aria-label="当前页上下文与文档检索" /><span class="context-glyph" aria-hidden="true"><AppIcon name="book" :size="14" /><i class="context-slash" /></span><span class="context-label">文档上下文</span></label>
+          <label class="context-switch" :class="{ on: includeDocument }" :data-tip="busy ? '正在回答，答完才能切换' : includeDocument ? '已开启：提问时附带当前页与文档检索' : '已关闭：只发送问题与选区'"><input v-model="includeDocument" type="checkbox" role="switch" :disabled="busy" aria-label="当前页上下文与文档检索" /><span class="context-glyph" aria-hidden="true"><AppIcon name="book" :size="14" /><i class="context-slash" /></span><span class="context-label">文档上下文</span></label>
           <span class="composer-space" />
           <span class="context-ring" :data-tip="`上下文约 ${count(contextUsed)} / ${count(contextLimit)} tokens`" aria-hidden="true" :style="{ '--ratio': contextRatio }"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5" /><circle class="ring-value" cx="10" cy="10" r="7.5" pathLength="100" /></svg></span>
           <div ref="pickerHost" class="model-picker-host">
-            <button type="button" class="model-picker" :disabled="busy" :aria-expanded="pickerOpen" :aria-controls="`model-drawer-${state.id}`" aria-label="选择模型与思考强度" data-tip="模型与思考强度" @click="pickerOpen = !pickerOpen"><span class="picker-model">{{ modelLabel }}</span><span class="picker-effort">{{ EFFORT_LABELS[settings.effort || ''] || settings.effort }}</span><span v-if="bolts" class="picker-fast" :class="{ twin: bolts > 1 }"><AppIcon v-for="n in bolts" :key="n" name="bolt" :size="11" /></span><AppIcon name="down" :size="12" class="picker-chevron" /></button>
+            <button type="button" class="model-picker" :disabled="busy" :aria-expanded="pickerOpen" :aria-controls="`model-drawer-${state.id}`" aria-label="选择模型与思考强度" :data-tip="busy ? '正在回答，答完才能换模型' : '模型与思考强度'" @click="pickerOpen = !pickerOpen"><span class="picker-model">{{ modelLabel }}</span><span class="picker-effort">{{ EFFORT_LABELS[settings.effort || ''] || settings.effort }}</span><span v-if="bolts" class="picker-fast" :class="{ twin: bolts > 1 }"><AppIcon v-for="n in bolts" :key="n" name="bolt" :size="11" /></span><AppIcon name="down" :size="12" class="picker-chevron" /></button>
           </div>
           <Transition name="send-swap" mode="out-in">
             <button v-if="busy" key="stop" class="send-button stop" aria-label="停止" data-tip="停止回答" @click="stop"><span class="stop-square" /></button>
@@ -1319,7 +1360,9 @@ button:disabled{opacity:.4;cursor:default}
 .note-card{display:flex;align-items:center;gap:6px;margin-left:auto;width:fit-content;max-width:86%;height:26px;padding:0 4px 0 9px;border-left:2px solid color-mix(in srgb,var(--accent) 65%,transparent);border-radius:3px 8px 8px 3px;background:color-mix(in srgb,var(--accent) 7%,transparent);color:var(--secondary);font-size:12px}
 .note-icon{flex-shrink:0;color:var(--muted)}
 .note-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.note-remove{display:grid;place-items:center;flex-shrink:0;width:18px;height:18px;padding:0;border:0;border-radius:50%;background:none;box-shadow:none;color:var(--muted);opacity:0;transition:opacity var(--dur-1) var(--ease-soft)}
+.note-remove{position:relative;display:grid;place-items:center;flex-shrink:0;width:18px;height:18px;padding:0;border:0;border-radius:50%;background:none;box-shadow:none;color:var(--muted);opacity:.45;transition:opacity var(--dur-1) var(--ease-soft)}
+/* 看得见的圈是 18px，点得到的范围往外多放 5px。 */
+.note-remove::before{content:'';position:absolute;inset:-5px;border-radius:50%}
 .note-card:hover .note-remove,.note-remove:focus-visible{opacity:1}
 .note-remove:hover{background:color-mix(in srgb,var(--ink) 9%,transparent);color:var(--ink)}
 .ai-message.note.arrived .note-card{animation:note-arrive 1.1s var(--ease-out)}
@@ -1352,7 +1395,8 @@ button:disabled{opacity:.4;cursor:default}
 .scroll-rail{position:absolute;right:3px;top:6px;bottom:6px;width:14px;z-index:5;cursor:default;touch-action:none}
 .rail-thumb{position:absolute;right:5px;width:3px;min-height:18px;border-radius:2px;background:color-mix(in srgb,var(--ink) 18%,transparent);transition:width var(--dur-2) var(--spring-snappy),right var(--dur-2) var(--spring-snappy),background var(--dur-1) var(--ease-soft)}
 .scroll-rail:hover .rail-thumb{right:4px;width:5px;background:color-mix(in srgb,var(--ink) 28%,transparent)}
-.rail-ticks{position:absolute;right:5px;top:50%;z-index:6;display:flex;flex-direction:column;align-items:flex-end;max-height:calc(100% - 96px);padding:6px 0;transform:translateY(-50%)}
+.rail-ticks{position:absolute;right:5px;top:50%;z-index:6;display:flex;flex-direction:column;align-items:flex-end;max-height:calc(100% - 96px);padding:6px 0;transform:translateY(-50%);overflow-y:auto;scrollbar-width:none}
+.rail-ticks::-webkit-scrollbar{display:none}
 /* 按钮是整格热区（宽 44px、高一格），看得见的刻度是里面的细线；只用黑白两色。 */
 .rail-mark{position:relative;flex-shrink:0;display:flex;align-items:center;justify-content:flex-end;width:44px;height:var(--slot,8px);padding:0 4px 0 0;border:0;border-radius:0;background:transparent;box-shadow:none;cursor:pointer}
 .rail-mark::after{content:'';display:block;width:calc(10px + 16px * var(--grow,0));height:2px;border-radius:1px;background:color-mix(in srgb,var(--ink) calc(24% + 46% * var(--grow,0)),transparent);transition:width .18s var(--spring-snappy),background var(--dur-1) var(--ease-soft)}
@@ -1579,7 +1623,8 @@ textarea::placeholder{color:var(--muted);font-family:'Anthropic Serif','Source H
 .shot.kept{animation:shot-kept .42s var(--spring-snappy,ease-out)}
 .shot:hover{scale:1.05}
 .shot:active{scale:.97}
-.shot-remove{position:absolute;top:-7px;right:-7px;display:grid;place-items:center;width:18px;height:18px;min-height:0;padding:0;border:0;border-radius:50%;background:var(--surface);box-shadow:0 1px 3px rgb(0 0 0 / .25);color:var(--ink);opacity:0;scale:.6;transition:opacity .15s,scale .18s var(--spring-snappy,ease-out)}
+.shot-remove{position:absolute;top:-7px;right:-7px;display:grid;place-items:center;width:18px;height:18px;min-height:0;padding:0;border:0;border-radius:50%;background:var(--surface);box-shadow:0 1px 3px rgb(0 0 0 / .25);color:var(--ink);opacity:.5;scale:.85;transition:opacity .15s,scale .18s var(--spring-snappy,ease-out)}
+.shot-remove::before{content:'';position:absolute;inset:-6px;border-radius:50%}
 .shot:hover .shot-remove,.shot-remove:focus-visible{opacity:1;scale:1}
 @keyframes shot-kept{0%{scale:1}35%{scale:.9}70%{scale:1.08}100%{scale:1}}
 .shot-enter-active{transition:opacity .22s var(--ease-out),scale .34s var(--spring-snappy,ease-out),translate .34s var(--spring-snappy,ease-out)}
