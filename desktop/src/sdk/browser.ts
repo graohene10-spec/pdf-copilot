@@ -87,12 +87,18 @@ export const browserLibrary: Library = {
   async getSetting(key) { return (await request<string | undefined>('settings', 'readonly', s => s.get(key))) ?? null; },
   async setSetting(key,value) { await request('settings', 'readwrite', s => s.put(value,key)); },
   // 浏览器预览没有文件夹：总结直接放进这里的文档库。
-  async saveSummary(id, text, replace) {
+  async saveSummary(id, text, replace, name) {
     const source = (await get(id)).doc;
     if (replace) await request('documents', 'readwrite', s => s.delete(replace)).catch(() => {});
-    const [doc] = await importFiles([new File([text], `${source.name.replace(/\.[^.]+$/, '')} · 总结.md`, { type: 'text/markdown' })]);
+    const [doc] = await importFiles([new File([text], `${name || `${source.name.replace(/\.[^.]+$/, '')} · 总结`}.md`, { type: 'text/markdown' })]);
     if (!doc) throw new Error('总结没有加入文档库');
     return doc;
+  },
+  async rename(id, name) {
+    const record = await get(id), stem = name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '').trim();
+    if (!stem) throw new Error('名字不能为空');
+    record.doc.name = stem + (record.doc.name.match(/\.[^.]+$/)?.[0] || '');
+    return put(record);
   },
   async reveal() { throw new Error('浏览器预览里没有文件夹；桌面版本可以打开。'); },
 };

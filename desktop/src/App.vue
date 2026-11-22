@@ -1242,13 +1242,42 @@ function toggleDraft(documentId: string, value: { conversationId: string; open?:
   if (value.open === false || (value.open === undefined && same)) { if (same || value.open === undefined) draft.value = null; return }
   draft.value = { documentId, conversationId: value.conversationId }
 }
+async function summaryName(documentId: string, text: string) {
+  const controller = new AbortController(), limit = window.setTimeout(() => controller.abort(), 12000)
+  try {
+    const [{ complete }, { fileNamePrompt, cleanFileName }] = await Promise.all([import('./ai/complete'), import('./ai/summary')])
+    const source = documents.value.find(item => item.id === sourceId(documentId))?.name || ''
+    return cleanFileName(await complete({ kind: 'memory', fast: true, signal: controller.signal, messages: [{ role: 'user', content: fileNamePrompt(source, text) }] }))
+  } catch { return '' }
+  finally { clearTimeout(limit) }
+}
+// 在文档库里改文件名：卡片上的名字变成输入框，回车或点到别处生效，Esc 取消。
+const renamingDoc = ref(''), renameText = ref('')
+const stemOf = (name: string) => name.replace(/\.(pdf|md|markdown|mdown)$/i, '')
+function startRename(doc: Doc) { renamingDoc.value = doc.id; renameText.value = stemOf(doc.name) }
+// 从右键菜单进来时，菜单关掉会把焦点还给卡片：稍后再拿一次。
+function grabRename(el: HTMLInputElement) { const take = () => { if (el.isConnected) { el.focus(); el.select() } }; take(); window.setTimeout(take, 60) }
+async function commitRename() {
+  const id = renamingDoc.value
+  if (!id) return
+  renamingDoc.value = ''
+  const doc = documents.value.find(item => item.id === id), name = renameText.value.trim()
+  if (!doc || !name || name === stemOf(doc.name)) return
+  const before = stemOf(doc.name), source = sourceId(id)
+  try {
+    updateLocal(await library.rename(source, name))
+    undoable('已改名', async () => { updateLocal(await library.rename(source, before)) })
+  } catch (error) { notify(reason(error)) }
+}
 /** 存入文档库：写成 Markdown 放在原文档的文件夹里。同一段对话再存是覆盖上次那份。 */
 async function saveDraft(text: string) {
   const target = draft.value, summary = draftSummary.value
   if (!target || !summary || draftSaving.value) return
   draftSaving.value = true
   try {
-    const doc = await library.saveSummary(target.documentId, text, summary.savedId)
+    // 第一次存：让助手照内容起个名字；起不出来（没连服务、超时）就用「原名 · 总结」。再存是覆盖，名字不动。
+    const again = !!summary.savedId && documents.value.some(item => item.id === summary.savedId)
+    const doc = await library.saveSummary(target.documentId, text, summary.savedId, again ? undefined : await summaryName(target.documentId, text))
     summary.savedId = doc.id
     const at = documents.value.findIndex(item => item.id === doc.id)
     if (at >= 0) documents.value[at] = doc; else documents.value = [doc, ...documents.value]
@@ -1554,6 +1583,7 @@ function appContextMenu(event: MouseEvent) {
     items.push({ label: '打开', icon: 'book', action: () => { void openDocument(doc) } })
     items.push({ label: doc.starred ? '取消收藏' : '收藏', icon: 'star', action: () => { void toggleStar(doc) } })
     items.push({ label: '总结…', icon: 'doc', action: () => { void summarizeDocument(doc) } })
+    items.push({ label: '重命名', icon: 'edit', hint: 'F2', action: () => startRename(doc) })
     items.push({ label: '详情与标签…', icon: 'tag', action: () => { detailsId.value = doc.id } })
     items.push({ label: '打开所在文件夹', icon: 'folder', action: () => { void library.reveal(doc.id).catch(error => notify(reason(error))) } })
     items.push(...groupMenuItems(picked.value.has(doc.id) && picked.value.size > 1 ? pickedDocs.value.map(item => item.id) : [doc.id]))
@@ -2356,10 +2386,10 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
         <div v-if="loading" class="library-empty"><span class="spinner"></span><p>正在读取文档库…</p></div>
         <div v-else-if="!visibleDocuments.length" class="library-empty"><div class="empty-art"><svg viewBox="0 0 120 96" aria-hidden="true"><path class="ea-shade" d="M14 80c16-5 30-5 45 1 16-6 30-6 47-1l1 6c-17-4-31-4-47 2-16-6-30-6-45-2z" /><path class="ea-page" d="M15 22c14-6 29-6 44 2v56c-15-7-30-7-45-2z" /><path class="ea-page ea-right" d="M59 24c15-8 30-8 46-3l1 57c-16-5-31-5-47 2z" /><path class="ea-line" d="M15 22c14-6 29-6 44 2 15-8 30-8 46-3l1 57c-16-5-31-5-47 2-15-7-30-7-45-2z M59 24.500c.4 18 .2 37 .1 55.300 M24 35c8-2.500 17-2 26 1 M24 46.500c8-2.400 17-2 26 1.200 M24.500 58c7-2 14-2 21 .300 M69 36c9-3.200 18-3.400 27-1.400 M69 47.500c9-3 18-3.300 27-1.300 M69.500 59c6-2 12-2.400 18-1.500" /><path class="ea-star" d="M97 6.500c1 5 3 7.200 8 8.500-5 1.200-7 3.400-8.200 8.500-1-5-3.200-7.300-8.300-8.500 5-1.300 7.300-3.500 8.500-8.500z" /><path class="ea-line" d="M112 21.500l.4 5 M109.500 24l5.400.200 M83 4.500l.300 3.600 M81.200 6.300l3.900.100" /></svg></div><h2>{{ query ? '没有匹配的文档' : category === 'starred' ? '暂无收藏' : groupFilter ? '这个分组还是空的' : tagFilter ? '此标签下暂无文档' : '暂无文档' }}</h2><button v-if="query" @click="query = ''; refresh()">查看全部文档</button><template v-else-if="!documents.length"><button @click="importDocuments" :disabled="importing">加入文档</button><small>导入不会移动或修改原文件</small></template></div>
         <div v-else ref="collection" class="document-collection" :class="[display, { arrangeable: canArrange }]" :aria-description="canArrange ? '拖动卡片或按 Alt+方向键调整位置' : undefined">
-          <article v-for="doc in visibleDocuments" :key="doc.id" class="document-card" :class="[doc.kind, { 'reorder-lifted': reorderLibrary.dragging.value === doc.id, picked: picked.has(doc.id), grouped: groupMarks.has(doc.id), 'group-start': groupMarks.get(doc.id)?.start, 'group-end': groupMarks.get(doc.id)?.end }]" :data-reorder-id="doc.id" tabindex="0" role="button" :aria-label="`打开 ${doc.name}`" :aria-selected="picked.size ? picked.has(doc.id) : undefined" @click="cardClick($event, doc)" @keydown.enter.self="openDocument(doc)" @keydown.space.self.prevent="openDocument(doc)" @keydown="reorderLibrary.keydown($event, doc.id)" @pointerdown="reorderLibrary.pointerdown($event, doc.id)">
+          <article v-for="doc in visibleDocuments" :key="doc.id" class="document-card" :class="[doc.kind, { 'reorder-lifted': reorderLibrary.dragging.value === doc.id, picked: picked.has(doc.id), grouped: groupMarks.has(doc.id), 'group-start': groupMarks.get(doc.id)?.start, 'group-end': groupMarks.get(doc.id)?.end }]" :data-reorder-id="doc.id" tabindex="0" role="button" :aria-label="`打开 ${doc.name}`" :aria-selected="picked.size ? picked.has(doc.id) : undefined" @click="cardClick($event, doc)" @keydown.enter.self="openDocument(doc)" @keydown.space.self.prevent="openDocument(doc)" @keydown.f2.self.prevent="startRename(doc)" @keydown="reorderLibrary.keydown($event, doc.id)" @pointerdown="reorderLibrary.pointerdown($event, doc.id)">
             <i v-if="groupMarks.has(doc.id)" class="group-thread" aria-hidden="true"></i><span v-if="groupMarks.get(doc.id)?.start" class="group-chip">{{ groupMarks.get(doc.id)!.name }}</span>
             <div class="document-cover" :class="{ 'has-image': covers.has(sourceId(doc.id)) }"><img v-if="covers.has(sourceId(doc.id))" class="cover-image" :class="covers.get(sourceId(doc.id))!.kind" :src="covers.get(sourceId(doc.id))!.image" alt="" draggable="false" /><template v-else><div class="cover-lines"><i></i><i></i><i></i><i></i></div><div class="document-type-icon"><AppIcon :name="doc.kind === 'pdf' ? 'file' : 'markdown'" :size="display === 'list' ? 23 : 30" /></div></template><button class="card-star" :class="{ 'is-starred': doc.starred }" @click.stop="toggleStar(doc)" :data-tip="doc.starred ? '取消收藏' : '收藏文档'" :aria-label="doc.starred ? '取消收藏' : '收藏文档'"><AppIcon name="star" :size="17" /></button></div>
-            <div class="document-card-body"><div class="document-card-title"><h3 :data-tip="doc.name">{{ doc.name.replace(/\.(pdf|md|markdown)$/i, '') }}</h3><span class="format-pill">{{ doc.kind === 'pdf' ? 'PDF' : 'MD' }}</span></div><p class="document-meta">{{ size(doc.size) }}<span>·</span>{{ doc.lastOpenedAt ? `阅读于 ${date(doc.lastOpenedAt)}` : `加入于 ${date(doc.addedAt)}` }}</p><div class="document-tags"><span v-for="tag in doc.tags.slice(0, 3)" :key="tag">{{ tag }}</span><span v-if="doc.tags.length > 3">+{{ doc.tags.length - 3 }}</span></div><div class="document-progress"><div><i :style="{ width: `${progressPercent(doc)}%` }"></i></div><span>{{ doc.progress ? `${progressPercent(doc)}%` : '未读' }}</span></div></div>
+            <div class="document-card-body"><div class="document-card-title"><input v-if="renamingDoc === doc.id" v-model="renameText" class="card-rename" maxlength="120" aria-label="文件名" spellcheck="false" @vue:mounted="({ el }: any) => grabRename(el)" @click.stop @dblclick.stop @pointerdown.stop @keydown.stop @keydown.enter.prevent="commitRename" @keydown.esc.prevent="renamingDoc = ''" @blur="commitRename" /><h3 v-else :data-tip="doc.name">{{ doc.name.replace(/\.(pdf|md|markdown)$/i, '') }}</h3><span class="format-pill">{{ doc.kind === 'pdf' ? 'PDF' : 'MD' }}</span></div><p class="document-meta">{{ size(doc.size) }}<span>·</span>{{ doc.lastOpenedAt ? `阅读于 ${date(doc.lastOpenedAt)}` : `加入于 ${date(doc.addedAt)}` }}</p><div class="document-tags"><span v-for="tag in doc.tags.slice(0, 3)" :key="tag">{{ tag }}</span><span v-if="doc.tags.length > 3">+{{ doc.tags.length - 3 }}</span></div><div class="document-progress"><div><i :style="{ width: `${progressPercent(doc)}%` }"></i></div><span>{{ doc.progress ? `${progressPercent(doc)}%` : '未读' }}</span></div></div>
             <button class="card-remove icon-button" @click.stop="removeTarget = doc" data-tip="从文档库移除" aria-label="从文档库移除"><AppIcon name="trash" :size="15" /></button>
             <span v-if="picked.has(doc.id)" class="card-pick" aria-hidden="true"><AppIcon name="check" :size="13" /></span>
           </article>

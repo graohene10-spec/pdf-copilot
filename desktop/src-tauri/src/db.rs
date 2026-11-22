@@ -170,6 +170,33 @@ impl Library {
         Ok(doc)
     }
 
+    /// 改文件名：磁盘上的文件跟着改，扩展名不变，文档还是原来那一份（书签、对话、分组都不受影响）。
+    pub fn rename(&mut self, id: &str, name: &str) -> Result<Document> {
+        let doc = self.get(id)?;
+        let old = std::path::PathBuf::from(&doc.path);
+        let extension = old.extension().and_then(|s| s.to_str()).ok_or("文件名无效")?.to_owned();
+        let mut stem = crate::files::clean_stem(name)?;
+        // 读者把扩展名也打上了：去掉，免得变成 x.md.md。
+        let cut = stem.len().saturating_sub(extension.len() + 1);
+        if cut > 0 && stem.is_char_boundary(cut) && stem[cut..].eq_ignore_ascii_case(&format!(".{extension}")) { stem = crate::files::clean_stem(&stem[..cut])?; }
+        let file = format!("{stem}.{extension}");
+        if file == doc.name { return Ok(doc); }
+        let new = old.parent().ok_or("文档目录无效")?.join(&file);
+        // Windows 不分大小写：只改大小写时「新名字已存在」指的就是它自己。
+        let itself = cfg!(windows) && file.to_lowercase() == doc.name.to_lowercase();
+        if new.exists() && !itself { return Err("这个文件夹里已经有叫这个名字的文件".into()); }
+        if !old.is_file() { return Err("文件已不在原来的位置".into()); }
+        fs::rename(&old,&new).map_err(|e| format!("无法改名：{e}"))?;
+        let path = new.to_string_lossy().into_owned();
+        let saved = self.connection.transaction().map_err(|e| e.to_string()).and_then(|tx| {
+            tx.execute("UPDATE documents SET path=?2,name=?3 WHERE id=?1", params![id,path,file]).map_err(|e| e.to_string())?;
+            refresh_search(&tx, id)?;
+            tx.commit().map_err(|e| e.to_string())
+        });
+        if let Err(error) = saved { let _ = fs::rename(&new,&old); return Err(error); }
+        self.get(id)
+    }
+
     pub fn remove(&mut self, id: &str) -> Result<()> {
         let tx = self.connection.transaction().map_err(|e| e.to_string())?;
         tx.execute("DELETE FROM document_search WHERE id=?1", [id]).map_err(|e| e.to_string())?;
@@ -261,6 +288,21 @@ mod tests {
         assert!(db.import(vec![md.to_string_lossy().into_owned(),bad.to_string_lossy().into_owned()]).is_err());
         assert!(db.list(None).unwrap().is_empty());
         assert!(serde_json::from_str::<DocumentPatch>(r#"{"path":"arbitrary"}"#).is_err());
+        drop(db); fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn rename_moves_the_file_and_keeps_the_document() {
+        let root = fixture();
+        let md = root.join("旧名.md"); fs::write(&md,"hello").unwrap(); fs::write(root.join("占用.md"),"x").unwrap();
+        let mut db = Library::open(&root.join("library.db")).unwrap();
+        let doc = db.import(vec![md.to_string_lossy().into_owned()]).unwrap().remove(0);
+        let renamed = db.rename(&doc.id,"新名: 第一章.md").unwrap();
+        assert_eq!((renamed.id.as_str(),renamed.name.as_str()),(doc.id.as_str(),"新名 第一章.md"));
+        assert!(!md.exists() && Path::new(&renamed.path).is_file());
+        assert_eq!(db.list(Some("第一章")).unwrap().len(),1);
+        // 重名、空名字都不动文件。
+        assert!(db.rename(&doc.id,"占用").is_err() && db.rename(&doc.id," . ").is_err());
+        assert_eq!(db.get(&doc.id).unwrap().name,"新名 第一章.md");
         drop(db); fs::remove_dir_all(root).unwrap();
     }
 }

@@ -665,7 +665,7 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey, true); clea
       <header class="cm-side-head"><h3 data-tip="一段对话答完，助手把你学了什么、掌握得怎样整理成几行；下次提问时先看这些，决定从哪讲起、讲多细。每条记忆都记在它那本书名下。新对话下面选「本书」只用这本书的，选「全局」所有书的都用，选「不用」既不读也不记">记忆</h3><b>{{ remembered }}</b><span>条</span></header>
       <div class="cm-shelf">
         <p v-if="ready && !remembered" class="cm-side-note">还没有记忆。</p>
-        <p v-if="organizing" class="cm-organizing" role="status"><AppIcon name="memory" :size="13" />正在整理 {{ organizing }}</p>
+        <p v-if="organizing" class="cm-organizing" role="status"><i class="cm-spin" aria-hidden="true"></i>正在整理 {{ organizing }}</p>
         <form v-if="remembered" class="cm-mem-ask" :class="{ busy: memBusy }" :aria-busy="memBusy" @submit.prevent="askMemory"><input v-model="memAsk" :readonly="memBusy" maxlength="500" placeholder="让助手改：比如 把循环相关的合并成一条" aria-label="让助手改记忆" @keydown.enter="($event.isComposing || $event.keyCode === 229) && $event.preventDefault()" @keydown.esc.prevent.stop="!$event.isComposing && memAskEsc($event)" /><button v-if="memBusy" type="button" class="cm-act" aria-label="停下" data-tip="助手正在改，点一下停下" @click="stopMemory"><AppIcon name="stop" :size="13" /></button><button v-else type="submit" class="cm-act" :disabled="!memAsk.trim()" aria-label="让助手改" :data-tip="memAsk.trim() ? '让助手按这句话改记忆；改完可以撤销' : '先写一句要怎么改'"><AppIcon name="arrow-up" :size="13" /></button></form>
         <p v-if="memBusy || memNote" class="cm-mem-note" :class="{ bad: memNote?.bad }" role="status">{{ memBusy ? '助手正在看这些记忆，按你说的改…' : memNote!.text }}<button v-if="!memBusy && memNote?.undo" type="button" @click="undoLast(); memNote = null">撤销</button></p>
         <section v-for="group in groups" :key="group.root.id" class="cm-group" :class="{ folded: foldedMem.has(group.root.id) }">
@@ -856,6 +856,9 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey, true); clea
 .cm-side-head span{color:var(--muted);font-size:11.5px}
 .cm-shelf{flex:1;min-height:0;overflow:auto;padding:0 24px 28px}
 .cm-side-note{margin:4px 0 16px;color:var(--secondary);font-size:12.5px;line-height:1.7}
+.cm-spin{flex:none;width:11px;height:11px;border:1.2px solid color-mix(in srgb,currentColor 22%,transparent);border-top-color:currentColor;border-radius:50%;animation:cm-spin .9s linear infinite}
+@keyframes cm-spin{to{rotate:360deg}}
+@media (prefers-reduced-motion:reduce){.cm-spin{animation-duration:2.4s}}
 .cm-organizing{display:flex;align-items:center;gap:7px;margin:0 0 14px;color:var(--muted);font-family:var(--font-formal);font-size:12px}
 .cm-organize{display:flex;align-items:center;gap:8px;width:100%;height:38px;margin-bottom:18px;padding:0 13px;border:1.5px solid var(--ink);border-radius:0;background:none;box-shadow:none;color:var(--ink);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
 .cm-organize:hover:not(:disabled){background:var(--ink);color:var(--canvas)}
