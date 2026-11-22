@@ -47,6 +47,13 @@ export function forgetItem(conversationId: string, index: number) {
   if (!entry.items.length) delete memory.entries[conversationId]
   persist()
 }
+/** 读者自己改一条的写法。 */
+export function editItem(conversationId: string, index: number, text: string) {
+  const entry = memory.entries[conversationId], next = text.replace(/\s+/g, ' ').trim().slice(0, 80)
+  if (!entry || !next || entry.items[index] === undefined) return
+  entry.items[index] = next
+  persist()
+}
 /** 对话换了书、改了名：记录跟着改。 */
 /** 撤销用：把一段对话的记忆原样放回去。 */
 export function restoreMemory(conversationId: string, entry: MemoryEntry) { memory.entries[conversationId] = entry; persist() }
