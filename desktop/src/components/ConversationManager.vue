@@ -5,6 +5,7 @@
 // 书和对话的顺序是定住的（自己排的），不会因为刚动过哪一段就跳到前面。书从文档库移除后对话和记忆还在，根节点打上阴影。
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import AppIcon from './AppIcon.vue'
+import { offerSpaced } from '../ui/hints'
 import { library } from '../sdk'
 import { booksReady, conversationBooks, conversationBundle, conversations, deleteConversation, forgetBook, loadConversations, memorizeNow, moveConversation, rememberBook, renameConversation, restoreConversations, setConversationMemory, type ChatState } from '../ai/workspace'
 import { editItem, forgetItem, moveItem, replaceMemory, reviseMemory, snapshotMemory, memory, memoryMode, memoryReady, restoreMemory, type MemoryMode } from '../ai/memory'
@@ -357,6 +358,7 @@ async function organize() {
   say(remembered.value > had ? `整理出 ${remembered.value - had} 条记忆` : '没有整理出内容。检查一下 AI 设置里阅读助手用的服务。')
 }
 const lit = ref('')
+onMounted(() => offerSpaced('manager-gestures', ['右键'], '操作，拖动是移动和排序'))
 // 右边一栏：哪几本书的记忆收起来了。
 const foldedMem = reactive(new Set<string>())
 function foldMem(id: string) { if (foldedMem.has(id)) foldedMem.delete(id); else foldedMem.add(id) }
@@ -521,7 +523,6 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey, true); clea
       <div class="cm-foot">
         <Transition name="cm-fade" mode="out-in">
           <p v-if="flash" :key="flash.text" class="cm-flash" role="status"><span>{{ flash.text }}</span><button v-if="flash.undo" type="button" @click="undoLast">撤销</button></p>
-          <p v-else class="cm-hint">左键进入<i></i>右键操作<i></i>拖动移动或排序<i></i>空白处框选<i></i>Ctrl Z 撤销</p>
         </Transition>
       </div>
 
@@ -553,9 +554,9 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey, true); clea
         <path class="a-block" d="M330 180h44v44h-44zM24 20h18v18H24zM50 20h8v8h-8z" />
         <circle class="a-ball" cx="352" cy="62" r="13" />
       </svg>
-      <header class="cm-side-head"><h3>记忆</h3><b>{{ remembered }}</b><span>条</span></header>
+      <header class="cm-side-head"><h3 data-tip="一段对话答完，助手把你学了什么、掌握得怎样整理成几行；下次提问时先看这些，决定从哪讲起、讲多细。新对话下面的「本书 / 全局 / 不用」决定这段对话读哪些、记到哪">记忆</h3><b>{{ remembered }}</b><span>条</span></header>
       <div class="cm-shelf">
-        <p class="cm-side-note">一段对话答完，助手把你学了什么、掌握得怎样整理成几行记在这里；下次提问时它先看这些，决定从哪讲起、讲多细。<template v-if="ready && !remembered">现在还没有。</template></p>
+        <p v-if="ready && !remembered" class="cm-side-note">还没有记忆。</p>
         <button v-if="pending.length" type="button" class="cm-organize" :disabled="!!organizing" @click="organize"><AppIcon name="memory" :size="15" />{{ organizing ? `正在整理 ${organizing}` : `整理 ${pending.length} 段还没整理的对话` }}</button>
         <form v-if="remembered" class="cm-mem-ask" @submit.prevent="askMemory"><input v-model="memAsk" :disabled="memBusy" maxlength="500" placeholder="让助手改：比如 把循环相关的合并成一条" aria-label="让助手改记忆" @keydown.enter="($event.isComposing || $event.keyCode === 229) && $event.preventDefault()" /><button type="submit" class="cm-act" :disabled="memBusy || !memAsk.trim()" :aria-label="memBusy ? '助手正在改' : '让助手改'" :data-tip="memBusy ? '助手正在改' : '让助手按这句话改记忆；改完可以撤销'"><AppIcon :name="memBusy ? 'clock' : 'arrow-up'" :size="13" /></button></form>
         <section v-for="group in groups" :key="group.root.id" class="cm-group" :class="{ folded: foldedMem.has(group.root.id) }">

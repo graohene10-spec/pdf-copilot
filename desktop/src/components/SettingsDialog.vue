@@ -14,6 +14,7 @@ type Tab = 'appearance' | 'reading' | 'shortcuts' | 'ai' | 'memory' | 'updates'
 const props = withDefaults(defineProps<{ initialTab?: Tab }>(), { initialTab: 'appearance' })
 const emit = defineEmits<{ close: []; saved: [value: AppPreferences]; 'ai-saved': [value: any]; tour: []; manage: [] }>()
 const MemorySettings = defineAsyncComponent(() => import('./MemorySettings.vue'))
+import HelpTip from './HelpTip.vue'
 const AiSettings = defineAsyncComponent(() => import('./AiSettings.vue'))
 const UpdateSettings = defineAsyncComponent(() => import('./UpdateSettings.vue'))
 const shared = useSettings()
@@ -348,7 +349,7 @@ function failureText(item: RenderFailure) {
       <div class="settings-body">
         <nav v-liquid-selection class="settings-tabs" aria-label="设置分类"><button v-for="item in tabs" :key="item.id" :class="{ selected: tab === item.id }" @click="switchTab(item.id)" :aria-current="tab === item.id ? 'page' : undefined"><AppIcon :name="item.icon" :size="17" />{{ item.label }}</button><button type="button" class="tour-entry" :disabled="saving" @click="emit('tour')"><AppIcon name="play" :size="16" />使用教程</button></nav>
         <div ref="content" class="settings-content">
-          <p v-if="!ready" class="settings-help">{{ status || '正在读取设置…' }}</p>
+          <HelpTip v-if="!ready">{{ status || '正在读取设置…' }}</HelpTip>
           <template v-else-if="tab === 'appearance'">
             <h3>外观</h3>
             <div class="style-grid" role="radiogroup" aria-label="界面风格">
@@ -390,7 +391,7 @@ function failureText(item: RenderFailure) {
               <div v-if="draft.appearance.glassLegibility === 'thicken'" class="setting-row transparency-row"><label for="glass-compensation">补偿强度</label><div class="transparency-control"><input id="glass-compensation" v-model.number="draft.appearance.glassCompensation" :style="{ '--value': draft.appearance.glassCompensation }" :disabled="saving || draft.appearance.glassTransparency === 0" type="range" min="0" max="100" step="1" aria-label="可读性补偿强度" @pointerdown="peek(true)" @keydown="peek(false)" :aria-valuetext="`${draft.appearance.glassCompensation}%`" /><output for="glass-compensation">{{ draft.appearance.glassCompensation }}%</output><span class="slider-endpoints" aria-hidden="true"><span>通透</span><span>清楚</span></span></div></div>
               <label class="setting-row"><span>玻璃底色</span><select v-model="draft.appearance.glassTint" :disabled="saving || draft.appearance.glassTransparency === 0" aria-label="玻璃底色"><option v-for="item in GLASS_TINTS" :key="item.id" :value="item.id">{{ item.label }}</option></select></label>
             </div>
-            <p class="settings-help">「泛白」来自两样东西：玻璃本身的底色（浅色主题是白色、深色主题是深灰，透明度越低越浓），以及使用图片底板时的可读性补偿——身后的图片和文字颜色太接近时，应用会把那一块玻璃自动加厚，所以同一张图上有的面板发白、有的不发白。补偿强度调低，玻璃更通透，不足的对比度改用文字光晕补上；「切换字色」让玻璃保持透明度，改为按身后明暗换深浅字色；「取自底图颜色」让玻璃带上图片的色调而不是白雾。这几项只在图片底板下生效。</p>
+            <HelpTip>「泛白」来自两样东西：玻璃本身的底色（浅色主题是白色、深色主题是深灰，透明度越低越浓），以及使用图片底板时的可读性补偿——身后的图片和文字颜色太接近时，应用会把那一块玻璃自动加厚，所以同一张图上有的面板发白、有的不发白。补偿强度调低，玻璃更通透，不足的对比度改用文字光晕补上；「切换字色」让玻璃保持透明度，改为按身后明暗换深浅字色；「取自底图颜色」让玻璃带上图片的色调而不是白雾。这几项只在图片底板下生效。</HelpTip>
             <h3 class="section-heading">底板</h3>
             <div class="settings-group background-setting">
               <div class="backdrop-grid" role="radiogroup" aria-label="底板">
@@ -405,10 +406,10 @@ function failureText(item: RenderFailure) {
                 <button v-if="draft.appearance.gallery.length < MAX_GALLERY" type="button" class="backdrop-swatch custom-swatch" :style="{ '--i': draft.appearance.gallery.length }" aria-label="添加图片到图库" :disabled="saving || importingImage" @click="imageInput?.click()"><span class="swatch-art"><AppIcon name="plus" :size="20" /></span><span class="swatch-label">{{ importingImage ? '处理中…' : '添加图片' }}</span></button>
               </div>
               <div v-if="draft.appearance.background" class="background-heading"><img class="background-current" :src="draft.appearance.background.dataUrl" alt="底板图片预览" /><span class="background-name" :data-tip="draft.appearance.background.name">{{ draft.appearance.background.name }}</span><button type="button" :disabled="saving || importingImage" @click="imageInput?.click()">替换图片</button><button type="button" :disabled="saving || importingImage" @click="previewScene(restoreBackground)" aria-label="恢复默认底板">改用预设</button></div>
-              <div v-else class="background-heading"><span class="background-name">选择预设，或从图库挑一张图片</span><button type="button" :disabled="saving || importingImage" @click="imageInput?.click()">{{ importingImage ? '正在处理…' : '选择图片' }}</button></div>
+              <div v-else class="background-heading"><span class="background-name"></span><button type="button" :disabled="saving || importingImage" @click="imageInput?.click()">{{ importingImage ? '正在处理…' : '选择图片' }}</button></div>
               <input ref="imageInput" class="background-file" type="file" accept="image/png,image/jpeg,image/webp" tabindex="-1" aria-label="底板图片文件" @change="chooseBackground" />
               <p v-if="imageError" class="settings-error" role="status">{{ imageError }}</p>
-              <p class="settings-help">每套底板带一套协调的主色与徽记颜色；图片底板沿用当前预设的主色。图库最多 {{ MAX_GALLERY }} 张，切换预设不会删除图片。支持 PNG、JPEG、WebP，图片保存在本机。</p>
+              <HelpTip>每套底板带一套协调的主色与徽记颜色；图片底板沿用当前预设的主色。图库最多 {{ MAX_GALLERY }} 张，切换预设不会删除图片。支持 PNG、JPEG、WebP，图片保存在本机。</HelpTip>
             </div>
             </template>
             <h3 class="section-heading">字体</h3>
@@ -422,11 +423,11 @@ function failureText(item: RenderFailure) {
               <div v-for="font in draft.appearance.customFonts" :key="font.id" class="setting-row font-file"><span :style="{ fontFamily: `'${font.family}'` }">{{ font.family }}<small>{{ font.file }} · {{ font.weight }}{{ font.style === 'italic' ? ' 斜体' : '' }}</small></span><button type="button" class="font-remove" :aria-label="`移除字体 ${font.file}`" :disabled="saving" @click="removeFont(font.id)"><AppIcon name="close" :size="13" /></button></div>
             </div>
             <input ref="fontInput" class="background-file" type="file" multiple accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2" tabindex="-1" aria-label="字体文件" @change="chooseFonts" />
-            <p v-if="fontStatus" class="settings-help" role="status">{{ fontStatus }}</p>
-            <p class="settings-help">阅读字体用于 Markdown 正文与阅读助手的回答；PDF 保持原排版。Anthropic Serif 已随应用内置；也可以导入其他字体文件，只保存在本机。</p>
-            <p v-if="isGlassStyle(draft.appearance.style)" class="settings-help">透明度仅影响侧栏、工具栏与面板，正文保持实色。系统开启「减少透明度」时自动使用实色。为了流畅：用预设底板时，侧栏、顶栏、阅读助手等大面板身后只有柔和的渐变，直接用玻璃底色、不做实时模糊（看不出差别）；模糊与折射作用在弹窗、菜单和页码胶囊上。用图片底板时所有玻璃完整生效，内容滚动或输出时折射会短暂停一下。</p>
-            <p v-else-if="draft.appearance.style === 'sketch'" class="settings-help">铅笔草稿的界面文字用龙藏体手写；回答字体只用于阅读助手的回答，Markdown 正文仍用阅读字体。手写字体均随应用内置（SIL OFL）。</p>
-            <p v-else class="settings-help">暖色极简用 Anthropic Serif 排标题与回答，界面用无衬线字；玻璃、底板等设置只在液态玻璃下生效。</p>
+            <HelpTip v-if="fontStatus" role="status">{{ fontStatus }}</HelpTip>
+            <HelpTip>阅读字体用于 Markdown 正文与阅读助手的回答；PDF 保持原排版。Anthropic Serif 已随应用内置；也可以导入其他字体文件，只保存在本机。</HelpTip>
+            <HelpTip v-if="isGlassStyle(draft.appearance.style)">透明度仅影响侧栏、工具栏与面板，正文保持实色。系统开启「减少透明度」时自动使用实色。为了流畅：用预设底板时，侧栏、顶栏、阅读助手等大面板身后只有柔和的渐变，直接用玻璃底色、不做实时模糊（看不出差别）；模糊与折射作用在弹窗、菜单和页码胶囊上。用图片底板时所有玻璃完整生效，内容滚动或输出时折射会短暂停一下。</HelpTip>
+            <HelpTip v-else-if="draft.appearance.style === 'sketch'">铅笔草稿的界面文字用龙藏体手写；回答字体只用于阅读助手的回答，Markdown 正文仍用阅读字体。手写字体均随应用内置（SIL OFL）。</HelpTip>
+            <HelpTip v-else>暖色极简用 Anthropic Serif 排标题与回答，界面用无衬线字；玻璃、底板等设置只在液态玻璃下生效。</HelpTip>
           </template>
           <template v-else-if="tab === 'reading'">
             <h3>PDF</h3>
@@ -437,7 +438,7 @@ function failureText(item: RenderFailure) {
             <label class="setting-check"><input v-model="draft.pdf.fitOnPanelOverflow" type="checkbox" aria-label="侧栏打开后页面超宽时适应宽度" /><span>侧栏打开后，仅在页面超宽时适应宽度</span></label>
             <label class="setting-check"><input v-model="draft.pdf.openAssistantOnCapture" type="checkbox" aria-label="PDF 框选后自动打开阅读助手" /><span>PDF 框选后自动打开阅读助手</span></label>
             </div>
-            <p class="settings-help">启用 AI 页的框选快捷提问后，优先显示选区旁的按钮。</p>
+            <HelpTip>启用 AI 页的框选快捷提问后，优先显示选区旁的按钮。</HelpTip>
             <h3 class="section-heading">Markdown</h3>
             <div class="settings-group">
             <label class="setting-row"><span>默认字号</span><span class="number-control"><input v-model.number="draft.markdown.fontSize" type="number" min="13" max="28" step="1" aria-label="Markdown 默认字号" /><span>px</span></span></label>
@@ -447,7 +448,7 @@ function failureText(item: RenderFailure) {
           <MemorySettings v-else-if="tab === 'memory'" @manage="emit('manage')" />
           <template v-else-if="tab === 'shortcuts'">
             <div class="shortcuts-heading"><h3>快捷键</h3><button class="text-action" @click="restoreAll">恢复全部默认</button></div>
-            <p class="settings-help">点击后录入按键，支持 F11；缩放也可按住 Ctrl 滚动鼠标录入。Esc 取消录入。</p>
+            <HelpTip>点击后录入按键，支持 F11；缩放也可按住 Ctrl 滚动鼠标录入。Esc 取消录入。</HelpTip>
             <div class="settings-group">
             <div v-for="item in SHORTCUTS" :key="item.action" class="shortcut-row"><label :for="`shortcut-${item.action}`">{{ item.label }}</label><input :id="`shortcut-${item.action}`" :value="recording === item.action ? '按下快捷键…' : shortcutLabel(draft.shortcuts[item.action])" :class="{ recording: recording === item.action }" readonly :aria-label="`${item.label}快捷键`" data-shortcut-capture @focus="startRecording(item.action)" @click="startRecording(item.action)" @keydown="record($event, item.action)" @wheel="recordWheel($event, item.action)" @blur="recording === item.action && (recording = null)" /><button @click="disable(item.action)" :aria-label="`禁用${item.label}快捷键`" :disabled="!draft.shortcuts[item.action]">禁用</button><button @click="restoreShortcut(item.action)" :aria-label="`恢复${item.label}默认快捷键`">默认</button></div>
             </div>
@@ -458,12 +459,12 @@ function failureText(item: RenderFailure) {
           <section v-if="ready && tab === 'updates' && render" class="quick-prompts-section render-section" aria-label="渲染与排障">
             <div class="quick-prompts-heading"><h3>渲染与排障</h3></div>
             <div class="settings-group"><label class="setting-check"><input :checked="render.graphite" type="checkbox" :disabled="saving" aria-label="Graphite 渲染" @change="setGraphite(($event.target as HTMLInputElement).checked)" /><span>Graphite 渲染（重启后生效）</span></label></div>
-            <p class="settings-help">{{ render.failures.length ? `页面进程最近出错 ${render.failures.length} 次，最近一次：${failureText(render.failures[0]!)}。` : '页面进程最近没有出过错。' }}</p>
+            <HelpTip>{{ render.failures.length ? `页面进程最近出错 ${render.failures.length} 次，最近一次：${failureText(render.failures[0]!)}。` : '页面进程最近没有出过错。' }}</HelpTip>
           </section>
           <AiSettings v-if="ready && aiVisited" v-show="tab === 'ai'" ref="aiSettings" embedded />
           <section v-if="ready && tab === 'ai'" class="quick-prompts-section avatar-section" aria-label="助手形象">
             <div class="quick-prompts-heading"><h3>助手形象</h3></div>
-            <p class="settings-help">显示在阅读助手的空白页。自定义图片支持 GIF、APNG、WebP 动图。</p>
+            <HelpTip>显示在阅读助手的空白页。自定义图片支持 GIF、APNG、WebP 动图。</HelpTip>
             <div class="avatar-grid" role="radiogroup" aria-label="助手形象">
               <button v-for="item in AVATARS.filter(item => item.id !== 'custom')" :key="item.id" type="button" role="radio" class="avatar-option" :aria-checked="draft.assistant.avatar.kind === item.id" :disabled="saving" @click="draft.assistant.avatar = { kind: item.id, image: draft.assistant.avatar.image }"><AssistantMark :kind="item.id" :size="44" /><span>{{ item.label }}</span></button>
               <button v-if="draft.assistant.avatar.image" type="button" role="radio" class="avatar-option" :aria-checked="draft.assistant.avatar.kind === 'custom'" :disabled="saving" @click="draft.assistant.avatar = { kind: 'custom', image: draft.assistant.avatar.image }"><AssistantMark kind="custom" :image="draft.assistant.avatar.image" :size="44" /><span>我的图片</span></button>
@@ -474,7 +475,7 @@ function failureText(item: RenderFailure) {
           </section>
           <section v-if="ready && tab === 'ai'" class="quick-prompts-section greeting-section" aria-label="空白页问候">
             <div class="quick-prompts-heading"><h3>空白页问候</h3></div>
-            <p class="settings-help">阅读助手空白页的大字问候，按当地时间随机挑一句，固定使用 Anthropic Serif。</p>
+            <HelpTip>阅读助手空白页的大字问候，按当地时间随机挑一句，固定使用 Anthropic Serif。</HelpTip>
             <div class="settings-group">
               <label class="setting-row"><span>问候样式</span><select v-model="draft.assistant.greeting.style" :disabled="saving" aria-label="问候样式"><option v-for="item in GREETING_STYLES" :key="item.id" :value="item.id">{{ item.label }}</option></select></label>
               <label v-if="draft.assistant.greeting.style === 'custom'" class="greeting-custom"><span>自定义问候，每行一句</span><textarea v-model="draft.assistant.greeting.custom" :disabled="saving" :maxlength="MAX_GREETING_CHARS" rows="4" aria-label="自定义问候，每行一句" placeholder="Fancy a cup of tea?&#10;月色真美&#10;Good morning" /></label>
@@ -488,12 +489,12 @@ function failureText(item: RenderFailure) {
           <section v-if="ready && tab === 'ai'" class="quick-prompts-section prediction-section" aria-label="猜你想问设置">
             <div class="quick-prompts-heading"><h3>猜你想问</h3></div>
             <div class="settings-group"><label class="setting-check"><input v-model="draft.assistant.predictQuestions" type="checkbox" :disabled="saving" aria-label="启用猜你想问" aria-describedby="predict-help" /><span>启用猜你想问</span></label><label class="setting-row"><span>问题水平</span><select v-model="draft.assistant.predictLevel" :disabled="saving || !draft.assistant.predictQuestions" aria-label="猜你想问的问题水平"><option v-for="item in PREDICT_LEVELS" :key="item.id" :value="item.id">{{ item.label }} · {{ item.note }}</option></select></label></div>
-            <p id="predict-help" class="settings-help">输入框为空时，根据当前页、选区和最近对话推荐下一个问题。按 Tab 或回车采用，Esc 收起。推荐使用当前服务商的小模型或最低思考强度，会消耗额度；关闭后停止推荐请求并清除已有建议。保存后生效。</p>
+            <HelpTip id="predict-help">输入框为空时，根据当前页、选区和最近对话推荐下一个问题。按 Tab 或回车采用，Esc 收起。推荐使用当前服务商的小模型或最低思考强度，会消耗额度；关闭后停止推荐请求并清除已有建议。保存后生效。</HelpTip>
           </section>
           <section v-if="ready && tab === 'ai'" class="quick-prompts-section capture-questions-section" aria-label="框选快捷提问设置">
             <div class="quick-prompts-heading"><h3>框选快捷提问</h3><button type="button" class="text-action" :disabled="saving" @click="restoreCaptureQuestions" aria-label="恢复框选提问默认">恢复默认</button></div>
             <div class="settings-group"><label class="setting-check"><input v-model="draft.pdf.quickAskOnCapture" type="checkbox" :disabled="saving" aria-label="PDF 框选后显示快捷提问" aria-describedby="capture-quick-ask-help" /><span>PDF 框选后聚焦选区并弹出快捷提问</span></label></div>
-            <p id="capture-quick-ask-help" class="settings-help">框选后选区以外的画面会虚化，选区旁弹出思考气泡；按气泡旁的数字键即可发送。「提问概括」显示在气泡上，「提问内容」是实际发送给 AI 的提示词。</p>
+            <HelpTip id="capture-quick-ask-help">框选后选区以外的画面会虚化，选区旁弹出思考气泡；按气泡旁的数字键即可发送。「提问概括」显示在气泡上，「提问内容」是实际发送给 AI 的提示词。</HelpTip>
             <TransitionGroup name="editor-list" tag="div" class="capture-question-list" @before-leave="retireEditor">
               <section v-for="(item, index) in draft.assistant.captureQuestions" :key="captureKeys[index]" class="quick-prompt-editor capture-question-editor settings-group" :aria-labelledby="`capture-question-heading-${index}`">
                 <div class="quick-prompt-heading"><h4 :id="`capture-question-heading-${index}`"><kbd class="capture-key">{{ index + 1 }}</kbd>提问 {{ index + 1 }}</h4><button type="button" :disabled="saving || draft.assistant.captureQuestions.length <= CAPTURE_QUESTION_MIN" @click="removeCaptureQuestion(index)" :aria-label="`删除框选提问 ${index + 1}`">删除</button></div>

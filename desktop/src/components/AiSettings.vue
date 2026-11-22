@@ -143,21 +143,19 @@ defineExpose({ save, hasChanges: () => edited.value })
 <template>
   <section class="ai-settings" :class="{ embedded }" aria-label="AI 设置" @input="markEdited" @change="markEdited">
     <div v-if="!embedded" class="settings-heading"><strong>AI 设置</strong><button class="text-button" @click="emit('close')">返回</button></div>
-    <h4 class="step"><i>1</i>连接服务<small>填 API Key，或用本机 Codex 的登录</small></h4>
+    <h4 class="step"><i>1</i>连接服务</h4>
     <div class="links">
       <details v-for="item in (PROVIDERS as any[])" :key="item.id" class="link" :class="{ on: connected(item.id) }">
         <summary><i class="link-dot" aria-hidden="true"></i><b>{{ item.name }}</b><small>{{ item.id === 'codex' ? (codexReady ? '已登录' : refreshing ? '检查中…' : codexCheck.state === 'failed' ? '未连上' : '未检查') : keys[item.id] ? '已填密钥' : local(item.id) ? '本机服务' : '未连接' }}</small></summary>
         <template v-if="item.id === 'codex'">
-          <p class="settings-note">沿用本机 Codex 的登录，不用填 API Key。装了 Codex 桌面版或 CLI 并登录过就行。</p>
-          <button class="secondary-button" :disabled="refreshing" @click="refreshNative">{{ refreshing ? '检查中…' : '检查登录并读取模型' }}</button>
+          <button class="secondary-button" :disabled="refreshing" data-tip="沿用本机 Codex 的登录，不用填 API Key。装了 Codex 桌面版或 CLI 并登录过就行" @click="refreshNative">{{ refreshing ? '检查中…' : '检查登录并读取模型' }}</button>
           <p v-if="codexStatus" class="settings-note">{{ codexStatus }}</p>
           <p v-if="timingLine" class="settings-note">{{ timingLine }} <button type="button" class="text-button" @click="copyTimings">{{ timingCopied ? '已复制' : '复制最近 12 次' }}</button></p>
         </template>
         <template v-else>
-          <label>API Key<input v-model="keys[item.id]" :aria-label="`${item.name} API Key`" type="password" autocomplete="off" placeholder="加密保存在本机" @input="keyEdited.add(item.id)" /></label>
+          <label>API Key<input v-model="keys[item.id]" :aria-label="`${item.name} API Key`" type="password" autocomplete="off" :placeholder="item.custom ? '加密保存在本机；本机服务可留空' : '加密保存在本机'" @input="keyEdited.add(item.id)" /></label>
           <label v-if="item.custom">接口协议<select v-model="connections[item.id]!.protocol" aria-label="接口协议"><option v-for="protocol in PROTOCOLS" :key="protocol.id" :value="protocol.id">{{ protocol.name }}</option></select></label>
           <label>API 地址<input v-model="connections[item.id]!.baseUrl" :aria-label="`${item.name} API 地址`" type="url" :placeholder="item.custom ? 'https://openrouter.ai/api/v1 或 http://localhost:11434/v1' : item.baseUrl" /></label>
-          <p v-if="item.custom" class="settings-note">本机服务（Ollama、LM Studio）可以不填密钥。</p>
         </template>
       </details>
     </div>

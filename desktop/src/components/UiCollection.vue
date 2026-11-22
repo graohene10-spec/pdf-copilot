@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { offerSpaced } from '../ui/hints'
+offerSpaced('collection-pick', ['拖动'], '框选，Delete 删除')
 // Intelligent UI 合集：文档库里的一个分类（和「我的收藏」并列），钉住的 PDF 卡片、记入文档的 Markdown 释义里带界面的那些，按书归在一起。
 // 每一个都照样能操作；点页码跳回原处；单击标题选中（Ctrl / Shift 多选），在空白处按住左键拖出框也能选，Delete 删除。
 // 删除是真删：文档里那张卡片 / 那条释义也一起没了。
@@ -100,7 +102,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', keydown, true))
 <template>
   <div class="ui-collection">
     <div class="uc-bar">
-      <span class="uc-hint">单击标题选中 · 拖动框选 · Delete 删除</span>
+      <span class="uc-hint"></span>
       <button v-if="selected.size" type="button" class="uc-remove" @click="askRemove(chosen())"><AppIcon name="trash" :size="14" />删除所选 {{ selected.size }}</button>
     </div>
     <Transition name="uc-confirm"><div v-if="confirming" class="uc-confirm" role="alertdialog">
@@ -108,7 +110,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', keydown, true))
       <button type="button" class="uc-danger" @click="remove">删除</button><button type="button" @click="confirming = null">取消</button>
     </div></Transition>
     <div ref="list" class="uc-list" @pointerdown.stop="startBand">
-      <p v-if="!shown.length" class="uc-empty">{{ query ? `没有和「${query}」相关的 Intelligent UI。` : '还没有。PDF 里钉住的、Markdown 里记入文档的解释，只要带 Intelligent UI，都会收在这里。' }}</p>
+      <p v-if="!shown.length" class="uc-empty">{{ query ? `没有和「${query}」相关的 Intelligent UI。` : '还没有。' }}</p>
       <section v-for="group in groups" :key="group.doc" class="uc-group">
         <h3><AppIcon name="book" :size="14" />{{ group.name }}<span>{{ group.list.length }}</span></h3>
         <TransitionGroup tag="div" class="uc-grid" name="uc-item" appear>

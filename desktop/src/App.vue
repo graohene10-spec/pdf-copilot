@@ -2229,7 +2229,7 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
           <button v-else :class="{ selected: groupFilter === group.id, picked: pickedGroups.has(group.id) }" :data-group-id="group.id" @click="groupClick(group.id, $event)" @dblclick="editGroup(group.id, group.name)"><AppIcon name="folder" :size="16" />{{ group.name }}<span>{{ groupCount(group.id) }}</span></button>
         </template>
         <form v-if="groupEditing === 'new'" class="group-edit" @submit.prevent="commitGroup"><input v-model="groupName" maxlength="40" placeholder="分组名称，回车确定" aria-label="新分组的名称" @vue:mounted="({ el }: any) => el.focus()" @blur="commitGroup" @keydown.esc.stop="groupEditing = ''" /></form>
-        <p v-else-if="!groups.length" class="tag-empty">点 + 新建，右键文档放进分组。</p>
+        <p v-else-if="!groups.length" class="tag-empty" data-tip="点 + 新建，右键文档放进分组">还没有分组</p>
       </nav>
       <div class="tag-heading"><p class="sidebar-label">书签<span v-if="bookmarkTotal" class="mark-total">{{ bookmarkTotal }}</span></p><AppIcon name="bookmark" :size="14" /></div>
       <nav ref="markNav" class="mark-nav" aria-label="全部书签">
@@ -2237,7 +2237,7 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
           <p class="mark-book" :data-tip="`${group.doc.name} · 按住拖动可以调整顺序`">{{ group.doc.name.replace(/\.(pdf|md|markdown)$/i, '') }}</p>
           <button v-for="item in group.marks" :key="item.mark.id" type="button" class="mark-row" :class="{ picked: pickedMarks.has(markKey(group.doc.id, item.mark.id)) }" :data-key="markKey(group.doc.id, item.mark.id)" :data-tip="`${item.art.name} · ${item.where}`" @click="markClick(group.doc, item.mark, $event)" @contextmenu.prevent.stop="markMenu(group.doc, item.mark, $event)"><svg class="mark-art" viewBox="0 0 96 40" preserveAspectRatio="xMaxYMid slice" aria-hidden="true" v-html="item.art.svg" /><small>{{ item.where }}</small><span class="mark-name">{{ item.mark.name }}</span></button>
         </section>
-        <p v-if="!bookmarkGroups.length" class="tag-empty">在书里按 {{ shortcut('bookmark') || '右键' }} 留书签，都会收在这里。</p>
+        <p v-if="!bookmarkGroups.length" class="tag-empty" :data-tip="`在书里按 ${shortcut('bookmark') || '右键'} 留书签`">还没有书签</p>
       </nav>
       <div class="sidebar-spacer"></div>
       <div v-if="effectiveAppearance.style === 'sketch'" class="sidebar-doodle" aria-hidden="true"></div>

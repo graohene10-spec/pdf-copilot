@@ -47,7 +47,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', outside, true)
 
 <template>
   <section ref="panel" class="split-picker" :style="style" role="dialog" aria-label="并排阅读" data-glass-interactive="panel" @keydown="keydown">
-    <header><span class="split-picker-mark"><AppIcon name="split-add" :size="16" /></span><div><strong>并排阅读</strong><small>{{ full ? `最多同时并排 ${limit} 份文档` : '选择一份文档，放在当前文档右侧' }}</small></div></header>
+    <header><span class="split-picker-mark"><AppIcon name="split-add" :size="16" /></span><div><strong>并排阅读</strong><small>{{ full ? `最多同时并排 ${limit} 份文档` : '' }}</small></div></header>
     <label class="split-picker-search"><AppIcon name="search" :size="14" /><input ref="input" v-model="query" type="text" placeholder="搜索文档" aria-label="搜索要并排的文档" /></label>
     <div class="split-picker-list" role="listbox" aria-label="可并排的文档">
       <template v-for="group in groups" :key="group.label">
