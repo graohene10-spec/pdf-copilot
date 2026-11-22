@@ -2334,7 +2334,7 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
       <div v-else-if="removeTarget" class="dialog-backdrop" @click.self="removeTarget = null"><section class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="remove-title"><div class="dialog-icon"><AppIcon name="trash" :size="24" /></div><h2 id="remove-title">从文档库移除？</h2><p>「{{ removeTarget.name }}」的阅读记录与标签会被移除，原文件仍保留在电脑上。</p><div class="dialog-actions"><button @click="removeTarget = null">取消</button><button class="danger-button" @click="removeDocument()">移除文档</button></div></section></div>
     </Transition>
     <Transition name="settings-pop">
-      <SettingsDialog v-if="settingsOpen" :initial-tab="settingsTab" @close="settingsOpen = false" @ai-saved="aiSettingsSaved" @tour="openTour" />
+      <SettingsDialog v-if="settingsOpen" :initial-tab="settingsTab" @close="settingsOpen = false" @ai-saved="aiSettingsSaved" @tour="openTour" @manage="settingsOpen = false; managerOpen = true" />
     </Transition>
     <ConversationManager v-if="managerOpen" :documents="managerBooks" @close="managerOpen = false" @open-conversation="openConversationAt" @open-document="openDocumentById" @notify="notify" />
     <TourPlayer v-if="tourOpen" :start-full="tourFull" @close="tourOpen = false" />

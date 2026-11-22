@@ -10,9 +10,10 @@ import { importFontFiles, forgetFontFile, registerCustomFonts } from '../ui/cust
 import { vLiquidSelection } from '../ui/liquid-selection'
 import { useSettings, PREDICT_LEVELS, defaultPreferences, normalizePreferences, preferenceErrors, importBackgroundImage, defaultCaptureQuestions, newCaptureQuestion, quickPromptLabelLength, limitQuickPromptLabel, QUICK_PROMPT_LABEL_LIMIT, QUICK_PROMPT_QUESTION_LIMIT, CAPTURE_QUESTION_MIN, CAPTURE_QUESTION_MAX, BACKDROPS, UI_STYLES, isGlassStyle, SKETCH_ANSWER_FONTS, AVATARS, GREETING_STYLES, GLASS_LEGIBILITY, GLASS_TINTS, MAX_GREETING_CHARS, MAX_CUSTOM_FONTS, fontChoices, MAX_AVATAR_CHARS, validAvatarImage, UI_FONTS, READING_FONTS, MAX_GALLERY, SHORTCUTS, DEFAULT_SHORTCUTS, shortcutLabel, shortcutFromEvent, shortcutFromWheelEvent, type AppPreferences, type BackdropPreset, type BackgroundImage, type ShortcutAction } from '../settings'
 
-type Tab = 'appearance' | 'reading' | 'shortcuts' | 'ai' | 'updates'
+type Tab = 'appearance' | 'reading' | 'shortcuts' | 'ai' | 'memory' | 'updates'
 const props = withDefaults(defineProps<{ initialTab?: Tab }>(), { initialTab: 'appearance' })
-const emit = defineEmits<{ close: []; saved: [value: AppPreferences]; 'ai-saved': [value: any]; tour: [] }>()
+const emit = defineEmits<{ close: []; saved: [value: AppPreferences]; 'ai-saved': [value: any]; tour: []; manage: [] }>()
+const MemorySettings = defineAsyncComponent(() => import('./MemorySettings.vue'))
 const AiSettings = defineAsyncComponent(() => import('./AiSettings.vue'))
 const UpdateSettings = defineAsyncComponent(() => import('./UpdateSettings.vue'))
 const shared = useSettings()
@@ -53,7 +54,7 @@ const errors = computed(() => preferenceErrors(draft.value))
 const zoomMode = computed({ get: () => draft.value.pdf.initialZoom === 'fit-width' ? 'fit-width' : 'custom', set: value => { draft.value.pdf.initialZoom = value === 'fit-width' ? 'fit-width' : 100 } })
 const tabs: { id: Tab; label: string; icon: string }[] = [
   { id: 'appearance', label: '外观', icon: 'sun' }, { id: 'reading', label: '阅读', icon: 'book' },
-  { id: 'shortcuts', label: '快捷键', icon: 'settings' }, { id: 'ai', label: 'AI', icon: 'sparkle' },
+  { id: 'shortcuts', label: '快捷键', icon: 'settings' }, { id: 'ai', label: 'AI', icon: 'sparkle' }, { id: 'memory', label: '记忆', icon: 'memory' },
   { id: 'updates', label: '更新', icon: 'import' },
 ]
 onMounted(async () => {
@@ -443,6 +444,7 @@ function failureText(item: RenderFailure) {
             <label class="setting-row"><span>内容宽度</span><span class="number-control"><input v-model.number="draft.markdown.contentWidth" type="number" min="600" max="1400" step="20" aria-label="Markdown 内容宽度" /><span>px</span></span></label>
             </div>
           </template>
+          <MemorySettings v-else-if="tab === 'memory'" @manage="emit('manage')" />
           <template v-else-if="tab === 'shortcuts'">
             <div class="shortcuts-heading"><h3>快捷键</h3><button class="text-action" @click="restoreAll">恢复全部默认</button></div>
             <p class="settings-help">点击后录入按键，支持 F11；缩放也可按住 Ctrl 滚动鼠标录入。Esc 取消录入。</p>

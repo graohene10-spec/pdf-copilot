@@ -7,7 +7,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'v
 import AppIcon from './AppIcon.vue'
 import { library } from '../sdk'
 import { booksReady, conversationBooks, conversationBundle, conversations, deleteConversation, forgetBook, loadConversations, memorizeNow, moveConversation, rememberBook, renameConversation, restoreConversations, setConversationMemory, type ChatState } from '../ai/workspace'
-import { forgetItem, memory, memoryMode, memoryReady, restoreMemory, type MemoryMode } from '../ai/memory'
+import { editItem, forgetItem, memory, memoryMode, memoryReady, restoreMemory, type MemoryMode } from '../ai/memory'
 
 type Book = { id: string; title: string; kind: string }
 type Root = Book & { gone: boolean; list: ChatState[] }
@@ -357,6 +357,10 @@ async function organize() {
   say(remembered.value > had ? `整理出 ${remembered.value - had} 条记忆` : '没有整理出内容。检查一下 AI 设置里阅读助手用的服务。')
 }
 const lit = ref('')
+// 右边一栏里正在改哪一条记忆。
+const memEdit = ref(''), memText = ref('')
+function startMemEdit(row: { talk: { id: string }; index: number; item: string }) { memEdit.value = `${row.talk.id}:${row.index}`; memText.value = row.item; void nextTick(() => document.querySelector<HTMLInputElement>('.cm-mem-edit')?.focus()) }
+function saveMemEdit(row: { talk: { id: string }; index: number; item: string }) { if (memEdit.value !== `${row.talk.id}:${row.index}`) return; memEdit.value = ''; const next = memText.value.trim(); if (next && next !== row.item) editItem(row.talk.id, row.index, next) }
 let litTimer: ReturnType<typeof setTimeout> | undefined
 function reveal(id: string) {
   const { documentId } = split(id)
@@ -502,11 +506,11 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey, true); clea
       </svg>
       <header class="cm-side-head"><h3>记忆</h3><b>{{ remembered }}</b><span>条</span></header>
       <div class="cm-shelf">
-        <p v-if="ready && !remembered" class="cm-side-note">还没有记忆。对话答完后，会把学到的内容整理成几行记在这里。</p>
+        <p class="cm-side-note">一段对话答完，助手把你学了什么、掌握得怎样整理成几行记在这里；下次提问时它先看这些，决定从哪讲起、讲多细。<template v-if="ready && !remembered">现在还没有。</template></p>
         <button v-if="pending.length" type="button" class="cm-organize" :disabled="!!organizing" @click="organize"><AppIcon name="memory" :size="15" />{{ organizing ? `正在整理 ${organizing}` : `整理 ${pending.length} 段还没整理的对话` }}</button>
         <section v-for="group in groups" :key="group.root.id" class="cm-group">
           <h4>{{ group.root.title }}</h4>
-          <ul><li v-for="row in group.rows" :key="row.id + row.item" :class="{ on: lit === row.id }" :data-tip="`来自「${row.talk.title || '新对话'}」 · ${memory.entries[row.talk.id]?.scope === 'book' ? '只留在本书' : '所有书共用'}`" @click="reveal(row.id)"><span><b>{{ parts(row.item)[0] }}</b><em v-if="parts(row.item)[1]">{{ parts(row.item)[1] }}</em></span><button type="button" class="cm-act" aria-label="忘掉这一条" data-tip="忘掉这一条" @click.stop="forget(row.talk.id, row.index)"><AppIcon name="close" :size="11" /></button></li></ul>
+          <ul><li v-for="row in group.rows" :key="row.id + row.item" :class="{ on: lit === row.id }" :data-tip="`来自「${row.talk.title || '新对话'}」 · ${memory.entries[row.talk.id]?.scope === 'book' ? '只留在本书' : '所有书共用'}`" @click="reveal(row.id)"><input v-if="memEdit === `${row.talk.id}:${row.index}`" v-model="memText" class="cm-mem-edit" maxlength="80" aria-label="修改这条记忆" @click.stop @keydown.enter.prevent="!$event.isComposing && $event.keyCode !== 229 && saveMemEdit(row)" @keydown.esc.prevent.stop="memEdit = ''" @blur="saveMemEdit(row)" /><span v-else><b>{{ parts(row.item)[0] }}</b><em v-if="parts(row.item)[1]">{{ parts(row.item)[1] }}</em></span><button type="button" class="cm-act" aria-label="修改这一条" data-tip="修改这一条" @click.stop="startMemEdit(row)"><AppIcon name="edit" :size="11" /></button><button type="button" class="cm-act" aria-label="忘掉这一条" data-tip="忘掉这一条" @click.stop="forget(row.talk.id, row.index)"><AppIcon name="close" :size="11" /></button></li></ul>
         </section>
       </div>
     </aside>
@@ -701,6 +705,7 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey, true); clea
 .cm-group ul{margin:0;padding:0;list-style:none}
 .cm-group li{display:flex;align-items:center;gap:4px;min-height:30px;padding:3px 2px 3px 10px;border-left:2px solid transparent;font-size:12.5px;line-height:1.5;cursor:pointer}
 .cm-group li span{flex:1;min-width:0;overflow-wrap:anywhere}
+.cm-mem-edit{flex:1;min-width:0;height:26px;padding:0 6px;border:1.5px solid var(--ink);border-radius:0;background:var(--surface,var(--canvas));color:var(--ink);font:inherit;outline:0}
 .cm-group li:hover,.cm-group li.on{border-left-color:var(--cm-red);background:color-mix(in srgb,var(--ink) 6%,transparent)}
 
 /* 停在对话上时的预览：最后一轮问答。 */
