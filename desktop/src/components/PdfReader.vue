@@ -237,10 +237,25 @@ function releaseViewport() {
   frozenViewport = undefined
   for (const property of ['left', 'top', 'right', 'bottom', 'width', 'height']) container.value?.style.removeProperty(property)
 }
+// 阅读区变窄时为了不超出而自动缩小的：记下缩之前读者自己的比例，变宽以后回到它（放不下就尽量大）。
+// 读者自己再调一次比例，这个记录就作废。
+let wantedScale: number | null = null
+// 读者定下那个比例时阅读区有多宽：回到这么宽，就原样回到那个比例（哪怕它本来就比页宽大）。
+let wantedRoom = 0
 function overflowScale() {
   const active = viewer?.active
   if (!active?.ready) return null
-  return shrinkToFitScale(active.slot.getBoundingClientRect().width, readingWidth(), viewer.displayScale)
+  const width = active.slot.getBoundingClientRect().width, room = readingWidth(), now = viewer.displayScale
+  if (wantedScale !== null && wantedScale > now * (1 + .000001)) {
+    if (wantedRoom && room >= wantedRoom - 2) { const back = wantedScale; wantedScale = null; return back }
+    // 按原来的比例量一遍：放得下就回到原来的，放不下取放得下的最大值。
+    const target = shrinkToFitScale(width * wantedScale / now, room, wantedScale) ?? wantedScale
+    if (target >= wantedScale * (1 - .000001)) { const back = wantedScale; wantedScale = null; return back }
+    return Math.abs(target - now) < .000001 ? null : target
+  }
+  const next = shrinkToFitScale(width, room, now)
+  if (next !== null && wantedScale === null) { wantedScale = now; wantedRoom = Math.max(zoomRoom, lastAvailableWidth || 0) }
+  return next
 }
 async function renderZoom(value: number | null, deferLayout = false) {
   if (!active) return
@@ -401,8 +416,9 @@ async function goToPage(number: number, rect?: any) {
     transientMarkers.add(clear)
   }
 }
+let zoomRoom = 0
 async function zoom(value: number | null) {
-  pendingPanelFit = false
+  pendingPanelFit = false; wantedScale = null; zoomRoom = readingWidth()
   if (panelResizeHeld || outlineResizeHeld) suppressPanelFit = true
   fitMode = value === null; fitting.value = fitMode
   releaseViewport()
@@ -532,7 +548,7 @@ function holdPanelResize(held: boolean, fitOverflow = false) {
   if (!active) return
   if (held && !panelResizeHeld && !outlineResizeHeld) suppressPanelFit = false
   panelResizeHeld = held
-  if (fitOverflow && props.sidebarFitEnabled && !suppressPanelFit) pendingPanelFit = true
+  if ((fitOverflow || wantedScale !== null) && props.sidebarFitEnabled && !suppressPanelFit) pendingPanelFit = true
   clearTimeout(layoutTimer)
   if (held) { viewer?.cancelDeferredZoom?.(); startFollow(); return }
   const followed = stopFollow()
@@ -551,7 +567,7 @@ function holdOutlineResize(held: boolean, fitOverflow = false) {
   if (!active) return
   if (held && !panelResizeHeld && !outlineResizeHeld) suppressPanelFit = false
   outlineResizeHeld = held
-  if (fitOverflow && props.sidebarFitEnabled && !suppressPanelFit) pendingPanelFit = true
+  if ((fitOverflow || wantedScale !== null) && props.sidebarFitEnabled && !suppressPanelFit) pendingPanelFit = true
   clearTimeout(layoutTimer)
   if (held) { freezeViewport(); void nextTick(positionFrozenViewport); preparePanelLayout() }
   else { positionFrozenViewport(); if (outlineOpen.value && props.sidebarFitEnabled && !suppressPanelFit) pendingPanelFit = true; finishPanelLayout() }
@@ -817,7 +833,7 @@ function suspend() {
   capture.value = false
   viewer?.suspend()
   panelResizeHeld = outlineResizeHeld = false
-  pendingPanelFit = false; prepareScheduled = false; suppressPanelFit = false
+  pendingPanelFit = false; prepareScheduled = false; suppressPanelFit = false; wantedScale = null
   releaseViewport(); releaseCommitWaiters()
 }
 // 屏幕缩放比例变了（窗口拖到另一块屏幕、在系统里改了缩放）：页面是按原来的倍率画的，得按新的重画，不然是糊的。
@@ -862,7 +878,7 @@ async function resume() {
   if (indexedText.size) emit('text', collectedText())
   if (cachedView?.scale != null && Math.abs(cachedView.scale - viewer.displayScale) > .000001) await renderZoom(cachedView.scale, true)
   if (!active || visible !== activation) return
-  pendingPanelFit = props.sidebarFitEnabled && readingWidth() < lastAvailableWidth - .5
+  pendingPanelFit = props.sidebarFitEnabled && (readingWidth() < lastAvailableWidth - .5 || wantedScale !== null)
   await refreshLayout()
   if (!active || visible !== activation) return
   viewer.updateWindow(viewer.currentPage)

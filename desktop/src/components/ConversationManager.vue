@@ -496,7 +496,9 @@ const vLinks = {
 }
 
 function onKey(event: KeyboardEvent) {
-  if ((event.target as HTMLElement).closest?.('input')) return
+  // 输入框里的 Ctrl + Z 是它自己的撤销。例外：让助手改记忆的那一格空着的时候（刚改完，焦点还在里面），撤的是刚才那次修改。
+  const field = (event.target as HTMLElement).closest?.('input') as HTMLInputElement | null
+  if (field && !(field.matches('.cm-mem-ask input') && !field.value && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z')) return
   // 右边一栏里停着的那条记忆自己处理 Delete（忘掉它），不去删树上选中的对话。
   if (event.key === 'Delete' && (event.target as HTMLElement).closest?.('.cm-shelf')) return
   const command = event.ctrlKey || event.metaKey, letter = event.key.toLowerCase()
