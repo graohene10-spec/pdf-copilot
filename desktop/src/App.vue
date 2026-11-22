@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, shallowRef, computed, watch, onMounted, onBeforeUnmount, nextTick, defineAsyncComponent, toRaw, triggerRef } from 'vue'
+import { ref, shallowRef, computed, watch, onMounted, onBeforeUnmount, nextTick, defineAsyncComponent, toRaw, triggerRef, type Directive } from 'vue'
 import { library, isDesktop, importDroppedDocuments, renderGuard } from './sdk'
 import { groups, members, groupFilter, currentGroup, loadGroups, createGroup, renameGroup, removeGroup, assignGroup, snapshotGroups, restoreGroups } from './library/groups'
 import type { Doc } from './sdk/types'
@@ -26,7 +26,7 @@ import { translator, translate, type Translation } from './ai/translate'
 import { loadTour } from './tour/lessons'
 import { explainCards, closeCard, closeLooseCards, explainTarget, runExplain, rerunExplain, shownNotes, uiEntries, uiReady, uiVersion, type Explain, type UiEntry } from './ai/explain'
 import { looksMathy, selectionImage } from './reader/selection-image'
-import { currentHint, dismissHint, hintLearned, offerHint } from './ui/hints'
+import { currentHint, dismissHint, hintLearned, offerHint, offerSpaced } from './ui/hints'
 import ExplainCard from './components/ExplainCard.vue'
 import SelectionTranslation from './components/SelectionTranslation.vue'
 import { startAutoCheck, stopAutoCheck } from './ui/updater'
@@ -203,6 +203,31 @@ const detailsDoc = computed(() => detailsId.value ? documents.value.find(item =>
 const removeTarget = ref<Doc | null>(null)
 /** 文档库里一次移除多份（框选后的批量操作）。 */
 const removeBatch = ref<Doc[] | null>(null)
+// 对话框打开时把焦点放进来，Tab 只在里面转；关上后焦点回到打开它之前的那个控件（从一个对话框换到另一个时，回到最早的那个）。
+const FOCUSABLE = 'button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), a[href], [tabindex]:not([tabindex="-1"])'
+type Trapped = HTMLElement & { trapReturn?: HTMLElement | null; trapKey?: (event: KeyboardEvent) => void }
+const vTrap: Directive<Trapped, string | undefined> = {
+  mounted(el, binding) {
+    const from = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const host = from?.closest<Trapped>('[data-trap]')
+    el.trapReturn = host && host !== el ? host.trapReturn : from
+    el.dataset.trap = ''
+    el.trapKey = event => {
+      if (event.key !== 'Tab') return
+      const list = [...el.querySelectorAll<HTMLElement>(FOCUSABLE)]
+      if (!list.length) { event.preventDefault(); return }
+      const first = list[0]!, last = list[list.length - 1]!, now = document.activeElement
+      if (event.shiftKey ? now === first || now === el : now === last) { event.preventDefault(); (event.shiftKey ? last : first).focus() }
+    }
+    el.addEventListener('keydown', el.trapKey)
+    void nextTick(() => { if (el.isConnected) (el.querySelector<HTMLElement>(binding.value || FOCUSABLE) || el).focus({ preventScroll: true }) })
+  },
+  beforeUnmount(el) {
+    if (el.trapKey) el.removeEventListener('keydown', el.trapKey)
+    const now = document.activeElement
+    if ((!now || now === document.body || el.contains(now)) && el.trapReturn?.isConnected) el.trapReturn.focus({ preventScroll: true })
+  },
+}
 const theme = ref('light')
 const systemTheme = window.matchMedia('(prefers-color-scheme: dark)')
 const tagInput = ref('')
@@ -356,6 +381,8 @@ async function starPicked() {
   catch (error) { notify(reason(error)) }
 }
 const batchTag = ref<string | null>(null)
+// 点到别处：写了字就照样加上，没写就收起——不把打好的标签悄悄丢掉。
+function blurBatchTag() { if (document.hasFocus() && batchTag.value !== null) void tagPicked() }
 async function tagPicked() {
   const value = (batchTag.value || '').trim().slice(0, 40)
   if (!value) { batchTag.value = null; return }
@@ -455,17 +482,31 @@ const groupEditing = ref('')
 const groupName = ref('')
 /** 新建分组后要放进去的书。 */
 let groupPending: string[] = []
-function editGroup(id: string, name = '', pending: string[] = []) { groupEditing.value = id; groupName.value = name; groupPending = pending; if (id === 'new' && !sidebarOpen.value) sidebarOpen.value = true }
-async function commitGroup() {
+function editGroup(id: string, name = '', pending: string[] = []) { groupEditing.value = id; groupName.value = name; groupPending = pending; if (id === 'new' && !sidebarOpen.value) sidebarOpen.value = true; if (id !== 'new') hintLearned('group-rename') }
+/** 把键盘焦点放回某个分组按钮上（回车 / Esc 结束输入后，输入框没了，焦点不该掉到页面最上面）。 */
+function focusGroup(id: string) { void nextTick(() => sidebarEl.value?.querySelector<HTMLElement>(`[data-group-id="${CSS.escape(id)}"]`)?.focus({ preventScroll: true })) }
+async function commitGroup(keyboard = false) {
   const id = groupEditing.value, name = groupName.value.trim(), pending = groupPending
   if (!id) return
   groupEditing.value = ''; groupPending = []
-  if (!name) return
+  if (!name) { if (keyboard && id !== 'new') focusGroup(id); return }
   try {
-    if (id === 'new') { const group = await createGroup(name); if (group && pending.length) { await assignGroup(pending, group.id); notify(`已把 ${pending.length} 份文档放进「${group.name}」。`) } }
-    else await renameGroup(id, name)
+    if (id === 'new') { const group = await createGroup(name); if (group && pending.length) { await assignGroup(pending, group.id); notify(`已把 ${pending.length} 份文档放进「${group.name}」。`) } if (group && keyboard) focusGroup(group.id) }
+    else { await renameGroup(id, name); if (keyboard) focusGroup(id) }
   } catch (error) { notify(reason(error)) }
 }
+function cancelGroup() { const id = groupEditing.value; groupEditing.value = ''; groupPending = []; if (id && id !== 'new') focusGroup(id) }
+// 点到别处：新建时没写名字就当没开过，改名时名字没变也不写库；写了新名字才保存。切到别的窗口不算点到别处，草稿留着。
+function blurGroup() {
+  const id = groupEditing.value, name = groupName.value.trim()
+  if (!id || !document.hasFocus()) return
+  if (!name || (id !== 'new' && name === groups.value.find(item => item.id === id)?.name)) { groupEditing.value = ''; groupPending = []; return }
+  void commitGroup()
+}
+// 「+」开着输入框时再点一下是收起：按下时输入框先失焦收起，紧跟着的这一下点击就别再打开它。
+let groupAddShut = false
+function groupAddDown() { groupAddShut = groupEditing.value === 'new' }
+function toggleNewGroup() { if (groupAddShut) { groupAddShut = false; return } editGroup('new') }
 function groupCount(id: string) { return documents.value.filter(doc => members.value[doc.id] === id).length }
 function moveToGroup(ids: string[], group: string) { void assignGroup(ids, group).then(() => { const name = groups.value.find(item => item.id === group)?.name; notify(name ? `已把 ${ids.length} 份文档放进「${name}」。` : `已把 ${ids.length} 份文档移出分组。`) }).catch(error => notify(reason(error))) }
 function groupMenuItems(ids: string[]) {
@@ -1042,21 +1083,40 @@ function sidePointerDown(event: PointerEvent) {
   const additive = event.ctrlKey || event.metaKey
   const keepMarks = additive ? new Set(pickedMarks.value) : new Set<string>(), keepGroups = additive ? new Set(pickedGroups.value) : new Set<string>()
   markDragged = false
+  // 每帧最多算一次；各行的位置拖动开始时量一次，侧栏里滚动了再重新量。
+  let frame = 0, pointer = { x: sx, y: sy }
+  let layout: { bounds: DOMRect; marks: [string, DOMRect][]; folders: [string, DOMRect][] } | undefined
+  const forget = () => { layout = undefined }
+  const step = () => {
+    frame = 0
+    layout ||= {
+      bounds: host.getBoundingClientRect(),
+      marks: [...host.querySelectorAll<HTMLElement>('.mark-row')].map(item => [item.dataset.key!, item.getBoundingClientRect()]),
+      folders: [...host.querySelectorAll<HTMLElement>('[data-group-id]')].map(item => [item.dataset.groupId!, item.getBoundingClientRect()]),
+    }
+    const { bounds } = layout
+    const x = Math.min(bounds.right, Math.max(bounds.left, pointer.x)), y = Math.min(bounds.bottom, Math.max(bounds.top, pointer.y))
+    const band = { left: Math.min(x, sx), top: Math.min(y, sy), width: Math.abs(x - sx), height: Math.abs(y - sy) }
+    markBand.value = band
+    const inside = (r: DOMRect) => r.left < band.left + band.width && r.right > band.left && r.top < band.top + band.height && r.bottom > band.top
+    const marks = new Set(keepMarks), folders = new Set(keepGroups)
+    for (const [key, rect] of layout.marks) if (inside(rect)) marks.add(key)
+    for (const [key, rect] of layout.folders) if (inside(rect)) folders.add(key)
+    pickedMarks.value = marks; pickedGroups.value = folders
+  }
   const move = (next: PointerEvent) => {
     // 拖出 5 像素才算框选；没拖就是普通的点击。
     if (!markDragged && Math.hypot(next.clientX - sx, next.clientY - sy) < 5) return
     markDragged = true
-    const bounds = host.getBoundingClientRect()
-    const x = Math.min(bounds.right, Math.max(bounds.left, next.clientX)), y = Math.min(bounds.bottom, Math.max(bounds.top, next.clientY))
-    const band = { left: Math.min(x, sx), top: Math.min(y, sy), width: Math.abs(x - sx), height: Math.abs(y - sy) }
-    markBand.value = band
-    const inside = (element: HTMLElement) => { const r = element.getBoundingClientRect(); return r.left < band.left + band.width && r.right > band.left && r.top < band.top + band.height && r.bottom > band.top }
-    const marks = new Set(keepMarks), folders = new Set(keepGroups)
-    for (const item of host.querySelectorAll<HTMLElement>('.mark-row')) if (inside(item)) marks.add(item.dataset.key!)
-    for (const item of host.querySelectorAll<HTMLElement>('[data-group-id]')) if (inside(item)) folders.add(item.dataset.groupId!)
-    pickedMarks.value = marks; pickedGroups.value = folders
+    pointer = { x: next.clientX, y: next.clientY }
+    if (!frame) frame = requestAnimationFrame(step)
   }
+  host.addEventListener('scroll', forget, true)
   const end = () => {
+    // 松手前最后一下还没来得及算：先算完，选中的才和框对得上。
+    if (frame) { cancelAnimationFrame(frame); step() }
+    host.removeEventListener('scroll', forget, true)
+    window.removeEventListener('pointerup', end); window.removeEventListener('pointercancel', end)
     markBand.value = null; window.removeEventListener('pointermove', move)
     if (markDragged) { host.focus({ preventScroll: true }); if (!row) markDragged = false }
     // 在空白处点了一下：取消选中。
@@ -1079,6 +1139,7 @@ function groupClick(id: string, event: MouseEvent) {
   if (event.ctrlKey || event.metaKey) { const next = new Set(pickedGroups.value); if (next.has(id)) next.delete(id); else next.add(id); pickedGroups.value = next; sidebarEl.value?.focus({ preventScroll: true }); return }
   clearSidePicks()
   chooseGroup(id)
+  offerSpaced('group-rename', ['F2'], '给分组改名，双击也可以')
 }
 function removeGroups(ids: string[]) {
   pickedGroups.value = new Set()
@@ -1341,6 +1402,8 @@ function setPanelSide(key: string, width: number) {
 }
 // ---- Dragging windows to rearrange (lift, others slide aside) ---------------
 let panelDrag: { key: string; element: HTMLElement; grab: number; startX: number; startY: number; moved: boolean; pointer: number } | undefined
+// 指针移动只记下位置，排版的读写合到下一帧里做一次。
+let panelFrame = 0, panelPoint = { x: 0, y: 0 }
 const draggingPanel = ref<string>()
 function startPanelDrag(event: PointerEvent, key: string) {
   if (event.button !== 0 || !multiPanel.value) return
@@ -1367,10 +1430,17 @@ function movePanelDrag(event: PointerEvent) {
     drag.moved = true; draggingPanel.value = drag.key
     document.documentElement.classList.add('dragging-panels')
   }
+  panelPoint = { x: event.clientX, y: event.clientY }
+  if (!panelFrame) panelFrame = requestAnimationFrame(stepPanelDrag)
+}
+function stepPanelDrag() {
+  panelFrame = 0
+  const drag = panelDrag, point = panelPoint
+  if (!drag) return
   const container = drag.element.parentElement!.getBoundingClientRect()
   const natural = container.left + drag.element.offsetLeft
-  const left = event.clientX - drag.grab
-  drag.element.style.transform = `translate(${left - natural}px, ${Math.max(-10, Math.min(10, (event.clientY - drag.startY) * .15))}px) scale(1.015)`
+  const left = point.x - drag.grab
+  drag.element.style.transform = `translate(${left - natural}px, ${Math.max(-10, Math.min(10, (point.y - drag.startY) * .15))}px) scale(1.015)`
   // Swap with a neighbour once the dragged window's centre crosses that neighbour's centre.
   const centre = left + drag.element.offsetWidth / 2
   const keys = panels.value
@@ -1389,7 +1459,8 @@ function movePanelDrag(event: PointerEvent) {
       element.animate([{ transform: `translateX(${delta}px)` }, { transform: 'none' }], { duration: 420, easing: getComputedStyle(document.documentElement).getPropertyValue('--spring-snappy').trim() || 'ease-out' })
     }
     const natural = drag.element.parentElement!.getBoundingClientRect().left + drag.element.offsetLeft
-    drag.element.style.transform = `translate(${event.clientX - drag.grab - natural}px, 0) scale(1.015)`
+    if (panelDrag !== drag) return
+    drag.element.style.transform = `translate(${panelPoint.x - drag.grab - natural}px, 0) scale(1.015)`
   })
 }
 function applyPanelOrder(next: string[]) {
@@ -1401,6 +1472,7 @@ function applyPanelOrder(next: string[]) {
 function endPanelDrag() {
   const drag = panelDrag
   panelDrag = undefined
+  cancelAnimationFrame(panelFrame); panelFrame = 0
   window.removeEventListener('pointermove', movePanelDrag)
   window.removeEventListener('pointerup', endPanelDrag)
   window.removeEventListener('pointercancel', endPanelDrag)
@@ -1994,8 +2066,9 @@ function keydown(event: KeyboardEvent) {
     else if (splitPicker.value) { splitPicker.value = undefined; event.preventDefault() }
     // 收起卡片但保留截图：之后自己在阅读助手里提问，截图仍在输入框上方。
     else if (captureQuick.value) { dismissCaptureQuick(); event.preventDefault() }
-    else if (removeTarget.value) { removeTarget.value = null; event.preventDefault() }
+    // 两个确认框同时有时，屏幕上显示的是批量那一个：先关它。
     else if (removeBatch.value) { removeBatch.value = null; event.preventDefault() }
+    else if (removeTarget.value) { removeTarget.value = null; event.preventDefault() }
     else if (detailsId.value) { detailsId.value = ''; event.preventDefault() }
     else if (!active.value && batchTag.value !== null) { batchTag.value = null; event.preventDefault() }
     else if (!active.value && picked.value.size) { clearPicked(); event.preventDefault() }
@@ -2011,7 +2084,7 @@ function keydown(event: KeyboardEvent) {
     if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.code === 'KeyA' && visibleDocuments.value.length) { event.preventDefault(); pickAll(); return }
     if (event.key === 'Delete' && picked.value.size) { event.preventDefault(); removePicked(); return }
   }
-  if (settingsOpen.value || removeTarget.value || removeBatch.value) {
+  if (settingsOpen.value || removeTarget.value || removeBatch.value || detailsId.value) {
     if (binding && ['Ctrl+KeyF', 'F11', preferences.value.shortcuts.find, preferences.value.shortcuts.fullscreen].includes(binding)) event.preventDefault()
     return
   }
@@ -2222,13 +2295,13 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
         <button :class="{ selected: category === 'starred' }" @click="chooseCategory('starred')"><AppIcon name="star" :size="18" />我的收藏<span>{{ starredCount }}</span></button>
         <button :class="{ selected: category === 'ui' }" data-tip="钉住 / 记入文档的 Intelligent UI，按书归在一起" @click="chooseCategory('ui')"><AppIcon name="visual" :size="18" />Intelligent UI<span>{{ uiCount }}</span></button>
       </nav>
-      <div class="tag-heading group-heading"><p class="sidebar-label">分组</p><button type="button" class="group-add" aria-label="新建分组" data-tip="新建分组" @click="editGroup('new')"><AppIcon name="plus" :size="14" /></button></div>
+      <div class="tag-heading group-heading"><p class="sidebar-label">分组</p><button type="button" class="group-add" aria-label="新建分组" data-tip="新建分组" :aria-expanded="groupEditing === 'new'" @pointerdown="groupAddDown" @click="toggleNewGroup"><AppIcon name="plus" :size="14" /></button></div>
       <nav v-liquid-selection="{ radius: 'var(--r-control)' }" class="tag-nav group-nav" aria-label="文档分组">
         <template v-for="group in groups" :key="group.id">
-          <form v-if="groupEditing === group.id" class="group-edit" @submit.prevent="commitGroup"><input v-model="groupName" maxlength="40" aria-label="分组名称" @vue:mounted="({ el }: any) => { el.focus(); el.select() }" @blur="commitGroup" @keydown.esc.stop="groupEditing = ''" /></form>
-          <button v-else :class="{ selected: groupFilter === group.id, picked: pickedGroups.has(group.id) }" :data-group-id="group.id" @click="groupClick(group.id, $event)" @dblclick="editGroup(group.id, group.name)"><AppIcon name="folder" :size="16" />{{ group.name }}<span>{{ groupCount(group.id) }}</span></button>
+          <form v-if="groupEditing === group.id" class="group-edit" @submit.prevent="commitGroup(true)"><input v-model="groupName" maxlength="40" aria-label="分组名称" @vue:mounted="({ el }: any) => { el.focus(); el.select() }" @blur="blurGroup" @keydown.esc.stop="cancelGroup" /></form>
+          <button v-else :class="{ selected: groupFilter === group.id, picked: pickedGroups.has(group.id) }" :data-group-id="group.id" @click="groupClick(group.id, $event)" @dblclick="editGroup(group.id, group.name)" @keydown.f2.prevent="editGroup(group.id, group.name)"><AppIcon name="folder" :size="16" />{{ group.name }}<span>{{ groupCount(group.id) }}</span></button>
         </template>
-        <form v-if="groupEditing === 'new'" class="group-edit" @submit.prevent="commitGroup"><input v-model="groupName" maxlength="40" placeholder="分组名称，回车确定" aria-label="新分组的名称" @vue:mounted="({ el }: any) => el.focus()" @blur="commitGroup" @keydown.esc.stop="groupEditing = ''" /></form>
+        <form v-if="groupEditing === 'new'" class="group-edit" @submit.prevent="commitGroup(true)"><input v-model="groupName" maxlength="40" placeholder="分组名称" aria-label="新分组的名称" @vue:mounted="({ el }: any) => el.focus()" @blur="blurGroup" @keydown.esc.stop="cancelGroup" /></form>
         <p v-else-if="!groups.length" class="tag-empty" data-tip="点 + 新建，右键文档放进分组">还没有分组</p>
       </nav>
       <div class="tag-heading"><p class="sidebar-label">书签<span v-if="bookmarkTotal" class="mark-total">{{ bookmarkTotal }}</span></p><AppIcon name="bookmark" :size="14" /></div>
@@ -2281,9 +2354,9 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
         <template v-else>
         <div v-if="query || category === 'recent'" class="library-list-heading"><span>{{ query ? `搜索「${query}」` : '按最近阅读排列' }}</span></div>
         <div v-if="loading" class="library-empty"><span class="spinner"></span><p>正在读取文档库…</p></div>
-        <div v-else-if="!visibleDocuments.length" class="library-empty"><div class="empty-art"><svg viewBox="0 0 120 96" aria-hidden="true"><path class="ea-shade" d="M14 80c16-5 30-5 45 1 16-6 30-6 47-1l1 6c-17-4-31-4-47 2-16-6-30-6-45-2z" /><path class="ea-page" d="M15 22c14-6 29-6 44 2v56c-15-7-30-7-45-2z" /><path class="ea-page ea-right" d="M59 24c15-8 30-8 46-3l1 57c-16-5-31-5-47 2z" /><path class="ea-line" d="M15 22c14-6 29-6 44 2 15-8 30-8 46-3l1 57c-16-5-31-5-47 2-15-7-30-7-45-2z M59 24.500c.4 18 .2 37 .1 55.300 M24 35c8-2.500 17-2 26 1 M24 46.500c8-2.400 17-2 26 1.200 M24.500 58c7-2 14-2 21 .300 M69 36c9-3.200 18-3.400 27-1.400 M69 47.500c9-3 18-3.300 27-1.300 M69.500 59c6-2 12-2.400 18-1.500" /><path class="ea-star" d="M97 6.500c1 5 3 7.200 8 8.500-5 1.200-7 3.400-8.200 8.500-1-5-3.200-7.300-8.300-8.500 5-1.300 7.300-3.500 8.500-8.500z" /><path class="ea-line" d="M112 21.500l.4 5 M109.500 24l5.400.200 M83 4.500l.300 3.600 M81.200 6.300l3.900.100" /></svg></div><h2>{{ query ? '没有匹配的文档' : category === 'starred' ? '暂无收藏' : groupFilter ? '这个分组还是空的' : tagFilter ? '此标签下暂无文档' : '暂无文档' }}</h2><p>{{ query ? '可搜索标题、标签和已读取的文档内容。' : '点击“加入文档”添加 PDF 或 Markdown，可一次选择多个文件。' }}</p><button v-if="query" @click="query = ''; refresh()">查看全部文档</button><small>导入不会移动或修改原文件</small></div>
+        <div v-else-if="!visibleDocuments.length" class="library-empty"><div class="empty-art"><svg viewBox="0 0 120 96" aria-hidden="true"><path class="ea-shade" d="M14 80c16-5 30-5 45 1 16-6 30-6 47-1l1 6c-17-4-31-4-47 2-16-6-30-6-45-2z" /><path class="ea-page" d="M15 22c14-6 29-6 44 2v56c-15-7-30-7-45-2z" /><path class="ea-page ea-right" d="M59 24c15-8 30-8 46-3l1 57c-16-5-31-5-47 2z" /><path class="ea-line" d="M15 22c14-6 29-6 44 2 15-8 30-8 46-3l1 57c-16-5-31-5-47 2-15-7-30-7-45-2z M59 24.500c.4 18 .2 37 .1 55.300 M24 35c8-2.500 17-2 26 1 M24 46.500c8-2.400 17-2 26 1.200 M24.500 58c7-2 14-2 21 .300 M69 36c9-3.200 18-3.400 27-1.400 M69 47.500c9-3 18-3.300 27-1.300 M69.500 59c6-2 12-2.400 18-1.500" /><path class="ea-star" d="M97 6.500c1 5 3 7.200 8 8.500-5 1.200-7 3.400-8.200 8.500-1-5-3.200-7.300-8.300-8.500 5-1.300 7.300-3.500 8.500-8.500z" /><path class="ea-line" d="M112 21.500l.4 5 M109.500 24l5.400.200 M83 4.500l.300 3.600 M81.200 6.300l3.900.100" /></svg></div><h2>{{ query ? '没有匹配的文档' : category === 'starred' ? '暂无收藏' : groupFilter ? '这个分组还是空的' : tagFilter ? '此标签下暂无文档' : '暂无文档' }}</h2><button v-if="query" @click="query = ''; refresh()">查看全部文档</button><template v-else-if="!documents.length"><button @click="importDocuments" :disabled="importing">加入文档</button><small>导入不会移动或修改原文件</small></template></div>
         <div v-else ref="collection" class="document-collection" :class="[display, { arrangeable: canArrange }]" :aria-description="canArrange ? '拖动卡片或按 Alt+方向键调整位置' : undefined">
-          <article v-for="doc in visibleDocuments" :key="doc.id" class="document-card" :class="[doc.kind, { 'reorder-lifted': reorderLibrary.dragging.value === doc.id, picked: picked.has(doc.id), grouped: groupMarks.has(doc.id), 'group-start': groupMarks.get(doc.id)?.start, 'group-end': groupMarks.get(doc.id)?.end }]" :data-reorder-id="doc.id" tabindex="0" role="button" :aria-label="`打开 ${doc.name}`" :aria-selected="picked.size ? picked.has(doc.id) : undefined" @click="cardClick($event, doc)" @keydown.enter.self="openDocument(doc)" @keydown="reorderLibrary.keydown($event, doc.id)" @pointerdown="reorderLibrary.pointerdown($event, doc.id)">
+          <article v-for="doc in visibleDocuments" :key="doc.id" class="document-card" :class="[doc.kind, { 'reorder-lifted': reorderLibrary.dragging.value === doc.id, picked: picked.has(doc.id), grouped: groupMarks.has(doc.id), 'group-start': groupMarks.get(doc.id)?.start, 'group-end': groupMarks.get(doc.id)?.end }]" :data-reorder-id="doc.id" tabindex="0" role="button" :aria-label="`打开 ${doc.name}`" :aria-selected="picked.size ? picked.has(doc.id) : undefined" @click="cardClick($event, doc)" @keydown.enter.self="openDocument(doc)" @keydown.space.self.prevent="openDocument(doc)" @keydown="reorderLibrary.keydown($event, doc.id)" @pointerdown="reorderLibrary.pointerdown($event, doc.id)">
             <i v-if="groupMarks.has(doc.id)" class="group-thread" aria-hidden="true"></i><span v-if="groupMarks.get(doc.id)?.start" class="group-chip">{{ groupMarks.get(doc.id)!.name }}</span>
             <div class="document-cover" :class="{ 'has-image': covers.has(sourceId(doc.id)) }"><img v-if="covers.has(sourceId(doc.id))" class="cover-image" :class="covers.get(sourceId(doc.id))!.kind" :src="covers.get(sourceId(doc.id))!.image" alt="" draggable="false" /><template v-else><div class="cover-lines"><i></i><i></i><i></i><i></i></div><div class="document-type-icon"><AppIcon :name="doc.kind === 'pdf' ? 'file' : 'markdown'" :size="display === 'list' ? 23 : 30" /></div></template><button class="card-star" :class="{ 'is-starred': doc.starred }" @click.stop="toggleStar(doc)" :data-tip="doc.starred ? '取消收藏' : '收藏文档'" :aria-label="doc.starred ? '取消收藏' : '收藏文档'"><AppIcon name="star" :size="17" /></button></div>
             <div class="document-card-body"><div class="document-card-title"><h3 :data-tip="doc.name">{{ doc.name.replace(/\.(pdf|md|markdown)$/i, '') }}</h3><span class="format-pill">{{ doc.kind === 'pdf' ? 'PDF' : 'MD' }}</span></div><p class="document-meta">{{ size(doc.size) }}<span>·</span>{{ doc.lastOpenedAt ? `阅读于 ${date(doc.lastOpenedAt)}` : `加入于 ${date(doc.addedAt)}` }}</p><div class="document-tags"><span v-for="tag in doc.tags.slice(0, 3)" :key="tag">{{ tag }}</span><span v-if="doc.tags.length > 3">+{{ doc.tags.length - 3 }}</span></div><div class="document-progress"><div><i :style="{ width: `${progressPercent(doc)}%` }"></i></div><span>{{ doc.progress ? `${progressPercent(doc)}%` : '未读' }}</span></div></div>
@@ -2298,7 +2371,7 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
             <span class="batch-divider" aria-hidden="true"></span>
             <button @click="openPicked" data-tip="第一份打开，其余放进标签页"><AppIcon name="book" :size="15" />打开</button>
             <button @click="starPicked"><AppIcon name="star" :size="15" />{{ pickedDocs.some(doc => !doc.starred) ? '收藏' : '取消收藏' }}</button>
-            <form v-if="batchTag !== null" class="batch-tag" @submit.prevent="tagPicked"><input v-model="batchTag" placeholder="标签名，回车添加" maxlength="40" aria-label="批量添加的标签" @vue:mounted="({ el }: any) => el.focus()" @blur="batchTag = null" /></form>
+            <form v-if="batchTag !== null" class="batch-tag" @submit.prevent="tagPicked"><input v-model="batchTag" placeholder="标签名" maxlength="40" aria-label="批量添加的标签" @vue:mounted="({ el }: any) => el.focus()" @blur="blurBatchTag" /></form>
             <button v-else @click="batchTag = ''"><AppIcon name="tag" :size="15" />加标签</button>
             <button @click="groupPickedMenu"><AppIcon name="folder" :size="15" />分组</button>
             <button class="batch-danger" @click="removePicked" data-tip-key="Delete"><AppIcon name="trash" :size="15" />移除</button>
@@ -2361,11 +2434,11 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
     <Transition name="hint"><button v-if="currentHint" :key="currentHint.id" type="button" class="gesture-hint" aria-live="polite" @click="dismissHint"><svg v-if="currentHint.id === 'explain' || currentHint.id === 'visual-explain'" class="hint-mouse" viewBox="0 0 14 20" aria-hidden="true"><rect x="1" y="1" width="12" height="18" rx="6" /><line x1="7" y1="4.5" x2="7" y2="8.5" /></svg><kbd v-for="key in currentHint.keys" :key="key">{{ key }}</kbd><span>{{ currentHint.text }}</span></button></Transition>
     <Transition name="toast"><div v-if="toast" class="toast-message" role="status"><span>{{ toast }}</span><button @click="toast = ''" data-tip="关闭提示" aria-label="关闭提示"><AppIcon name="close" :size="15" /></button></div></Transition>
     <Transition name="dialog">
-      <div v-if="detailsDoc" class="dialog-backdrop" @click.self="detailsId = ''"><aside class="document-details as-dialog" role="dialog" aria-modal="true" aria-label="文档详情"><div class="details-heading"><h3>文档详情</h3><button class="icon-button" @click="detailsId = ''" data-tip="关闭" aria-label="关闭文档详情"><AppIcon name="close" :size="17" /></button></div><div class="detail-icon"><AppIcon :name="detailsDoc.kind === 'pdf' ? 'file' : 'markdown'" :size="30" /></div><h4>{{ detailsDoc.name }}</h4><dl><dt>格式</dt><dd>{{ detailsDoc.kind === 'pdf' ? 'PDF' : 'Markdown' }}</dd><dt>文件大小</dt><dd>{{ size(detailsDoc.size) }}</dd><dt>加入时间</dt><dd>{{ date(detailsDoc.addedAt) }}</dd><dt>文件位置</dt><dd class="detail-path">{{ detailsDoc.path }}</dd></dl><p class="eyebrow">标签</p><div class="editable-tags"><span v-for="tag in detailsDoc.tags" :key="tag">{{ tag }}<button @click="removeTag(tag)" :data-tip="`移除标签 ${tag}`" :aria-label="`移除标签 ${tag}`"><AppIcon name="close" :size="12" /></button></span></div><form class="add-tag" @submit.prevent="addTag"><input v-model="tagInput" placeholder="添加标签" maxlength="40" /><button :disabled="!tagInput.trim()" data-tip="添加标签" aria-label="添加标签"><AppIcon name="plus" :size="16" /></button></form><button class="remove-document" @click="removeTarget = detailsDoc; detailsId = ''"><AppIcon name="trash" :size="16" />从文档库移除</button></aside></div>
+      <div v-if="detailsDoc" class="dialog-backdrop" @click.self="detailsId = ''"><aside v-trap="'.add-tag input'" class="document-details as-dialog" role="dialog" aria-modal="true" aria-label="文档详情" tabindex="-1"><div class="details-heading"><h3>文档详情</h3><button class="icon-button" @click="detailsId = ''" data-tip="关闭" aria-label="关闭文档详情"><AppIcon name="close" :size="17" /></button></div><div class="detail-icon"><AppIcon :name="detailsDoc.kind === 'pdf' ? 'file' : 'markdown'" :size="30" /></div><h4>{{ detailsDoc.name }}</h4><dl><dt>格式</dt><dd>{{ detailsDoc.kind === 'pdf' ? 'PDF' : 'Markdown' }}</dd><dt>文件大小</dt><dd>{{ size(detailsDoc.size) }}</dd><dt>加入时间</dt><dd>{{ date(detailsDoc.addedAt) }}</dd><dt>文件位置</dt><dd class="detail-path">{{ detailsDoc.path }}</dd></dl><p class="eyebrow">标签</p><div class="editable-tags"><span v-for="tag in detailsDoc.tags" :key="tag">{{ tag }}<button @click="removeTag(tag)" :data-tip="`移除标签 ${tag}`" :aria-label="`移除标签 ${tag}`"><AppIcon name="close" :size="12" /></button></span></div><form class="add-tag" @submit.prevent="addTag"><input v-model="tagInput" placeholder="添加标签" maxlength="40" /><button :disabled="!tagInput.trim()" data-tip="添加标签" aria-label="添加标签"><AppIcon name="plus" :size="16" /></button></form><button class="remove-document" @click="removeTarget = detailsDoc; detailsId = ''"><AppIcon name="trash" :size="16" />从文档库移除</button></aside></div>
     </Transition>
     <Transition name="dialog">
-      <div v-if="removeBatch" class="dialog-backdrop" @click.self="removeBatch = null"><section class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="remove-batch-title"><div class="dialog-icon"><AppIcon name="trash" :size="24" /></div><h2 id="remove-batch-title">移除 {{ removeBatch.length }} 份文档？</h2><p>{{ removeBatch.slice(0, 3).map(doc => `「${doc.name}」`).join('') }}{{ removeBatch.length > 3 ? ` 等 ${removeBatch.length} 份` : '' }}的阅读记录与标签会被移除，原文件仍保留在电脑上。</p><div class="dialog-actions"><button @click="removeBatch = null">取消</button><button class="danger-button" @click="removeDocuments">移除 {{ removeBatch.length }} 份</button></div></section></div>
-      <div v-else-if="removeTarget" class="dialog-backdrop" @click.self="removeTarget = null"><section class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="remove-title"><div class="dialog-icon"><AppIcon name="trash" :size="24" /></div><h2 id="remove-title">从文档库移除？</h2><p>「{{ removeTarget.name }}」的阅读记录与标签会被移除，原文件仍保留在电脑上。</p><div class="dialog-actions"><button @click="removeTarget = null">取消</button><button class="danger-button" @click="removeDocument()">移除文档</button></div></section></div>
+      <div v-if="removeBatch" class="dialog-backdrop" @click.self="removeBatch = null"><section v-trap="'.dialog-actions button'" class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="remove-batch-title" tabindex="-1"><div class="dialog-icon"><AppIcon name="trash" :size="24" /></div><h2 id="remove-batch-title">移除 {{ removeBatch.length }} 份文档？</h2><p>{{ removeBatch.slice(0, 3).map(doc => `「${doc.name}」`).join('') }}{{ removeBatch.length > 3 ? ` 等 ${removeBatch.length} 份` : '' }}的阅读记录与标签会被移除，原文件仍保留在电脑上。</p><div class="dialog-actions"><button @click="removeBatch = null">取消</button><button class="danger-button" @click="removeDocuments">移除 {{ removeBatch.length }} 份</button></div></section></div>
+      <div v-else-if="removeTarget" class="dialog-backdrop" @click.self="removeTarget = null"><section v-trap="'.dialog-actions button'" class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="remove-title" tabindex="-1"><div class="dialog-icon"><AppIcon name="trash" :size="24" /></div><h2 id="remove-title">从文档库移除？</h2><p>「{{ removeTarget.name }}」的阅读记录与标签会被移除，原文件仍保留在电脑上。</p><div class="dialog-actions"><button @click="removeTarget = null">取消</button><button class="danger-button" @click="removeDocument()">移除文档</button></div></section></div>
     </Transition>
     <Transition name="settings-pop">
       <SettingsDialog v-if="settingsOpen" :initial-tab="settingsTab" @close="settingsOpen = false" @ai-saved="aiSettingsSaved" @tour="openTour" @manage="settingsOpen = false; managerOpen = true" />

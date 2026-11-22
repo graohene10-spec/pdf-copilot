@@ -20,7 +20,18 @@ if (!translator.items.length) offerSpaced('translate-how', ['右键'], '选中�
 const emit = defineEmits<{ close: []; settings: []; grab: [event: PointerEvent] }>()
 // 按住标题栏空白处拖动：把整个翻译栏拖到阅读区的另一侧。
 function grab(event: PointerEvent) { if (event.button === 0 && !(event.target as HTMLElement).closest('button, input, textarea, select, a')) emit('grab', event) }
-const draft = ref('')
+// 输入框里的字记在 translator 上：按 Esc 或关掉翻译栏再打开，没翻的字还在。
+const draft = computed({ get: () => translator.draft, set: value => { translator.draft = value } })
+// 清空记录：第一下只是把按钮变成「再点一次」，三秒内再点才真的清空（正在翻的也会停下）。
+const clearArmed = ref(false)
+let clearTimer = 0
+function clearAll() {
+  clearTimeout(clearTimer)
+  if (!clearArmed.value) { clearArmed.value = true; clearTimer = window.setTimeout(() => { clearArmed.value = false }, 3000); return }
+  clearArmed.value = false
+  clearTranslations()
+}
+onBeforeUnmount(() => clearTimeout(clearTimer))
 const list = ref<HTMLElement>()
 const field = ref<HTMLTextAreaElement>()
 const copied = ref('')
@@ -121,7 +132,7 @@ defineExpose({ focus })
       <div class="tp-targets" role="radiogroup" aria-label="译成">
         <button v-for="item in TARGETS" :key="item.value" type="button" role="radio" :aria-checked="translator.target === item.value" :class="{ on: translator.target === item.value }" @click="translator.target = item.value">{{ item.label }}</button>
       </div>
-      <button type="button" class="tp-icon" :disabled="!translator.items.length" aria-label="清空翻译记录" data-tip="清空翻译记录" @click="clearTranslations"><AppIcon name="trash" :size="15" /></button>
+      <button type="button" class="tp-icon tp-clear" :class="{ armed: clearArmed }" :disabled="!translator.items.length" :aria-label="clearArmed ? '再点一次，清空翻译记录' : '清空翻译记录'" :data-tip="clearArmed ? '再点一次清空，清掉的找不回来' : '清空翻译记录'" @click="clearAll"><template v-if="clearArmed">再点一次</template><AppIcon v-else name="trash" :size="15" /></button>
       <button type="button" class="tp-icon" aria-label="关闭翻译栏" data-tip="关闭翻译栏" :data-tip-key="shortcut" @click="emit('close')"><AppIcon name="close" :size="15" /></button>
     </header>
 
@@ -167,7 +178,7 @@ defineExpose({ focus })
       <button type="submit" :disabled="savingKey || !canSave">保存</button>
     </form>
     <form class="tp-composer" @submit.prevent="submit">
-      <textarea ref="field" v-model="draft" rows="1" placeholder="输入文字，回车翻译" aria-label="要翻译的文字" @keydown="keydown"></textarea>
+      <textarea ref="field" v-model="draft" rows="1" placeholder="要翻译的文字" aria-label="要翻译的文字" @keydown="keydown"></textarea>
       <button type="submit" class="tp-send" :disabled="!draft.trim()" aria-label="开始翻译" data-tip="翻译（回车）"><AppIcon name="arrow-up" :size="16" /></button>
     </form>
   </aside>
@@ -204,6 +215,8 @@ defineExpose({ focus })
 .tp-icon{display:grid;place-items:center;flex:none;width:28px;height:28px;padding:0;border:0;border-radius:8px;background:none;box-shadow:none;color:var(--secondary)}
 .tp-icon:hover:not(:disabled){background:color-mix(in srgb,var(--surface-ink) 8%,transparent);color:var(--ink)}
 .tp-icon:disabled{opacity:.4}
+.tp-clear.armed{width:auto;padding:0 8px;background:color-mix(in srgb,var(--danger) 14%,transparent);color:var(--danger);font-size:12px;white-space:nowrap}
+.tp-clear.armed:hover:not(:disabled){background:color-mix(in srgb,var(--danger) 20%,transparent);color:var(--danger)}
 .tp-list{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:8px 8px 2px;will-change:transform}
 .tp-empty{display:grid;justify-items:center;gap:8px;margin-top:22vh;padding:0 18px;text-align:center;color:var(--secondary);font-size:13px;line-height:1.6}
 .tp-empty p{margin:0}

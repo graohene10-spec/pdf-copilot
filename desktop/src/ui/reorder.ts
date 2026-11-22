@@ -24,6 +24,8 @@ export function useReorder(options: ReorderOptions) {
   let state: {
     id: string; pointer: number; startX: number; startY: number; grabX: number; grabY: number
     x: number; y: number; moved: boolean; element: HTMLElement; scroller: HTMLElement | null; frame: number
+    /** 指针动过、还没按新位置重排：留给下一帧做，一帧只读一次排版。 */
+    dirty: boolean
   } | undefined
 
   const items = (root: HTMLElement) => [...root.children].filter((node): node is HTMLElement => node instanceof HTMLElement && !!node.dataset.reorderId)
@@ -86,8 +88,9 @@ export function useReorder(options: ReorderOptions) {
     if (scroller) {
       const box = scroller.getBoundingClientRect(), edge = 64
       const speed = state.y < box.top + edge ? -(box.top + edge - state.y) : state.y > box.bottom - edge ? state.y - (box.bottom - edge) : 0
-      if (speed) { scroller.scrollTop += Math.max(-18, Math.min(18, speed * .3)); place(); reorder() }
+      if (speed) { scroller.scrollTop += Math.max(-18, Math.min(18, speed * .3)); state.dirty = true }
     }
+    if (state.dirty) { state.dirty = false; place(); reorder() }
     state.frame = requestAnimationFrame(tick)
   }
 
@@ -126,8 +129,7 @@ export function useReorder(options: ReorderOptions) {
       lift()
     }
     event.preventDefault()
-    place()
-    reorder()
+    state.dirty = true
   }
 
   function swallowClick(event: Event) { event.stopPropagation(); event.preventDefault() }
@@ -164,7 +166,7 @@ export function useReorder(options: ReorderOptions) {
     const rect = element.getBoundingClientRect()
     state = {
       id, pointer: event.pointerId, startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY,
-      grabX: event.clientX - rect.left, grabY: event.clientY - rect.top, moved: false, element, frame: 0,
+      grabX: event.clientX - rect.left, grabY: event.clientY - rect.top, moved: false, element, frame: 0, dirty: false,
       scroller: element.closest<HTMLElement>('[data-reorder-scroll]'),
     }
     if (options.hold) holdTimer = window.setTimeout(lift, options.hold)

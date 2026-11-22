@@ -97,16 +97,20 @@ function selected() {
   const selection = window.getSelection(), element = paper.value, host = root.value
   if (!selection || selection.isCollapsed || !selection.rangeCount || !element || !host || !element.contains(selection.anchorNode) || !element.contains(selection.focusNode)) return
   const range = selection.getRangeAt(0).cloneRange(), text = quoteOf(range)
-  const rects = range.getClientRects(), last = rects[rects.length - 1], base = host.getBoundingClientRect()
-  if (!text || !last) return
+  const rects = range.getClientRects(), first = rects[0], last = rects[rects.length - 1], base = host.getBoundingClientRect(), view = scroller.value?.getBoundingClientRect()
+  if (!text || !first || !last || !view) return
   mark(range)
-  // 小输入框放在选区最后一行的下面，别伸出面板。
-  ask.value = { quote: text.slice(0, 800), left: Math.max(16, Math.min(base.width - ASK_WIDTH - 16, last.right - base.left - ASK_WIDTH / 2)), top: Math.min(base.height - 64, last.bottom - base.top + 8) }
+  // 小输入框放在选区最后一行的下面；下面放不下就放到第一行的上面，总之不盖住选中的字。别伸出面板，也不压住表头。
+  const width = Math.min(ASK_WIDTH, base.width - 32), roof = view.top - base.top + 8, floor = view.bottom - base.top - ASK_HEIGHT - 8
+  const below = last.bottom - base.top + 8, above = first.top - base.top - ASK_HEIGHT - 8
+  const top = below <= floor ? below : above >= roof ? above : floor
+  const anchor = top === above ? first.left - base.left + width / 2 : last.right - base.left
+  ask.value = { quote: text.slice(0, 800), left: Math.max(16, Math.min(base.width - width - 16, anchor - width / 2)), top }
   instruction.value = ''
   void nextTick(() => field.value?.focus({ preventScroll: true }))
 }
 // 小输入框的宽：面板窄的时候跟着收。
-const ASK_WIDTH = 440
+const ASK_WIDTH = 440, ASK_HEIGHT = 46
 // 草稿写完一回提一句：划选一段可以直接让助手改（隔几次提一回，用过就不提）。
 watch(busy, (now, before) => { if (before && !now && size.value) offerSpaced('draft-revise', ['划选一段'], '直接写怎么改') })
 function send() {
@@ -140,8 +144,8 @@ async function copy() {
       <span v-if="!busy && size" class="draft-state">{{ size }} 字</span>
       <span v-else-if="busy" class="draft-live" role="status">{{ draft.writing ? (draft.last === 'edit' ? '正在改' : '正在写') : '助手在忙' }}</span>
       <button v-if="saved" type="button" class="draft-link" :data-tip="`已存为 ${saved}`" @click="emit('open')">已存 · 打开</button>
-      <button type="button" class="draft-icon" :disabled="!size" aria-label="复制" data-tip="复制 Markdown 原文" @click="copy"><AppIcon name="copy" :size="15" /></button>
-      <button type="button" class="draft-save" :disabled="!size || busy || saving" :data-tip="saved ? '再存一次，覆盖上次存的那份' : '存成 Markdown，放在原文档的文件夹里，并加入文档库'" @click="emit('save', draft.text)">{{ saving ? '正在存…' : saved ? '再存一次' : '存入文档库' }}</button>
+      <button type="button" class="draft-icon" :disabled="!size" aria-label="复制" :data-tip="size ? '复制 Markdown 原文' : '还没有内容可以复制'" @click="copy"><AppIcon name="copy" :size="15" /></button>
+      <button type="button" class="draft-save" :disabled="!size || busy || saving" :data-tip="saving ? '正在存' : !size ? '还没有内容可以存' : busy ? '助手写完才能存' : saved ? '再存一次，覆盖上次存的那份' : '存成 Markdown，放在原文档的文件夹里，并加入文档库'" @click="emit('save', draft.text)">{{ saving ? '正在存…' : saved ? '再存一次' : '存入文档库' }}</button>
       <button type="button" class="draft-icon" aria-label="收起草稿" data-tip="收起草稿，回到原文" @click="emit('close')"><AppIcon name="close" :size="15" /></button>
     </header>
     <div ref="scroller" class="draft-scroll" @scroll.passive="ask = null">
@@ -158,7 +162,7 @@ async function copy() {
     </div>
     <form v-if="ask" class="draft-ask" :style="{ left: `${ask.left}px`, top: `${ask.top}px` }" @submit.prevent="send">
       <input ref="field" v-model="instruction" type="text" maxlength="400" placeholder="这一段怎么改？比如：展开讲、换个例子" aria-label="这一段怎么改" @keydown.enter="($event.isComposing || $event.keyCode === 229) && $event.stopPropagation()" @keydown.esc.prevent.stop="ask = null" />
-      <button type="submit" :disabled="!instruction.trim()" aria-label="让助手改" data-tip="让助手改这一段"><AppIcon name="arrow-up" :size="14" /></button>
+      <button type="submit" :disabled="!instruction.trim()" aria-label="让助手改" :data-tip="instruction.trim() ? '让助手改这一段' : '先写一句怎么改'"><AppIcon name="arrow-up" :size="14" /></button>
     </form>
   </section>
 </template>

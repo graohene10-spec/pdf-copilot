@@ -138,10 +138,15 @@ function tabDown(mark: Mark, event: PointerEvent) {
   const startX = event.clientX, startY = event.clientY
   // 按下的地方在那枚小书签上的哪儿：拖的时候保持不变，书签不会跳到指针底下。
   const shown = (node.querySelector('.bookmark-art') || node).getBoundingClientRect(), grabX = Math.max(0, Math.min(44, startX - shown.left)), grabY = startY - (shown.top + shown.height / 2)
-  let active = false, lastX = startX, lastY = startY
+  let active = false, lastX = startX, lastY = startY, pending = 0
+  // 纸的位置在开始拖时量一次；拖动中只加上滚动了多少，不在每次指针移动时重新量排版。
+  let origin = { left: 0, top: 0 }, scrolled = { left: 0, top: 0 }
+  const measure = () => { const box = paper.getBoundingClientRect(); origin = { left: box.left, top: box.top }; scrolled = { left: scroller?.scrollLeft ?? 0, top: scroller?.scrollTop ?? 0 } }
   const update = () => {
+    pending = 0
     // box：小书签左缘现在在哪。
-    const frame = paper.getBoundingClientRect(), box = lastX - frame.left - grabX, y = lastY - frame.top - grabY
+    const frame = { left: origin.left - ((scroller?.scrollLeft ?? 0) - scrolled.left), top: origin.top - ((scroller?.scrollTop ?? 0) - scrolled.top) }
+    const box = lastX - frame.left - grabX, y = lastY - frame.top - grabY
     const top = Math.max(12, Math.min(sheet.value.height - 12, y))
     const rightAt = at.width - at.left < 50 ? at.left - 46 : at.left - 5, leftAt = at.edge < 50 ? at.edge + 46 : at.edge + 5
     const flip = lift.value?.flip ?? spot.flip
@@ -151,15 +156,17 @@ function tabDown(mark: Mark, event: PointerEvent) {
     else if (near(at.edge)) lift.value = { id: mark.id, top, left: leftAt, flip: true, dock: 'left' }
     else lift.value = { id: mark.id, top, left: Math.max(flip ? 48 : 2, Math.min(sheet.value.width - (flip ? 2 : 48), flip ? box + 44 : box)), flip, dock: 'free' }
   }
-  const begin = () => { active = true; picked.clear(); window.getSelection()?.removeAllRanges(); update() }
+  const begin = () => { active = true; picked.clear(); window.getSelection()?.removeAllRanges(); measure(); update() }
   const hold = setTimeout(begin, 300)
   const move = (now: PointerEvent) => {
     lastX = now.clientX; lastY = now.clientY
     if (!active) { if (Math.hypot(lastX - startX, lastY - startY) < 6) return; clearTimeout(hold); begin() }
-    now.preventDefault(); update()
+    now.preventDefault()
+    if (!pending) pending = requestAnimationFrame(update)
   }
   const up = () => {
     clearTimeout(hold)
+    if (pending) { cancelAnimationFrame(pending); update() }
     window.removeEventListener('pointermove', move, true); window.removeEventListener('pointerup', up, true); window.removeEventListener('pointercancel', up, true)
     const state = lift.value
     lift.value = null
@@ -294,6 +301,8 @@ onBeforeUnmount(() => {
 .bookmark-guide-enter-from,.bookmark-guide-leave-to{opacity:0}
 /* 不在视野里的书签：线上的一道刻度，一头搭在线上，另一头是个小圆点，颜色取自那幅画；指上去刻度变长，画从左边伸出来。 */
 .bookmark:not(.on-page) .bookmark-hit{position:relative;height:10px;gap:0}
+/* 刻度画得细，能点的范围往上下和书页那边放大一些（右边是滚动条，不占）；样子不变。 */
+.bookmark:not(.on-page) .bookmark-hit::after{content:'';position:absolute;inset:-3px 0 -3px -18px}
 .bookmark-line{position:relative;display:block;width:11px;height:1.5px;border-radius:1px;background:currentColor;color:var(--accent);transition:width var(--dur-2) var(--ease-out)}
 .bookmark-line::before{content:'';position:absolute;left:-2px;top:50%;width:5px;height:5px;margin-top:-2.5px;border-radius:50%;background:currentColor;box-shadow:0 0 0 1.5px var(--canvas,#fff)}
 .bookmark:not(.on-page) .bookmark-hit:hover .bookmark-line,.bookmark:not(.on-page) .bookmark-hit:focus-visible .bookmark-line,.bookmark.picked .bookmark-line{width:18px}

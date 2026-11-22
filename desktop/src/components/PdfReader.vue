@@ -72,6 +72,8 @@ let panelResizeHeld = false
 let outlineResizeHeld = false
 let frozenViewport: { left: number; top: number; width: number; height: number } | undefined
 let fitMode = props.initialView ? props.initialView.scale === null : props.initialZoom === 'fit'
+// 工具条上「适应宽度」按钮的按下状态（fitMode 本身不是响应式的）。
+const fitting = ref(fitMode)
 let pendingPanelFit = false
 let lastAvailableWidth = 0
 let prepareScheduled = false
@@ -235,10 +237,25 @@ function releaseViewport() {
   frozenViewport = undefined
   for (const property of ['left', 'top', 'right', 'bottom', 'width', 'height']) container.value?.style.removeProperty(property)
 }
+// 阅读区变窄时为了不超出而自动缩小的：记下缩之前读者自己的比例，变宽以后回到它（放不下就尽量大）。
+// 读者自己再调一次比例，这个记录就作废。
+let wantedScale: number | null = null
+// 读者定下那个比例时阅读区有多宽：回到这么宽，就原样回到那个比例（哪怕它本来就比页宽大）。
+let wantedRoom = 0
 function overflowScale() {
   const active = viewer?.active
   if (!active?.ready) return null
-  return shrinkToFitScale(active.slot.getBoundingClientRect().width, readingWidth(), viewer.displayScale)
+  const width = active.slot.getBoundingClientRect().width, room = readingWidth(), now = viewer.displayScale
+  if (wantedScale !== null && wantedScale > now * (1 + .000001)) {
+    if (wantedRoom && room >= wantedRoom - 2) { const back = wantedScale; wantedScale = null; return back }
+    // 按原来的比例量一遍：放得下就回到原来的，放不下取放得下的最大值。
+    const target = shrinkToFitScale(width * wantedScale / now, room, wantedScale) ?? wantedScale
+    if (target >= wantedScale * (1 - .000001)) { const back = wantedScale; wantedScale = null; return back }
+    return Math.abs(target - now) < .000001 ? null : target
+  }
+  const next = shrinkToFitScale(width, room, now)
+  if (next !== null && wantedScale === null) { wantedScale = now; wantedRoom = Math.max(zoomRoom, lastAvailableWidth || 0) }
+  return next
 }
 async function renderZoom(value: number | null, deferLayout = false) {
   if (!active) return
@@ -399,24 +416,49 @@ async function goToPage(number: number, rect?: any) {
     transientMarkers.add(clear)
   }
 }
+let zoomRoom = 0
 async function zoom(value: number | null) {
-  pendingPanelFit = false
+  pendingPanelFit = false; wantedScale = null; zoomRoom = readingWidth()
   if (panelResizeHeld || outlineResizeHeld) suppressPanelFit = true
-  fitMode = value === null
+  fitMode = value === null; fitting.value = fitMode
   releaseViewport()
   if (value === null) await renderFit()
   else await renderZoom(clampPdfScale(value))
   lastAvailableWidth = readingWidth()
 }
-function zoomIn() { return zoom(scale.value + Math.max(.05, Math.min(.5, props.zoomStep))) }
-function zoomOut() { if (scale.value > .25) return zoom(scale.value - Math.max(.05, Math.min(.5, props.zoomStep))) }
+// 缩放的上下限和 clampPdfScale 一致：到头了按钮变灰，不再无声地什么也不做。
+const atMinZoom = computed(() => scale.value <= .25 + 1e-6), atMaxZoom = computed(() => scale.value >= 4 - 1e-6)
+function zoomIn() { if (!atMaxZoom.value) return zoom(scale.value + Math.max(.05, Math.min(.5, props.zoomStep))) }
+function zoomOut() { if (!atMinZoom.value) return zoom(scale.value - Math.max(.05, Math.min(.5, props.zoomStep))) }
 function fitWidth() { return zoom(null) }
+function actualSize() { return zoom(1) }
 function nextPage() { return goToPage(page.value + 1) }
 function previousPage() { return goToPage(page.value - 1) }
+const outlineButton = ref<HTMLButtonElement>()
+const outlinePanel = ref<HTMLElement>()
 async function toggleOutline() {
+  // 焦点在目录里时收起：焦点回到「目录」按钮，不掉到页面外面。
+  const focused = !!outlinePanel.value?.contains(document.activeElement)
   holdOutlineResize(true)
   outlineOpen.value = !outlineOpen.value
+  if (!outlineOpen.value && focused) outlineButton.value?.focus({ preventScroll: true })
   if (outlineOpen.value) { await nextTick(); if (outlineOpen.value) requestPanelFit() }
+}
+function outlineKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Escape' || event.isComposing) return
+  event.preventDefault(); event.stopPropagation()
+  void toggleOutline()
+}
+// 横向滚动条也能用键盘：方向键挪一点，Home / End 到两头。
+function hscrollKey(event: KeyboardEvent) {
+  const element = container.value
+  if (!element) return
+  const step = event.key === 'ArrowLeft' ? -60 : event.key === 'ArrowRight' ? 60 : event.key === 'PageUp' ? -element.clientWidth * .8 : event.key === 'PageDown' ? element.clientWidth * .8 : 0
+  if (step) element.scrollLeft += step
+  else if (event.key === 'Home') element.scrollLeft = 0
+  else if (event.key === 'End') element.scrollLeft = element.scrollWidth
+  else return
+  event.preventDefault(); event.stopPropagation()
 }
 function toggleCapture() {
   capture.value = !capture.value
@@ -506,7 +548,7 @@ function holdPanelResize(held: boolean, fitOverflow = false) {
   if (!active) return
   if (held && !panelResizeHeld && !outlineResizeHeld) suppressPanelFit = false
   panelResizeHeld = held
-  if (fitOverflow && props.sidebarFitEnabled && !suppressPanelFit) pendingPanelFit = true
+  if ((fitOverflow || wantedScale !== null) && props.sidebarFitEnabled && !suppressPanelFit) pendingPanelFit = true
   clearTimeout(layoutTimer)
   if (held) { viewer?.cancelDeferredZoom?.(); startFollow(); return }
   const followed = stopFollow()
@@ -525,7 +567,7 @@ function holdOutlineResize(held: boolean, fitOverflow = false) {
   if (!active) return
   if (held && !panelResizeHeld && !outlineResizeHeld) suppressPanelFit = false
   outlineResizeHeld = held
-  if (fitOverflow && props.sidebarFitEnabled && !suppressPanelFit) pendingPanelFit = true
+  if ((fitOverflow || wantedScale !== null) && props.sidebarFitEnabled && !suppressPanelFit) pendingPanelFit = true
   clearTimeout(layoutTimer)
   if (held) { freezeViewport(); void nextTick(positionFrozenViewport); preparePanelLayout() }
   else { positionFrozenViewport(); if (outlineOpen.value && props.sidebarFitEnabled && !suppressPanelFit) pendingPanelFit = true; finishPanelLayout() }
@@ -569,7 +611,7 @@ async function load() {
     pdf = document; total.value = pdf.numPages
     await viewer.setDocument(pdf)
     if (epoch !== current) return
-    fitMode = props.initialView ? props.initialView.scale === null : props.initialZoom === 'fit'
+    fitMode = props.initialView ? props.initialView.scale === null : props.initialZoom === 'fit'; fitting.value = fitMode
     if (!fitMode && active) await renderZoom(props.initialView?.scale ?? clampPdfScale(props.initialZoom))
     await viewer.goToPage(Math.max(1, Math.min(restorePage, total.value)))
     if (epoch !== current) return
@@ -682,10 +724,25 @@ function togglePageMenu() {
   if (box) pageMenuAt.value = { left: Math.max(146, Math.min(window.innerWidth - 146, box.left + box.width / 2)), top: box.bottom + 8 }
   pageMenu.value = !pageMenu.value
 }
+const pageMenuButton = ref<HTMLButtonElement>()
+function shutPageMenu() { pageMenu.value = false; pageMenuButton.value?.focus({ preventScroll: true }) }
+// 弹层开着时 Esc 在哪儿按都先收起它（焦点不必在弹层里），不连带取消框选、退出全屏。
+function pageMenuKey(event: KeyboardEvent) {
+  if (event.key !== 'Escape' || event.isComposing) return
+  event.preventDefault(); event.stopPropagation()
+  shutPageMenu()
+}
 function setPageLayout(pageLayout: 'single' | 'spread', coverAlone = props.coverAlone) { emit('pageLayout', { pageLayout, coverAlone }) }
 function closePageMenu(event: PointerEvent) { const target = event.target as Node; if (!pageMenuHost.value?.contains(target) && !pageMenuPanel.value?.contains(target)) pageMenu.value = false }
-watch(pageMenu, open => { if (open) document.addEventListener('pointerdown', closePageMenu, true); else document.removeEventListener('pointerdown', closePageMenu, true) })
-onBeforeUnmount(() => document.removeEventListener('pointerdown', closePageMenu, true))
+watch(pageMenu, async open => {
+  if (open) {
+    document.addEventListener('pointerdown', closePageMenu, true); document.addEventListener('keydown', pageMenuKey, true)
+    // 弹层是对话框：焦点进去，落在当前选中的那一项上。
+    await nextTick()
+    if (pageMenu.value) pageMenuPanel.value?.querySelector<HTMLElement>('[aria-pressed="true"]')?.focus({ preventScroll: true })
+  } else { document.removeEventListener('pointerdown', closePageMenu, true); document.removeEventListener('keydown', pageMenuKey, true) }
+})
+onBeforeUnmount(() => { document.removeEventListener('pointerdown', closePageMenu, true); document.removeEventListener('keydown', pageMenuKey, true) })
 // 切换时页面先按旧比例排成新版式，要等新比例画好才铺满：这段时间先把页面藏起来，排好后淡入，不让它飞到一边。
 watch(() => props.rightCapture, value => viewer?.secondaryCapture(value))
 watch(() => [props.pageLayout, props.coverAlone] as const, async ([layout, cover]) => {
@@ -776,7 +833,7 @@ function suspend() {
   capture.value = false
   viewer?.suspend()
   panelResizeHeld = outlineResizeHeld = false
-  pendingPanelFit = false; prepareScheduled = false; suppressPanelFit = false
+  pendingPanelFit = false; prepareScheduled = false; suppressPanelFit = false; wantedScale = null
   releaseViewport(); releaseCommitWaiters()
 }
 // 屏幕缩放比例变了（窗口拖到另一块屏幕、在系统里改了缩放）：页面是按原来的倍率画的，得按新的重画，不然是糊的。
@@ -821,7 +878,7 @@ async function resume() {
   if (indexedText.size) emit('text', collectedText())
   if (cachedView?.scale != null && Math.abs(cachedView.scale - viewer.displayScale) > .000001) await renderZoom(cachedView.scale, true)
   if (!active || visible !== activation) return
-  pendingPanelFit = props.sidebarFitEnabled && readingWidth() < lastAvailableWidth - .5
+  pendingPanelFit = props.sidebarFitEnabled && (readingWidth() < lastAvailableWidth - .5 || wantedScale !== null)
   await refreshLayout()
   if (!active || visible !== activation) return
   viewer.updateWindow(viewer.currentPage)
@@ -836,15 +893,15 @@ defineExpose({ getOutline: () => outline.value.map(item => ({ title: item.title,
 <template>
   <div class="pdf-reader reader-engine">
     <div class="reader-tools">
-      <button class="quiet-button" :class="{ active: outlineOpen }" @click="toggleOutline" data-tip="文档目录" :data-tip-key="shortcuts?.outline"><AppIcon name="list" :size="17" />目录</button>
+      <button ref="outlineButton" class="quiet-button" :class="{ active: outlineOpen }" :aria-expanded="outlineOpen" @click="toggleOutline" data-tip="文档目录" :data-tip-key="shortcuts?.outline"><AppIcon name="list" :size="17" />目录</button>
       <div class="reader-page-control"><button @click="previousPage" :disabled="page <= 1" data-tip="上一页" aria-label="上一页" :data-tip-key="shortcuts?.previousPage">‹</button><input aria-label="页码" v-model.number="pageInput" type="number" min="1" :max="total" @change="typedPage" /><span>/ {{ total || '—' }}</span><button @click="nextPage" :disabled="page >= total" data-tip="下一页" aria-label="下一页" :data-tip-key="shortcuts?.nextPage">›</button></div>
-      <div class="reader-zoom"><button data-tip="缩小" aria-label="缩小" :data-tip-key="shortcuts?.zoomOut" @click="zoomOut">−</button><button @click="fitWidth" data-tip="适应宽度" :data-tip-key="shortcuts?.fitWidth">{{ scale >= .01 ? Math.round(scale * 100) : Math.round(scale * 1000) / 10 }}%</button><button data-tip="放大" aria-label="放大" :data-tip-key="shortcuts?.zoomIn" @click="zoomIn">＋</button></div>
+      <div class="reader-zoom"><button data-tip="缩小" aria-label="缩小" :data-tip-key="shortcuts?.zoomOut" :disabled="atMinZoom" @click="zoomOut">−</button><button @click="actualSize" data-tip="恢复 100%" aria-label="缩放比例，点击恢复 100%">{{ scale >= .01 ? Math.round(scale * 100) : Math.round(scale * 1000) / 10 }}%</button><button data-tip="放大" aria-label="放大" :data-tip-key="shortcuts?.zoomIn" :disabled="atMaxZoom" @click="zoomIn">＋</button><button class="zoom-fit" :aria-pressed="fitting" data-tip="适应宽度" aria-label="适应宽度" :data-tip-key="shortcuts?.fitWidth" @click="fitWidth">↔</button></div>
       <button class="quiet-button crop-toggle" :class="{ active: capture }" @click="toggleCapture" data-tip="框选公式或图表作为 AI 上下文" :data-tip-key="shortcuts?.capture"><AppIcon name="crop" :size="17" />{{ capture ? '拖动框选' : '框选' }}</button>
       <InkButton :active="ink.state.enabled" @click="ink.toggle" />
-      <div ref="pageMenuHost" class="page-view-host" @keydown.esc.stop="pageMenu = false">
-        <button type="button" class="quiet-button" :class="{ active: pageMenu }" aria-haspopup="dialog" :aria-expanded="pageMenu" aria-label="页面视图" data-tip="页面视图" @click="togglePageMenu"><AppIcon :name="pageLayout === 'spread' ? 'book' : 'doc'" :size="17" /></button>
+      <div ref="pageMenuHost" class="page-view-host">
+        <button ref="pageMenuButton" type="button" class="quiet-button" :class="{ active: pageMenu }" aria-haspopup="dialog" :aria-expanded="pageMenu" aria-label="页面视图" data-tip="页面视图" @click="togglePageMenu"><AppIcon :name="pageLayout === 'spread' ? 'book' : 'doc'" :size="17" /></button>
         <Teleport to="body"><Transition name="history-pop">
-          <div v-if="pageMenu" ref="pageMenuPanel" class="page-view-menu" role="dialog" aria-label="页面视图" :style="{ left: `${pageMenuAt.left}px`, top: `${pageMenuAt.top}px` }" @keydown.esc.stop="pageMenu = false">
+          <div v-if="pageMenu" ref="pageMenuPanel" class="page-view-menu" role="dialog" aria-label="页面视图" :style="{ left: `${pageMenuAt.left}px`, top: `${pageMenuAt.top}px` }">
             <p class="page-view-title">页面视图</p>
             <div class="page-view-options">
               <button type="button" :aria-pressed="pageLayout !== 'spread'" @click="setPageLayout('single')"><span class="page-view-icon"><AppIcon name="doc" :size="20" /></span>单一页面</button>
@@ -858,10 +915,10 @@ defineExpose({ getOutline: () => outline.value.map(item => ({ title: item.title,
     </div>
     <div class="reader-engine-body">
       <Transition name="pane" @before-enter="outlineResizeStart($event, true)" @before-leave="outlineResizeStart($event, false)" @after-enter="outlineResizeEnd" @after-leave="outlineResizeEnd" @enter-cancelled="outlineResizeEnd" @leave-cancelled="outlineResizeEnd">
-        <aside v-if="outlineOpen" class="document-outline"><p class="outline-heading">目录</p><button v-for="(item, index) in outline" :key="index" :class="[`depth-${Math.min(item.depth, 3)}`, { current: index === currentOutline }]" :style="{ '--depth': item.depth }" :aria-current="index === currentOutline ? 'location' : undefined" @click="destination(item.dest)"><span class="outline-title">{{ item.title }}</span><span v-if="item.page" class="outline-page">{{ item.page }}</span></button><p v-if="!outline.length" class="subtle">此文档没有目录。</p></aside>
+        <aside v-if="outlineOpen" ref="outlinePanel" class="document-outline" @keydown="outlineKeydown"><p class="outline-heading">目录</p><button v-for="(item, index) in outline" :key="index" :class="[`depth-${Math.min(item.depth, 3)}`, { current: index === currentOutline }]" :style="{ '--depth': item.depth }" :aria-current="index === currentOutline ? 'location' : undefined" @click="destination(item.dest)"><span class="outline-title">{{ item.title }}</span><span v-if="item.page" class="outline-page">{{ item.page }}</span></button><p v-if="!outline.length" class="subtle">此文档没有目录。</p></aside>
       </Transition>
       <div ref="viewportHost" class="pdf-viewport"><div ref="container" class="pdf-scroll" tabindex="0" aria-label="PDF 阅读区域" @mouseup="selectedText" @keyup="selectedText"></div>
-        <div v-show="hscroll.bar.visible" class="pdf-hscroll" :class="{ dragging: hscroll.bar.dragging }" role="scrollbar" aria-orientation="horizontal" aria-label="左右滚动页面" :aria-valuenow="Math.round(hscroll.bar.left / Math.max(1, 100 - hscroll.bar.width) * 100)" aria-valuemin="0" aria-valuemax="100" @pointerdown="hscroll.down" @pointermove="hscroll.move" @pointerup="hscroll.up" @pointercancel="hscroll.up"><span class="pdf-hscroll-thumb" :style="{ left: `${hscroll.bar.left}%`, width: `${hscroll.bar.width}%` }" /></div>
+        <div v-show="hscroll.bar.visible" class="pdf-hscroll" :class="{ dragging: hscroll.bar.dragging }" role="scrollbar" tabindex="0" aria-orientation="horizontal" aria-label="左右滚动页面" :aria-valuenow="Math.round(hscroll.bar.left / Math.max(1, 100 - hscroll.bar.width) * 100)" aria-valuemin="0" aria-valuemax="100" @pointerdown="hscroll.down" @pointermove="hscroll.move" @pointerup="hscroll.up" @pointercancel="hscroll.up" @keydown="hscrollKey"><span class="pdf-hscroll-thumb" :style="{ left: `${hscroll.bar.left}%`, width: `${hscroll.bar.width}%` }" /></div>
         <InkPalette v-if="ink.state.enabled" :mode="ink.state.mode" :colors="ink.state.colors" :last-tool="ink.state.lastTool" :can-undo="ink.state.canUndo" :page-has-ink="ink.state.pageHasInk" :selected="ink.state.selected" :status="ink.state.status" @mode="ink.setMode" @color="ink.setColor" @delete-selected="ink.deleteSelection" @undo="ink.undo" @clear="ink.clearPage" @close="ink.exit" />
       </div>
       <div v-if="loading" class="reader-overlay"><span class="spinner"></span><p>正在打开文档…</p></div>
@@ -872,6 +929,8 @@ defineExpose({ getOutline: () => outline.value.map(item => ({ title: item.title,
 
 <style scoped>
 .page-view-host { position: relative; display: flex; }
+/* 适应宽度开着时，按钮像被按下去一样留着一层底。 */
+.reader-zoom .zoom-fit[aria-pressed='true'] { background: var(--control-hover); }
 .page-view-menu { position: fixed; z-index: 120; width: 260px; padding: 16px 16px 12px; border: 1px solid var(--line-soft); border-radius: var(--r-lg); background: var(--surface); color: var(--surface-ink); box-shadow: 0 18px 44px -18px rgb(0 0 0 / .32), 0 2px 6px rgb(0 0 0 / .06); transform: translateX(-50%); transform-origin: 50% 0; }
 .page-view-title { margin: 0 0 12px; font-size: 13px; font-weight: 600; }
 .page-view-options { display: flex; gap: 14px; }
@@ -894,7 +953,7 @@ defineExpose({ getOutline: () => outline.value.map(item => ({ title: item.title,
 .pdf-viewport > .pdf-scroll::-webkit-scrollbar:horizontal { height: 0; }
 .pdf-hscroll { position: absolute; left: 14px; right: 64px; bottom: 3px; z-index: 6; height: 14px; cursor: default; touch-action: none; }
 .pdf-hscroll-thumb { position: absolute; top: 50%; height: 6px; margin-top: -3px; min-width: 28px; border-radius: var(--r-full); background: color-mix(in srgb, var(--surface-ink) 34%, transparent); box-shadow: inset 0 0 0 .5px rgb(255 255 255 / .35), 0 1px 3px rgb(0 0 0 / .18); transition: height var(--dur-2) var(--spring-snappy), margin-top var(--dur-2) var(--spring-snappy), background var(--dur-1) var(--ease-soft); }
-.pdf-hscroll:hover .pdf-hscroll-thumb, .pdf-hscroll.dragging .pdf-hscroll-thumb { height: 9px; margin-top: -4.5px; background: color-mix(in srgb, var(--surface-ink) 52%, transparent); }
+.pdf-hscroll:hover .pdf-hscroll-thumb, .pdf-hscroll.dragging .pdf-hscroll-thumb, .pdf-hscroll:focus-visible .pdf-hscroll-thumb { height: 9px; margin-top: -4.5px; background: color-mix(in srgb, var(--surface-ink) 52%, transparent); }
 :deep(.pdf-search-highlights) { position: absolute; inset: 0; pointer-events: none; z-index: 2; overflow: hidden; }
 :deep(.document-search-hit) { position: absolute; background: rgba(235, 181, 44, .32); mix-blend-mode: multiply; }
 :deep(.document-search-current) { background: rgba(245, 138, 33, .5); outline: 1px solid rgba(155, 83, 15, .75); }
