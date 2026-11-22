@@ -3,7 +3,7 @@
 // 这里改了立刻生效，不跟着设置的「保存」走。
 import { computed, nextTick, reactive, ref } from 'vue'
 import AppIcon from './AppIcon.vue'
-import { editItem, forgetItem, memory, restoreMemory, retagMemory, type MemoryEntry } from '../ai/memory'
+import { editItem, forgetItem, memory, restoreMemory, type MemoryEntry } from '../ai/memory'
 
 const emit = defineEmits<{ manage: [] }>()
 type Row = { id: string; index: number; text: string; talk: string; scope: 'book' | 'all' }
@@ -54,12 +54,11 @@ function forget(row: Row) {
   clearTimeout(undoTimer); undoTimer = window.setTimeout(() => { undo.value = null }, 6000)
 }
 function restore() { if (undo.value) restoreMemory(undo.value.id, undo.value.entry); undo.value = null }
-function flipScope(row: Row) { retagMemory(row.id, { scope: row.scope === 'book' ? 'all' : 'book' }) }
 </script>
 
 <template>
   <section class="mem" aria-label="记忆">
-    <div class="mem-head"><h3>记忆</h3><i class="mem-what" tabindex="0" role="note" aria-label="记忆是什么" data-tip="一段对话答完，助手把你学了什么、掌握得怎样整理成几行；下次提问时先看这些，决定从哪讲起、讲多细。新对话下面的「本书 / 全局 / 不用」决定这段对话读哪些、记到哪">?</i><span v-if="total">{{ total }} 条</span><button type="button" class="text-action" @click="emit('manage')">管理对话…</button></div>
+    <div class="mem-head"><h3>记忆</h3><i class="mem-what" tabindex="0" role="note" aria-label="记忆是什么" data-tip="一段对话答完，助手把你学了什么、掌握得怎样整理成几行；下次提问时先看这些，决定从哪讲起、讲多细。每条记忆都记在它那本书名下。新对话下面选「本书」只用这本书的，选「全局」所有书的都用，选「不用」既不读也不记">?</i><span v-if="total">{{ total }} 条</span><button type="button" class="text-action" @click="emit('manage')">管理对话…</button></div>
     <p v-if="!memory.ready" class="mem-empty">正在读取…</p>
     <p v-else-if="!total" class="mem-empty">还没有记忆。</p>
     <div v-for="book in books" :key="book.key" class="mem-book" :class="{ folded: folded.has(book.key) }">
@@ -68,7 +67,6 @@ function flipScope(row: Row) { retagMemory(row.id, { scope: row.scope === 'book'
         <li v-for="row in book.rows" :key="keyOf(row)">
           <textarea v-if="editing === keyOf(row)" ref="field" v-model="text" rows="1" maxlength="80" aria-label="修改这条记忆" @input="grow($event.target as HTMLTextAreaElement)" @keydown="editKey($event, row)" @blur="save(row)"></textarea>
           <button v-else type="button" class="mem-text" :data-mem="keyOf(row)" :data-tip="`点一下修改 · 来自「${row.talk}」`" @click="edit(row)">{{ row.text }}</button>
-          <button type="button" class="mem-scope" :data-tip="row.scope === 'book' ? '只在这本书里用。点一下改成所有书共用' : '所有书共用。点一下改成只在这本书里用'" @click="flipScope(row)">{{ row.scope === 'book' ? '本书' : '全局' }}</button>
           <button type="button" class="mem-x" aria-label="忘掉这一条" data-tip="忘掉这一条" @click="forget(row)"><AppIcon name="close" :size="12" /></button>
         </li>
       </ul>
@@ -102,13 +100,9 @@ function flipScope(row: Row) { retagMemory(row.id, { scope: row.scope === 'book'
 .mem,.mem :is(button,textarea){font-family:var(--font-formal)}
 .mem .mem-text,:root[data-style='sketch'] .mem .mem-text{white-space:normal;overflow:visible;overflow-wrap:anywhere;text-overflow:clip;letter-spacing:0}
 .mem-book li{align-items:flex-start}
-.mem-scope,.mem-x{margin-top:5px}
-.mem-scope{margin-top:8px}
 :root[data-style='sketch'] .mem-text:hover:not(:disabled){rotate:none}
 .mem-text:hover{background:color-mix(in srgb,var(--ink) 6%,transparent)}
 .mem-book textarea{flex:1;min-width:0;height:auto;min-height:0;margin:4px 0;padding:5px 7px;border:1px solid var(--accent);border-radius:6px;background:none;box-shadow:none;color:var(--ink);font:inherit;font-size:13px;line-height:1.5;resize:none;overflow:hidden;outline:0;box-sizing:border-box}
-.mem-scope{flex:none;height:22px;padding:0 8px;border:1px solid var(--separator);border-radius:999px;background:none;box-shadow:none;color:var(--muted);font:inherit;font-size:11.5px;white-space:nowrap}
-.mem-scope:hover{border-color:color-mix(in srgb,var(--ink) 40%,transparent);color:var(--ink)}
 .mem-x{display:grid;place-items:center;flex:none;width:28px;height:28px;padding:0;border:0;border-radius:6px;background:none;box-shadow:none;color:var(--muted)}
 .mem-x:hover{background:color-mix(in srgb,var(--danger,#c0392b) 12%,transparent);color:var(--danger,#c0392b)}
 .mem-undo{position:sticky;bottom:0;display:flex;align-items:center;gap:8px;margin:14px 0 0;padding:8px 12px;border:1px solid var(--separator);border-radius:8px;background:var(--surface,var(--canvas));font-size:12.5px}

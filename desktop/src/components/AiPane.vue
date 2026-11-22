@@ -358,8 +358,8 @@ function clock(message: Message) {
 function thinkingTime(message: Message) { return seconds((message.firstTokenAt || message.finishedAt || now.value) - (message.startedAt || now.value)) }
 // 记忆的三种用法。说明里把「读」和「记」都说到，免得只知道一半。
 const MEMORY_MODES: { id: MemoryMode; label: string; note: string }[] = [
-  { id: 'book', label: '本书', note: '只读这本书里记下的，新记的也只留在这本书' },
-  { id: 'all', label: '全局', note: '读所有书共用的记忆，新记的所有书都能用' },
+  { id: 'book', label: '本书', note: '只用这本书里记下的' },
+  { id: 'all', label: '全局', note: '所有书里记下的都用，包括这本书的' },
   { id: 'off', label: '不用', note: '不读记忆，这段对话也不记' },
 ]
 const memoryNow = computed(() => memoryMode(state.value))
