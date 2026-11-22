@@ -5,6 +5,7 @@
 // 书和对话的顺序是定住的（自己排的），不会因为刚动过哪一段就跳到前面。书从文档库移除后对话和记忆还在，根节点打上阴影。
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import AppIcon from './AppIcon.vue'
+import { useReorder } from '../ui/reorder'
 import { hintLearned, offerSpaced } from '../ui/hints'
 import { library } from '../sdk'
 import { booksReady, conversationBooks, conversationBundle, conversations, deleteConversation, forgetBook, loadConversations, memorizeNow, moveConversation, rememberBook, renameConversation, restoreConversations, setConversationMemory, type ChatState } from '../ai/workspace'
@@ -361,7 +362,40 @@ function peekIn(talk: ChatState, event: PointerEvent) {
 function peekOut() { clearTimeout(peekTimer); peek.value = undefined }
 
 // ---- 右边一栏：现在记着的全部内容 ----
-const groups = computed(() => roots.value.map(root => ({ root, rows: root.list.flatMap(talk => memoryMode(talk) === 'off' ? [] : itemsOf(talk.id).map((item, index) => ({ item, index, talk, id: key(root.id, talk.id) }))) })).filter(group => group.rows.length))
+// 记忆条目拖动时的临时顺序（哪本书、条目的先后）：拖的过程中别的条目照这个顺序让位，松手才真的写回去。
+const memOrder = ref<{ group: string; ids: string[] } | null>(null)
+const memRowKey = (row: { talk: { id: string }; item: string }) => `${row.talk.id}|${row.item}`
+const groups = computed(() => roots.value.map(root => {
+  const rows = root.list.flatMap(talk => memoryMode(talk) === 'off' ? [] : itemsOf(talk.id).map((item, index) => ({ item, index, talk, id: key(root.id, talk.id) })))
+  const order = memOrder.value?.group === root.id ? memOrder.value.ids : null
+  return { root, rows: order ? [...rows].sort((a, b) => order.indexOf(memRowKey(a)) - order.indexOf(memRowKey(b))) : rows }
+}).filter(group => group.rows.length))
+// 和主屏上挪图标一样：按住一条拖，它浮起来跟着走，别的条目弹开让位，松手落进新位置。
+let memList: HTMLElement | null = null, memGroup = ''
+const memReorder = useReorder({
+  container: () => memList,
+  ids: () => (groups.value.find(group => group.root.id === memGroup)?.rows || []).map(memRowKey),
+  apply: ids => { memOrder.value = { group: memGroup, ids } },
+  commit: ids => {
+    const group = groups.value.find(item => item.root.id === memGroup)
+    memOrder.value = null
+    if (!group) return
+    // 这本书的几段对话各自还是原来那么多条，按新的先后重新装进去。
+    const texts = ids.map(id => id.slice(id.indexOf('|') + 1)), talks = [...new Set(group.rows.map(row => row.talk.id))].filter(id => memory.entries[id])
+    if (texts.join('\n') === talks.flatMap(id => memory.entries[id]!.items).join('\n')) return
+    const before = snapshotMemory()
+    let at = 0
+    for (const id of talks) { const entry = memory.entries[id]!; entry.items = texts.slice(at, at + entry.items.length); at += entry.items.length }
+    replaceMemory(snapshotMemory())
+    record('挪了一条记忆', () => replaceMemory(before))
+  },
+  hold: 240,
+})
+function memGrab(event: PointerEvent, row: { talk: { id: string }; item: string }, group: { root: { id: string } }) {
+  if (event.button !== 0 || (event.target as Element).closest('button, input') || memEdit.value) return
+  memList = (event.currentTarget as HTMLElement).parentElement; memGroup = group.root.id
+  memReorder.pointerdown(event, memRowKey(row))
+}
 // 可以记、但还没整理过的对话（这个功能出来之前的那些）。
 const pending = computed(() => roots.value.flatMap(root => root.list.filter(talk => memoryMode(talk) !== 'off' && !talk.request && talk.messages.length >= 2 && !memory.entries[talk.id]).map(talk => ({ root, talk }))))
 const organizing = ref('')
@@ -628,7 +662,7 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey, true); clea
         <path class="a-block" d="M330 180h44v44h-44zM24 20h18v18H24zM50 20h8v8h-8z" />
         <circle class="a-ball" cx="352" cy="62" r="13" />
       </svg>
-      <header class="cm-side-head"><h3 data-tip="一段对话答完，助手把你学了什么、掌握得怎样整理成几行；下次提问时先看这些，决定从哪讲起、讲多细。新对话下面的「本书 / 全局 / 不用」决定这段对话读哪些、记到哪">记忆</h3><b>{{ remembered }}</b><span>条</span></header>
+      <header class="cm-side-head"><h3 data-tip="一段对话答完，助手把你学了什么、掌握得怎样整理成几行；下次提问时先看这些，决定从哪讲起、讲多细。每条记忆都记在它那本书名下。新对话下面选「本书」只用这本书的，选「全局」所有书的都用，选「不用」既不读也不记">记忆</h3><b>{{ remembered }}</b><span>条</span></header>
       <div class="cm-shelf">
         <p v-if="ready && !remembered" class="cm-side-note">还没有记忆。</p>
         <p v-if="organizing" class="cm-organizing" role="status"><AppIcon name="memory" :size="13" />正在整理 {{ organizing }}</p>
@@ -636,7 +670,7 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey, true); clea
         <p v-if="memBusy || memNote" class="cm-mem-note" :class="{ bad: memNote?.bad }" role="status">{{ memBusy ? '助手正在看这些记忆，按你说的改…' : memNote!.text }}<button v-if="!memBusy && memNote?.undo" type="button" @click="undoLast(); memNote = null">撤销</button></p>
         <section v-for="group in groups" :key="group.root.id" class="cm-group" :class="{ folded: foldedMem.has(group.root.id) }">
           <h4><button type="button" class="cm-fold" :aria-expanded="!foldedMem.has(group.root.id)" :data-tip="foldedMem.has(group.root.id) ? '展开' : '收起'" @click="foldMem(group.root.id)"><span>{{ group.root.title }}</span><small>{{ group.rows.length }}</small><AppIcon name="arrow" :size="10" /></button></h4>
-          <ul v-if="!foldedMem.has(group.root.id)"><li v-for="row in group.rows" :key="row.id + row.item" :class="{ on: lit === row.id, lifted: memDrag?.key === `${row.talk.id}:${row.index}`, 'drop-before': memDrop === `${row.talk.id}:${row.index}:before`, 'drop-after': memDrop === `${row.talk.id}:${row.index}:after` }" :style="memDrag?.key === `${row.talk.id}:${row.index}` ? { translate: `0 ${memDrag.dy}px` } : undefined" tabindex="0" :data-mem="`${row.talk.id}:${row.index}`" @pointerdown="memDown($event, row, group)" @keydown="memKey($event, row, group)" :data-tip="`来自「${row.talk.title || '新对话'}」 · ${memory.entries[row.talk.id]?.scope === 'book' ? '只留在本书' : '所有书共用'}`" @click="!memDragged && reveal(row.id)"><AppIcon name="grip" :size="12" class="cm-grip" aria-hidden="true" /><input v-if="memEdit === `${row.talk.id}:${row.index}`" v-model="memText" class="cm-mem-edit" maxlength="80" aria-label="修改这条记忆" @click.stop @keydown.enter.prevent="!$event.isComposing && $event.keyCode !== 229 && (saveMemEdit(row), focusMem(`${row.talk.id}:${row.index}`))" @keydown.esc.prevent.stop="memEdit = ''; focusMem(`${row.talk.id}:${row.index}`)" @blur="saveMemEdit(row)" /><span v-else><b>{{ parts(row.item)[0] }}</b><em v-if="parts(row.item)[1]">{{ parts(row.item)[1] }}</em></span><button type="button" class="cm-act" aria-label="修改这一条" data-tip="修改这一条" @click.stop="startMemEdit(row)"><AppIcon name="edit" :size="11" /></button><button type="button" class="cm-act" aria-label="忘掉这一条" data-tip="忘掉这一条" @click.stop="forget(row.talk.id, row.index)"><AppIcon name="close" :size="11" /></button></li></ul>
+          <ul v-if="!foldedMem.has(group.root.id)"><li v-for="row in group.rows" :key="memRowKey(row)" :class="{ on: lit === row.id, 'reorder-lifted': memReorder.dragging.value === memRowKey(row) }" tabindex="0" :data-mem="`${row.talk.id}:${row.index}`" :data-reorder-id="memRowKey(row)" @pointerdown="memGrab($event, row, group)" @keydown="memKey($event, row, group)" :data-tip="`来自「${row.talk.title || '新对话'}」`" @click="!memDragged && reveal(row.id)"><AppIcon name="grip" :size="12" class="cm-grip" aria-hidden="true" /><input v-if="memEdit === `${row.talk.id}:${row.index}`" v-model="memText" class="cm-mem-edit" maxlength="80" aria-label="修改这条记忆" @click.stop @keydown.enter.prevent="!$event.isComposing && $event.keyCode !== 229 && (saveMemEdit(row), focusMem(`${row.talk.id}:${row.index}`))" @keydown.esc.prevent.stop="memEdit = ''; focusMem(`${row.talk.id}:${row.index}`)" @blur="saveMemEdit(row)" /><span v-else><b>{{ parts(row.item)[0] }}</b><em v-if="parts(row.item)[1]">{{ parts(row.item)[1] }}</em></span><button type="button" class="cm-act" aria-label="修改这一条" data-tip="修改这一条" @click.stop="startMemEdit(row)"><AppIcon name="edit" :size="11" /></button><button type="button" class="cm-act" aria-label="忘掉这一条" data-tip="忘掉这一条" @click.stop="forget(row.talk.id, row.index)"><AppIcon name="close" :size="11" /></button></li></ul>
         </section>
       </div>
     </aside>
@@ -859,7 +893,11 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey, true); clea
 .cm-grip{position:absolute;left:-2px;top:50%;translate:0 -50%;color:var(--muted);opacity:0;cursor:grab;transition:opacity .14s var(--ease-out)}
 .cm-group li:hover .cm-grip,.cm-group li:focus-visible .cm-grip,.cm-group li.lifted .cm-grip{opacity:1}
 .cm-group li:focus-visible{outline-offset:-2px}
-/* 拖一条记忆：拿着的那条浮起来，红线是落点。 */
+/* 拖一条记忆：拿着的那条浮起来跟着走，别的弹开让位。 */
+.cm-group ul{position:relative}
+.cm-group li:is(.reorder-lifted,.reorder-landing){z-index:3}
+.cm-group li.reorder-lifted{scale:1.03;background:var(--surface,var(--canvas));box-shadow:5px 5px 0 color-mix(in srgb,var(--ink) 18%,transparent),0 0 0 1.5px var(--ink);cursor:grabbing}
+.cm-group ul.reorder-active>li:not(.reorder-lifted){opacity:.7}
 .cm-group li{position:relative;touch-action:none}
 .cm-group li.lifted{z-index:2;background:var(--surface,var(--canvas));box-shadow:4px 4px 0 color-mix(in srgb,var(--ink) 18%,transparent);cursor:grabbing}
 .cm-group li.drop-before::before,.cm-group li.drop-after::after{content:'';position:absolute;left:0;right:0;height:2px;background:var(--cm-red)}

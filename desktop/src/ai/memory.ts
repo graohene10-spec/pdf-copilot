@@ -5,11 +5,10 @@
  * 对话删掉，它的记录跟着删掉。之后提问时，这些记录随请求带给模型，只用来判断讲解的起点和深度。
  * 快速解释、翻译不读也不写这份记忆。
  *
- * 记忆分两处放，免得不同的书互相串味：
- * - 本书（book）：记录只留在这本书里，只有这本书的对话读得到；
- * - 全局（all）：记录所有书共用。
- * 一段对话选哪一种，读和写都按它来：选「本书」只读这本书里记下的（两种都算），写下的也只留在本书；
- * 选「全局」读所有书的全局记录加上这本书自己的，写下的是全局记录；选「不用」既不读也不写。
+ * 每条记忆都记在它那本书名下，「本书」是「全局」的一部分：
+ * - 本书（book）：只用这本书里记下的；
+ * - 全局（all）：所有书里记下的加在一起（这本书的排在前面）；
+ * - 不用（off）：既不读也不写。
  */
 import { reactive } from 'vue'
 import { library } from '../sdk'
@@ -226,8 +225,8 @@ export async function memorize(conversation: { id: string; title: string; docume
 export function memoryInstructions(current: { id: string; documentId: string; mode?: MemoryMode }, budget = 1800): string {
   const mode = current.mode || 'all'
   if (mode === 'off') return ''
-  // 本书：只要这本书里记下的。全局：所有书的共用记录，加上这本书自己的。别的书「只留在本书」的记录谁也读不到。
-  const entries = Object.entries(memory.entries).filter(([id, entry]) => id !== current.id && entry.items.length && (entry.documentId === current.documentId || (mode === 'all' && entry.scope !== 'book')))
+  // 本书是全局的一部分：「本书」只用这本书里记下的；「全局」是所有书记下的加在一起（这本书的排在前面）。
+  const entries = Object.entries(memory.entries).filter(([id, entry]) => id !== current.id && entry.items.length && (entry.documentId === current.documentId || mode === 'all'))
     .sort(([, a], [, b]) => Number(b.documentId === current.documentId) - Number(a.documentId === current.documentId) || b.at - a.at)
   const lines: string[] = []
   let used = 0
