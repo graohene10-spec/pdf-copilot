@@ -18,12 +18,28 @@ function run(item: Item) { if (item.disabled) return; emit('close'); item.action
 function buttons() { return [...(menu.value?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') || [])] }
 function keydown(event: KeyboardEvent) {
   if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); emit('close'); return }
-  if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+  if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
   event.preventDefault()
   const list = buttons(), index = list.indexOf(document.activeElement as HTMLButtonElement)
-  list[(index + (event.key === 'ArrowDown' ? 1 : -1) + list.length) % list.length]?.focus()
+  if (event.key === 'Home') list[0]?.focus()
+  else if (event.key === 'End') list.at(-1)?.focus()
+  else list[(index + (event.key === 'ArrowDown' ? 1 : -1) + list.length) % list.length]?.focus()
 }
-function outside(event: Event) { if (!(event.target instanceof Node) || !menu.value?.contains(event.target)) emit('close') }
+// 在菜单外面按下左键：这一下只用来收起菜单，不顺带点中底下的东西。
+// 只吞掉紧跟着的那一次 click；右键照常（在别处右键会收起这个菜单、再打开新的）。
+// App 在 document 的捕获阶段用 pointerdown 判断「这一下是收菜单的」，这里不拦 pointerdown，它照常收到。
+function swallowClick() {
+  const stop = (event: Event) => { event.preventDefault(); event.stopPropagation(); done() }
+  const later = () => setTimeout(done, 0)
+  function done() { window.removeEventListener('click', stop, true); window.removeEventListener('pointerup', later, true); window.removeEventListener('pointercancel', later, true) }
+  window.addEventListener('click', stop, true)
+  window.addEventListener('pointerup', later, true); window.addEventListener('pointercancel', later, true)
+}
+function outside(event: Event) {
+  if (event.target instanceof Node && menu.value?.contains(event.target)) return
+  if (event.type === 'pointerdown' && (event as PointerEvent).button === 0) swallowClick()
+  emit('close')
+}
 // 菜单关掉后把焦点还给原来的地方（比如书页），方向键、翻页键接着能用。
 let before: Element | null = null
 onMounted(async () => {

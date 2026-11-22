@@ -1026,7 +1026,8 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
       <button class="header-button close-assistant" data-tip="收起附属对话（内容会保留）" aria-label="收起附属对话" @click="emit('close')"><AppIcon name="close" :size="15" /></button>
     </header>
     <header v-else class="ai-header" :class="{ draggable }" @pointerdown="grabHeader">
-      <span v-if="draggable" class="drag-grip" data-tip="拖动调整位置" aria-hidden="true" @pointerdown.stop="emit('grab', $event)"><AppIcon name="grip" :size="14" /></span>
+      <!-- 标题左边这颗键进对话管理。挪面板的位置直接拖整条表头。 -->
+      <button v-if="!side" type="button" class="header-button manage-entry" aria-label="对话管理" data-tip="对话管理：全部对话和记忆" @pointerdown.stop @click="historyOpen = false; emit('manage')"><AppIcon name="threads" :size="16" /></button>
       <div class="history-host">
         <button class="conversation-title" :aria-expanded="historyOpen" aria-label="对话记录" data-tip="对话记录" @click="historyOpen = !historyOpen"><span class="title-text">{{ title }}</span><small>{{ document.title }}</small></button>
         <Transition name="history-pop">

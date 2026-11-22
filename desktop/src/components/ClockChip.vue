@@ -23,7 +23,8 @@ function toggle() { open.value = !open.value }
 watch(open, value => { if (value) { locate(); sweep.value = (Date.now() % 60000) / 1000; fields.h = Math.min(23, clock.last.h); fields.m = clock.last.m; fields.s = clock.last.s; Object.assign(alarm, nextHalfHour()) } })
 watch(() => clock.ringing, ringing => { if (ringing) open.value = true })
 function outside(event: PointerEvent) { if (!open.value || clock.ringing) return; const target = event.target as Node; if (!panel.value?.contains(target) && !chip.value?.contains(target) && !corner.value?.contains(target)) open.value = false }
-function key(event: KeyboardEvent) { if (event.key === 'Escape' && open.value && !clock.ringing) { open.value = false; chip.value?.focus() } }
+// Esc 只收起卡片（preventDefault：应用不再拿这一下去退出全屏、取消框选）；焦点回到打开它的那个按钮。
+function key(event: KeyboardEvent) { if (event.key === 'Escape' && open.value && !clock.ringing) { event.preventDefault(); open.value = false; (cornerShown.value && !chip.value?.offsetWidth ? corner.value : chip.value)?.focus() } }
 onMounted(() => { document.addEventListener('pointerdown', outside, true); document.addEventListener('keydown', key); window.addEventListener('resize', locate) })
 onBeforeUnmount(() => { document.removeEventListener('pointerdown', outside, true); document.removeEventListener('keydown', key); window.removeEventListener('resize', locate) })
 
