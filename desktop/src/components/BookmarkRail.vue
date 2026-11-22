@@ -44,6 +44,8 @@ function key(event: KeyboardEvent, id: string) {
 const DROP = 36
 // 刻度挂的那根线：贴着滚动条左边，和滚动区域一样高，所以刻度和滑块对得上。
 const rail = ref({ top: 72, height: 0, right: 12 })
+// 细线是滚动条的导轨：画在滚动条正中（滚动条宽 14），滑块就骑在线上。翻走的书签刻度跟着伸到线上。
+const RAIL_IN = 7.5
 function relayout() {
   const seen = new Set<string>()
   let first: Place | null = null
@@ -256,7 +258,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div ref="layer" class="bookmark-layer" tabindex="-1" aria-label="书签" @keydown="layerKey">
-    <Transition name="bookmark-guide"><i v-if="lines.length" class="bookmark-guide" :style="{ top: `${rail.top}px`, height: `${Math.max(0, rail.height || paneHeight - rail.top)}px`, right: `${rail.right}px` }" aria-hidden="true"></i></Transition>
+    <Transition name="bookmark-guide"><i v-if="lines.length" class="bookmark-guide" :style="{ top: `${rail.top}px`, height: `${Math.max(0, rail.height || paneHeight - rail.top)}px`, right: `${rail.right - RAIL_IN}px` }" aria-hidden="true"></i></Transition>
     <TransitionGroup name="bookmark">
       <div v-for="item in lines" :key="item.key" class="bookmark" :class="{ picked: picked.has(item.mark.id) }" :data-mark="item.mark.id" :style="{ top: `${item.top}px`, right: `${rail.right}px` }">
         <button type="button" class="bookmark-hit" :aria-label="item.mark.name ? `书签：${item.mark.name}` : `书签 · ${item.mark.hint}`" :data-tip="`${item.mark.art.name} · ${item.mark.hint}`" @click="click(item.mark, $event)" @keydown.delete.prevent="remove(item.mark)" @contextmenu.prevent.stop="menu(item.mark, $event)">
@@ -296,6 +298,7 @@ onBeforeUnmount(() => {
 
 /* 贴着滚动条的那根发丝线：两头淡出。 */
 /* 书签轨道的细线：从阅读区顶到底一整条，两头不留空、不淡出。 */
+.bookmark:not(.on-page){translate:7px 0}
 .bookmark-guide{position:absolute;width:1px;background:color-mix(in srgb,var(--ink) 20%,transparent)}
 .bookmark-guide-enter-active,.bookmark-guide-leave-active{transition:opacity var(--dur-3) var(--ease-out)}
 .bookmark-guide-enter-from,.bookmark-guide-leave-to{opacity:0}
