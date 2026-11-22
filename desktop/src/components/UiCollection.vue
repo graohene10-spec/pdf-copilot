@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { offerSpaced } from '../ui/hints'
+import { hintLearned, offerSpaced } from '../ui/hints'
 offerSpaced('collection-pick', ['拖动'], '框选，Delete 删除')
 // Intelligent UI 合集：文档库里的一个分类（和「我的收藏」并列），钉住的 PDF 卡片、记入文档的 Markdown 释义里带界面的那些，按书归在一起。
 // 每一个都照样能操作；点页码跳回原处；单击标题选中（Ctrl / Shift 多选），在空白处按住左键拖出框也能选，Delete 删除。
@@ -57,6 +57,7 @@ function askRemove(list: UiEntry[]) { if (list.length) confirming.value = list }
 function remove() {
   if (!confirming.value) return
   removeUiEntries(confirming.value)
+  hintLearned('collection-pick')
   const gone = new Set(confirming.value.map(key))
   selected.value = new Set([...selected.value].filter(id => !gone.has(id)))
   confirming.value = null

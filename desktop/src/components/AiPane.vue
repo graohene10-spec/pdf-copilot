@@ -918,6 +918,7 @@ function startSummary() {
   const summary = state.value.summary
   if (!summary || summary.started || busy.value) return
   const extra = prompt.value.trim()
+  if (extra) hintLearned('summary-setup')
   summary.started = true; prompt.value = ''
   rememberSummaryOptions(summary.options)
   // 范围选了「选中的内容」才把选区带上；其余情况让助手自己去读。
