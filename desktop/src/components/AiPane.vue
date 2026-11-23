@@ -16,6 +16,7 @@ import { vMarquee } from '../ui/marquee'
 import { loadAiSettings, saveModelChoice, supportsFast } from '../ai/settings.mjs'
 import { warmNative } from '../ai/native.mjs'
 import { useSettings } from '../settings'
+import { searchTalks } from '../ai/conversation-search'
 import AppIcon from './AppIcon.vue'
 import AssistantMark from './AssistantMark.vue'
 import { greetingFor, placeholderFor, thinkingVerb, thinkingTitle, spinnerFor } from '../ai/greeting'
@@ -114,7 +115,18 @@ function openAny(item: ChatState) {
   if (item.documentId === props.document.id) useConversation(item.id)
   else emit('openConversation', { documentId: item.documentId, conversationId: item.id })
 }
-watch(historyOpen, open => { if (!open) historyScope.value = 'document' })
+watch(historyOpen, open => { if (!open) { historyScope.value = 'document'; historyQuery.value = '' } })
+// 搜对话：标题和内容一起搜，所有文档的都搜。打字时才去读别的文档的对话，读一次。
+const historyQuery = ref(''), searchField = ref<HTMLInputElement>()
+const searching = computed(() => !!historyQuery.value.trim())
+let searchLoaded = false
+watch(searching, async on => {
+  if (!on || searchLoaded) return
+  searchLoaded = true; loadingAll.value = true
+  try { everything.value = await allConversations((props.library || []).map(item => item.id)) } finally { loadingAll.value = false }
+})
+watch(historyOpen, open => { if (open) { searchLoaded = false; void nextTick(() => searchField.value?.focus({ preventScroll: true })) } })
+const found = computed(() => searching.value ? searchTalks(everything.value, historyQuery.value, 40) : [])
 function useConversation(id: string) {
   if (id !== conversationId.value) { editing.value = null; editOptions.value = null }
   conversationId.value = id
@@ -699,7 +711,7 @@ function drawerEscape(event: KeyboardEvent) { if (!pickerOpen.value || event.def
 // 抽屉里的按钮在读取模型时会暂时禁用，焦点随之落回页面：这时 Esc 仍然收起抽屉。
 function strayEscape(event: KeyboardEvent) { if (event.key === 'Escape' && (document.activeElement === document.body || !document.activeElement)) drawerEscape(event) }
 function closePicker() { pickerOpen.value = false; void nextTick(() => pickerHost.value?.querySelector<HTMLElement>('.model-picker')?.focus()) }
-function historyEscape(event: KeyboardEvent) { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); historyOpen.value = false; pane.value?.querySelector<HTMLElement>('.history-host button')?.focus() } }
+function historyEscape(event: KeyboardEvent) { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); if (historyQuery.value) { historyQuery.value = ''; return } historyOpen.value = false; pane.value?.querySelector<HTMLElement>('.history-host button')?.focus() } }
 function historyOutside(event: PointerEvent) { if (!(event.target as Element)?.closest?.('.history-host')) historyOpen.value = false }
 watch(historyOpen, open => { deleteArmed.value = ''; if (open) { document.addEventListener('pointerdown', historyOutside, true); window.addEventListener('keydown', historyEscape, true) } else { document.removeEventListener('pointerdown', historyOutside, true); window.removeEventListener('keydown', historyEscape, true) } })
 
@@ -1035,8 +1047,19 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
           <div v-if="historyOpen" class="history-menu" role="dialog" aria-label="对话记录">
             <div class="history-top"><button class="history-new" @click="startConversation"><AppIcon name="compose" :size="15" />新对话</button><button class="history-new history-manage" data-tip="管理全部对话和记忆" @click="historyOpen = false; emit('manage')"><AppIcon name="list" :size="15" />管理</button></div>
             <div v-if="alternatives?.length" class="history-switch"><p class="history-label">助手正在读</p><button v-marquee class="current" aria-current="true" tabindex="-1"><span class="marquee-text">{{ document.title }}</span></button><button v-for="item in alternatives" :key="item.id" v-marquee @click="historyOpen = false; emit('switchDocument', item.id)"><span class="marquee-text">改读 {{ item.title }}</span></button></div>
-            <div class="history-scope" role="tablist" aria-label="对话范围"><button role="tab" :aria-selected="historyScope === 'document'" @click="historyScope = 'document'">这份文档</button><button role="tab" :aria-selected="historyScope === 'all'" @click="showAll">全部文档</button></div>
-            <div v-if="historyScope === 'all'" class="history-list">
+            <label class="history-search"><AppIcon name="search" :size="13" /><input ref="searchField" v-model="historyQuery" type="text" placeholder="搜索对话" aria-label="搜索对话" spellcheck="false" @keydown.enter.prevent="!$event.isComposing && $event.keyCode !== 229 && found[0] && openAny(found[0].item)" /></label>
+            <div v-if="searching" class="history-list">
+              <p v-if="loadingAll" class="history-empty">正在读取…</p>
+              <template v-else>
+                <div v-for="hit in found" :key="hit.item.id" class="history-item" :class="{ current: hit.item.id === conversationId }">
+                  <button class="history-open history-hit" @click="openAny(hit.item)"><span><AppIcon v-if="hit.item.branchOf" name="branch" :size="12" class="branch-mark" /><span v-if="hit.title" class="hit-title">{{ hit.title.before }}<mark>{{ hit.title.hit }}</mark>{{ hit.title.after }}</span><span v-else class="hit-title">{{ hit.item.title || '新对话' }}</span></span><small>{{ titles.get(hit.item.documentId) || '已移除的文档' }} · {{ relative(hit.item.updatedAt) }}</small><em v-if="hit.snippet">{{ hit.snippet.before }}<mark>{{ hit.snippet.hit }}</mark>{{ hit.snippet.after }}</em></button>
+                </div>
+                <p v-if="!found.length" class="history-empty">没有找到。</p>
+              </template>
+            </div>
+            <div v-if="!searching" class="history-scope" role="tablist" aria-label="对话范围"><button role="tab" :aria-selected="historyScope === 'document'" @click="historyScope = 'document'">这份文档</button><button role="tab" :aria-selected="historyScope === 'all'" @click="showAll">全部文档</button></div>
+            <div v-if="searching"></div>
+            <div v-else-if="historyScope === 'all'" class="history-list">
               <p v-if="loadingAll" class="history-empty">正在读取…</p>
               <div v-for="item in everything" v-else :key="item.id" class="history-item" :class="{ current: item.id === conversationId }">
                 <button v-marquee class="history-open" @click="openAny(item)"><span><AppIcon v-if="item.branchOf" name="branch" :size="12" class="branch-mark" /><span class="marquee-text">{{ item.title || '新对话' }}</span></span><small>{{ titles.get(item.documentId) || '已移除的文档' }} · {{ relative(item.updatedAt) }}</small></button>
@@ -1309,6 +1332,13 @@ button:disabled{opacity:.4;cursor:default}
 .history-item:hover .history-delete,.history-delete:focus-visible{opacity:1}
 .history-delete.armed{width:auto;padding:0 8px;background:color-mix(in srgb,var(--danger) 14%,transparent);color:var(--danger);font-size:12px;white-space:nowrap;opacity:1}
 .history-delete:hover{background:color-mix(in srgb,var(--danger) 12%,transparent);color:var(--danger)}
+.history-search{display:flex;align-items:center;gap:7px;height:30px;margin:8px 0 0;padding:0 10px;border-bottom:1px solid var(--line-soft);color:var(--muted)}
+.history-search input{flex:1;min-width:0;height:100%;padding:0;border:0;border-radius:0;outline:0;background:none;box-shadow:none;color:var(--ink);font:inherit;font-size:12.5px}
+.history-search:focus-within{border-bottom-color:var(--ink);color:var(--ink)}
+.history-search+.history-list{margin-top:6px}
+.history-hit .hit-title{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.history-hit em{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;max-width:100%;margin-top:2px;color:var(--secondary);font-family:var(--font-formal);font-size:11.5px;font-style:normal;line-height:1.5;white-space:normal;overflow-wrap:anywhere}
+.history-hit mark{padding:0;background:none;color:var(--accent);font-weight:700}
 .history-empty{margin:10px;font-size:12px;color:var(--muted)}
 .history-pop-enter-active{transition:opacity var(--dur-2) var(--ease-out),transform var(--dur-bounce) var(--spring-snappy)}
 .history-pop-leave-active{transition:opacity var(--dur-1) var(--ease-out),transform var(--dur-1) var(--ease-out)}
