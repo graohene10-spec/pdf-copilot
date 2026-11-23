@@ -11,6 +11,7 @@ import { rectangleSelector } from '../../../extension/reader/selection.mjs'
 import { regionText, captureRegion } from '../reader/markdown-capture'
 import { usePdfInk } from '../reader/ink/use-ink'
 import AppIcon from './AppIcon.vue'
+import ZoomChip from './ZoomChip.vue'
 import ReaderSearch from './ReaderSearch.vue'
 import InkButton from './ink/InkButton.vue'
 import InkPalette from './ink/InkPalette.vue'
@@ -22,6 +23,7 @@ const emit = defineEmits<{
   selection: [value: { text: string; page: number; image?: string; imagePending?: Promise<string>; rect?: MarkdownRect; captureFrame?: { left: number; top: number; width: number; height: number } }]
   text: [value: string]
   error: [value: string]
+  zoomStep: [value: number]
   fontSizeChange: [value: number]
 }>()
 /** A framed region in the article's own (unzoomed) CSS pixels. */
@@ -465,7 +467,7 @@ defineExpose({ getOutline: () => headings.value.map(item => ({ title: item.title
     <div class="reader-tools">
       <button ref="outlineButton" class="quiet-button" :class="{ active: outlineOpen }" :aria-expanded="outlineOpen" data-tip="文档目录" :data-tip-key="shortcuts?.outline" @click="toggleOutline"><AppIcon name="list" :size="17" />目录</button>
       <span class="reader-format-label">Markdown</span>
-      <div class="reader-zoom"><button @click="zoomOut()" data-tip="缩小" aria-label="缩小" :data-tip-key="shortcuts?.zoomOut" :disabled="zoom <= .5">−</button><button @click="resetZoom" data-tip="恢复 100%" aria-label="缩放比例，点击恢复 100%">{{ Math.round(zoom * 100) }}%</button><button @click="zoomIn()" data-tip="放大" aria-label="放大" :data-tip-key="shortcuts?.zoomIn" :disabled="zoom >= 3">＋</button></div>
+      <div class="reader-zoom"><button @click="zoomOut()" data-tip="缩小" aria-label="缩小" :data-tip-key="shortcuts?.zoomOut" :disabled="zoom <= .5">−</button><ZoomChip :label="`${Math.round(zoom * 100)}%`" :percent="zoom * 100" :min="50" :max="300" :step="zoomStep * 100" tip="恢复 100%" @tap="resetZoom" @set="queueZoom($event / 100)" @step="emit('zoomStep', $event)" /><button @click="zoomIn()" data-tip="放大" aria-label="放大" :data-tip-key="shortcuts?.zoomIn" :disabled="zoom >= 3">＋</button></div>
       <button class="quiet-button crop-toggle" :class="{ active: capture }" @click="toggleCapture" data-tip="框选公式、图表或一段内容作为 AI 上下文" :data-tip-key="shortcuts?.capture"><AppIcon name="crop" :size="17" />{{ capture ? '拖动框选' : '框选' }}</button>
       <InkButton :active="ink.state.enabled" :tip-key="shortcuts?.inkPen" @click="toggleInk" />
       <button class="quiet-button" :class="{ active: raw }" @click="raw = !raw">{{ raw ? '阅读视图' : '查看源码' }}</button>
