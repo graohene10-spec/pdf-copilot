@@ -47,7 +47,7 @@ onMounted(async () => {
   for (const id of ids) if (recent(id).length) { if (!order.books.includes(id)) order.books.push(id); order.talks[id] = talks(id).map(item => item.id) }
   saveOrder()
   ready.value = true
-  setTimeout(() => { opening.value = false }, 1200)
+  setTimeout(() => { opening.value = false }, 1400)
   void nextTick(() => dialog.value?.focus())
 })
 const bookOf = (id: string): Book => shelf.value.get(id) || { id, title: conversationBooks[id]?.title || '已移除的文档', kind: conversationBooks[id]?.kind || 'pdf' }
@@ -761,7 +761,8 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey, true); clea
 .g-disc{fill:color-mix(in srgb,var(--canvas) 72%,transparent)}
 .g-wedge{fill:url(#cm-hatch-red);stroke:var(--cm-red);stroke-width:1.5;vector-effect:non-scaling-stroke}
 .cm-ground #cm-hatch-red path{stroke:color-mix(in srgb,var(--cm-red) 62%,transparent);stroke-width:1.1}
-.g-ring{fill:none;stroke:color-mix(in srgb,var(--ink) 62%,transparent);stroke-width:2;vector-effect:non-scaling-stroke}
+/* 不用 non-scaling-stroke：那样虚线按屏幕像素算，窗口一大画线就差一截，动画结束才突然补全。 */
+.g-ring{fill:none;stroke:color-mix(in srgb,var(--ink) 62%,transparent);stroke-width:1.6}
 .g-orbit{fill:none;stroke:color-mix(in srgb,var(--ink) 40%,transparent);stroke-width:1;stroke-dasharray:2 9;vector-effect:non-scaling-stroke}
 .g-beam{fill:color-mix(in srgb,var(--ink) 13%,transparent)}
 .g-bits,.g-core{fill:var(--ink)}

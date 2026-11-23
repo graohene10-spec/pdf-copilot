@@ -1,6 +1,6 @@
 {
   "name": "phydog-desktop",
-  "version": "0.10.137",
+  "version": "0.10.138",
   "private": true,
   "type": "module",
   "scripts": {

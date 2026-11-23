@@ -10,6 +10,7 @@ import { ContinuousPdfViewer, SPREAD_GAP } from '../reader/continuous.mjs'
 import { cropImageAsync } from '../reader/crop'
 import { availableReadingWidth, shrinkToFitScale, clampPdfScale } from '../reader/layout.mjs'
 import AppIcon from './AppIcon.vue'
+import ZoomChip from './ZoomChip.vue'
 import ReaderSearch from './ReaderSearch.vue'
 import { normalizeSearchText, scanPdfMatches } from '../reader/search.mjs'
 import { pacer } from '../reader/pace.mjs'
@@ -43,6 +44,7 @@ const emit = defineEmits<{
   text: [value: string]
   error: [value: string]
   pageLayout: [value: { pageLayout: 'single' | 'spread'; coverAlone: boolean }]
+  zoomStep: [value: number]
 }>()
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
 const container = ref<HTMLElement>()
@@ -895,7 +897,7 @@ defineExpose({ getOutline: () => outline.value.map(item => ({ title: item.title,
     <div class="reader-tools">
       <button ref="outlineButton" class="quiet-button" :class="{ active: outlineOpen }" :aria-expanded="outlineOpen" @click="toggleOutline" data-tip="文档目录" :data-tip-key="shortcuts?.outline"><AppIcon name="list" :size="17" />目录</button>
       <div class="reader-page-control"><button @click="previousPage" :disabled="page <= 1" data-tip="上一页" aria-label="上一页" :data-tip-key="shortcuts?.previousPage">‹</button><input aria-label="页码" v-model.number="pageInput" type="number" min="1" :max="total" @change="typedPage" /><span>/ {{ total || '—' }}</span><button @click="nextPage" :disabled="page >= total" data-tip="下一页" aria-label="下一页" :data-tip-key="shortcuts?.nextPage">›</button></div>
-      <div class="reader-zoom"><button data-tip="缩小" aria-label="缩小" :data-tip-key="shortcuts?.zoomOut" :disabled="atMinZoom" @click="zoomOut">−</button><button :aria-pressed="fitting" data-tip="适应宽度" aria-label="缩放比例，点击适应宽度" :data-tip-key="shortcuts?.fitWidth" @click="fitWidth">{{ scale >= .01 ? Math.round(scale * 100) : Math.round(scale * 1000) / 10 }}%</button><button data-tip="放大" aria-label="放大" :data-tip-key="shortcuts?.zoomIn" :disabled="atMaxZoom" @click="zoomIn">＋</button></div>
+      <div class="reader-zoom"><button data-tip="缩小" aria-label="缩小" :data-tip-key="shortcuts?.zoomOut" :disabled="atMinZoom" @click="zoomOut">−</button><ZoomChip :label="`${scale >= .01 ? Math.round(scale * 100) : Math.round(scale * 1000) / 10}%`" :percent="scale * 100" :min="25" :max="400" :step="zoomStep * 100" :pressed="fitting" tip="适应宽度" :tip-key="shortcuts?.fitWidth" @tap="fitWidth" @set="zoom($event / 100)" @step="emit('zoomStep', $event)" /><button data-tip="放大" aria-label="放大" :data-tip-key="shortcuts?.zoomIn" :disabled="atMaxZoom" @click="zoomIn">＋</button></div>
       <button class="quiet-button crop-toggle" :class="{ active: capture }" @click="toggleCapture" data-tip="框选公式或图表作为 AI 上下文" :data-tip-key="shortcuts?.capture"><AppIcon name="crop" :size="17" />{{ capture ? '拖动框选' : '框选' }}</button>
       <InkButton :active="ink.state.enabled" @click="ink.toggle" />
       <div ref="pageMenuHost" class="page-view-host">
