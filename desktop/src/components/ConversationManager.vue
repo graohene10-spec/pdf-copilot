@@ -9,7 +9,7 @@ import { useReorder } from '../ui/reorder'
 import { searchTalks } from '../ai/conversation-search'
 import { hintLearned, offerSpaced } from '../ui/hints'
 import { library } from '../sdk'
-import { booksReady, conversationBooks, conversationBundle, conversations, deleteConversation, forgetBook, loadConversations, memorizeNow, moveConversation, rememberBook, renameConversation, restoreConversations, setConversationMemory, type ChatState } from '../ai/workspace'
+import { booksReady, conversationBooks, conversationBundle, conversations, deleteConversation, forgetBook, loadConversations, memorizeNow, moveConversation, rememberBook, revealTarget, renameConversation, restoreConversations, setConversationMemory, type ChatState } from '../ai/workspace'
 import { editItem, forgetItem, moveItem, replaceMemory, reviseMemory, snapshotMemory, memory, memoryMode, memoryReady, restoreMemory, type MemoryMode } from '../ai/memory'
 
 type Book = { id: string; title: string; kind: string }
@@ -130,8 +130,9 @@ const hits = computed(() => {
   for (const root of roots.value) for (const talk of root.list) home.set(talk.id, root)
   return searchTalks([...home.keys()].map(id => home.get(id)!.list.find(talk => talk.id === id)!), find.value).map(hit => ({ ...hit, root: home.get(hit.item.id)! }))
 })
-function openHit(hit: { root: Root; item: ChatState }) {
+function openHit(hit: { root: Root; item: ChatState; messageId?: string }) {
   if (hit.root.gone) { say('这本书已从文档库移除。把对话拖到另一本书上就能接着用。'); return }
+  if (hit.messageId) revealTarget.value = { conversationId: hit.item.id, messageId: hit.messageId, at: Date.now() }
   emit('openConversation', { documentId: hit.root.id, conversationId: hit.item.id })
   emit('close')
 }

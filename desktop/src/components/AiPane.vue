@@ -3,7 +3,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, reactive, d
 import 'katex/dist/katex.min.css'
 import { getProvider, getNativeModels, getNativeStatus } from '../ai/providers.mjs'
 import { nativeModelInventory, registerNativeModelInventory } from '../ai/native-models'
-import { newSummaryConversation, cancelSummary, setConversationMemory, adoptTurns, addExcerpt, removeExcerpt, removeMessage, compressConversation, sideConversation, chatState, sendChat, stopChat, configureRequests, taskSummary, conversations, activeConversationId, selectConversation, newConversation, deleteConversation, loadConversations, conversationTokens, contextWindow, branchConversation, resendQuestion, watchConversation, allConversations, pinMessage, MAX_ATTACHMENTS, pendingImages, setPendingImages, keepImage, type Message, type ChatState } from '../ai/workspace'
+import { newSummaryConversation, cancelSummary, setConversationMemory, adoptTurns, addExcerpt, removeExcerpt, removeMessage, compressConversation, sideConversation, chatState, sendChat, stopChat, configureRequests, taskSummary, conversations, activeConversationId, selectConversation, newConversation, deleteConversation, loadConversations, conversationTokens, contextWindow, branchConversation, resendQuestion, watchConversation, allConversations, revealTarget, pinMessage, MAX_ATTACHMENTS, pendingImages, setPendingImages, keepImage, type Message, type ChatState } from '../ai/workspace'
 import { renderMarkdown, renderDiagrams } from '../ai/render'
 import { memoryMode, type MemoryMode } from '../ai/memory'
 import { summaryChat, summaryRequest, parseSummaryRequest, requestExtra, rememberSummaryOptions, type SummaryOptions } from '../ai/summary'
@@ -62,6 +62,28 @@ function revealRest(done: () => void) {
   }
   step()
 }
+// 从搜索结果进来：把更早的消息都补出来，滚到命中的那一条，亮两下。
+// 打开面板、切对话时别处也在动滚动位置，所以到位后隔一会儿再对一次。
+const foundMessage = ref('')
+let revealTimer: ReturnType<typeof setTimeout> | undefined
+function showFound(tries = 0, again = true) {
+  const target = revealTarget.value
+  if (!target || target.conversationId !== conversationId.value) return
+  // 没人接的旧目标不算数：免得之后正常打开这段对话时突然滚走。
+  if (Date.now() - target.at > 8000) { revealTarget.value = null; return }
+  clearTimeout(revealTimer)
+  const list = messageList.value, own = messages.value.some(message => message.id === target.messageId)
+  if (!own) { revealTarget.value = null; return }
+  if (contentReady.value && revealCount.value < messages.value.length) revealCount.value = Infinity
+  const el = contentReady.value && list ? [...list.querySelectorAll<HTMLElement>('.ai-message')].find(item => item.dataset.id === target.messageId) : undefined
+  if (!el || !list) { if (tries < 40) revealTimer = setTimeout(() => showFound(tries + 1, again), 80); else revealTarget.value = null; return }
+  list.scrollTop += el.getBoundingClientRect().top - list.getBoundingClientRect().top - Math.min(80, list.clientHeight / 4)
+  foundMessage.value = target.messageId
+  if (again) { revealTimer = setTimeout(() => showFound(0, false), 420); return }
+  revealTarget.value = null
+  revealTimer = setTimeout(() => { foundMessage.value = '' }, 1800)
+}
+watch([revealTarget, conversationId, contentReady], () => { if (revealTarget.value) void nextTick(() => showFound()) }, { immediate: true })
 function whenSettled(done: () => void) {
   const panel = pane.value?.closest<HTMLElement>('.ai-panel')
   let finished = false
@@ -109,6 +131,10 @@ async function showAll() {
   historyScope.value = 'all'
   loadingAll.value = true
   try { everything.value = await allConversations((props.library || []).map(item => item.id)) } finally { loadingAll.value = false }
+}
+function openHit(hit: { item: ChatState; messageId?: string }) {
+  if (hit.messageId) revealTarget.value = { conversationId: hit.item.id, messageId: hit.messageId, at: Date.now() }
+  openAny(hit.item)
 }
 function openAny(item: ChatState) {
   historyOpen.value = false
@@ -1047,12 +1073,12 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
           <div v-if="historyOpen" class="history-menu" role="dialog" aria-label="对话记录">
             <div class="history-top"><button class="history-new" @click="startConversation"><AppIcon name="compose" :size="15" />新对话</button><button class="history-new history-manage" data-tip="管理全部对话和记忆" @click="historyOpen = false; emit('manage')"><AppIcon name="list" :size="15" />管理</button></div>
             <div v-if="alternatives?.length" class="history-switch"><p class="history-label">助手正在读</p><button v-marquee class="current" aria-current="true" tabindex="-1"><span class="marquee-text">{{ document.title }}</span></button><button v-for="item in alternatives" :key="item.id" v-marquee @click="historyOpen = false; emit('switchDocument', item.id)"><span class="marquee-text">改读 {{ item.title }}</span></button></div>
-            <label class="history-search"><AppIcon name="search" :size="13" /><input ref="searchField" v-model="historyQuery" type="text" placeholder="搜索对话" aria-label="搜索对话" spellcheck="false" @keydown.enter.prevent="!$event.isComposing && $event.keyCode !== 229 && found[0] && openAny(found[0].item)" /></label>
+            <label class="history-search"><AppIcon name="search" :size="13" /><input ref="searchField" v-model="historyQuery" type="text" placeholder="搜索对话" aria-label="搜索对话" spellcheck="false" @keydown.enter.prevent="!$event.isComposing && $event.keyCode !== 229 && found[0] && openHit(found[0])" /></label>
             <div v-if="searching" class="history-list">
               <p v-if="loadingAll" class="history-empty">正在读取…</p>
               <template v-else>
                 <div v-for="hit in found" :key="hit.item.id" class="history-item" :class="{ current: hit.item.id === conversationId }">
-                  <button class="history-open history-hit" @click="openAny(hit.item)"><span><AppIcon v-if="hit.item.branchOf" name="branch" :size="12" class="branch-mark" /><span v-if="hit.title" class="hit-title">{{ hit.title.before }}<mark>{{ hit.title.hit }}</mark>{{ hit.title.after }}</span><span v-else class="hit-title">{{ hit.item.title || '新对话' }}</span></span><small>{{ titles.get(hit.item.documentId) || '已移除的文档' }} · {{ relative(hit.item.updatedAt) }}</small><em v-if="hit.snippet">{{ hit.snippet.before }}<mark>{{ hit.snippet.hit }}</mark>{{ hit.snippet.after }}</em></button>
+                  <button class="history-open history-hit" @click="openHit(hit)"><span><AppIcon v-if="hit.item.branchOf" name="branch" :size="12" class="branch-mark" /><span v-if="hit.title" class="hit-title">{{ hit.title.before }}<mark>{{ hit.title.hit }}</mark>{{ hit.title.after }}</span><span v-else class="hit-title">{{ hit.item.title || '新对话' }}</span></span><small>{{ titles.get(hit.item.documentId) || '已移除的文档' }} · {{ relative(hit.item.updatedAt) }}</small><em v-if="hit.snippet">{{ hit.snippet.before }}<mark>{{ hit.snippet.hit }}</mark>{{ hit.snippet.after }}</em></button>
                 </div>
                 <p v-if="!found.length" class="history-empty">没有找到。</p>
               </template>
@@ -1096,7 +1122,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
           <h2 class="ai-welcome-lead" :lang="greeting.lang === 'zh' ? 'zh-CN' : 'en'" :aria-label="greeting.text"><span v-for="(glyph, index) in Array.from(greeting.text)" :key="index" class="lead-glyph" aria-hidden="true" :style="{ '--i': Math.min(index, 60) }">{{ glyph }}</span></h2>
         </div>
         <div v-if="!contentReady && messages.length" class="ai-loading" aria-hidden="true"><i></i><i></i><i></i></div>
-        <article v-for="message in shownMessages" :key="message.id" class="ai-message" :class="[message.note ? 'note' : message.role, { compressed: message.compressed, summary: message.summary, arrived: arrivedNote === message.id }]" :data-id="message.id">
+        <article v-for="message in shownMessages" :key="message.id" class="ai-message" :class="[message.note ? 'note' : message.role, { compressed: message.compressed, summary: message.summary, arrived: arrivedNote === message.id, found: foundMessage === message.id }]" :data-id="message.id">
           <div v-if="message.note" class="note-card" :data-tip="`${noteLabel(message)}：${message.content.slice(0, 300)}`">
             <AppIcon class="note-icon" :name="message.note === 'self' ? 'pin' : 'branch'" :size="11" />
             <span class="note-text">{{ message.content }}</span>
@@ -1339,6 +1365,8 @@ button:disabled{opacity:.4;cursor:default}
 .history-hit .hit-title{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .history-hit em{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;max-width:100%;margin-top:2px;color:var(--secondary);font-family:var(--font-formal);font-size:11.5px;font-style:normal;line-height:1.5;white-space:normal;overflow-wrap:anywhere}
 .history-hit mark{padding:0;background:none;color:var(--accent);font-weight:700}
+.ai-message.found{animation:found-flash .8s var(--ease-out) 2}
+@keyframes found-flash{0%,100%{box-shadow:0 0 0 0 transparent}40%{box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 70%,transparent)}}
 .history-empty{margin:10px;font-size:12px;color:var(--muted)}
 .history-pop-enter-active{transition:opacity var(--dur-2) var(--ease-out),transform var(--dur-bounce) var(--spring-snappy)}
 .history-pop-leave-active{transition:opacity var(--dur-1) var(--ease-out),transform var(--dur-1) var(--ease-out)}
