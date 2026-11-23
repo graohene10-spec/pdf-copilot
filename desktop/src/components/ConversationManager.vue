@@ -6,9 +6,10 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import AppIcon from './AppIcon.vue'
 import { useReorder } from '../ui/reorder'
+import { searchTalks } from '../ai/conversation-search'
 import { hintLearned, offerSpaced } from '../ui/hints'
 import { library } from '../sdk'
-import { booksReady, conversationBooks, conversationBundle, conversations, deleteConversation, forgetBook, loadConversations, memorizeNow, moveConversation, rememberBook, renameConversation, restoreConversations, setConversationMemory, type ChatState } from '../ai/workspace'
+import { booksReady, conversationBooks, conversationBundle, conversations, deleteConversation, forgetBook, loadConversations, memorizeNow, moveConversation, rememberBook, revealTarget, renameConversation, restoreConversations, setConversationMemory, type ChatState } from '../ai/workspace'
 import { editItem, forgetItem, moveItem, replaceMemory, reviseMemory, snapshotMemory, memory, memoryMode, memoryReady, restoreMemory, type MemoryMode } from '../ai/memory'
 
 type Book = { id: string; title: string; kind: string }
@@ -119,6 +120,23 @@ async function undoLast() {
   await nextTick(); glide(snap)
   say(`已撤销：${step.label}`)
 }
+
+// ---- 搜索：标题和内容一起搜。搜的时候树换成一列结果，清空就回到树 ----
+const find = ref(''), findField = ref<HTMLInputElement>()
+const finding = computed(() => !!find.value.trim())
+const hits = computed(() => {
+  if (!finding.value) return []
+  const home = new Map<string, Root>()
+  for (const root of roots.value) for (const talk of root.list) home.set(talk.id, root)
+  return searchTalks([...home.keys()].map(id => home.get(id)!.list.find(talk => talk.id === id)!), find.value).map(hit => ({ ...hit, root: home.get(hit.item.id)! }))
+})
+function openHit(hit: { root: Root; item: ChatState; messageId?: string }) {
+  if (hit.root.gone) { say('这本书已从文档库移除。把对话拖到另一本书上就能接着用。'); return }
+  if (hit.messageId) revealTarget.value = { conversationId: hit.item.id, messageId: hit.messageId, at: Date.now() }
+  emit('openConversation', { documentId: hit.root.id, conversationId: hit.item.id })
+  emit('close')
+}
+watch(finding, on => { if (on) { picked.clear(); menu.value = undefined } })
 
 // ---- 左键进入；Ctrl / Shift + 左键加选 ----
 let dragged = false
@@ -545,6 +563,7 @@ const vLinks = {
 
 function onKey(event: KeyboardEvent) {
   // 输入框里的 Ctrl + Z 是它自己的撤销。例外：让助手改记忆的那一格空着的时候（刚改完，焦点还在里面），撤的是刚才那次修改。
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') { event.preventDefault(); event.stopPropagation(); findField.value?.focus(); findField.value?.select(); return }
   const field = (event.target as HTMLElement).closest?.('input') as HTMLInputElement | null
   if (field && !(field.matches('.cm-mem-ask input') && !field.value && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z')) return
   // 右边一栏里停着的那条记忆自己处理 Delete（忘掉它），不去删树上选中的对话。
@@ -585,6 +604,7 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey, true); clea
       <div class="cm-tools">
         <button type="button" class="cm-tool" @click="emit('close')"><AppIcon name="arrow" :size="14" />返回</button>
         <button type="button" class="cm-tool" :disabled="!undoable" data-tip="撤销上一步" @click="undoLast"><AppIcon name="reset" :size="14" />撤销<kbd>Ctrl Z</kbd></button>
+        <label class="cm-find" data-tip="搜标题和内容，Ctrl + F"><AppIcon name="search" :size="14" /><input ref="findField" v-model="find" type="text" placeholder="搜索对话" aria-label="搜索对话" spellcheck="false" maxlength="80" @keydown.esc.prevent.stop="find ? (find = '') : findField?.blur()" @keydown.enter.prevent="!$event.isComposing && $event.keyCode !== 229 && hits[0] && openHit(hits[0])" /><button v-if="find" type="button" class="cm-act" aria-label="清空" @click="find = ''; findField?.focus()"><AppIcon name="close" :size="11" /></button></label>
       </div>
 
       <div ref="tree" class="cm-tree" @pointerdown="startPointer" @scroll.passive="peekOut">
@@ -594,7 +614,15 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey, true); clea
         </header>
         <p v-if="!ready" class="cm-empty">正在读取…</p>
         <p v-else-if="!roots.length" class="cm-empty">还没有对话。</p>
-        <div class="cm-forest">
+        <div v-if="finding" class="cm-hits">
+          <button v-for="hit in hits" :key="hit.item.id" type="button" class="cm-hit" :class="{ gone: hit.root.gone }" @click="openHit(hit)">
+            <span class="cm-hit-title"><AppIcon v-if="hit.item.branchOf" name="branch" :size="12" /><template v-if="hit.title">{{ hit.title.before }}<mark>{{ hit.title.hit }}</mark>{{ hit.title.after }}</template><template v-else>{{ hit.item.title || '新对话' }}</template></span>
+            <small>{{ hit.root.title.replace(/\.(pdf|md|markdown)$/i, '') }} · {{ Math.ceil(hit.item.messages.length / 2) }} 问 · {{ relative(hit.item.updatedAt) }}</small>
+            <em v-if="hit.snippet">{{ hit.snippet.before }}<mark>{{ hit.snippet.hit }}</mark>{{ hit.snippet.after }}</em>
+          </button>
+          <p v-if="ready && !hits.length" class="cm-empty">没有找到。</p>
+        </div>
+        <div v-else class="cm-forest">
           <div v-for="(root, at) in roots" :key="root.id" class="cm-book" :class="{ gone: root.gone, drop: drop?.book === root.id && !drop.line }" :data-book="root.id" :data-f="`b:${root.id}`" :style="{ '--i': at }">
             <div class="cm-root" :data-root="root.id" :data-f="`r:${root.id}`" @contextmenu.prevent.stop="rootMenu(root, $event)">
               <button type="button" class="cm-root-open" :data-tip="root.gone ? '这本书已从文档库移除，对话和记忆仍然保留' : '打开这本书'" @click="openRoot(root)">
@@ -708,6 +736,19 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey, true); clea
 .cm-tool{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px 0 9px;border:1.5px solid var(--ink);border-radius:0;background:var(--canvas);box-shadow:none;color:var(--ink);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;transition:background-color .14s var(--ease-out),color .14s var(--ease-out),opacity .14s}
 .cm-tool:hover:not(:disabled){background:var(--ink);color:var(--canvas)}
 .cm-tool:disabled{opacity:.3;cursor:default}
+.cm-find{display:inline-flex;align-items:center;gap:7px;width:220px;height:32px;padding:0 6px 0 9px;border:1.5px solid var(--ink);background:var(--canvas);color:var(--ink);cursor:text;transition:width .2s var(--ease-out),box-shadow .14s var(--ease-out)}
+.cm-find:focus-within{width:300px;box-shadow:4px 4px 0 color-mix(in srgb,var(--cm-red) 30%,transparent)}
+.cm-find input{flex:1;min-width:0;height:100%;padding:0;border:0;border-radius:0;outline:0;background:none;box-shadow:none;color:inherit;font:inherit;font-size:12.5px}
+.cm-hits{display:flex;flex-direction:column;align-items:stretch;max-width:720px}
+.cm-hit{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;gap:4px 16px;padding:11px 12px 11px 14px;border:0;border-left:4px solid var(--ink);border-bottom:1px solid var(--cm-line);border-radius:0;background:var(--surface);box-shadow:none;color:var(--ink);font:inherit;text-align:left;white-space:normal;cursor:pointer;transition:background-color .12s var(--ease-out),border-color .12s var(--ease-out)}
+.cm-hit+.cm-hit{margin-top:6px}
+.cm-hit:hover,.cm-hit:focus-visible{border-left-color:var(--cm-red);background:color-mix(in srgb,var(--cm-red) 6%,var(--surface))}
+.cm-hit.gone{border-left-style:dashed;color:var(--muted)}
+.cm-hit-title{display:block;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:13.5px;font-weight:650}
+.cm-hit small{color:var(--muted);font-size:11px;white-space:nowrap}
+.cm-hit-title svg{margin-right:6px;vertical-align:-1px}
+.cm-hit em{grid-column:1 / -1;white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;color:var(--secondary);font-family:var(--font-formal);font-size:12.5px;font-style:normal;line-height:1.6;overflow-wrap:anywhere}
+.cm-hit mark{padding:0;background:none;color:var(--cm-red);font-weight:700}
 .cm-tool kbd{margin-left:3px;font:inherit;font-size:10.5px;font-weight:400;opacity:.6}
 .cm-tree{position:relative;z-index:1;flex:1;min-height:0;overflow:auto;padding:78px clamp(36px,6vw,96px) 120px;user-select:none}
 

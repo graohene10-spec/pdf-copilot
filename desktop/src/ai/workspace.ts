@@ -1,4 +1,4 @@
-import { reactive, shallowReactive, markRaw } from 'vue'
+import { reactive, ref, shallowReactive, markRaw } from 'vue'
 import { loadAiSettings, loadApiKey } from './settings.mjs'
 import { RequestScheduler } from './request-scheduler.mjs'
 import { library } from '../sdk'
@@ -408,6 +408,8 @@ function schedulePersist(documentId: string) {
   clearTimeout(persistTimers.get(documentId))
   persistTimers.set(documentId, setTimeout(() => flushPersist(documentId), 500))
 }
+/** 从搜索结果点进一段对话：要滚到哪条消息。显示这段对话的助手窗口看到后滚过去，然后清掉。 */
+export const revealTarget = ref<{ conversationId: string; messageId: string; at: number } | null>(null)
 /** Every conversation with messages across the given documents, newest first (loads saved ones on demand). */
 export async function allConversations(documentIds: string[]): Promise<ChatState[]> {
   await Promise.all(documentIds.map(id => loadConversations(id)))
