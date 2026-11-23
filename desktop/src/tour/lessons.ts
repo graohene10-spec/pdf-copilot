@@ -8,13 +8,18 @@ export type Scene = {
   /** 外观一课里临时换的风格；空着就跟随应用当前的风格。 */
   look: '' | Look
   dark: boolean
-  photo: boolean
+  /** 外观一课：选图片的窗口开着、底板换成了自己的图片、设置窗让开在预览新底板。 */
+  picker: boolean
+  picture: boolean
+  preview: boolean
   chrome: boolean
   ai: boolean
   doc: 'algebra' | 'paper'
   split: boolean
   scroll: number
   zoom: number
+  /** 百分比按钮按下：适应宽度。 */
+  fit: boolean
   /** 目标句子已经选中了多少个字。 */
   selected: number
   card: 'none' | 'open' | 'pinned'
@@ -89,15 +94,27 @@ export type Scene = {
   ribbonAt: Point | null
   ribbonFlip: boolean
   ribbonLift: boolean
-  /** 管理对话一课：「阅读助手」的右键菜单、管理页、悬停预览、正在拖（指针在哪）、落点红线、移过去了没有、左下角的提示、记忆展开了没有。 */
-  aiMenu: boolean
+  /** 管理对话一课：管理页、悬停预览、正在拖（指针在哪）、落点红线、移过去了没有、左下角的提示、搜索框里的字。 */
   manager: boolean
   cmPeek: boolean
   cmDrag: Point | null
   cmSlot: boolean
   cmMoved: boolean
   cmFlash: '' | 'moved' | 'undone'
-  cmOpen: boolean
+  cmQuery: string
+  /** 记忆栏：拿着的那条挪了多少、下面那条让了多少、换过来了没有、这一下不要过渡；让助手改的那句话、在改、改完的那行字、合并了没有。 */
+  memDrag: number | null
+  memShift: number
+  memSwap: boolean
+  memStill: boolean
+  memAsk: string
+  memBusy: boolean
+  memNote: string
+  memMerged: boolean
+  /** 助手栏表头的对话标题、对话记录开着、对话记录里搜索框的字。 */
+  talk: string
+  histOpen: boolean
+  histQuery: string
   /** 新对话的记忆选哪一种。 */
   mem: 'book' | 'all' | 'off'
   /** 总结一课：停在哪一步（表、草稿）、第 5 章展开了没有、勾了几节、不遗漏开了没有、草稿写了多少字、划选了多少字、小输入框和里面的字、改好了没有、存了没有。 */
@@ -118,19 +135,25 @@ export type Scene = {
   markSwap: boolean
   markStill: boolean
   /** 文库一课：右键菜单里指着哪一项。 */
-  fileHover: '' | 'sum' | 'details' | 'reveal'
+  fileHover: '' | 'sum' | 'rename' | 'details' | 'reveal'
+  /** 文库一课：第二张卡片的名字正在改（输入框里的字，null 是没在改）、改好的名字。 */
+  renaming: string | null
+  fileName: string
+  /** 窗口底部的提示。 */
+  toast: string
 }
 
 export const freshScene = (): Scene => ({
-  view: 'reader', look: '', dark: false, photo: false, chrome: true, ai: true, doc: 'algebra', split: false, scroll: 0, zoom: 1, selected: 0,
+  view: 'reader', look: '', dark: false, picker: false, picture: false, preview: false, chrome: true, ai: true, doc: 'algebra', split: false, scroll: 0, zoom: 1, fit: false, selected: 0,
   card: 'none', cardAt: { x: 0, y: 0 }, running: false, words: 0, drawn: false, visual: false, lambda: 2.5,
   settings: '', link: false, key: 0, codex: false, slots: { assistant: '未选择', translation: '未选择', explain: '未选择' }, menu: '',
   draft: '', asked: false, answer: 0, quote: false, quotePop: false, side: false, sideAsk: '', sideAnswer: 0, branch: false, commands: false, btw: false, btwAnswer: 0,
   pop: false, column: false, auto: false, ink: '', hl: 0, pen: 0, ul: 0, mark: false, art: 0, markMenu: false,
   files: 6, ghost: null, query: '', fileMenu: false, grouped: false, starred: false, outline: false, finding: false, find: '', clock: 'idle', minutes: 5, follow: 'page', hold: 0, desk: 0,
   crop: false, frame: null, quick: false, ctx: null, rightOn: false, quickOff: false, shots: 0, kept: 0, shotSent: false, shotAnswer: 0, asking: false, cardDraft: '', cardAsk: false, cardAnswer: 0,
-  ribbonAt: null, ribbonFlip: false, ribbonLift: false, aiMenu: false, manager: false, cmPeek: false, cmDrag: null, cmSlot: false, cmMoved: false, cmFlash: '', cmOpen: false,
-  mem: 'book', sum: '', sumFold: false, sumPicked: 0, sumFull: false, sumWords: 0, sumSel: 0, sumAsk: false, sumNote: '', sumSent: false, sumFixed: false, sumSaved: false, fileHover: '', markDrag: null, markShift: 0, markSwap: false, markStill: false,
+  ribbonAt: null, ribbonFlip: false, ribbonLift: false, manager: false, cmPeek: false, cmDrag: null, cmSlot: false, cmMoved: false, cmFlash: '', cmQuery: '',
+  memDrag: null, memShift: 0, memSwap: false, memStill: false, memAsk: '', memBusy: false, memNote: '', memMerged: false, talk: '', histOpen: false, histQuery: '',
+  mem: 'book', sum: '', sumFold: false, sumPicked: 0, sumFull: false, sumWords: 0, sumSel: 0, sumAsk: false, sumNote: '', sumSent: false, sumFixed: false, sumSaved: false, fileHover: '', markDrag: null, markShift: 0, markSwap: false, markStill: false, renaming: null, fileName: '', toast: '',
 })
 
 export const TEXT = {
@@ -163,6 +186,25 @@ export const SUM = {
   fix: '加一个例子',
   added: '例：A = diag(2, 3) 时，方程是 (2 − λ)(3 − λ) = 0，特征值是 2 和 3。',
 }
+/* 搜对话：字按顺序出现就算，可以不全。管理页里搜「特征向」，对话记录里搜「对角」。 */
+export type Hit = { title: [string, string, string]; meta: string; snip?: [string, string, string] }
+export const FIND: { manage: string; manageHits: Hit[]; history: string; historyHits: Hit[] } = {
+  manage: '特征向',
+  manageHits: [
+    { title: ['特征值与', '特征向', '量'], meta: '线性代数讲义 · 4 问 · 昨天' },
+    { title: ['特征值是什么', '', ''], meta: '线性代数讲义 · 3 问 · 刚刚', snip: ['…它留在原来那条直线上，只被拉长或缩短。这个方向就是', '特征向', '量。'] },
+  ],
+  history: '对角',
+  historyHits: [
+    { title: ['特征值有什么用', '', ''], meta: '线性代数讲义 · 刚刚', snip: ['…找到这些方向，矩阵就能', '对角', '化，高次幂和微分方程都好算得多。'] },
+    { title: ['相似', '对角', '化的条件'], meta: '线性代数讲义 · 3 天前' },
+    { title: ['PCA 为什么要算特征值', '', ''], meta: '机器学习导论 · 上周', snip: ['…协方差矩阵', '对角', '化以后，每个方向上的方差就是特征值。'] },
+  ],
+}
+/* 外观一课里选的那张图。 */
+export const PICTURE = '湖边日落.jpg'
+/* 总结第一次存进文库时，助手照内容起的名字。 */
+export const SUM_NAME = '线代讲义 5.1–5.2 特征值'
 export const sumLength = SUM.blocks.reduce((total, block) => total + block[1].length, 0)
 /* 后两个所属的服务在这一课里没有连接，菜单里是灰的。 */
 export const MODELS = ['DeepSeek Flash', 'DeepSeek V4 Pro', 'GPT-5.4（未连接）', 'Claude Opus 5.5（未连接）']
@@ -344,7 +386,7 @@ const visual: Play = async (stage, scene, say) => {
 }
 
 const assistant: Play = async (stage, scene, say) => {
-  say({ text: '新对话先选记忆：只用这本书的、所有书共用的，或者不用', top: true })
+  say({ text: '新对话先选记忆：「本书」只用这本书的；「全局」用所有书的，也包括这本书', top: true })
   stage.place({ x: 900, y: 790 })
   stage.look('.tw-mem', 1.7, [.5, .5])
   await stage.move('.tw-mem-all', { ms: 800 })
@@ -364,6 +406,7 @@ const assistant: Play = async (stage, scene, say) => {
   scene.draft = ''; scene.asked = true
   stage.look('.tw-chat', 1.6, [.5, .18])
   await stage.tween(1200, k => { scene.answer = Math.round(k * replyLength) }, true)
+  scene.talk = '特征值有什么用'
   await stage.wait(300)
 
   say('选中回答里的词，到附属对话里追问')
@@ -400,6 +443,19 @@ const assistant: Play = async (stage, scene, say) => {
   scene.draft = ''; scene.btw = true
   await stage.tween(900, k => { scene.btwAnswer = Math.round(k * TEXT.btwReply.length) }, true)
   await stage.wait(1100)
+
+  // 对话记录最上面是搜索框：搜所有文档的对话，标题和内容都搜。
+  say({ text: '点对话标题打开对话记录，可以搜所有文档的对话', top: true })
+  scene.btw = false
+  stage.look('.tw-ai', 1.45, [.5, .3])
+  await click(stage, '.tw-title')
+  scene.histOpen = true
+  await stage.wait(500)
+  await click(stage, '.tw-hist-search')
+  await stage.type(FIND.history, value => { scene.histQuery = value }, 220)
+  await stage.wait(1200)
+  await stage.move('.tw-hist-hit-2', { ms: 700 })
+  await stage.wait(1500)
 }
 
 /* 在页面上拖出一个框；右键拖动时不用先点「框选」。关掉快捷提问后不弹气泡，图直接进输入框。 */
@@ -670,29 +726,24 @@ const bookmark: Play = async (stage, scene, say) => {
   await stage.wait(1500)
 }
 
-/* 管理对话：从「阅读助手」的右键菜单进去；树、悬停预览、拖动移动、撤销、记忆。 */
+/* 管理对话：从助手栏表头的按钮进去；树、悬停预览、拖动移动、撤销、记忆栏、搜索。 */
 const manage: Play = async (stage, scene, say) => {
-  say({ text: '右键「阅读助手」，打开管理对话', mouse: 'right' })
+  say('点助手栏标题左边的按钮，打开对话管理')
   stage.place(ENTRY)
-  stage.look('.tw-aibtn', 1.5, [3.2, 3.2])
-  await stage.move('.tw-aibtn', { ms: 800 })
-  await stage.wait(250)
-  await stage.click('right')
-  scene.aiMenu = true
-  await stage.wait(900)
-  await stage.move('.tw-aimenu-manage', { ms: 600 })
-  await stage.wait(250)
+  stage.look('.tw-manage', 1.6, [3, 3])
+  await stage.move('.tw-manage', { ms: 900 })
+  await stage.wait(300)
   await stage.click()
-  scene.aiMenu = false; scene.manager = true
+  scene.manager = true
   stage.look(null, 1)
-  await stage.wait(1600)
+  await stage.wait(1400)
 
   say('书在左，右边是它的对话。停在一段对话上，看它最后一轮问答')
   stage.look('.tw-cm-t1', 1.12, [.75, .9])
   await stage.move('.tw-cm-t1', { at: [.3, .5], ms: 800 })
   await stage.wait(450)
   scene.cmPeek = true
-  await stage.wait(2400)
+  await stage.wait(2200)
 
   say({ text: '拖到别的书是移动，拖到同一本书里是排序，红线是落点', mouse: 'left' })
   scene.cmPeek = false
@@ -704,21 +755,58 @@ const manage: Play = async (stage, scene, say) => {
   await stage.wait(500)
   stage.release()
   scene.cmDrag = null; scene.cmSlot = false; scene.cmMoved = true; scene.cmFlash = 'moved'
-  await stage.wait(1700)
+  await stage.wait(1500)
 
   say({ text: '每一步都能撤销', keys: ['Ctrl', 'Z'] })
-  await stage.wait(900)
+  await stage.wait(800)
   scene.cmMoved = false; scene.cmFlash = 'undone'
-  await stage.wait(1700)
+  await stage.wait(1500)
 
-  say('小方钮展开这段对话记下的内容；右边一栏是现在记着的全部')
+  // 记忆栏：按住一条，它浮起来跟着走，下面那条让开；松手落进新位置。
+  say({ text: '右边是记下的内容。按住一条拖动，换个位置', mouse: 'left' })
   scene.cmFlash = ''
-  stage.look(null, 1)
-  await click(stage, '.tw-cm-knob-t0')
-  scene.cmOpen = true
+  stage.look('.tw-cm-side', 1.5, [.5, .55])
+  await stage.wait(300)
+  const held = stage.locate('.tw-mem-r1', [.4, .5])
+  const room = stage.locate('.tw-mem-r2', [0, 0]).y - stage.locate('.tw-mem-r1', [0, 0]).y
+  await stage.move(held, { ms: 800 })
+  stage.press()
+  await stage.wait(380)
+  scene.memDrag = 0
+  await stage.move({ x: held.x, y: held.y + room }, { ms: 1000, step: k => { scene.memDrag = room * k; scene.memShift = k > .5 ? -room : 0 } })
+  await stage.wait(350)
+  stage.release()
+  scene.memStill = true; scene.memSwap = true; scene.memDrag = null; scene.memShift = 0
+  await stage.wait(80)
+  scene.memStill = false
   await stage.wait(900)
-  await stage.move('.tw-cm-side-list', { at: [.4, .3], ms: 900 })
-  await stage.wait(1800)
+
+  say('也可以写一句话，让助手改；改完可以撤销')
+  await click(stage, '.tw-mem-ask')
+  await stage.type('把特征值相关的合并成一条', value => { scene.memAsk = value }, 70)
+  await stage.wait(250)
+  await click(stage, '.tw-mem-ask b')
+  scene.memBusy = true
+  await stage.wait(1700)
+  scene.memBusy = false; scene.memAsk = ''; scene.memMerged = true; scene.memNote = '改好了：改写 1 条，去掉 1 条'
+  await stage.wait(2000)
+
+  // 搜索框在左上角，Ctrl + F 直接到那里。打字后树换成一列结果。
+  say({ text: '搜索对话：标题和内容都搜，字不全也能找到', keys: ['Ctrl', 'F'] })
+  scene.memNote = ''
+  stage.look('.tw-cm-main', 1.25, [.35, .3])
+  await stage.move('.tw-cm-find', { ms: 800 })
+  await stage.click()
+  await stage.type(FIND.manage, value => { scene.cmQuery = value }, 260)
+  await stage.wait(1600)
+
+  say({ text: '点一条结果打开那段对话；Esc 清掉搜索，树就回来', mouse: 'left' })
+  await stage.move('.tw-cm-hit-1', { at: [.3, .3], ms: 700 })
+  await stage.wait(400)
+  await stage.click()
+  scene.manager = false; scene.cmQuery = ''; scene.talk = '特征值是什么'; scene.asked = true; scene.answer = replyLength
+  stage.look('.tw-ai', 1.3, [.5, .3])
+  await stage.wait(2000)
 }
 
 const library: Play = async (stage, scene, say) => {
@@ -768,9 +856,29 @@ const library: Play = async (stage, scene, say) => {
     scene.fileHover = item
     await stage.wait(650)
   }
-  scene.fileHover = ''; scene.fileMenu = false
-  stage.look(null, 1)
+
+  // 重命名：名字变成输入框，回车生效；磁盘上的文件一起改名。
+  say({ text: '重命名：名字变成输入框，回车后磁盘上的文件跟着改', keys: ['F2'] })
+  await stage.move('.tw-fm-rename', { ms: 500 })
+  scene.fileHover = 'rename'
+  await stage.wait(400)
+  await stage.click()
+  scene.fileHover = ''; scene.fileMenu = false; scene.renaming = '线性代数讲义'
+  stage.look('.tw-file-1', 1.7, [.5, .8])
   await stage.wait(700)
+  await stage.type('线性代数讲义 第二版', value => { scene.renaming = value }, 90)
+  await stage.wait(400)
+  scene.fileName = scene.renaming!; scene.renaming = null; scene.toast = '已改名　Ctrl + Z 撤销'
+  await stage.wait(1500)
+
+  say({ text: '改名、移除文档、删分组，都能撤销', keys: ['Ctrl', 'Z'] })
+  stage.look({ x: 700, y: 520 }, 1.2)
+  await stage.wait(900)
+  scene.fileName = ''; scene.toast = '已撤销：已改名'
+  await stage.wait(1800)
+  scene.toast = ''
+  stage.look(null, 1)
+  await stage.wait(500)
 }
 
 /* 总结：从文库右键进去；表里勾章节、开「不遗漏知识点」；草稿边写边看，划选一段让助手改，最后存进文库。 */
@@ -835,10 +943,11 @@ const summary: Play = async (stage, scene, say) => {
   scene.sumFixed = true
   await stage.wait(1700)
 
-  say('满意后存入文档库：一份 Markdown，放在原文档的文件夹里')
+  say('存入文档库：助手照内容起个短名字，存成 Markdown 放在原文档旁边')
   await click(stage, '.tw-draft-save')
-  scene.sumSaved = true
-  await stage.wait(1900)
+  scene.sumSaved = true; scene.toast = `已存为「${SUM_NAME}.md」，在原文档的文件夹里。`
+  stage.look(null, 1)
+  await stage.wait(2400)
 }
 
 const tabs: Play = async (stage, scene, say) => {
@@ -882,12 +991,28 @@ const view: Play = async (stage, scene, say) => {
   await stage.wait(900)
   scene.finding = false; scene.find = ''
 
-  say({ text: '缩放页面，触控板可以两指捏合', keys: ['Ctrl', '滚轮'] })
+  say({ text: '缩放页面；点百分比回到适应宽度', keys: ['Ctrl', '滚轮'] })
   stage.look(null, 1)
   await stage.move('.tw-page', { at: [.5, .4] })
   await stage.tween(600, k => { scene.zoom = 1 + k * .28 })
   await stage.tween(700, k => { scene.zoom = 1.28 - k * .4 })
-  await stage.tween(500, k => { scene.zoom = .88 + k * .12 })
+  stage.look('.tw-bar', 1.5, [.5, 3])
+  await click(stage, '.tw-percent b')
+  scene.fit = true
+  await stage.tween(500, k => { scene.zoom = .88 + k * .26 })
+  await stage.wait(600)
+
+  // 侧边面板把阅读区挤窄时，页面自动缩小；面板关掉，回到原来的比例。
+  say('面板挤窄页面时自动缩小，关掉后复原')
+  stage.look(null, 1)
+  await click(stage, '.tw-tr')
+  scene.column = true
+  await stage.tween(450, k => { scene.zoom = 1.14 - k * .44 })
+  await stage.wait(1300)
+  await click(stage, '.tw-tr')
+  scene.column = false
+  await stage.tween(450, k => { scene.zoom = .7 + k * .44 })
+  await stage.wait(900)
 
   say({ text: '收起顶栏和侧栏', keys: ['Ctrl', 'Shift', 'H'] })
   await stage.wait(300)
@@ -928,39 +1053,66 @@ const look: Play = async (stage, scene, say) => {
   for (const style of ['crystal', 'warm', 'sketch', 'glass'] as Look[]) {
     await click(stage, `.tw-style-${style}`)
     scene.look = style
-    await stage.wait(520)
+    await stage.wait(480)
   }
 
   say('深色和浅色随时切换')
   await click(stage, '.tw-dark')
   scene.dark = true
-  await stage.wait(900)
+  await stage.wait(800)
   await stage.click()
   scene.dark = false
   await stage.wait(400)
 
-  say('底板可以换预设，或用自己的图片')
-  await click(stage, '.tw-bg-2')
-  scene.photo = true
-  await stage.wait(1400)
+  // 只有两种液态玻璃有底板：预设几种，也可以加自己的图片。
+  say('液态玻璃可以拿自己的图片做底板')
+  stage.look('.tw-gallery', 1.5, [.4, .2])
+  await click(stage, '.tw-gallery-add')
+  scene.picker = true
+  await stage.wait(600)
+  stage.look('.tw-picker', 1.4)
+  await stage.move('.tw-pick-0', { ms: 700 })
+  await stage.wait(500)
+  await stage.click()
+  scene.picker = false; scene.picture = true; scene.preview = true
+  stage.look(null, 1)
+  await stage.wait(900)
+
+  // 设置窗让开：整个窗口换成这张图，侧栏、顶栏、助手栏的玻璃透出它。
+  say('整个窗口换上这张图，玻璃面板透出后面的颜色')
+  await stage.move({ x: 330, y: 300 }, { ms: 900 })
+  stage.look({ x: 300, y: 330 }, 1.5)
+  await stage.wait(1500)
+  stage.look({ x: 1050, y: 300 }, 1.5)
+  await stage.move({ x: 1010, y: 260 }, { ms: 1100 })
+  await stage.wait(1500)
+  stage.look(null, 1)
+  await stage.wait(1000)
+
+  say('点「采用」。图片留在「我的图片」里，随时换回预设')
+  await click(stage, '.tw-scene-ok')
+  scene.preview = false
+  await stage.wait(500)
+  stage.look('.tw-gallery', 1.5, [.4, .4])
+  await stage.wait(2200)
 }
 
 export const LESSONS: Lesson[] = [
   { id: 'setup', title: '接入 AI', note: '连接服务，给每个功能选模型', steps: 4, play: setup },
   { id: 'explain', title: '快速解释', note: '选中文字后按中键', steps: 8, play: explain },
   { id: 'visual', title: '用图解释', note: '图解、可拖的图、合集', steps: 3, play: visual },
-  { id: 'assistant', title: '阅读助手', note: '记忆、提问、附属对话、分支、指令', steps: 6, play: assistant },
+  { id: 'assistant', title: '阅读助手', note: '记忆、提问、附属对话、分支、指令、搜对话', steps: 7, play: assistant },
   { id: 'summary', title: '总结', note: '勾章节、边写边改、存进文库', steps: 6, play: summary },
   { id: 'capture', title: '截图提问', note: '框选、右键拖动、固定多张', steps: 9, play: capture },
-  { id: 'manage', title: '管理对话', note: '移动、排序、撤销，看记下了什么', steps: 5, play: manage },
+  { id: 'manage', title: '管理对话', note: '移动、撤销、整理记忆、搜索对话', steps: 8, play: manage },
   { id: 'translate', title: '翻译', note: '划词翻译与翻译栏', steps: 3, play: translate },
   { id: 'ink', title: '标记', note: 'Alt + 1 / 2 / 3 直接拿起工具', steps: 4, play: ink },
   { id: 'bookmark', title: '书签', note: '夹在页边，可以拖，Ctrl + ↑ ↓ 跳转，书能排顺序', steps: 9, play: bookmark },
-  { id: 'library', title: '文库', note: '导入、搜索、分组、收藏、右键菜单', steps: 4, play: library },
+  { id: 'library', title: '文库', note: '导入、搜索、分组、收藏、重命名、撤销', steps: 6, play: library },
   { id: 'tabs', title: '多文档', note: '标签页与并排阅读', steps: 2, play: tabs },
-  { id: 'view', title: '阅读视图', note: '目录、搜索、缩放、收起界面', steps: 4, play: view },
+  { id: 'view', title: '阅读视图', note: '目录、搜索、缩放、收起界面', steps: 5, play: view },
   { id: 'focus', title: '计时', note: '倒计时与提醒', steps: 3, play: focus },
-  { id: 'look', title: '外观', note: '四种风格、深浅色、底板', steps: 3, play: look },
+  { id: 'look', title: '外观', note: '四种风格、深浅色，自己的图片做底板', steps: 5, play: look },
 ]
 
 /* 看过哪些、还要不要自动弹出，记在本机。 */

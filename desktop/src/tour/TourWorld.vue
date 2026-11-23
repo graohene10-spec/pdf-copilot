@@ -3,7 +3,7 @@
 import { computed } from 'vue'
 import AppIcon from '../components/AppIcon.vue'
 import { BOOKMARK_ARTS } from '../library/bookmark-art'
-import { MODELS, TEXT, SUM, sumLength, replyLength, type Look, type Scene, type SlotId } from './lessons'
+import { MODELS, TEXT, SUM, FIND, PICTURE, SUM_NAME, sumLength, replyLength, type Look, type Scene, type SlotId } from './lessons'
 
 const props = defineProps<{ scene: Scene }>()
 const markBooks = computed(() => props.scene.markSwap ? ['paper', 'algebra'] as const : ['algebra', 'paper'] as const)
@@ -73,6 +73,24 @@ const cmBooks = computed(() => {
 /* 根到每段对话的折线：行高 40、间隔 8，和真的那页一样先平、再斜、再平。 */
 const cmLinks = (count: number) => { const mid = (count * 48 - 8) / 2; return Array.from({ length: count }, (_, index) => `M0 ${mid}L14 ${mid}L32 ${index * 48 + 20}L46 ${index * 48 + 20}`) }
 const ribbonStyle = computed(() => props.scene.ribbonAt ? { left: `${props.scene.ribbonAt.x}px`, top: `${props.scene.ribbonAt.y}px`, translate: props.scene.ribbonFlip ? '-100% -50%' : '0 -50%' } : undefined)
+/* 记忆栏：线性代数讲义的三条可以挪、可以让助手合并；合并后两条特征值的并成一条。 */
+type Mem = { id: string; name: string; state: string }
+const MEM: Record<string, Mem> = {
+  r0: { id: 'r0', name: '特征值的定义', state: '已弄懂' },
+  r1: { id: 'r1', name: '相似对角化', state: '问过还不熟' },
+  r2: { id: 'r2', name: '特征向量的几何意义', state: '已弄懂' },
+  m: { id: 'm', name: '特征值与特征向量', state: '已弄懂' },
+}
+const memRows = computed(() => props.scene.memMerged ? [MEM.m!, MEM.r1!] : props.scene.memSwap ? [MEM.r0!, MEM.r2!, MEM.r1!] : [MEM.r0!, MEM.r1!, MEM.r2!])
+const memCount = computed(() => memRows.value.length + 1)
+const memMove = (id: string) => id === 'r1' && props.scene.memDrag !== null ? props.scene.memDrag : id === 'r2' ? props.scene.memShift : 0
+/* 外观一课里那张「自己的图片」：湖边日落，全用渐变和色块画。id 前缀让几处同时画时渐变不串。 */
+const wall = (id: string) => `<defs><linearGradient id="${id}-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#263468"/><stop offset=".42" stop-color="#9c5a86"/><stop offset=".7" stop-color="#ef8a5f"/><stop offset="1" stop-color="#ffd496"/></linearGradient><linearGradient id="${id}-lake" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f2a06e"/><stop offset=".45" stop-color="#8b5a88"/><stop offset="1" stop-color="#202a58"/></linearGradient><radialGradient id="${id}-glow"><stop offset="0" stop-color="#fff3c6"/><stop offset=".3" stop-color="#ffd27f" stop-opacity=".85"/><stop offset="1" stop-color="#ffb26b" stop-opacity="0"/></radialGradient></defs>`
+  + `<rect width="160" height="100" fill="url(#${id}-sky)"/><circle cx="104" cy="57" r="34" fill="url(#${id}-glow)"/><circle cx="104" cy="58" r="8" fill="#fff1c4"/>`
+  + `<path d="M0 52 16 39 28 46 46 30 63 45 75 40 92 52 112 47 134 36 160 46V66H0Z" fill="#7b4c80" opacity=".8"/><path d="M0 61 15 51 29 57 42 49 60 59 81 53 101 60 121 51 141 57 160 49V66H0Z" fill="#45316a"/>`
+  + `<rect y="64" width="160" height="36" fill="url(#${id}-lake)"/><path d="M90 67.5h28M94 71.5h20M97 76h14M100 81.5h8" stroke="#ffe2a6" stroke-width="1.3" stroke-linecap="round" opacity=".85"/>`
+  + `<path d="M0 86C26 80 50 88 74 100H0Z" fill="#191b38"/><path d="M116 100C128 87 145 82 160 80V100Z" fill="#191b38"/><path d="M13 89 8 79h3l-4-7h3l-3-6 6 13h-3l4 7Z" fill="#191b38"/><path d="M24 91 19 81h3l-4-7h3l-3-6 6 13h-3l4 7Z" fill="#191b38"/><path d="M147 82 142 72h3l-4-7h3l-3-6 6 13h-3l4 7Z" fill="#191b38"/>`
+const PRESETS = ['晨雾', '暮光', '薄荷', '薰衣草', '石墨', '素白']
 const OUTLINE = ['5.1 特征值与特征向量', '5.2 特征方程', '5.3 相似对角化', '5.4 实对称矩阵']
 const FILES = [
   { id: 'new', title: '特征值专题讲义', meta: 'PDF · 24 页', kind: 'k1', hit: 0 },
@@ -90,7 +108,7 @@ const files = computed(() => {
 </script>
 
 <template>
-  <div class="tw-world" :data-look="look" :class="{ forced: scene.look, dark: scene.dark, photo: scene.photo, bare: !scene.chrome, desk: scene.desk > 0 }" aria-hidden="true">
+  <div class="tw-world" :data-look="look" :class="{ forced: scene.look, dark: scene.dark, picture: scene.picture, bare: !scene.chrome, desk: scene.desk > 0 }" aria-hidden="true">
     <div v-if="scene.desk > 0" class="tw-desk">
       <p class="tw-icon"><AppIcon name="folder" :size="30" />文档</p>
       <p class="tw-icon"><AppIcon name="image" :size="30" />截图</p>
@@ -98,6 +116,7 @@ const files = computed(() => {
       <i class="tw-taskbar"><b></b><b></b><b></b><b></b></i>
     </div>
     <div class="tw-app" :style="scene.desk > 0 ? { transform: `translate(${-40 * scene.desk}px, ${-14 * scene.desk}px) scale(${1 - scene.desk * .27})` } : undefined">
+    <Transition name="tw-wall"><svg v-if="scene.picture" class="tw-wall" viewBox="0 0 160 100" preserveAspectRatio="xMidYMid slice" v-html="wall('w')" /></Transition>
     <aside class="tw-side">
       <div class="tw-search"><AppIcon name="search" :size="14" /><i></i></div>
       <p class="tw-row" :class="{ on: scene.view !== 'collection' }"><AppIcon name="library" :size="15" />全部文档</p>
@@ -147,7 +166,7 @@ const files = computed(() => {
           <i class="tw-sep"></i><i class="tw-dot c1"></i><i class="tw-dot c2"></i><i class="tw-dot c3"></i>
         </template>
         <template v-else>
-          <AppIcon class="tw-ol" name="list" :size="15" /><i class="tw-sep"></i><span class="tw-percent">−<b>{{ Math.round(scene.zoom * 100) }}%</b>+</span><i class="tw-sep"></i><span class="tw-cropbtn" :class="{ on: scene.crop }"><AppIcon name="crop" :size="15" /></span><AppIcon class="tw-inkbtn" name="edit" :size="15" />
+          <AppIcon class="tw-ol" name="list" :size="15" /><i class="tw-sep"></i><span class="tw-percent" :class="{ fit: scene.fit }">−<b>{{ Math.round(scene.zoom * 100) }}%</b>+</span><i class="tw-sep"></i><span class="tw-cropbtn" :class="{ on: scene.crop }"><AppIcon name="crop" :size="15" /></span><AppIcon class="tw-inkbtn" name="edit" :size="15" />
         </template>
       </div>
       <Transition name="tw-slide"><div v-if="scene.outline" class="tw-outline"><h6>目录</h6><p v-for="(item, index) in OUTLINE" :key="item" :class="[`tw-ol-${index}`, { on: index === 0 }]">{{ item }}</p></div></Transition>
@@ -220,7 +239,7 @@ const files = computed(() => {
     </main>
 
     <Transition name="tw-fade"><section v-if="scene.sum === 'draft' && scene.view === 'reader'" class="tw-draft">
-      <header><b>总结草稿</b><small>线性代数讲义</small><em :class="{ live: sumWriting }">{{ sumWriting ? '正在写' : `${scene.sumWords + (scene.sumFixed ? SUM.added.length : 0)} 字` }}</em><span v-if="scene.sumSaved" class="tw-draft-saved">已存 · 打开</span><span class="tw-draft-save" :class="{ dim: sumWriting }">{{ scene.sumSaved ? '再存一次' : '存入文档库' }}</span></header>
+      <header :class="{ running: sumWriting }"><b>总结草稿</b><small>线性代数讲义</small><em :class="{ live: sumWriting }">{{ sumWriting ? '正在写' : `${scene.sumWords + (scene.sumFixed ? SUM.added.length : 0)} 字` }}</em><span v-if="scene.sumSaved" class="tw-draft-saved" :title="SUM_NAME">已存 · 打开</span><span class="tw-draft-save" :class="{ dim: sumWriting }">{{ scene.sumSaved ? '再存一次' : '存入文档库' }}</span></header>
       <article>
         <h1>{{ SUM.title }}</h1>
         <template v-for="(block, index) in sumBlocks" :key="index">
@@ -238,12 +257,13 @@ const files = computed(() => {
         <TransitionGroup tag="div" class="tw-grid" name="tw-file">
           <div v-for="file in files" :key="file.id" class="tw-file" :class="`tw-file-${file.slot}`">
             <i class="tw-cover" :class="file.kind"><b></b><b></b><b></b></i>
-            <p>{{ file.title }}</p><small>{{ file.meta }}<template v-if="scene.query && file.hit"> · 正文 {{ file.hit }} 处</template></small>
+            <p v-if="file.id === 'algebra' && scene.renaming !== null" class="tw-rename"><span :class="{ all: scene.renaming === file.title }">{{ scene.renaming }}</span><i class="tw-caret"></i></p>
+            <p v-else>{{ file.id === 'algebra' && scene.fileName ? scene.fileName : file.title }}</p><small>{{ file.meta }}<template v-if="scene.query && file.hit"> · 正文 {{ file.hit }} 处</template></small>
             <AppIcon class="tw-star" :class="{ on: scene.starred && file.id === 'algebra' }" name="star" :size="14" />
             <span v-if="scene.grouped && file.id === 'algebra'" class="tw-tag">线性代数</span>
           </div>
         </TransitionGroup>
-        <Transition name="tw-pop"><div v-if="scene.fileMenu" class="tw-menu tw-file-menu"><span class="tw-fm-group"><AppIcon name="folder" :size="13" />放进分组：线性代数</span><span><AppIcon name="star" :size="13" />收藏</span><span class="tw-fm-sum line" :class="{ hot: scene.fileHover === 'sum' }"><AppIcon name="doc" :size="13" />总结…</span><span class="tw-fm-details" :class="{ hot: scene.fileHover === 'details' }"><AppIcon name="tag" :size="13" />详情与标签…</span><span class="tw-fm-reveal" :class="{ hot: scene.fileHover === 'reveal' }"><AppIcon name="folder" :size="13" />打开所在文件夹</span><span class="line"><AppIcon name="trash" :size="13" />移出文库</span></div></Transition>
+        <Transition name="tw-pop"><div v-if="scene.fileMenu" class="tw-menu tw-file-menu"><span><AppIcon name="book" :size="13" />打开</span><span><AppIcon name="star" :size="13" />收藏</span><span class="tw-fm-sum" :class="{ hot: scene.fileHover === 'sum' }"><AppIcon name="doc" :size="13" />总结…</span><span class="tw-fm-rename" :class="{ hot: scene.fileHover === 'rename' }"><AppIcon name="edit" :size="13" />重命名<small>F2</small></span><span class="tw-fm-details" :class="{ hot: scene.fileHover === 'details' }"><AppIcon name="tag" :size="13" />详情与标签…</span><span class="tw-fm-reveal" :class="{ hot: scene.fileHover === 'reveal' }"><AppIcon name="folder" :size="13" />打开所在文件夹</span><span class="tw-fm-group line"><AppIcon name="folder" :size="13" />放进「线性代数」</span><span class="line danger"><AppIcon name="trash" :size="13" />从文档库移除</span></div></Transition>
       </section>
       <section v-else-if="scene.view === 'collection'" class="tw-lib">
         <header><h2>Intelligent UI<small>3</small></h2></header>
@@ -258,7 +278,20 @@ const files = computed(() => {
     <Transition name="tw-ai">
       <aside v-if="scene.ai && scene.view === 'reader'" class="tw-ai" :class="{ side: scene.side }">
         <div class="tw-main">
-          <header><AppIcon name="sparkle" :size="15" /><b>阅读助手</b><span v-if="scene.branch" class="tw-chip"><AppIcon name="branch" :size="12" />分支</span><AppIcon class="tw-history" name="history" :size="14" /></header>
+          <header><span class="tw-manage"><AppIcon name="threads" :size="16" /></span><span class="tw-title"><b>{{ scene.talk || '新对话' }}</b><small>{{ scene.doc === 'paper' ? 'Attention Is All You Need' : '线性代数讲义' }}</small></span><span v-if="scene.branch" class="tw-chip"><AppIcon name="branch" :size="12" />分支</span><span class="tw-hbtns"><AppIcon name="branch" :size="14" /><AppIcon name="compose" :size="14" /><AppIcon name="close" :size="13" /></span></header>
+          <Transition name="tw-pop"><div v-if="scene.histOpen" class="tw-hist">
+            <div class="tw-hist-top"><p><AppIcon name="compose" :size="13" />新对话</p><p><AppIcon name="list" :size="13" />管理</p></div>
+            <div class="tw-hist-search" :class="{ typed: scene.histQuery }"><AppIcon name="search" :size="13" /><em>{{ scene.histQuery || '搜索对话' }}</em><i v-if="scene.histQuery" class="tw-caret"></i></div>
+            <template v-if="scene.histQuery">
+              <div v-for="(hit, index) in FIND.historyHits" :key="index" class="tw-hist-row tw-hist-hit" :class="[`tw-hist-hit-${index}`, { current: index === 0 }]"><strong>{{ hit.title[0] }}<mark>{{ hit.title[1] }}</mark>{{ hit.title[2] }}</strong><small>{{ hit.meta }}</small><em v-if="hit.snip">{{ hit.snip[0] }}<mark>{{ hit.snip[1] }}</mark>{{ hit.snip[2] }}</em></div>
+            </template>
+            <template v-else>
+              <div class="tw-hist-scope"><p class="on">这份文档</p><p>全部文档</p></div>
+              <div class="tw-hist-row current"><strong>{{ scene.talk || '新对话' }}</strong><small>刚刚 · 1 问</small></div>
+              <div class="tw-hist-row"><strong>相似对角化的条件</strong><small>3 天前 · 2 问</small></div>
+              <div class="tw-hist-row"><strong>行列式为什么能判可逆</strong><small>上周 · 2 问</small></div>
+            </template>
+          </div></Transition>
           <div class="tw-chat">
             <template v-if="scene.sum === 'setup'">
               <div class="tw-sum">
@@ -314,9 +347,9 @@ const files = computed(() => {
     </Transition>
 
     <Transition name="tw-dialog">
-      <section v-if="scene.settings" class="tw-dialog">
+      <section v-if="scene.settings" class="tw-dialog" :class="{ peek: scene.preview }">
         <h3>设置</h3>
-        <nav><span :class="{ on: scene.settings === 'look' }"><AppIcon name="sun" :size="14" />外观</span><span><AppIcon name="book" :size="14" />阅读</span><span><AppIcon name="settings" :size="14" />快捷键</span><span :class="{ on: scene.settings === 'ai' }"><AppIcon name="sparkle" :size="14" />AI</span><span><AppIcon name="import" :size="14" />更新</span></nav>
+        <nav><span :class="{ on: scene.settings === 'look' }"><AppIcon name="sun" :size="14" />外观</span><span><AppIcon name="book" :size="14" />阅读</span><span><AppIcon name="settings" :size="14" />快捷键</span><span :class="{ on: scene.settings === 'ai' }"><AppIcon name="sparkle" :size="14" />AI</span><span><AppIcon name="memory" :size="14" />记忆</span><span><AppIcon name="import" :size="14" />更新</span></nav>
         <div v-if="scene.settings === 'ai'" class="tw-pane">
           <h5><i>1</i>连接服务</h5>
           <div class="tw-links">
@@ -338,12 +371,30 @@ const files = computed(() => {
         <div v-else class="tw-pane">
           <h5>界面风格</h5>
           <div class="tw-styles"><span v-for="item in STYLES" :key="item.id" class="tw-style" :class="[`tw-style-${item.id}`, { on: look === item.id }]"><i :class="item.id"><b></b><b></b></i>{{ item.label }}</span></div>
-          <h5>底板</h5>
-          <div class="tw-bgs"><i v-for="index in 5" :key="index" :class="[`tw-bg-${index - 1}`, { on: (scene.photo ? 2 : 0) === index - 1 }]"></i></div>
+          <!-- 底板只在两种液态玻璃下有：预设几种，下面是自己加的图片。 -->
+          <template v-if="look === 'glass' || look === 'crystal'">
+            <h5>底板</h5>
+            <div class="tw-bgs"><p v-for="(name, index) in PRESETS" :key="name"><i :class="[`tw-bg-${index}`, { on: !scene.picture && index === 0 }]"></i>{{ name }}</p></div>
+            <p class="tw-gallery-head">我的图片<small>{{ scene.picture ? 1 : 0 }} / 6</small></p>
+            <div class="tw-gallery">
+              <p v-if="scene.picture" class="tw-gallery-own"><svg class="on" viewBox="0 0 160 100" preserveAspectRatio="xMidYMid slice" v-html="wall('g')" />{{ PICTURE }}</p>
+              <p class="tw-gallery-add"><i><AppIcon name="plus" :size="18" /></i>添加图片</p>
+            </div>
+          </template>
         </div>
       </section>
     </Transition>
 
+    <Transition name="tw-pop"><div v-if="scene.picker" class="tw-picker">
+      <header><AppIcon name="image" :size="14" />选择图片<small>图片</small></header>
+      <div class="tw-picks">
+        <p class="tw-pick-0"><svg viewBox="0 0 160 100" preserveAspectRatio="xMidYMid slice" v-html="wall('p')" />{{ PICTURE }}</p>
+        <p class="tw-pick-1"><i class="snow"></i>雪山.png</p>
+        <p class="tw-pick-2"><i class="desk"></i>书桌.jpg</p>
+      </div>
+      <footer><b>打开</b><b>取消</b></footer>
+    </div></Transition>
+    <Transition name="tw-pop"><div v-if="scene.preview" class="tw-scene-bar"><span>新底板效果预览</span><b>不采用</b><b class="tw-scene-ok">采用</b></div></Transition>
     <Transition name="tw-fade"><div v-if="scene.quick && scene.frame" class="tw-dim" :style="hole"></div></Transition>
     <div v-if="scene.frame" class="tw-frame" :class="{ set: scene.quick }" :style="box"><i v-for="corner in 4" :key="corner"></i></div>
     <Transition name="tw-pop"><div v-if="scene.quick && scene.frame" class="tw-quick" :style="beside">
@@ -357,11 +408,14 @@ const files = computed(() => {
       <span class="line"><AppIcon name="settings" :size="13" />设置</span>
     </div></Transition>
     </div>
-    <Transition name="tw-pop"><div v-if="scene.aiMenu" class="tw-menu tw-aimenu"><span><AppIcon name="sparkle" :size="13" />关闭阅读助手</span><span class="tw-aimenu-manage line"><AppIcon name="list" :size="13" />管理对话…</span></div></Transition>
     <Transition name="tw-fade"><section v-if="scene.manager" class="tw-cm">
       <div class="tw-cm-main">
-        <p class="tw-cm-tools"><span><AppIcon name="arrow" :size="12" />返回</span><span :class="{ off: scene.cmFlash !== 'moved' }"><AppIcon name="reset" :size="12" />撤销<kbd>Ctrl Z</kbd></span></p>
-        <header class="tw-cm-hero"><h2><i></i>管理对话</h2><dl><div><dt>2</dt><dd>本书</dd></div><div><dt>5</dt><dd>段对话</dd></div><div class="red"><dt>3</dt><dd>条记忆</dd></div></dl></header>
+        <p class="tw-cm-tools"><span><AppIcon name="arrow" :size="12" />返回</span><span :class="{ off: scene.cmFlash !== 'moved' }"><AppIcon name="reset" :size="12" />撤销<kbd>Ctrl Z</kbd></span><span class="tw-cm-find" :class="{ typed: scene.cmQuery }"><AppIcon name="search" :size="13" /><em>{{ scene.cmQuery || '搜索对话' }}</em><i v-if="scene.cmQuery" class="tw-caret"></i></span></p>
+        <header class="tw-cm-hero"><h2><i></i>管理对话</h2><dl><div><dt>2</dt><dd>本书</dd></div><div><dt>5</dt><dd>段对话</dd></div><div class="red"><dt>{{ memCount }}</dt><dd>条记忆</dd></div></dl></header>
+        <div v-if="scene.cmQuery" class="tw-cm-hits">
+          <div v-for="(hit, index) in FIND.manageHits" :key="index" class="tw-cm-hit" :class="`tw-cm-hit-${index}`"><strong>{{ hit.title[0] }}<mark>{{ hit.title[1] }}</mark>{{ hit.title[2] }}</strong><small>{{ hit.meta }}</small><em v-if="hit.snip">{{ hit.snip[0] }}<mark>{{ hit.snip[1] }}</mark>{{ hit.snip[2] }}</em></div>
+        </div>
+        <template v-else>
         <div v-for="book in cmBooks" :key="book.id" class="tw-cm-book" :class="`tw-cm-${book.id}`">
           <div class="tw-cm-root"><i :class="book.kind"><AppIcon :name="book.kind === 'square' ? 'book' : 'doc'" :size="15" /></i><span><b>{{ book.title }}</b><small>{{ book.talks.length }} 段对话</small></span></div>
           <i class="tw-cm-knob"><AppIcon name="arrow" :size="9" /></i>
@@ -370,26 +424,33 @@ const files = computed(() => {
             <div v-for="talk in book.talks" :key="talk.id" class="tw-cm-kid">
               <div class="tw-cm-talk" :class="[`tw-cm-${talk.id}`, { has: talk.items, lifted: scene.cmDrag && talk.id === 't1', picked: (scene.cmDrag || scene.cmFlash === 'moved') && talk.id === 't1' }]"><b>{{ talk.title }}</b><small>{{ talk.meta }}</small></div>
               <template v-if="talk.items">
-                <i class="tw-cm-knob has" :class="[`tw-cm-knob-${talk.id}`, { shut: !(scene.cmOpen && talk.id === 't0') }]"><AppIcon v-if="scene.cmOpen && talk.id === 't0'" name="arrow" :size="9" /><template v-else>{{ talk.items.length }}</template></i>
-                <div v-if="scene.cmOpen && talk.id === 't0'" class="tw-cm-items"><p v-for="item in talk.items" :key="item[0]"><b>{{ item[0] }}</b><em>{{ item[1] }}</em></p></div>
+                <i class="tw-cm-knob has shut">{{ talk.items.length }}</i>
               </template>
               <Transition name="tw-fade"><div v-if="scene.cmPeek && talk.id === 't1'" class="tw-cm-peek"><h5>{{ talk.title }}</h5><p><i>问</i><span>行列式等于 0，为什么矩阵就不可逆？</span></p><p class="answer"><i>答</i><span>行列式是这组列向量张成的体积。体积为 0，说明它们被压进了更低的维度，信息丢了，这个变换就退不回去。</span></p></div></Transition>
             </div>
             <i v-if="scene.cmSlot && book.id === 'b1'" class="tw-cm-slot"></i>
           </div>
         </div>
+        </template>
         <Transition name="tw-fade"><p v-if="scene.cmFlash" :key="scene.cmFlash" class="tw-cm-flash"><span>{{ scene.cmFlash === 'moved' ? '已把 1 段对话移到《Attention Is All You Need》' : '已撤销：把 1 段对话移到《Attention Is All You Need》' }}</span><b v-if="scene.cmFlash === 'moved'">撤销</b></p></Transition>
-        <p v-if="!scene.cmFlash" class="tw-cm-hint">左键进入<i></i>右键操作<i></i>拖动移动或排序<i></i>空白处框选<i></i>Ctrl Z 撤销</p>
         <div v-if="scene.cmDrag" class="tw-cm-ghost" :style="{ left: `${scene.cmDrag.x + 12}px`, top: `${scene.cmDrag.y + 10}px` }">1 段对话</div>
       </div>
       <aside class="tw-cm-side">
         <svg class="tw-cm-art" viewBox="0 0 400 250" preserveAspectRatio="xMidYMid slice"><path class="l" d="M-10 196 420 42M-10 212 420 58M-10 228 420 74" /><circle class="r" cx="262" cy="118" r="86" /><circle class="k" cx="262" cy="118" r="11" /><path class="w" d="M14 54 268 118 56 214Z" /><path class="k" d="M196 250 372 18 392 33 216 265Z" /><path class="k" d="M330 180h44v44h-44zM24 20h18v18H24zM50 20h8v8h-8z" /><circle class="w" cx="352" cy="62" r="13" /></svg>
-        <header><h3>记忆</h3><b>3</b><span>条</span></header>
+        <header><h3>记忆</h3><b>{{ memCount }}</b><span>条</span></header>
         <div class="tw-cm-side-list">
-          <template v-for="book in CM_BOOKS" :key="book.id"><h4>{{ book.title }}</h4><template v-for="talk in book.talks" :key="talk.id"><p v-for="item in talk.items || []" :key="item[0]"><b>{{ item[0] }}</b><em>{{ item[1] }}</em></p></template></template>
+          <p class="tw-mem-ask" :class="{ busy: scene.memBusy, typed: scene.memAsk }"><em>{{ scene.memAsk || '让助手改：比如 把循环相关的合并成一条' }}</em><i v-if="scene.memAsk && !scene.memBusy" class="tw-caret"></i><b><AppIcon :name="scene.memBusy ? 'stop' : 'arrow-up'" :size="12" /></b></p>
+          <p v-if="scene.memBusy || scene.memNote" class="tw-mem-note">{{ scene.memBusy ? '助手正在看这些记忆，按你说的改…' : scene.memNote }}<b v-if="!scene.memBusy">撤销</b></p>
+          <h4><span>线性代数讲义</span><small>{{ memRows.length }}</small><AppIcon name="arrow" :size="9" /></h4>
+          <div class="tw-mem-rows" :class="{ still: scene.memStill }">
+            <p v-for="row in memRows" :key="row.id" class="tw-mem-row" :class="[`tw-mem-${row.id}`, { lifted: row.id === 'r1' && scene.memDrag !== null, fresh: row.id === 'm' }]" :style="{ translate: `0 ${memMove(row.id)}px` }"><AppIcon class="tw-grip" name="grip" :size="12" /><b>{{ row.name }}</b><em>{{ row.state }}</em></p>
+          </div>
+          <h4><span>Attention Is All You Need</span><small>1</small><AppIcon name="arrow" :size="9" /></h4>
+          <p class="tw-mem-row"><AppIcon class="tw-grip" name="grip" :size="12" /><b>缩放点积注意力</b><em>已弄懂</em></p>
         </div>
       </aside>
     </section></Transition>
+    <Transition name="tw-pop"><div v-if="scene.toast" :key="scene.toast" class="tw-toast"><span>{{ scene.toast }}</span><AppIcon name="close" :size="13" /></div></Transition>
     <div v-if="scene.ghost" class="tw-ghost" :style="{ left: `${scene.ghost.x}px`, top: `${scene.ghost.y}px` }"><AppIcon name="file" :size="14" />特征值专题讲义.pdf</div>
   </div>
 </template>
