@@ -58,7 +58,7 @@ const CM_BOOKS: { id: string; title: string; kind: 'square' | 'round'; talks: Ta
   { id: 'b0', title: '线性代数讲义', kind: 'square', talks: [
     { id: 't0', title: '特征值是什么', meta: '3 问 · 刚刚', items: [['特征值的定义', '已弄懂'], ['相似对角化', '问过还不熟']] },
     { id: 't1', title: '行列式为什么能判可逆', meta: '2 问 · 1 小时前' },
-    { id: 't2', title: '这一节的思路', meta: '4 问 · 昨天' },
+    { id: 't2', title: '特征值与特征向量', meta: '4 问 · 昨天', items: [['特征向量的几何意义', '已弄懂']] },
   ] },
   { id: 'b1', title: 'Attention Is All You Need', kind: 'round', talks: [
     { id: 't3', title: '自注意力怎么算', meta: '5 问 · 2 天前', items: [['缩放点积注意力', '已弄懂']] },
@@ -468,7 +468,7 @@ const files = computed(() => {
 .tw-taskbar b{width:20px;height:20px;border-radius:5px;background:rgb(255 255 255 / .34)}
 .tw-world p,.tw-world h1,.tw-world h2,.tw-world h3,.tw-world h5,.tw-world h6{margin:0}
 .tw-world i,.tw-world em{font-style:normal}
-.tw-side,.tw-top,.tw-ai,.tw-dialog,.tw-bar,.tw-lib{transition:background-color .45s var(--ease-soft),border-color .45s var(--ease-soft),border-radius .45s var(--ease-soft),translate .5s var(--ease-out),opacity .4s var(--ease-out)}
+.tw-side,.tw-top,.tw-ai,.tw-dialog,.tw-bar,.tw-lib{transition:background-color .45s var(--ease-soft),border-color .45s var(--ease-soft),border-radius .45s var(--ease-soft),translate .5s var(--ease-out),opacity .4s var(--ease-out),scale .4s var(--ease-out)}
 
 /* ---- 外观一课：临时换一套颜色 ---- */
 .tw-world.forced[data-look='glass']{--tw-bg:linear-gradient(135deg,#e9eef4,#dfe7f1 55%,#e8e3f0);--surface:rgb(255 255 255 / .76);--sidebar:rgb(255 255 255 / .7);--popup-glass:#fbfcfd;--ink:#1b1f26;--secondary:#4a5361;--muted:#6a7381;--line-soft:rgb(60 72 92 / .1);--glass-outline:rgb(28 40 48 / .13);--accent:#3b6fe0;--selection-solid:#cfe0ff;font-family:'Segoe UI Variable Text','Segoe UI','Microsoft YaHei UI',system-ui,sans-serif}
@@ -476,8 +476,12 @@ const files = computed(() => {
 .tw-world.forced[data-look='warm']{--tw-bg:#f3efe6;--surface:#faf9f5;--sidebar:#f7f4ec;--popup-glass:#faf9f5;--ink:#3d2e1e;--secondary:#5e5040;--muted:#857660;--line-soft:rgb(61 46 30 / .1);--glass-outline:rgb(61 46 30 / .18);--accent:#c96442;--selection-solid:#f1d9b8;--tw-radius:8px;font-family:Georgia,'Source Han Serif SC','Songti SC',SimSun,serif}
 .tw-world.forced[data-look='sketch']{--tw-bg:#efe9db;--surface:#fbf8f0;--sidebar:#fbf8f0;--popup-glass:#fbf8f0;--ink:#2e2d2a;--secondary:#4a4741;--muted:#6b675e;--line-soft:rgb(46 45 42 / .18);--glass-outline:rgb(46 45 42 / .72);--accent:#c8553d;--selection-solid:#fbe691;font-family:'Caveat','Ma Shan Zheng','Long Cang',KaiTi,STKaiti,cursive}
 .tw-world.forced.dark{--tw-bg:#17181b;--surface:#26272b;--sidebar:#222327;--popup-glass:#2c2d31;--ink:#ececee;--secondary:#c5c6cb;--muted:#9a9ca3;--line-soft:rgb(255 255 255 / .09);--glass-outline:rgb(255 255 255 / .16);--selection-solid:#3a4a6b}
-.tw-world.forced.photo{--tw-bg:linear-gradient(135deg,#f3cdb6,#cdb9e6 48%,#9cc3ea)}
-.tw-world.forced.photo.dark{--tw-bg:linear-gradient(135deg,#4a3140,#2f3157 48%,#1e3a55)}
+/* 自己的图片做底板：图铺满窗口，侧栏、顶栏、工具条、助手栏变薄，透出并模糊身后的图；书页保持实色。 */
+.tw-wall{position:absolute;inset:0;width:100%;height:100%}
+.tw-wall-enter-active{transition:opacity .9s var(--ease-soft)}
+.tw-wall-enter-from{opacity:0}
+.tw-world.forced.picture{--surface:rgb(255 255 255 / .36);--sidebar:rgb(255 255 255 / .3);--glass-outline:rgb(255 255 255 / .6);--line-soft:rgb(255 255 255 / .45);--ink:#16192a;--secondary:#2c3045;--muted:#454a60}
+.tw-world.picture .tw-side,.tw-world.picture .tw-top,.tw-world.picture .tw-ai,.tw-world.picture .tw-bar{-webkit-backdrop-filter:blur(16px) saturate(1.7);backdrop-filter:blur(16px) saturate(1.7);box-shadow:inset 0 1px 0 rgb(255 255 255 / .75),inset 0 0 0 1px rgb(255 255 255 / .18),0 14px 36px -20px rgb(20 10 40 / .55)}
 .tw-world[data-look='sketch'] :is(.tw-side,.tw-top,.tw-ai,.tw-card,.tw-dialog,.tw-trans,.tw-menu,.tw-bar,.tw-clock-panel){border-width:1.5px}
 .tw-world[data-look='sketch'] .tw-side{border-radius:16px 22px 18px 20px / 20px 16px 22px 17px}
 .tw-world[data-look='sketch'] .tw-ai{border-radius:20px 16px 22px 17px / 16px 22px 18px 20px}
@@ -530,7 +534,8 @@ const files = computed(() => {
 .tw-bar{position:absolute;left:50%;top:4px;z-index:4;display:flex;align-items:center;gap:12px;height:34px;padding:0 14px;border:1px solid var(--glass-outline);border-radius:999px;background:var(--surface);color:var(--secondary);translate:-50% 0;box-shadow:0 8px 22px -14px rgb(0 0 0 / .4)}
 .tw-sep{width:1px;height:14px;background:var(--line-soft)}
 .tw-percent{display:flex;align-items:center;gap:8px;font-size:12px;font-variant-numeric:tabular-nums}
-.tw-percent b{min-width:36px;font-weight:600;text-align:center;color:var(--ink)}
+.tw-percent b{min-width:36px;padding:2px 4px;border-radius:6px;font-weight:600;text-align:center;color:var(--ink);transition:background-color .2s,color .2s}
+.tw-percent.fit b{background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent)}
 .tw-tool{display:grid;place-items:center;width:28px;height:26px;border-radius:8px;transition:background-color .2s,color .2s}
 .tw-tool svg{fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round}
 .tw-tool.on{background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent)}
@@ -649,7 +654,6 @@ const files = computed(() => {
 .tw-menu small{margin-left:auto;padding-left:14px;color:var(--muted);font-size:11px}
 .tw-menu span.line0{margin-bottom:3px;border-bottom:1px solid var(--line-soft);border-radius:7px 7px 0 0;color:var(--secondary)}
 .tw-mark-menu{right:-64px;top:96px}
-.tw-aimenu{right:14px;top:50px;z-index:12}
 /* 管理对话那一页：构成主义的红、黑、纸色，直角和斜线。 */
 .tw-cm{--cm-red:#d23f2a;--cm-line:color-mix(in srgb,var(--ink) 58%,transparent);position:absolute;inset:0;z-index:14;display:grid;grid-template-columns:minmax(0,1fr) 330px;background:var(--canvas);color:var(--ink);text-align:left}
 .tw-world[data-look='sketch'] .tw-cm{--cm-red:var(--red-pencil,#c0392b)}
@@ -686,11 +690,8 @@ const files = computed(() => {
 .tw-cm-talk small{flex:none;color:var(--muted);font-size:10px}
 .tw-cm-talk.picked{border-color:var(--cm-red);background:color-mix(in srgb,var(--cm-red) 10%,var(--surface));box-shadow:4px 4px 0 color-mix(in srgb,var(--cm-red) 30%,transparent)}
 .tw-cm-talk.lifted{opacity:.35}
-.tw-cm-items{display:grid;gap:0;margin-left:16px}
-.tw-cm-items p{display:flex;align-items:center;height:20px;font-size:11.5px;white-space:nowrap}
-.tw-cm-items p::before{content:'';width:5px;height:5px;margin-right:7px;background:var(--cm-red)}
-.tw-cm-items b,.tw-cm-side-list b{font-weight:600}
-.tw-cm-items em,.tw-cm-side-list em{margin-left:8px;color:var(--muted);font-size:10.5px}
+.tw-cm-side-list b{font-weight:600}
+.tw-cm-side-list em{margin-left:8px;color:var(--muted);font-size:10.5px}
 .tw-cm-slot{position:absolute;left:0;top:42.5px;z-index:2;width:270px;height:3px;background:var(--cm-red)}
 .tw-cm-slot::before{content:'';position:absolute;left:-8px;top:-2.5px;width:8px;height:8px;background:var(--cm-red)}
 .tw-cm-peek{position:absolute;left:292px;top:-4px;z-index:5;width:300px;padding:12px 14px 13px;border:1.5px solid var(--ink);background:var(--surface);box-shadow:6px 6px 0 color-mix(in srgb,var(--ink) 18%,transparent)}
@@ -700,9 +701,7 @@ const files = computed(() => {
 .tw-cm-peek i{display:grid;place-items:center;flex:none;width:17px;height:17px;margin-top:1px;background:var(--ink);color:var(--canvas);font-size:10px;font-weight:700}
 .tw-cm-peek .answer i{background:var(--cm-red);color:#fff}
 .tw-cm-peek .answer span{color:var(--secondary)}
-.tw-cm-hint,.tw-cm-flash{position:absolute;left:20px;bottom:14px;display:flex;align-items:center;font-size:10.5px}
-.tw-cm-hint{color:var(--muted)}
-.tw-cm-hint i{width:1px;height:10px;margin:0 10px;background:var(--cm-line)}
+.tw-cm-flash{position:absolute;left:20px;bottom:14px;display:flex;align-items:center;font-size:10.5px}
 .tw-cm-flash{gap:12px;height:32px;padding:0 6px 0 12px;border-left:6px solid var(--cm-red);background:var(--ink);color:var(--canvas);font-size:11.5px}
 .tw-cm-flash b{display:grid;place-items:center;height:23px;padding:0 9px;background:var(--cm-red);color:#fff;font-weight:700}
 .tw-cm-flash:not(:has(b)){padding-right:12px}
@@ -720,8 +719,45 @@ const files = computed(() => {
 .tw-cm-side-list{padding:0 20px}
 .tw-cm-side-list h4{display:flex;align-items:center;gap:8px;margin:14px 0 5px;font-size:11px;font-weight:700}
 .tw-cm-side-list h4::before{content:'';width:14px;height:4px;background:var(--ink)}
-.tw-cm-side-list p{display:flex;align-items:center;height:26px;padding-left:9px;font-size:11.5px}
+.tw-cm-side-list h4 span{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.tw-cm-side-list h4 small{color:var(--muted);font-size:10.5px;font-weight:400}
+.tw-cm-side-list h4 svg{color:var(--muted);rotate:-90deg}
+/* 记忆栏的一条：拿起来时放大一点、带硬投影，别的条目跟着让位。 */
+.tw-mem-rows{display:flex;flex-direction:column}
+.tw-mem-row{position:relative;display:flex;align-items:center;height:28px;padding-left:4px;background:transparent;font-size:11.5px;transition:translate .32s var(--ease-spring),scale .2s,box-shadow .2s,background-color .2s}
+.tw-mem-rows.still .tw-mem-row{transition:none}
+.tw-mem-row.lifted{z-index:2;scale:1.04;background:var(--surface);box-shadow:5px 5px 0 color-mix(in srgb,var(--ink) 18%,transparent),0 0 0 1.5px var(--ink);transition:scale .2s,box-shadow .2s,background-color .2s}
+.tw-mem-row.fresh{animation:tw-sum-new 2.2s ease-out both}
+.tw-grip{flex:none;margin-right:4px;color:var(--muted);opacity:0;transition:opacity .2s}
+.tw-mem-row.lifted .tw-grip{opacity:1}
+.tw-cm-side-list .tw-mem-ask{position:relative;clip-path:inset(-4px 0 -3px 0);display:flex;align-items:center;gap:4px;height:32px;margin:2px 0 10px;border-bottom:1.5px solid var(--ink);font-size:11.5px}
+.tw-mem-ask em{flex:1;min-width:0;overflow:hidden;white-space:nowrap;color:var(--muted)}
+.tw-mem-ask.typed em{flex:none;color:var(--ink)}
+.tw-mem-ask b{display:grid;place-items:center;flex:none;width:22px;height:22px;margin-left:auto;color:var(--ink)}
+.tw-mem-ask.busy::after{content:'';position:absolute;left:0;bottom:-1.5px;width:36%;height:1.5px;background:linear-gradient(90deg,transparent,var(--cm-red),transparent);animation:tw-mem-run 1.15s cubic-bezier(.45,0,.55,1) infinite}
+@keyframes tw-mem-run{from{translate:-100% 0}to{translate:280% 0}}
+.tw-cm-side-list .tw-mem-note{display:block;height:auto;margin:-4px 0 10px;padding:0;color:var(--secondary);font-size:11px;line-height:1.5;animation:tw-appear .25s}
+.tw-mem-note b{margin-left:10px;color:var(--cm-red);font-weight:700;text-decoration:underline;text-underline-offset:3px}
+/* 管理页的搜索框和结果：一列卡片，命中的字是红的。 */
+.tw-cm-tools .tw-cm-find{width:210px;margin-left:8px;padding:0 9px;font-weight:400;transition:width .2s var(--ease-out),box-shadow .15s}
+.tw-cm-find em{flex:1;color:var(--muted)}
+.tw-cm-tools .tw-cm-find.typed{width:290px;box-shadow:4px 4px 0 color-mix(in srgb,var(--cm-red) 30%,transparent)}
+.tw-cm-find.typed em{flex:none;color:var(--ink)}
+.tw-cm-hits{display:flex;flex-direction:column;gap:6px;max-width:640px;animation:tw-page .3s var(--ease-out)}
+.tw-cm-hit{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;gap:4px 16px;padding:11px 12px 11px 14px;border-left:4px solid var(--ink);border-bottom:1px solid var(--cm-line);background:var(--surface)}
+.tw-cm-hit strong{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:13.5px;font-weight:650}
+.tw-cm-hit small{color:var(--muted);font-size:11px;white-space:nowrap}
+.tw-cm-hit em{grid-column:1 / -1;color:var(--secondary);font-size:12.5px;line-height:1.6}
+.tw-cm-hit mark{padding:0;background:none;color:var(--cm-red);font-weight:700}
 .tw-file-menu{left:420px;top:178px}
+.tw-menu span.danger{color:#d0453a}
+.tw-file .tw-rename{display:flex;align-items:center;height:22px;margin-top:8px;padding:0 6px;border:1px solid var(--accent);border-radius:6px;background:var(--surface);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 16%,transparent)}
+.tw-rename span{overflow:hidden;white-space:nowrap}
+.tw-rename span.all{background:var(--selection-solid,#cfe0ff)}
+/* 窗口底部的提示：一条圆角的胶囊，右边一颗叉。 */
+.tw-toast{position:absolute;left:50%;bottom:92px;z-index:20;display:flex;align-items:center;gap:14px;height:36px;padding:0 12px 0 18px;border:1px solid var(--glass-outline);border-radius:999px;background:var(--popup-glass,var(--surface));box-shadow:0 18px 40px -16px rgb(0 0 0 / .45);color:var(--ink);font:500 12.5px/1 var(--font-ui,system-ui);white-space:nowrap;translate:-50% 0}
+.tw-world.forced .tw-toast{font-family:inherit}
+.tw-toast svg{color:var(--muted)}
 .tw-menu span.hot{background:color-mix(in srgb,var(--ink) 9%,transparent);color:var(--ink)}
 /* 总结：助手栏里的表、发出去的表、盖在书页上的草稿。 */
 .tw-sum{display:flex;flex-direction:column;padding:12px 13px 12px;border:1px solid var(--glass-outline);border-radius:12px;background:var(--surface);font-size:12.5px;animation:tw-page .3s var(--ease-out)}
@@ -757,11 +793,12 @@ const files = computed(() => {
 .tw-draftchip{align-self:flex-start;display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border:1px solid color-mix(in srgb,var(--accent) 34%,transparent);border-radius:8px;background:color-mix(in srgb,var(--accent) 9%,transparent);font-size:12px;font-variant-numeric:tabular-nums;animation:tw-page .3s var(--ease-out)}
 .tw-draftchip svg{color:var(--accent)}
 .tw-draft{position:absolute;left:224px;right:330px;top:72px;bottom:14px;z-index:4;display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--glass-outline);border-radius:var(--tw-radius);background:var(--surface);box-shadow:0 18px 44px -24px rgb(0 0 0 / .3)}
-.tw-draft header{display:flex;align-items:center;gap:10px;flex:none;height:46px;padding:0 12px 0 20px;border-bottom:1px solid var(--line-soft);font-size:12.5px}
+.tw-draft header{position:relative;display:flex;align-items:center;gap:10px;flex:none;height:46px;padding:0 12px 0 20px;border-bottom:1px solid var(--line-soft);font-size:12.5px}
 .tw-draft header b{font-size:14px;font-weight:650}
 .tw-draft header small{flex:1;color:var(--muted)}
 .tw-draft header em{color:var(--muted);font-style:normal;font-variant-numeric:tabular-nums}
 .tw-draft header em.live{color:var(--accent)}
+.tw-draft header.running::after{content:'';position:absolute;left:0;bottom:-1px;width:38%;height:2px;border-radius:1px;background:linear-gradient(90deg,transparent,var(--accent),transparent);animation:tw-run 1.15s cubic-bezier(.45,0,.55,1) infinite}
 .tw-draft-saved{color:var(--secondary);text-decoration:underline;text-underline-offset:3px;animation:tw-bump .4s var(--ease-spring)}
 .tw-draft-save{display:grid;place-items:center;height:30px;padding:0 14px;border-radius:9px;background:var(--accent);color:#fff;font-weight:600;transition:opacity .3s}
 .tw-draft-save.dim{opacity:.4}
@@ -833,8 +870,31 @@ const files = computed(() => {
 .tw-ai-enter-from,.tw-ai-leave-to{translate:60px 0;opacity:0}
 .tw-main{position:relative;flex:1;min-width:0;display:flex;flex-direction:column;gap:12px}
 .tw-ai header{display:flex;align-items:center;gap:8px;height:22px}
-.tw-main header>svg:first-child{color:var(--accent)}
-.tw-history{margin-left:auto;color:var(--muted)}
+.tw-manage{display:grid;place-items:center;flex:none;width:26px;height:26px;margin-left:-4px;border-radius:8px;color:var(--secondary)}
+.tw-title{display:flex;align-items:baseline;gap:6px;flex:1;min-width:0;overflow:hidden;white-space:nowrap}
+.tw-title b{overflow:hidden;text-overflow:ellipsis;font-size:13px;font-weight:650}
+.tw-title small{overflow:hidden;text-overflow:ellipsis;color:var(--muted);font-size:11px}
+.tw-hbtns{display:flex;align-items:center;gap:11px;flex:none;color:var(--muted)}
+/* 对话记录：表头标题下弹出；最上面一行新对话、管理，下面是搜索框。 */
+.tw-hist{position:absolute;left:-4px;right:-4px;top:30px;z-index:8;display:flex;flex-direction:column;padding:6px;border:1px solid var(--glass-outline);border-radius:12px;background:linear-gradient(var(--popup-glass,var(--surface)),var(--popup-glass,var(--surface))),var(--popup-glass,var(--surface));-webkit-backdrop-filter:blur(22px);backdrop-filter:blur(22px);box-shadow:0 22px 50px -20px rgb(0 0 0 / .5),0 2px 6px rgb(0 0 0 / .08);font-size:12.5px}
+.tw-hist-top{display:flex;gap:4px}
+.tw-hist-top p{display:flex;align-items:center;gap:6px;height:28px;padding:0 9px;border-radius:7px;font-weight:600}
+.tw-hist-top p+p{color:var(--secondary);font-weight:500}
+.tw-hist-search{display:flex;align-items:center;gap:7px;height:30px;margin-top:4px;padding:0 10px;border-bottom:1px solid var(--line-soft);color:var(--muted)}
+.tw-hist-search em{overflow:hidden;white-space:nowrap}
+.tw-hist-search.typed{border-bottom-color:var(--ink);color:var(--ink)}
+.tw-hist-scope{display:flex;gap:4px;margin:6px 0 2px}
+.tw-hist-scope p{flex:1;height:24px;border-radius:6px;color:var(--muted);font-size:11.5px;line-height:24px;text-align:center}
+.tw-hist-scope p.on{background:color-mix(in srgb,var(--ink) 7%,transparent);color:var(--ink);font-weight:600}
+.tw-hist-row{display:grid;gap:1px;padding:6px 9px;border-radius:8px}
+.tw-hist-search+.tw-hist-row{margin-top:6px}
+.tw-hist-row.current{background:color-mix(in srgb,var(--ink) 6%,transparent)}
+.tw-hist-row strong{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-weight:600}
+.tw-hist-row small{color:var(--muted);font-size:11px}
+.tw-hist-row em{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;margin-top:2px;color:var(--secondary);font-size:11.5px;line-height:1.5}
+.tw-hist-row mark{padding:0;background:none;color:var(--accent);font-weight:700}
+.tw-hist-hit{animation:tw-page .25s var(--ease-out) both}
+.tw-hist-hit-1{animation-delay:.05s}.tw-hist-hit-2{animation-delay:.1s}
 .tw-chip{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 8px;border-radius:999px;background:color-mix(in srgb,var(--accent) 13%,transparent);color:var(--accent);font-size:11px;font-weight:600;animation:tw-bump .4s var(--ease-spring)}
 .tw-chat{position:relative;flex:1;display:flex;flex-direction:column;gap:10px;min-height:0}
 .tw-me{align-self:flex-end;max-width:86%;padding:8px 12px;border-radius:14px 14px 4px 14px;background:color-mix(in srgb,var(--ink) 7%,transparent);font-size:13px;animation:tw-page .3s var(--ease-out)}
@@ -894,10 +954,36 @@ const files = computed(() => {
 .tw-style i.warm{background:#f1ece1}.tw-style i.warm b{border-radius:2px;background:#faf9f5;box-shadow:inset 0 0 0 1px rgb(61 46 30 / .2)}
 .tw-style i.sketch{background:#efe9db}.tw-style i.sketch b{border-radius:5px 7px 4px 8px;background:#fbf8f0;box-shadow:inset 0 0 0 1.4px #2e2d2a}
 .tw-pane h5+.tw-styles+h5{margin-top:20px}
-.tw-bgs{display:flex;gap:10px}
-.tw-bgs i{width:58px;height:40px;border:1px solid var(--line-soft);border-radius:9px;transition:box-shadow .25s}
-.tw-bgs i.on{box-shadow:0 0 0 2px var(--popup-glass,#fff),0 0 0 4px var(--accent)}
-.tw-bg-0{background:linear-gradient(135deg,#e9eef4,#e8e3f0)}.tw-bg-1{background:linear-gradient(135deg,#f6e3cf,#f0c9c9)}.tw-bg-2{background:linear-gradient(135deg,#f3cdb6,#cdb9e6 48%,#9cc3ea)}.tw-bg-3{background:linear-gradient(135deg,#cfe8dc,#b9d6e6)}.tw-bg-4{background:#3a3c42}
+.tw-bgs,.tw-gallery{display:flex;gap:12px}
+.tw-bgs p,.tw-gallery p{display:grid;justify-items:center;gap:5px;width:66px;color:var(--secondary);font-size:11px;white-space:nowrap}
+.tw-bgs i,.tw-gallery svg,.tw-gallery i{display:block;width:66px;height:44px;border:1px solid var(--line-soft);border-radius:9px;transition:box-shadow .25s}
+.tw-bgs i.on,.tw-gallery svg.on{box-shadow:0 0 0 2px var(--popup-glass,#fff),0 0 0 4px var(--accent)}
+.tw-bg-0{background:linear-gradient(135deg,#e9eef4,#e8e3f0)}.tw-bg-1{background:linear-gradient(135deg,#f6e3cf,#f0c9c9)}.tw-bg-2{background:linear-gradient(135deg,#cfe8dc,#b9d6e6)}.tw-bg-3{background:linear-gradient(135deg,#e3dcf3,#cdb9e6)}.tw-bg-4{background:#3a3c42}.tw-bg-5{background:#f7f6f2}
+.tw-pane .tw-gallery-head{display:flex;align-items:baseline;gap:8px;margin:16px 0 8px;color:var(--secondary);font-size:12px;font-weight:600}
+.tw-gallery-head small{color:var(--muted);font-weight:400}
+.tw-gallery svg{overflow:hidden}
+.tw-gallery-own{animation:tw-bump .45s var(--ease-spring)}
+.tw-gallery i{display:grid;place-items:center;border-style:dashed;color:var(--muted)}
+/* 选图片的窗口：示意系统的打开文件框。 */
+.tw-picker{position:absolute;left:520px;top:300px;z-index:9;width:340px;padding:12px 14px;border:1px solid var(--glass-outline);border-radius:12px;background:var(--popup-glass,var(--surface));box-shadow:0 30px 70px -24px rgb(0 0 0 / .55);font:12px/1.3 var(--font-ui,system-ui)}
+.tw-world.forced .tw-picker{font-family:inherit}
+.tw-picker header{display:flex;align-items:center;gap:7px;margin-bottom:10px;font-weight:600}
+.tw-picker header small{margin-left:auto;color:var(--muted);font-weight:400}
+.tw-picks{display:flex;gap:12px}
+.tw-picks p{display:grid;justify-items:center;gap:6px;flex:1;padding:6px;border-radius:8px;color:var(--secondary);font-size:11px;white-space:nowrap}
+.tw-picks svg,.tw-picks i{display:block;width:92px;height:62px;border-radius:5px;box-shadow:0 0 0 1px rgb(0 0 0 / .12)}
+.tw-picks .tw-pick-0{background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--ink)}
+.tw-picks i.snow{background:linear-gradient(170deg,#c9dcef 0 38%,transparent 38%),linear-gradient(140deg,transparent 46%,#f4f7fb 46% 60%,#7f93ad 60%),linear-gradient(#9fb6cf,#5c7088)}
+.tw-picks i.desk{background:radial-gradient(circle at 70% 30%,#f6e4bf 0 12%,transparent 13%),linear-gradient(#cdb08c 0 62%,#8a6748 62%)}
+.tw-picker footer{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
+.tw-picker footer b{display:grid;place-items:center;height:26px;padding:0 14px;border:1px solid var(--line-soft);border-radius:6px;font-weight:500}
+.tw-picker footer b:first-child{border-color:transparent;background:var(--accent);color:#fff}
+/* 新底板预览：设置窗让开，底部一条「不采用 / 采用」。 */
+.tw-dialog.peek{opacity:0;scale:.97}
+.tw-scene-bar{position:absolute;left:50%;bottom:96px;z-index:12;display:flex;align-items:center;gap:10px;height:42px;padding:0 6px 0 18px;border:1px solid rgb(255 255 255 / .65);border-radius:999px;background:rgb(255 255 255 / .5);-webkit-backdrop-filter:blur(16px) saturate(1.6);backdrop-filter:blur(16px) saturate(1.6);box-shadow:inset 0 1px 0 rgb(255 255 255 / .8),0 18px 40px -16px rgb(20 10 40 / .55);color:var(--ink);font-size:12.5px;font-weight:600;white-space:nowrap;translate:-50% 0}
+.tw-scene-bar span{margin-right:6px}
+.tw-scene-bar b{display:grid;place-items:center;height:30px;padding:0 16px;border-radius:999px;background:rgb(255 255 255 / .55);font-weight:500}
+.tw-scene-bar b.tw-scene-ok{background:var(--accent);color:#fff;font-weight:600}
 
 /* ---- 收起界面 ---- */
 .tw-world.bare .tw-side{translate:-240px 0;opacity:0}

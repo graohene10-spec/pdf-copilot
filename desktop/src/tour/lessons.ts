@@ -446,7 +446,7 @@ const assistant: Play = async (stage, scene, say) => {
 
   // 对话记录最上面是搜索框：搜所有文档的对话，标题和内容都搜。
   say({ text: '点对话标题打开对话记录，可以搜所有文档的对话', top: true })
-  scene.btw = false
+  scene.btw = false; scene.side = false
   stage.look('.tw-ai', 1.45, [.5, .3])
   await click(stage, '.tw-title')
   scene.histOpen = true
@@ -800,7 +800,7 @@ const manage: Play = async (stage, scene, say) => {
   await stage.type(FIND.manage, value => { scene.cmQuery = value }, 260)
   await stage.wait(1600)
 
-  say({ text: '点一条结果打开那段对话；Esc 清掉搜索，树就回来', mouse: 'left' })
+  say({ text: '点一条结果，打开那段对话并滚到命中的那条；Esc 清掉搜索', mouse: 'left' })
   await stage.move('.tw-cm-hit-1', { at: [.3, .3], ms: 700 })
   await stage.wait(400)
   await stage.click()
@@ -1080,12 +1080,13 @@ const look: Play = async (stage, scene, say) => {
 
   // 设置窗让开：整个窗口换成这张图，侧栏、顶栏、助手栏的玻璃透出它。
   say('整个窗口换上这张图，玻璃面板透出后面的颜色')
-  await stage.move({ x: 330, y: 300 }, { ms: 900 })
-  stage.look({ x: 300, y: 330 }, 1.5)
-  await stage.wait(1500)
-  stage.look({ x: 1050, y: 300 }, 1.5)
-  await stage.move({ x: 1010, y: 260 }, { ms: 1100 })
-  await stage.wait(1500)
+  await stage.wait(900)
+  stage.look('.tw-side', 1.7, [.6, .4])
+  await stage.move('.tw-side', { at: [.7, .55], ms: 1000 })
+  await stage.wait(1300)
+  stage.look('.tw-ai', 1.6, [.4, .4])
+  await stage.move('.tw-ai', { at: [.35, .6], ms: 1200 })
+  await stage.wait(1300)
   stage.look(null, 1)
   await stage.wait(1000)
 
