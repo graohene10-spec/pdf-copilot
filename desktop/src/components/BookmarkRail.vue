@@ -275,7 +275,7 @@ onBeforeUnmount(() => {
         <TransitionGroup name="bookmark-tab">
           <div v-for="item in tabs" :key="item.key" class="bookmark on-page" :class="{ named: item.mark.name, editing: editing === item.mark.id, picked: picked.has(item.mark.id), inward: item.inward, flip: item.flip, lifted: item.lifted, docked: item.dock !== 'free' }" :data-mark="item.mark.id" :style="{ top: `${item.top}px`, left: `${item.left}px` }">
             <input v-if="editing === item.mark.id" ref="field" v-model="draft" class="bookmark-field" maxlength="40" placeholder="给书签起个名字" aria-label="书签名称" @keydown="key($event, item.mark.id)" @blur="commit(item.mark.id)" />
-            <button v-else type="button" class="bookmark-hit" :aria-label="item.mark.name ? `书签：${item.mark.name}` : `书签 · ${item.mark.hint}`" :data-tip="item.lifted ? undefined : `${item.mark.art.name} · ${item.mark.hint} · 按住可以挪`" @pointerdown="tabDown(item.mark, $event)" @click="click(item.mark, $event)" @keydown.delete.prevent="remove(item.mark)" @contextmenu.prevent.stop="menu(item.mark, $event)">
+            <button v-else type="button" class="bookmark-hit" :aria-label="item.mark.name ? `书签：${item.mark.name}` : `书签 · ${item.mark.hint}`" :data-tip="item.lifted ? undefined : `${item.mark.art.name} · ${item.mark.hint} · 按住拖动可移动`" @pointerdown="tabDown(item.mark, $event)" @click="click(item.mark, $event)" @keydown.delete.prevent="remove(item.mark)" @contextmenu.prevent.stop="menu(item.mark, $event)">
               <span class="bookmark-art" aria-hidden="true"><svg :key="item.mark.art.id" viewBox="0 0 96 40" preserveAspectRatio="xMinYMid slice" v-html="item.mark.art.svg" /></span>
               <span v-if="item.mark.name" class="bookmark-label">{{ item.mark.name }}</span>
             </button>

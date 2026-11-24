@@ -307,7 +307,7 @@ try {
     await internal.click();
     await page.waitForFunction(() => document.querySelector('[aria-label="页码"]').value === '2');
     await waitReady();
-    await page.locator('[data-tip="框选公式或图表作为 AI 上下文"]').click();
+    await page.locator('[data-tip="框选公式或图表，发给阅读助手"]').click();
     const bounds = await page.locator('#page-surface').boundingBox();
     await page.mouse.move(bounds.x + 25, bounds.y + 35); await page.mouse.down();
     await page.mouse.move(bounds.x + 160, bounds.y + 100); await page.mouse.up();

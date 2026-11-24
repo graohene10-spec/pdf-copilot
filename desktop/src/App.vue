@@ -177,7 +177,7 @@ let captureQuickMissing = 0
 let captureQuickResize: ResizeObserver | undefined
 let captureQuickMutation: MutationObserver | undefined
 const captureQuickBusy = computed(() => Boolean(captureQuick.value && (captureQuick.value.pending || chatState(sourceId(captureQuick.value.documentId)).request)))
-const captureQuickStatus = computed(() => captureQuick.value?.status || (captureQuick.value && chatState(sourceId(captureQuick.value.documentId)).request ? '这份文档已有问题正在处理，可点继续查看。' : ''))
+const captureQuickStatus = computed(() => captureQuick.value?.status || (captureQuick.value && chatState(sourceId(captureQuick.value.documentId)).request ? '阅读助手正在回答这份文档的上一个问题，点「自己提问」查看。' : ''))
 const reader = ref<any>()
 const settingsOpen = ref(false)
 const tourOpen = ref(false), tourFull = ref(false)
@@ -334,7 +334,7 @@ function beginArrange() {
   const shown = visibleDocuments.value.map(doc => doc.id), seen = new Set(shown)
   libraryOrder.value = [...shown, ...[...documents.value].sort((a, b) => (librarySort.value.descending ? -1 : 1) * sortValue(a, b, librarySort.value.key) || byRecent(a, b)).map(doc => doc.id).filter(id => !seen.has(id))]
   librarySort.value = { key: 'default', descending: true }
-  notify('已改为自己排列的顺序；排序菜单里可以换回按名称等排序。')
+  notify('已改为手动排序，可在排序菜单里改回。')
 }
 const collection = ref<HTMLElement>()
 const libraryView = ref<HTMLElement>()
@@ -571,7 +571,7 @@ function toggleLibrary() {
   if (!libraryShown.value) { clearPicked(); batchTag.value = null }
 }
 async function addDocuments(load: () => Promise<Doc[]>) {
-  if (importing.value) { notify('正在加入文档，请稍候。'); return }
+  if (importing.value) { notify('正在加入文档，完成后再试。'); return }
   libraryShown.value = true
   importing.value = true
   try {
@@ -595,7 +595,7 @@ async function addDocuments(load: () => Promise<Doc[]>) {
     query.value = ''; await refresh()
     notify(`已加入 ${imported.length} 份文档`)
     await openDocument(imported[0], changed.has(imported[0].id))
-  } catch (error) { notify(`导入失败：${reason(error)}`) }
+  } catch (error) { notify(`加入失败：${reason(error)}`) }
   finally { importing.value = false }
 }
 function importDocuments() { return addDocuments(() => library.importDocuments()) }
@@ -894,7 +894,7 @@ const uiCount = computed(() => { void uiVersion.value; return uiLoaded.value ? u
 // 从合集跳回原处：打开那本书，等阅读器摆好再翻到那一页 / 那一行。
 async function jumpToUi(entry: UiEntry) {
   const doc = documents.value.find(item => item.id === entry.doc)
-  if (!doc) { notify('这本书已经不在文档库里了。'); return }
+  if (!doc) { notify('这份文档已不在文档库里。'); return }
   await openDocument(doc)
   for (let tries = 0; tries < 25; tries++) {
     await new Promise(resolve => setTimeout(resolve, 120))
@@ -918,8 +918,8 @@ function explainMenu(event: CustomEvent<{ kind: 'card' | 'note'; id: string; x: 
     { label: '用图解释', icon: 'visual', hint: 'Shift + 中键', disabled: running, action: again('visual') },
   ]
   if (card) {
-    items.push({ label: card.pinned ? '拔下图钉' : '钉住', icon: 'pin', separator: true, action: () => { card.pinned = !card.pinned } })
-    if (card.pinned && card.anchor) items.push({ label: card.follow === 'page' ? '改成停在屏幕上' : '改成跟着书页走', icon: card.follow === 'page' ? 'fullscreen' : 'doc', action: () => { card.follow = card.follow === 'page' ? 'screen' : 'page'; hintLearned('explain-layer') } })
+    items.push({ label: card.pinned ? '取消钉住' : '钉住', icon: 'pin', separator: true, action: () => { card.pinned = !card.pinned } })
+    if (card.pinned && card.anchor) items.push({ label: card.follow === 'page' ? '改为固定在屏幕上' : '改为随页面滚动', icon: card.follow === 'page' ? 'fullscreen' : 'doc', action: () => { card.follow = card.follow === 'page' ? 'screen' : 'page'; hintLearned('explain-layer') } })
     items.push({ label: '关闭', icon: 'close', separator: !card.pinned, action: () => closeCard(card) })
   }
   if (note) items.push({ label: '删除这条释义', icon: 'trash', danger: true, separator: true, action: () => note.remove() })
@@ -966,7 +966,7 @@ function addBookmarkHere(id = active.value?.id) {
   if (!id) return
   const instance = readerInstances.get(id), position: BookmarkPosition | undefined = instance?.getBookmarkPosition?.()
   if (!position) return
-  if (!addBookmark(sourceId(id), position)) { notify('这本书的书签已经很多了，请先删掉一些。'); return }
+  if (!addBookmark(sourceId(id), position)) { notify('这份文档的书签已达上限，先删掉一些再加。'); return }
   bookmarkTick.value++
 }
 // 平滑滚动还没停下时再按 Ctrl + ↑ / ↓：以正在去的那个书签为当前位置，接着往下一个跳，不必等上一次滚完。
@@ -1024,9 +1024,9 @@ function pickBookmarkImage(source: string, target: string | string[]) {
   input.onchange = async () => {
     const file = input.files?.[0]
     if (!file) return
-    if (file.size > 40 * 1024 * 1024) { notify('这张图片太大了，换一张小一点的。'); return }
+    if (file.size > 40 * 1024 * 1024) { notify('图片超过 40 MB，请换一张。'); return }
     const id = await addCustomArt(file)
-    if (!id) { notify(customArtList().length >= 12 ? '自定义图片已经有 12 张了，先删掉一张再加。' : '这张图片读不了，换一张试试。'); return }
+    if (!id) { notify(customArtList().length >= 12 ? '自定义图片最多 12 张，先删掉一张再加。' : '无法读取这张图片，请换一张。'); return }
     for (const markId of [target].flat()) restyleBookmark(source, markId, id)
     bookmarkTick.value++
   }
@@ -1148,7 +1148,7 @@ function removeGroups(ids: string[]) {
   pickedGroups.value = new Set()
   if (!ids.length) return
   const before = snapshotGroups()
-  void Promise.all(ids.map(id => removeGroup(id))).then(() => undoable(ids.length > 1 ? `已删除 ${ids.length} 个分组，书都还在` : '已删除分组，书都还在', () => restoreGroups(before))).catch(error => notify(reason(error)))
+  void Promise.all(ids.map(id => removeGroup(id))).then(() => undoable(ids.length > 1 ? `已删除 ${ids.length} 个分组，文档仍在文档库` : '已删除分组，文档仍在文档库', () => restoreGroups(before))).catch(error => notify(reason(error)))
 }
 function markClick(doc: Doc, mark: { id: string; position: BookmarkPosition }, event: MouseEvent) {
   // 刚拖完框松手时落在某一行上的那一下不算点击。
@@ -1309,7 +1309,7 @@ async function retryDraftEdits() {
 }
 function openSavedDraft() {
   const doc = documents.value.find(item => item.id === draftSummary.value?.savedId)
-  if (!doc) { notify('存好的那份已经不在文档库里了。'); return }
+  if (!doc) { notify('保存的总结已不在文档库里。'); return }
   draft.value = null
   void openDocument(doc)
 }
@@ -1560,7 +1560,7 @@ function appContextMenu(event: MouseEvent) {
   } else if (text.trim()) {
     items.push({ label: '复制', icon: 'copy', hint: 'Ctrl+C', action: () => { void navigator.clipboard.writeText(text).catch(() => document.execCommand('copy')) } })
     const shot = looksMathy(text) ? selectionImage() : undefined
-    items.push({ label: '机翻', icon: 'translate', hint: shortcut('translate'), action: () => { void translate(text, undefined, false, { image: shot }) } })
+    items.push({ label: '翻译', icon: 'translate', hint: shortcut('translate'), action: () => { void translate(text, undefined, false, { image: shot }) } })
     const explainAt = target.closest('.reader-pane') ? explainTarget() : undefined
     if (explainAt) items.push({ label: '解释', icon: 'book', hint: '鼠标中键', action: () => runExplain(explainAt, event.clientX, event.clientY) })
     if (explainAt) items.push({ label: '用图解释', icon: 'visual', hint: 'Shift + 中键', action: () => runExplain(explainAt, event.clientX, event.clientY, undefined, true) })
@@ -1572,11 +1572,11 @@ function appContextMenu(event: MouseEvent) {
     const id = target.closest<HTMLElement>('[data-group-id]')!.dataset.groupId!, group = groups.value.find(item => item.id === id)
     if (!group) return
     // 右键的这个分组在选中的几个里面：一起删。
-    if (pickedGroups.value.has(id) && pickedGroups.value.size > 1) items.push({ label: `删除所选 ${pickedGroups.value.size} 个分组`, icon: 'trash', danger: true, hint: '书留在文档库', action: () => removeGroups([...pickedGroups.value]) })
+    if (pickedGroups.value.has(id) && pickedGroups.value.size > 1) items.push({ label: `删除所选 ${pickedGroups.value.size} 个分组`, icon: 'trash', danger: true, hint: '文档仍在文档库', action: () => removeGroups([...pickedGroups.value]) })
     else {
       clearSidePicks()
       items.push({ label: '重命名', icon: 'edit', action: () => editGroup(id, group.name) })
-      items.push({ label: '删除分组', icon: 'trash', danger: true, hint: '书留在文档库', action: () => removeGroups([id]) })
+      items.push({ label: '删除分组', icon: 'trash', danger: true, hint: '文档仍在文档库', action: () => removeGroups([id]) })
     }
   } else if (!active.value && target.closest('.document-card')) {
     const card = target.closest<HTMLElement>('.document-card')!
@@ -1640,7 +1640,7 @@ function tabMenu(payload: { id: string; x: number; y: number }) {
   }
   if (grouped) items.push({ label: '移出并排', icon: 'close', action: () => removeFromGroup(id) })
   if (group.value.length > 1) items.push({ label: '取消整组并排', icon: 'panel', action: ungroup })
-  items.push({ label: '为这份文档开一个助手窗口', icon: 'sparkle', separator: items.length > 0, action: () => { contextMenu.value = undefined; if (!paneVisible(id)) selectTab(id); void nextTick(() => openAssistant(true, id)) } })
+  items.push({ label: '为这份文档单独开阅读助手', icon: 'sparkle', separator: items.length > 0, action: () => { contextMenu.value = undefined; if (!paneVisible(id)) selectTab(id); void nextTick(() => openAssistant(true, id)) } })
   {
     const full = (inGroup(active.value?.id) ? group.value.length : 1) >= MAX_PANES
     items.push({ label: '在右侧再开一份', icon: 'split-add', action: () => openCopy(id), disabled: full, hint: full ? `最多 ${MAX_PANES} 份` : undefined })
@@ -1702,7 +1702,7 @@ function selectedContext(value: typeof selection.value) {
   if (active.value && (value?.image || value?.imagePending)) {
     if (shiftCapture) hintLearned('shift-capture')
     else if (!rightCaptureDocs.value.has(sourceId(active.value.id))) offerHint('right-capture', ['右键菜单'], '可开启「右键拖动截图」')
-    else offerHint('shift-capture', ['Shift'], '按住再截，上一张留着')
+    else offerHint('shift-capture', ['Shift'], '按住再框选，可保留上一张截图')
   }
   if (shiftCapture && active.value && previous && (value?.image || value?.imagePending) && toRaw(previous) !== toRaw(value)) {
     const key = sourceId(active.value.id)
@@ -1716,7 +1716,7 @@ function selectedContext(value: typeof selection.value) {
     const pending = value
     void pending.imagePending!.then(image => {
       if (toRaw(selection.value) !== toRaw(pending)) return
-      if (!image && !pending.text) { clearSelection(); notify('这块区域没有可以交给助手的内容，请换个地方框选。'); return }
+      if (!image && !pending.text) { clearSelection(); notify('这块区域没有可发给阅读助手的内容，请换个位置框选。'); return }
       triggerRef(selection)
     }, () => { if (toRaw(selection.value) === toRaw(pending)) clearSelection() })
   }
@@ -1801,7 +1801,7 @@ async function askCaptureQuick(question: string) {
   if (!current || current.pending || active.value?.id !== current.documentId) return
   const tabId = current.documentId
   const state = chatState(sourceId(tabId))
-  if (state.request) { current.status = '这份文档已有问题正在处理，可点继续查看。'; captureQuick.value = { ...current }; return }
+  if (state.request) { current.status = '阅读助手正在回答这份文档的上一个问题，点「自己提问」查看。'; captureQuick.value = { ...current }; return }
   const doc = { id: sourceId(tabId), title: active.value.name, kind: active.value.kind }
   const context = { page: current.selection.page, selection: current.selection }
   current.pending = true; current.status = '准备提问…'; captureQuick.value = { ...current }
@@ -1861,7 +1861,7 @@ function readingProgress(id: string, value: { page: number; pageCount: number; p
 function indexText(id: string, text: string) {
   if (isCopy(id)) return
   clearTimeout(indexTimers.get(id))
-  indexTimers.set(id, setTimeout(() => { indexTimers.delete(id); void library.index(id, text.slice(0, 2000000)).catch(error => notify(`搜索索引更新失败：${reason(error)}`)) }, 1200))
+  indexTimers.set(id, setTimeout(() => { indexTimers.delete(id); void library.index(id, text.slice(0, 2000000)).catch(error => notify(`正文搜索更新失败：${reason(error)}`)) }, 1200))
 }
 function clearSelection() { dismissCaptureQuick(); selection.value = undefined; selectionAction.value = undefined; if (currentTab.value) currentTab.value.selection = undefined; window.getSelection()?.removeAllRanges(); reader.value?.clearSelection?.() }
 function consumeSelection(value: { documentId: string; selection: any }) {
@@ -1899,7 +1899,7 @@ async function bringBack(ids: string[]) {
   let back = 0
   for (const id of ids) if (leaving.has(id)) { clearTimeout(leaving.get(id)); leaving.delete(id); back++ }
   await refresh()
-  if (back < ids.length) throw new Error(back ? `只拿回了 ${back} 份，其余的已经移出，重新加入即可。` : '已经移出，重新加入即可。')
+  if (back < ids.length) throw new Error(back ? `只恢复了 ${back} 份，其余已彻底移出，可重新加入文档库。` : '已彻底移出，可重新加入文档库。')
 }
 async function removeDocument(quiet = false, target = removeTarget.value) {
   if (!target) return
@@ -2241,12 +2241,12 @@ async function listenForFileDrop() {
       else if (value.type === 'leave') draggingFiles.value = false
       // 桌面版拖放只给文件路径：图片请走阅读助手的「添加图片」或粘贴，不当成文档导入。
       else if (value.type === 'drop') {
-        if (value.paths.length && value.paths.every(path => /\.(png|jpe?g|webp|gif)$/i.test(path))) { draggingFiles.value = false; notify('图片请在阅读助手里点「添加图片」，或复制后在输入框 Ctrl+V 粘贴。') }
+        if (value.paths.length && value.paths.every(path => /\.(png|jpe?g|webp|gif)$/i.test(path))) { draggingFiles.value = false; notify('图片不能加入文档库。要发给阅读助手，请在输入框旁点「添加图片」，或复制后粘贴。') }
         else void dropDocuments(value.paths)
       }
     })
     if (disposed) unlisten(); else stopDropListening = unlisten
-  } catch (error) { notify(`文件拖入暂不可用：${reason(error)}`) }
+  } catch (error) { notify(`无法接收拖入的文件：${reason(error)}`) }
 }
 function getReaderCacheStats() {
   return readerCache.value.map(entry => ({ id: entry.id, bytes: entry.size, active: active.value?.id === entry.id, ...readerInstances.get(entry.id)?.getCacheStats?.() }))
@@ -2308,7 +2308,7 @@ async function recoverSession() {
   const ids = (saved.tabs || []).filter(id => id !== saved.active)
   if (saved.active) ids.push(saved.active)
   for (const id of ids) { const doc = documents.value.find(item => item.id === id); if (doc) await openDocument(doc) }
-  notify(ids.length ? '页面刚才出错退出了，已自动恢复，文档回到原来的位置。' : '页面刚才出错退出了，已自动恢复。')
+  notify(ids.length ? '页面出错后已重新载入，文档已重新打开。' : '页面出错后已重新载入。')
 }
 onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); document.removeEventListener('mousedown', middleDown); document.removeEventListener('auxclick', middleClick); document.removeEventListener('mouseup', hintOnSelection); document.removeEventListener('mouseup', prewarmOnSelection); document.removeEventListener('pointerdown', sideOutside, true); window.removeEventListener('kaizhi:open-ai-settings', openAiSettings); window.removeEventListener('kaizhi:explain-menu', explainMenu as EventListener); closeLooseCards(); stopAutoCheck(); clearTimeout(enteringTimer); disposed = true; ++openEpoch; dismissCaptureQuick(); stopDropListening?.(); clearWheelZoom(); readerInstances.clear(); glassContrast?.dispose(); document.removeEventListener('keydown', keydown); document.removeEventListener('contextmenu', appContextMenu); document.removeEventListener('wheel', wheel, true); document.removeEventListener('dragenter', dragEnter); document.removeEventListener('dragover', dragOver); document.removeEventListener('dragleave', dragLeave); document.removeEventListener('drop', fileDrop); document.removeEventListener('selectionchange', selectionChanged); document.removeEventListener('scroll', dismissSelectionAction, true); document.removeEventListener('scroll', captureViewportChanged, true); window.removeEventListener('resize', dismissSelectionAction); window.removeEventListener('resize', captureViewportChanged); closeAllChats(); forgetAllPasswords(); systemTheme.removeEventListener('change', applyTheme); flushProgress(); for (const timer of indexTimers.values()) clearTimeout(timer); clearTimeout(queryTimer); clearTimeout(toastTimer) })
 </script>
@@ -2321,7 +2321,7 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
     <Transition name="sidebar" @before-enter="paneResizeStart($event, true)" @before-leave="paneResizeStart($event, false)" @after-enter="paneResizeEnd" @after-leave="paneResizeEnd" @enter-cancelled="paneResizeEnd($event, true)" @leave-cancelled="paneResizeEnd($event, true)">
     <aside ref="sidebarEl" class="app-sidebar" v-if="sidebarOpen" tabindex="-1" data-glass-interactive="panel" @pointerdown="sidePointerDown" @keydown="sideKeydown">
       <button class="brand" @click="chooseCategory('all')" aria-label="返回文档库"><span class="brand-symbol"><svg width="26" height="26" viewBox="200 130 624 700" aria-hidden="true"><path d="M220 418c118-52 214-44 278 22v372c-66-56-162-66-278-24z" fill="#fff" /><path d="M804 418c-118-52-214-44-278 22v372c66-56 162-66 278-24z" fill="#fff" fill-opacity=".62" /><path d="M512 150c11 92 41 122 133 133-92 11-122 41-133 133-11-92-41-122-133-133 92-11 122-41 133-133z" fill="#fff" /></svg></span><span>开智</span></button>
-      <button class="import-button" data-tip="加入 PDF / Markdown 文档" :data-tip-key="tipKey('import')" @click="importDocuments" :disabled="importing" aria-label="加入文档"><AppIcon name="plus" :size="18" />{{ importing ? '正在导入…' : '加入文档' }}<kbd v-if="preferences.shortcuts.import">{{ shortcut('import') }}</kbd></button>
+      <button class="import-button" data-tip="加入 PDF / Markdown 文档" :data-tip-key="tipKey('import')" @click="importDocuments" :disabled="importing" aria-label="加入文档"><AppIcon name="plus" :size="18" />{{ importing ? '正在加入…' : '加入文档' }}<kbd v-if="preferences.shortcuts.import">{{ shortcut('import') }}</kbd></button>
       <nav v-liquid-selection="{ radius: 'var(--r-control)' }" class="workspace-nav" aria-label="文档分类">
         <button :class="{ selected: category === 'all' && !tagFilter && !groupFilter }" @click="chooseCategory('all')"><AppIcon name="library" :size="18" />全部文档<span>{{ documents.length }}</span></button>
         <button :class="{ selected: category === 'recent' }" @click="chooseCategory('recent')"><AppIcon name="clock" :size="18" />最近阅读</button>
@@ -2340,10 +2340,10 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
       <div class="tag-heading"><p class="sidebar-label">书签<span v-if="bookmarkTotal" class="mark-total">{{ bookmarkTotal }}</span></p><AppIcon name="bookmark" :size="14" /></div>
       <nav ref="markNav" class="mark-nav" aria-label="全部书签">
         <section v-for="group in bookmarkGroups" :key="group.doc.id" class="mark-group" :class="{ 'reorder-lifted': reorderMarks.dragging.value === group.doc.id }" :data-reorder-id="group.doc.id" @pointerdown="markGroupDown($event, group.doc.id)">
-          <p class="mark-book" :data-tip="`${group.doc.name} · 按住拖动可以调整顺序`">{{ group.doc.name.replace(/\.(pdf|md|markdown)$/i, '') }}</p>
+          <p class="mark-book" :data-tip="`${group.doc.name} · 按住拖动调整顺序`">{{ group.doc.name.replace(/\.(pdf|md|markdown)$/i, '') }}</p>
           <button v-for="item in group.marks" :key="item.mark.id" type="button" class="mark-row" :class="{ picked: pickedMarks.has(markKey(group.doc.id, item.mark.id)) }" :data-key="markKey(group.doc.id, item.mark.id)" :data-tip="`${item.art.name} · ${item.where}`" @click="markClick(group.doc, item.mark, $event)" @contextmenu.prevent.stop="markMenu(group.doc, item.mark, $event)"><svg class="mark-art" viewBox="0 0 96 40" preserveAspectRatio="xMaxYMid slice" aria-hidden="true" v-html="item.art.svg" /><small>{{ item.where }}</small><span class="mark-name">{{ item.mark.name }}</span></button>
         </section>
-        <p v-if="!bookmarkGroups.length" class="tag-empty" :data-tip="`在书里按 ${shortcut('bookmark') || '右键'} 留书签`">还没有书签</p>
+        <p v-if="!bookmarkGroups.length" class="tag-empty" :data-tip="shortcut('bookmark') ? `阅读时按 ${shortcut('bookmark')} 加书签` : '阅读时右键加书签'">还没有书签</p>
       </nav>
       <div class="sidebar-spacer"></div>
       <div v-if="effectiveAppearance.style === 'sketch'" class="sidebar-doodle" aria-hidden="true"></div>
@@ -2360,11 +2360,11 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
       <header v-show="!chromeCollapsed" class="app-topbar" :class="{ 'with-tabs': tabs.length }" data-glass-interactive="panel">
         <button class="icon-button sidebar-toggle" @click="toggleSidebar" data-tip="显示 / 隐藏侧栏" :data-tip-key="tipKey('sidebar')" aria-label="切换侧栏" :aria-expanded="sidebarOpen"><AppIcon name="panel" :size="18" /></button>
         <FileTabs v-if="tabs.length" :tabs="fileTabs" :active-id="active?.id" :group="group.length > 1 ? group : []" :visible="paneIds" @select="selectTab" @close="closeTab" @library="toggleLibrary" :library-open="libraryShown" @menu="tabMenu" @drag="tabDrag" @reorder="reorderTabs" />
-        <button v-else class="breadcrumb breadcrumb-toggle" :class="{ open: libraryShown }" :aria-pressed="libraryShown" :data-tip="libraryShown ? '收起文档库，只留桌面' : '打开文档库'" @click="toggleLibrary"><AppIcon name="library" :size="15" /><b>{{ libraryShown ? currentTitle : '文档库' }}</b></button>
+        <button v-else class="breadcrumb breadcrumb-toggle" :class="{ open: libraryShown }" :aria-pressed="libraryShown" :data-tip="libraryShown ? '收起文档库' : '打开文档库'" @click="toggleLibrary"><AppIcon name="library" :size="15" /><b>{{ libraryShown ? currentTitle : '文档库' }}</b></button>
         <div class="topbar-actions">
           <ClockChip :collapsed="chromeCollapsed" />
           <!-- 阅读助手居中，左右各两枚：左边是和这份文档有关的（收藏、翻译），右边是和窗口有关的（收起顶栏、全屏）；设置单独放在最右。 -->
-          <template v-if="active"><button class="icon-button" :class="{ 'is-starred': active.starred }" @click="toggleStar(active)" data-tip="收藏文档" aria-label="收藏文档"><AppIcon name="star" :size="18" /></button><button class="icon-button translate-toggle" :class="{ active: translator.open }" @click="toggleTranslate" data-tip="翻译" :data-tip-key="tipKey('translate')" aria-label="翻译" :aria-pressed="translator.open"><AppIcon name="translate" :size="18" /></button><button class="ai-toggle" data-tip="阅读助手" :data-tip-key="tipKey('ai')" :class="{ active: aiOpen }" @click="toggleAssistant" :aria-expanded="aiOpen"><ClaudeBurst :size="17" />阅读助手</button></template>
+          <template v-if="active"><button class="icon-button" :class="{ 'is-starred': active.starred }" @click="toggleStar(active)" :data-tip="active.starred ? '取消收藏' : '收藏文档'" :aria-label="active.starred ? '取消收藏' : '收藏文档'"><AppIcon name="star" :size="18" /></button><button class="icon-button translate-toggle" :class="{ active: translator.open }" @click="toggleTranslate" data-tip="翻译" :data-tip-key="tipKey('translate')" aria-label="翻译" :aria-pressed="translator.open"><AppIcon name="translate" :size="18" /></button><button class="ai-toggle" :data-tip="aiOpen ? '关闭阅读助手' : '打开阅读助手'" :data-tip-key="tipKey('ai')" :class="{ active: aiOpen }" @click="toggleAssistant" :aria-expanded="aiOpen"><ClaudeBurst :size="17" />阅读助手</button></template>
           <template v-else><button class="icon-button" @click="toggleTheme" :data-tip="theme === 'dark' ? '切换浅色主题' : '切换深色主题'" :aria-label="theme === 'dark' ? '切换浅色主题' : '切换深色主题'"><AppIcon :name="theme === 'dark' ? 'sun' : 'moon'" :size="18" /></button><button class="icon-button translate-toggle" :class="{ active: translator.open }" @click="toggleTranslate" data-tip="翻译" :data-tip-key="tipKey('translate')" aria-label="翻译" :aria-pressed="translator.open"><AppIcon name="translate" :size="18" /></button></template>
           <button class="icon-button" @click="collapseChrome" data-tip="收起顶栏与侧栏，阅读区占满窗口" :data-tip-key="tipKey('chrome')" aria-label="收起顶栏与侧栏"><AppIcon name="collapse-up" :size="18" /></button>
           <button class="icon-button" @click="toggleFullscreen" :disabled="fullscreenPending" :aria-label="fullscreen ? '退出全屏' : '进入全屏'" :aria-pressed="fullscreen" :data-tip="fullscreen ? '退出全屏' : '进入全屏'" :data-tip-key="tipKey('fullscreen')"><AppIcon :name="fullscreen ? 'exit-fullscreen' : 'fullscreen'" :size="18" /></button>
@@ -2378,16 +2378,16 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
         <header class="library-header">
           <div class="library-heading"><h1>{{ currentTitle }}<span class="heading-count">{{ category === 'ui' ? uiCount : visibleDocuments.length }}</span></h1></div>
           <div class="library-tools">
-            <div class="library-search"><AppIcon name="search" :size="17" /><input ref="search" v-model="query" @input="searchDocuments" placeholder="搜索标题、标签或已索引内容" aria-label="搜索文档" /><button v-if="query" @click="query = ''; refresh()" data-tip="清空搜索" aria-label="清空搜索"><AppIcon name="close" :size="14" /></button><kbd v-else-if="preferences.shortcuts.search">{{ shortcut('search') }}</kbd></div>
+            <div class="library-search"><AppIcon name="search" :size="17" /><input ref="search" v-model="query" @input="searchDocuments" placeholder="搜索标题、标签或打开过的正文" aria-label="搜索文档" /><button v-if="query" @click="query = ''; refresh()" data-tip="清除搜索" aria-label="清除搜索"><AppIcon name="close" :size="14" /></button><kbd v-else-if="preferences.shortcuts.search">{{ shortcut('search') }}</kbd></div>
             <button v-if="libraryOrder.length && canArrange" class="icon-button arrange-reset" @click="resetLibraryOrder" data-tip="恢复按最近阅读排列" aria-label="恢复按最近阅读排列"><AppIcon name="clock" :size="16" /></button><button class="library-sort" data-tip="排序方式（再选一次切换升降序）" aria-label="排序方式" aria-haspopup="menu" @click="openSortMenu($event)"><AppIcon name="list" :size="15" /><span>{{ SORTS.find(item => item.key === librarySort.key)?.label }}</span><AppIcon name="down" :size="12" /></button><button v-if="librarySort.key !== 'default'" class="icon-button sort-direction" :data-tip="librarySort.descending ? '降序（点一下改为升序）' : '升序（点一下改为降序）'" :aria-label="librarySort.descending ? '降序' : '升序'" @click="chooseSort(librarySort.key)"><span aria-hidden="true">{{ librarySort.descending ? '↓' : '↑' }}</span></button><div v-liquid-selection class="view-switch"><button :class="{ selected: display === 'grid' }" @click="setDisplay('grid')" data-tip="卡片视图" aria-label="卡片视图"><AppIcon name="grid" :size="16" /></button><button :class="{ selected: display === 'list' }" @click="setDisplay('list')" data-tip="列表视图" aria-label="列表视图"><AppIcon name="list" :size="17" /></button></div>
           </div>
         </header>
-        <div class="library-summary"><div><AppIcon name="book" :size="15" /><strong>{{ documents.length }}</strong><span>份文档</span></div><span class="summary-divider"></span><div><AppIcon name="star" :size="15" /><strong>{{ starredCount }}</strong><span>份收藏</span></div><span class="summary-divider"></span><div><AppIcon name="file" :size="15" /><strong>{{ totalPages }}</strong><span>页已打开文档</span></div><span v-if="!isDesktop" class="summary-note">浏览器预览</span></div>
+        <div class="library-summary"><div><AppIcon name="book" :size="15" /><strong>{{ documents.length }}</strong><span>份文档</span></div><span class="summary-divider"></span><div><AppIcon name="star" :size="15" /><strong>{{ starredCount }}</strong><span>份收藏</span></div><span class="summary-divider"></span><div><AppIcon name="file" :size="15" /><strong>{{ totalPages }}</strong><span>页 · 打开过的 PDF</span></div><span v-if="!isDesktop" class="summary-note">浏览器预览</span></div>
         <UiCollection v-if="category === 'ui'" :documents="documents" :query="query" @jump="jumpToUi" />
         <template v-else>
         <div v-if="query || category === 'recent'" class="library-list-heading"><span>{{ query ? `搜索「${query}」` : '按最近阅读排列' }}</span></div>
         <div v-if="loading" class="library-empty"><span class="spinner"></span><p>正在读取文档库…</p></div>
-        <div v-else-if="!visibleDocuments.length" class="library-empty"><div class="empty-art"><svg viewBox="0 0 120 96" aria-hidden="true"><path class="ea-shade" d="M14 80c16-5 30-5 45 1 16-6 30-6 47-1l1 6c-17-4-31-4-47 2-16-6-30-6-45-2z" /><path class="ea-page" d="M15 22c14-6 29-6 44 2v56c-15-7-30-7-45-2z" /><path class="ea-page ea-right" d="M59 24c15-8 30-8 46-3l1 57c-16-5-31-5-47 2z" /><path class="ea-line" d="M15 22c14-6 29-6 44 2 15-8 30-8 46-3l1 57c-16-5-31-5-47 2-15-7-30-7-45-2z M59 24.500c.4 18 .2 37 .1 55.300 M24 35c8-2.500 17-2 26 1 M24 46.500c8-2.400 17-2 26 1.200 M24.500 58c7-2 14-2 21 .300 M69 36c9-3.200 18-3.400 27-1.400 M69 47.500c9-3 18-3.300 27-1.300 M69.500 59c6-2 12-2.400 18-1.500" /><path class="ea-star" d="M97 6.500c1 5 3 7.200 8 8.500-5 1.200-7 3.400-8.200 8.500-1-5-3.200-7.300-8.300-8.500 5-1.300 7.300-3.500 8.500-8.500z" /><path class="ea-line" d="M112 21.500l.4 5 M109.500 24l5.400.200 M83 4.500l.300 3.600 M81.200 6.300l3.900.100" /></svg></div><h2>{{ query ? '没有匹配的文档' : category === 'starred' ? '暂无收藏' : groupFilter ? '这个分组还是空的' : tagFilter ? '此标签下暂无文档' : '暂无文档' }}</h2><button v-if="query" @click="query = ''; refresh()">查看全部文档</button><template v-else-if="!documents.length"><button @click="importDocuments" :disabled="importing">加入文档</button><small>导入不会移动或修改原文件</small></template></div>
+        <div v-else-if="!visibleDocuments.length" class="library-empty"><div class="empty-art"><svg viewBox="0 0 120 96" aria-hidden="true"><path class="ea-shade" d="M14 80c16-5 30-5 45 1 16-6 30-6 47-1l1 6c-17-4-31-4-47 2-16-6-30-6-45-2z" /><path class="ea-page" d="M15 22c14-6 29-6 44 2v56c-15-7-30-7-45-2z" /><path class="ea-page ea-right" d="M59 24c15-8 30-8 46-3l1 57c-16-5-31-5-47 2z" /><path class="ea-line" d="M15 22c14-6 29-6 44 2 15-8 30-8 46-3l1 57c-16-5-31-5-47 2-15-7-30-7-45-2z M59 24.500c.4 18 .2 37 .1 55.300 M24 35c8-2.500 17-2 26 1 M24 46.500c8-2.400 17-2 26 1.200 M24.500 58c7-2 14-2 21 .300 M69 36c9-3.200 18-3.400 27-1.400 M69 47.500c9-3 18-3.300 27-1.300 M69.500 59c6-2 12-2.400 18-1.500" /><path class="ea-star" d="M97 6.500c1 5 3 7.200 8 8.500-5 1.200-7 3.400-8.200 8.500-1-5-3.200-7.300-8.300-8.500 5-1.300 7.300-3.500 8.500-8.500z" /><path class="ea-line" d="M112 21.500l.4 5 M109.500 24l5.400.200 M83 4.500l.300 3.600 M81.200 6.300l3.900.100" /></svg></div><h2>{{ query ? '没有匹配的文档' : category === 'starred' ? '暂无收藏' : groupFilter ? '这个分组还是空的' : tagFilter ? '此标签下暂无文档' : '暂无文档' }}</h2><button v-if="query" @click="query = ''; refresh()">查看全部文档</button><template v-else-if="!documents.length"><button @click="importDocuments" :disabled="importing">加入文档</button><small>加入不会移动或修改原文件</small></template></div>
         <div v-else ref="collection" class="document-collection" :class="[display, { arrangeable: canArrange }]" :aria-description="canArrange ? '拖动卡片或按 Alt+方向键调整位置' : undefined">
           <article v-for="doc in visibleDocuments" :key="doc.id" class="document-card" :class="[doc.kind, { 'reorder-lifted': reorderLibrary.dragging.value === doc.id, picked: picked.has(doc.id), grouped: groupMarks.has(doc.id), 'group-start': groupMarks.get(doc.id)?.start, 'group-end': groupMarks.get(doc.id)?.end }]" :data-reorder-id="doc.id" tabindex="0" role="button" :aria-label="`打开 ${doc.name}`" :aria-selected="picked.size ? picked.has(doc.id) : undefined" @click="cardClick($event, doc)" @keydown.enter.self="openDocument(doc)" @keydown.space.self.prevent="openDocument(doc)" @keydown.f2.self.prevent="startRename(doc)" @keydown="reorderLibrary.keydown($event, doc.id)" @pointerdown="reorderLibrary.pointerdown($event, doc.id)">
             <i v-if="groupMarks.has(doc.id)" class="group-thread" aria-hidden="true"></i><span v-if="groupMarks.get(doc.id)?.start" class="group-chip">{{ groupMarks.get(doc.id)!.name }}</span>
@@ -2427,10 +2427,10 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
                 <component v-if="paneVisible(entry.id)" :is="entry.doc.kind === 'pdf' ? PdfReader : MarkdownReader" :ref="value => bindReader(entry.id, value)" :key="entry.id" :data="entry.bytes" :document-id="sourceId(entry.id)" :initial-page="entry.doc.page || 1" :initial-progress="entry.doc.progress || 0" :sidebar-fit-enabled="preferences.pdf.fitOnPanelOverflow" :initial-zoom="preferences.pdf.initialZoom === 'fit-width' ? 'fit' : preferences.pdf.initialZoom / 100" :zoom-step="preferences.pdf.zoomStep / 100" :fit-request="fitRequest" :font-size="preferences.markdown.fontSize" :content-width="preferences.markdown.contentWidth" :find-shortcut="preferences.shortcuts.find ? shortcut('find') : ''" :shortcuts="tipKeys" :initial-view="entry.view" :page-layout="preferences.pdf.pageLayout" :cover-alone="preferences.pdf.coverAlone" :right-capture="rightCaptureDocs.has(sourceId(entry.id))" v-on="entry.events" @page-layout="setPageLayout" @zoom-step="setZoomStep" />
               </KeepAlive>
               <BookmarkRail v-if="paneVisible(entry.id)" :marks="paneBookmarks(entry.id)" :editing="editingBookmark" :place="markId => bookmarkPlace(entry.id, markId)" @jump="markId => jumpBookmark(entry.id, markId)" @menu="(markId, event) => bookmarkMenu(entry.id, markId, event)" @batch="(ids, event) => bookmarkBatchMenu(entry.id, ids, event)" @remove-many="ids => deleteBookmarks(entry.id, ids)" @rename="(markId, name) => finishRename(entry.id, markId, name)" @remove="markId => deleteBookmark(entry.id, markId)" @move="(markId, to) => moveBookmark(entry.id, markId, to)" @cancel="editingBookmark = null" />
-              <div v-if="tabDoc(entry.id)" class="reading-pill" :class="{ awake: splitView }" :data-tip="splitView ? entry.doc.name : undefined" role="status" :aria-label="`阅读位置自动保存 · ${tabDoc(entry.id)!.kind === 'pdf' ? `第 ${tabDoc(entry.id)!.page || 1} / ${tabDoc(entry.id)!.pageCount || '—'} 页 · ` : ''}已读 ${progressPercent(tabDoc(entry.id)!)}%`">
+              <div v-if="tabDoc(entry.id)" class="reading-pill" :class="{ awake: splitView }" :data-tip="splitView ? entry.doc.name : undefined" role="status" :aria-label="`阅读位置：${tabDoc(entry.id)!.kind === 'pdf' ? `第 ${tabDoc(entry.id)!.page || 1} / ${tabDoc(entry.id)!.pageCount || '—'} 页 · ` : ''}已读 ${progressPercent(tabDoc(entry.id)!)}%`">
                 <svg class="pill-ring" viewBox="0 0 24 24" aria-hidden="true"><circle class="pill-ring-track" cx="12" cy="12" r="9" /><circle class="pill-ring-value" cx="12" cy="12" r="9" pathLength="100" :style="{ strokeDashoffset: 100 - progressPercent(tabDoc(entry.id)!) }" /></svg>
                 <span class="pill-text" aria-hidden="true"><span v-if="tabDoc(entry.id)!.kind === 'pdf'" class="pill-page"><b :key="tabDoc(entry.id)!.page || 1">{{ tabDoc(entry.id)!.page || 1 }}</b><i>/</i>{{ tabDoc(entry.id)!.pageCount || '—' }}</span><span v-else class="pill-page"><b :key="progressPercent(tabDoc(entry.id)!)">{{ progressPercent(tabDoc(entry.id)!) }}</b><i>%</i></span></span>
-                <button v-if="splitView" class="pill-close" :data-tip="`移出并排`" :aria-label="`关闭并排的 ${entry.doc.name}`" @click.stop="closePane(entry.id)"><AppIcon name="close" :size="11" /></button>
+                <button v-if="splitView" class="pill-close" :data-tip="`移出并排`" :aria-label="`把 ${entry.doc.name} 移出并排`" @click.stop="closePane(entry.id)"><AppIcon name="close" :size="11" /></button>
               </div>
             </section>
             <section v-for="id in (multiPanel ? paneIds.filter(id => !readerCache.some(entry => entry.id === id)) : [])" :key="`pending:${id}`" class="reader-pane pending" :style="{ order: panelOrder(`doc:${id}`) }"><div class="reader-overlay"><span class="spinner"></span><p>正在打开 {{ tabDoc(id)?.name }}…</p></div></section>
@@ -2440,7 +2440,7 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
             </section>
             <SummaryDraft v-if="draft && paneIds.some(id => sourceId(id) === draft!.documentId)" :key="draft.conversationId" :document-id="draft.documentId" :conversation-id="draft.conversationId" :title="documents.find(item => item.id === draft!.documentId)?.name || ''" :saving="draftSaving" :saved="draftSaved" @close="draft = null" @save="saveDraft" @open="openSavedDraft" @copied="notify('已复制')" @revise="reviseDraft" @retry="retryDraftEdits" />
           </TransitionGroup>
-          <div v-if="selection && !captureQuick && !aiOpen && selection.image" class="selection-context"><AppIcon name="crop" :size="16" /><span>{{ selection.image ? `已框选第 ${selection.page} 页的图表或公式` : `已选择 ${selection.text.length} 个字符` }}</span><button @click="openAssistant(true)"><AppIcon name="sparkle" :size="15" />向 AI 提问</button><button class="icon-button" @click="clearSelection" data-tip="清除选区" aria-label="清除选区"><AppIcon name="close" :size="14" /></button></div>
+          <div v-if="selection && !captureQuick && !aiOpen && selection.image" class="selection-context"><AppIcon name="crop" :size="16" /><span>{{ selection.image ? `已框选第 ${selection.page} 页的图表或公式` : `已选择 ${selection.text.length} 个字符` }}</span><button @click="openAssistant(true)"><AppIcon name="sparkle" :size="15" />问阅读助手</button><button class="icon-button" @click="clearSelection" data-tip="清除选区" aria-label="清除选区"><AppIcon name="close" :size="14" /></button></div>
         </section>
         <Transition name="pane" @before-enter="paneResizeStart($event, true)" @before-leave="paneResizeStart($event, false)" @after-enter="paneResizeEnd" @after-leave="paneResizeEnd" @enter-cancelled="paneResizeEnd($event, true)" @leave-cancelled="paneResizeEnd($event, true)">
 

@@ -68,7 +68,7 @@ async function assistant() {
 }
 async function ask(job) { await assistant(); await page.getByRole('textbox',{name:'向 AI 提问'}).fill(job); await page.getByRole('button',{name:'发送',exact:true}).click(); }
 async function capture() {
-  const toggle = page.locator('[data-tip="框选公式或图表作为 AI 上下文"]');
+  const toggle = page.locator('[data-tip="框选公式或图表，发给阅读助手"]');
   if (!(await toggle.getAttribute('class'))?.split(' ').includes('active')) await toggle.click();
   const paper = await page.locator('#page-surface').boundingBox(), scroll = await page.locator('.pdf-scroll').boundingBox();
   const x = Math.max(paper.x, scroll.x) + 35, y = Math.max(paper.y, scroll.y) + 55;
@@ -141,7 +141,7 @@ try {
   await page.getByRole('button',{name:'关闭阅读助手',exact:true}).click();
   // Crop only after the closing panel has handed its width back to the page.
   await page.waitForFunction(()=>!document.querySelector('.pane-leave-active') && !document.querySelector('.pdf-scroll')?.style.width && !document.querySelector('#page-surface')?.classList.contains('pdf-preview'));
-  await page.locator('[data-tip="框选公式或图表作为 AI 上下文"]').click();
+  await page.locator('[data-tip="框选公式或图表，发给阅读助手"]').click();
   const bounds = await page.locator('#page-surface').boundingBox();
   await page.mouse.move(bounds.x+30,bounds.y+40); await page.mouse.down(); await page.mouse.move(bounds.x+160,bounds.y+100); await page.mouse.up();
   await page.locator('.ai-selection-context img').waitFor();

@@ -146,9 +146,9 @@ defineExpose({ save, hasChanges: () => edited.value })
     <h4 class="step"><i>1</i>连接服务</h4>
     <div class="links">
       <details v-for="item in (PROVIDERS as any[])" :key="item.id" class="link" :class="{ on: connected(item.id) }">
-        <summary><i class="link-dot" aria-hidden="true"></i><b>{{ item.name }}</b><small>{{ item.id === 'codex' ? (codexReady ? '已登录' : refreshing ? '检查中…' : codexCheck.state === 'failed' ? '未连上' : '未检查') : keys[item.id] ? '已填密钥' : local(item.id) ? '本机服务' : '未连接' }}</small></summary>
+        <summary><i class="link-dot" aria-hidden="true"></i><b>{{ item.name }}</b><small>{{ item.id === 'codex' ? (codexReady ? '已登录' : refreshing ? '检查中…' : codexCheck.state === 'failed' ? '连接失败' : '未检查') : keys[item.id] ? '已填 API Key' : local(item.id) ? '本机服务' : '未连接' }}</small></summary>
         <template v-if="item.id === 'codex'">
-          <button class="secondary-button" :disabled="refreshing" data-tip="沿用本机 Codex 的登录，不用填 API Key。装了 Codex 桌面版或 CLI 并登录过就行" @click="refreshNative">{{ refreshing ? '检查中…' : '检查登录并读取模型' }}</button>
+          <button class="secondary-button" :disabled="refreshing" data-tip="使用本机已登录的 Codex 桌面版或 CLI，无需 API Key" @click="refreshNative">{{ refreshing ? '检查中…' : '检查登录并读取模型' }}</button>
           <p v-if="codexStatus" class="settings-note">{{ codexStatus }}</p>
           <p v-if="timingLine" class="settings-note">{{ timingLine }} <button type="button" class="text-button" @click="copyTimings">{{ timingCopied ? '已复制' : '复制最近 12 次' }}</button></p>
         </template>
@@ -159,7 +159,7 @@ defineExpose({ save, hasChanges: () => edited.value })
         </template>
       </details>
     </div>
-    <label class="check"><input v-model="settings.rememberKey" type="checkbox" /> 在这台电脑记住阅读助手的密钥</label>
+    <label class="check"><input v-model="settings.rememberKey" type="checkbox" /> 在这台电脑记住阅读助手的 API Key</label>
     <h4 class="step"><i>2</i>每个功能用哪个模型</h4>
     <div class="slots">
       <div v-for="slot in slots" :key="slot.id" class="slot">
@@ -177,8 +177,8 @@ defineExpose({ save, hasChanges: () => edited.value })
         </template>
       </div>
     </div>
-    <details class="limit-settings"><summary>每题阅读预算</summary><label v-for="field in DOCUMENT_LIMIT_FIELDS" :key="field.key">{{ field.label }}<input v-model.number="settings.documentLimits[field.key]" type="number" :min="field.min" :max="field.max" :step="field.step || 1" /></label></details>
-    <details class="limit-settings"><summary>多文件提问</summary><label v-for="field in requestFields" :key="field.key">{{ field.label }}<input v-model.number="settings.requestLimits[field.key]" type="number" :min="field.min" :max="field.max" :aria-label="field.label" /></label><p class="settings-note">切换标签或收起助手后继续回答；关闭文件标签会停止该文件的提问。</p></details>
+    <details class="limit-settings"><summary>每题读取文档上限</summary><label v-for="field in DOCUMENT_LIMIT_FIELDS" :key="field.key">{{ field.label }}<input v-model.number="settings.documentLimits[field.key]" type="number" :min="field.min" :max="field.max" :step="field.step || 1" /></label></details>
+    <details class="limit-settings"><summary>同时提问上限</summary><label v-for="field in requestFields" :key="field.key">{{ field.label }}<input v-model.number="settings.requestLimits[field.key]" type="number" :min="field.min" :max="field.max" :aria-label="field.label" /></label><p class="settings-note">切换标签或收起助手后继续回答；关闭文件标签会停止该文件的提问。</p></details>
     <p v-if="status" class="settings-status" :class="{ error }" role="status">{{ status }}</p>
     <button v-if="!embedded" class="primary-button" :disabled="saving" @click="save">{{ saving ? '保存中…' : '保存设置' }}</button>
   </section>

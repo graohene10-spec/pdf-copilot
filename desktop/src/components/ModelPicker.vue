@@ -14,7 +14,7 @@ const props = defineProps<{ model: string; effort: string; models: Model[]; load
   /** 不提供「默认」档：翻译要明确的思考强度。 */
   noDefault?: boolean }>()
 const emit = defineEmits<{ model: [id: string]; effort: [value: string]; fast: [value: boolean]; tier: [id: string]; refresh: []; close: [] }>()
-const EFFORT_LABELS: Record<string, string> = { '': '默认', none: '关', minimal: '极简', low: '低', medium: '中', high: '高', xhigh: '超高', max: '最高', ultra: '极致' }
+const EFFORT_LABELS: Record<string, string> = { '': '默认', none: '不思考', minimal: '极低', low: '低', medium: '中', high: '高', xhigh: '超高', max: '最高', ultra: '极致' }
 const chips = ref<HTMLElement>()
 const current = computed(() => props.models.find(item => item.id === props.model))
 const steps = computed(() => [...(props.noDefault ? [] : ['']), ...(current.value?.efforts || ['none', 'low', 'medium', 'high', 'xhigh']).filter(Boolean)])
@@ -87,7 +87,7 @@ defineExpose({ hintWheel })
         <button v-for="(step, i) in steps" :key="step || 'default'" type="button" role="radio" :aria-checked="i === index" :tabindex="i === index ? 0 : -1" :class="{ on: i === index }" :data-tip="step ? undefined : '使用模型默认强度'" @click="emit('effort', step)">{{ label(step) }}</button>
       </div>
       <span class="effort-meter" aria-hidden="true" :title="label(effort)"><i v-for="bar in 4" :key="bar" :class="{ lit: index > 0 && bar <= Math.ceil(index / Math.max(1, steps.length - 1) * 4) }" /></span>
-      <button v-if="fast !== undefined && !speeds.length" type="button" class="fast-toggle" :class="{ on: fast }" role="switch" :aria-checked="fast" aria-label="Fast" :data-tip="fast ? 'Fast 已开：更快，额度消耗更多' : 'Fast：更快出字，额度消耗更多'" @click="emit('fast', !fast)"><AppIcon name="bolt" :size="12" />Fast</button>
+      <button v-if="fast !== undefined && !speeds.length" type="button" class="fast-toggle" :class="{ on: fast }" role="switch" :aria-checked="fast" aria-label="Fast" data-tip="更快出字，用量更多" @click="emit('fast', !fast)"><AppIcon name="bolt" :size="12" />Fast</button>
     </div>
     <template v-if="speeds.length">
       <span class="drawer-label">速度</span>

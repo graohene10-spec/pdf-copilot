@@ -306,7 +306,7 @@ const explain: Play = async (stage, scene, say) => {
   await stage.move('.tw-actions', { at: [.64, .5], ms: 620 })
   await stage.wait(260)
 
-  say('双击标题，就这段内容自己问一句')
+  say('双击卡片标题，针对这段内容提问')
   await stage.move('.tw-card-head span', { at: [.3, .5] })
   await stage.click(); await stage.click()
   scene.asking = true
@@ -386,7 +386,7 @@ const visual: Play = async (stage, scene, say) => {
 }
 
 const assistant: Play = async (stage, scene, say) => {
-  say({ text: '新对话先选记忆：「本书」只用这本书的；「全局」用所有书的，也包括这本书', top: true })
+  say({ text: '新对话选用哪些记忆：「本书」只用这本书里记下的，「全局」用所有书里记下的', top: true })
   stage.place({ x: 900, y: 790 })
   stage.look('.tw-mem', 1.7, [.5, .5])
   await stage.move('.tw-mem-all', { ms: 800 })
@@ -424,7 +424,7 @@ const assistant: Play = async (stage, scene, say) => {
   await stage.tween(700, k => { scene.sideAnswer = Math.round(k * TEXT.sideReply.length) }, true)
   await stage.wait(500)
 
-  say('从任意一条回答开出分支')
+  say('点回答下面的分支图标，从这条回答开出分支')
   await click(stage, '.tw-branch')
   scene.branch = true
   await stage.wait(900)
@@ -504,7 +504,7 @@ const capture: Play = async (stage, scene, say) => {
   stage.look('.tw-ask', 1.6, [.5, -1.1])
   await stage.wait(1500)
 
-  say({ text: '再截一张会换掉这张；左键点一下固定住它', mouse: 'left', top: true })
+  say({ text: '点一下输入框里的图把它留住；不留住，再截一张会换掉它', mouse: 'left', top: true })
   await stage.wait(700)
   await click(stage, '.tw-shot-0')
   scene.kept = 1
@@ -527,7 +527,7 @@ const capture: Play = async (stage, scene, say) => {
   stage.look({ x: 800, y: 480 }, 1.15)
   await stage.wait(1400)
 
-  say({ text: '按住再截，上一张自动固定', keys: ['Shift'], mouse: 'right' })
+  say({ text: '按住 Shift 再截，上一张自动留住', keys: ['Shift'], mouse: 'right' })
   await stage.tween(520, k => { scene.scroll = 120 - k * 120 })
   await frame(stage, scene, '.tw-target', [8, 5])
   scene.kept = 2
@@ -584,7 +584,7 @@ const translate: Play = async (stage, scene, say) => {
 }
 
 const ink: Play = async (stage, scene, say) => {
-  say({ text: '直接拿起荧光笔，不用先点标记按钮', keys: ['Alt', '2'] })
+  say({ text: '用快捷键拿起荧光笔', keys: ['Alt', '2'] })
   stage.place(ENTRY)
   stage.look('.tw-bar', 1.5)
   await stage.move('.tw-page', { at: [.3, .2] })
@@ -636,7 +636,7 @@ const bookmark: Play = async (stage, scene, say) => {
   scene.mark = true
   await stage.wait(900)
 
-  say('右键换画风，也可以用自己的图片')
+  say('右键书签换图案，也可以换成自己的图片')
   await click(stage, '.tw-ribbon-new')
   scene.markMenu = true
   await stage.wait(320)
@@ -644,7 +644,7 @@ const bookmark: Play = async (stage, scene, say) => {
   scene.art = 2; scene.markMenu = false
   await stage.wait(800)
 
-  say('滚动条旁同时有一道同色的刻度，翻走了靠它找回来')
+  say('滚动条旁有一道同色刻度，标出书签的位置')
   stage.look('.tw-rail', 1.35, [-2.6, .4])
   await stage.move('.tw-page', { at: [.5, .5] })
   await stage.tween(900, k => { scene.scroll = k * 260 })
@@ -663,7 +663,7 @@ const bookmark: Play = async (stage, scene, say) => {
   await stage.wait(900)
 
   // 挪书签：位置按书页自己的坐标记（平的那一头在哪、中线多高）。
-  say({ text: '按住书签可以挪：竖着挪到哪，它就标记哪', mouse: 'left' })
+  say({ text: '按住书签上下拖，松手的位置就是新的标记处', mouse: 'left' })
   stage.look('.tw-page', 1.25, [.62, .3])
   await stage.wait(500)
   const page = stage.box('.tw-page'), tab = stage.box('.tw-ribbon-new')
@@ -689,7 +689,7 @@ const bookmark: Play = async (stage, scene, say) => {
   stage.release(); scene.ribbonLift = false
   await stage.wait(1100)
 
-  say('拖到左边会吸上去并掉头，这也是给书签掉头的办法')
+  say('拖到页面左边，书签贴到左边并掉头')
   stage.look('.tw-page', 1.25, [.4, .4])
   stage.press()
   await stage.wait(420)
@@ -738,7 +738,7 @@ const manage: Play = async (stage, scene, say) => {
   stage.look(null, 1)
   await stage.wait(1400)
 
-  say('书在左，右边是它的对话。停在一段对话上，看它最后一轮问答')
+  say('左边是书，右边是它的对话。鼠标停在一段对话上，显示最后一轮问答')
   stage.look('.tw-cm-t1', 1.12, [.75, .9])
   await stage.move('.tw-cm-t1', { at: [.3, .5], ms: 800 })
   await stage.wait(450)
@@ -763,7 +763,7 @@ const manage: Play = async (stage, scene, say) => {
   await stage.wait(1500)
 
   // 记忆栏：按住一条，它浮起来跟着走，下面那条让开；松手落进新位置。
-  say({ text: '右边是记下的内容。按住一条拖动，换个位置', mouse: 'left' })
+  say({ text: '右栏是助手从对话里自动记下的事，类别标在后面。按住一条拖动可以换位置', mouse: 'left' })
   scene.cmFlash = ''
   stage.look('.tw-cm-side', 1.5, [.5, .55])
   await stage.wait(300)
@@ -781,9 +781,9 @@ const manage: Play = async (stage, scene, say) => {
   scene.memStill = false
   await stage.wait(900)
 
-  say('也可以写一句话，让助手改；改完可以撤销')
+  say('在上面的输入框写一句要求，助手照着改记忆；改完可以撤销')
   await click(stage, '.tw-mem-ask')
-  await stage.type('把特征值相关的合并成一条', value => { scene.memAsk = value }, 70)
+  await stage.type('把两条进度合并成一条', value => { scene.memAsk = value }, 70)
   await stage.wait(250)
   await click(stage, '.tw-mem-ask b')
   scene.memBusy = true
@@ -919,7 +919,7 @@ const summary: Play = async (stage, scene, say) => {
   scene.sumFull = true
   await stage.wait(1500)
 
-  say('开始后，原文让位给草稿，助手写到哪显示到哪')
+  say('点「开始总结」，原文的位置换成草稿，内容边写边出现')
   await click(stage, '.tw-sum-go')
   scene.sum = 'draft'
   stage.look(null, 1)
@@ -943,7 +943,7 @@ const summary: Play = async (stage, scene, say) => {
   scene.sumFixed = true
   await stage.wait(1700)
 
-  say('存入文档库：助手照内容起个短名字，存成 Markdown 放在原文档旁边')
+  say('点「存入文档库」：助手按内容起名，存成 Markdown，放在原文档的文件夹里')
   await click(stage, '.tw-draft-save')
   scene.sumSaved = true; scene.toast = `已存为「${SUM_NAME}.md」，在原文档的文件夹里。`
   stage.look(null, 1)
@@ -1003,7 +1003,7 @@ const view: Play = async (stage, scene, say) => {
   await stage.wait(600)
 
   // 侧边面板把阅读区挤窄时，页面自动缩小；面板关掉，回到原来的比例。
-  say('面板挤窄页面时自动缩小，关掉后复原')
+  say('打开侧边面板时页面自动缩小，关掉后恢复原来的比例')
   stage.look(null, 1)
   await click(stage, '.tw-tr')
   scene.column = true
@@ -1105,7 +1105,7 @@ export const LESSONS: Lesson[] = [
   { id: 'assistant', title: '阅读助手', note: '记忆、提问、附属对话、分支、指令、搜对话', steps: 7, play: assistant },
   { id: 'summary', title: '总结', note: '勾章节、边写边改、存进文库', steps: 6, play: summary },
   { id: 'capture', title: '截图提问', note: '框选、右键拖动、固定多张', steps: 9, play: capture },
-  { id: 'manage', title: '管理对话', note: '移动、撤销、整理记忆、搜索对话', steps: 8, play: manage },
+  { id: 'manage', title: '管理对话', note: '移动、撤销、改记忆、搜索对话', steps: 8, play: manage },
   { id: 'translate', title: '翻译', note: '划词翻译与翻译栏', steps: 3, play: translate },
   { id: 'ink', title: '标记', note: 'Alt + 1 / 2 / 3 直接拿起工具', steps: 4, play: ink },
   { id: 'bookmark', title: '书签', note: '夹在页边，可以拖，Ctrl + ↑ ↓ 跳转，书能排顺序', steps: 9, play: bookmark },

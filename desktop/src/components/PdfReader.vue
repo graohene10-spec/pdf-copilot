@@ -192,7 +192,7 @@ async function runSearch() {
     })
     if (controller.signal.aborted || !active || document !== pdf || current !== epoch) return
     searchComplete = true; searchBusy.value = false
-    searchStatus.value = result.limited ? '仅显示前 10000 处匹配' : searchMatches.value.length ? '' : '没有找到匹配文字；扫描版 PDF 需要文字层。'
+    searchStatus.value = result.limited ? '仅显示前 10000 处匹配' : searchMatches.value.length ? '' : '没有找到匹配的文字（扫描版 PDF 无法搜索）'
     if (searchCurrent.value < 0 && searchMatches.value.length) {
       const index = Math.min(searchDesiredIndex, searchMatches.value.length - 1)
       if (restoringSearch) { searchCurrent.value = index; highlightRenderedSearch() }
@@ -898,7 +898,7 @@ defineExpose({ getOutline: () => outline.value.map(item => ({ title: item.title,
       <button ref="outlineButton" class="quiet-button" :class="{ active: outlineOpen }" :aria-expanded="outlineOpen" @click="toggleOutline" data-tip="文档目录" :data-tip-key="shortcuts?.outline"><AppIcon name="list" :size="17" />目录</button>
       <div class="reader-page-control"><button @click="previousPage" :disabled="page <= 1" data-tip="上一页" aria-label="上一页" :data-tip-key="shortcuts?.previousPage">‹</button><input aria-label="页码" v-model.number="pageInput" type="number" min="1" :max="total" @change="typedPage" /><span>/ {{ total || '—' }}</span><button @click="nextPage" :disabled="page >= total" data-tip="下一页" aria-label="下一页" :data-tip-key="shortcuts?.nextPage">›</button></div>
       <div class="reader-zoom"><button data-tip="缩小" aria-label="缩小" :data-tip-key="shortcuts?.zoomOut" :disabled="atMinZoom" @click="zoomOut">−</button><ZoomChip :label="`${scale >= .01 ? Math.round(scale * 100) : Math.round(scale * 1000) / 10}%`" :percent="scale * 100" :min="25" :max="400" :step="zoomStep * 100" :pressed="fitting" tip="适应宽度" :tip-key="shortcuts?.fitWidth" @tap="fitWidth" @set="zoom($event / 100)" @step="emit('zoomStep', $event)" /><button data-tip="放大" aria-label="放大" :data-tip-key="shortcuts?.zoomIn" :disabled="atMaxZoom" @click="zoomIn">＋</button></div>
-      <button class="quiet-button crop-toggle" :class="{ active: capture }" @click="toggleCapture" data-tip="框选公式或图表作为 AI 上下文" :data-tip-key="shortcuts?.capture"><AppIcon name="crop" :size="17" />{{ capture ? '拖动框选' : '框选' }}</button>
+      <button class="quiet-button crop-toggle" :class="{ active: capture }" @click="toggleCapture" data-tip="框选公式或图表，发给阅读助手" :data-tip-key="shortcuts?.capture"><AppIcon name="crop" :size="17" />{{ capture ? '拖动框选' : '框选' }}</button>
       <InkButton :active="ink.state.enabled" @click="ink.toggle" />
       <div ref="pageMenuHost" class="page-view-host">
         <button ref="pageMenuButton" type="button" class="quiet-button" :class="{ active: pageMenu }" aria-haspopup="dialog" :aria-expanded="pageMenu" aria-label="页面视图" data-tip="页面视图" @click="togglePageMenu"><AppIcon :name="pageLayout === 'spread' ? 'book' : 'doc'" :size="17" /></button>
@@ -906,7 +906,7 @@ defineExpose({ getOutline: () => outline.value.map(item => ({ title: item.title,
           <div v-if="pageMenu" ref="pageMenuPanel" class="page-view-menu" role="dialog" aria-label="页面视图" :style="{ left: `${pageMenuAt.left}px`, top: `${pageMenuAt.top}px` }">
             <p class="page-view-title">页面视图</p>
             <div class="page-view-options">
-              <button type="button" :aria-pressed="pageLayout !== 'spread'" @click="setPageLayout('single')"><span class="page-view-icon"><AppIcon name="doc" :size="20" /></span>单一页面</button>
+              <button type="button" :aria-pressed="pageLayout !== 'spread'" @click="setPageLayout('single')"><span class="page-view-icon"><AppIcon name="doc" :size="20" /></span>单页</button>
               <button type="button" :aria-pressed="pageLayout === 'spread'" @click="setPageLayout('spread')"><span class="page-view-icon"><AppIcon name="book" :size="20" /></span>双页</button>
             </div>
             <label class="page-view-cover" :class="{ off: pageLayout !== 'spread' }"><span>单独显示封面</span><input type="checkbox" role="switch" :checked="coverAlone" :disabled="pageLayout !== 'spread'" @change="setPageLayout('spread', ($event.target as HTMLInputElement).checked)" /><i aria-hidden="true" /></label>

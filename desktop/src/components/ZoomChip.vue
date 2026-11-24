@@ -24,7 +24,7 @@ function leave(event: FocusEvent) { if (!(event.currentTarget as HTMLElement).co
 </script>
 
 <template>
-  <button v-if="!editing" class="zoom-fit" :aria-pressed="pressed" :data-tip="`${tip} · 双击输入`" :aria-label="`缩放比例，点击${tip}，双击输入`" :data-tip-key="tipKey" @click="tap" @dblclick="open">{{ label }}</button>
+  <button v-if="!editing" class="zoom-fit" :aria-pressed="pressed" :data-tip="`${tip} · 双击输入比例`" :aria-label="`缩放比例，单击${tip}，双击输入比例`" :data-tip-key="tipKey" @click="tap" @dblclick="open">{{ label }}</button>
   <span v-else class="zoom-edit" @focusout="leave" @keydown.enter.prevent="commit" @keydown.esc.stop.prevent="editing = false" @keydown.stop>
     <input ref="field" v-model="text" inputmode="decimal" aria-label="缩放比例" /><i>%</i>
     <i class="zoom-sep">±</i><input v-model="stepText" inputmode="numeric" data-tip="每次缩放的步长 %" aria-label="缩放步长" />

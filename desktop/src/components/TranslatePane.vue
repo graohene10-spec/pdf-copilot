@@ -37,11 +37,11 @@ const field = ref<HTMLTextAreaElement>()
 const copied = ref('')
 const LABEL: Record<string, string> = { zh: '中文', en: 'English', ja: '日本語' }
 const ENGINE_LABEL: Record<string, string> = { google: '谷歌', 'google-api': '谷歌云', youdao: '有道', ai: 'AI' }
-const ENGINE_TIP: Record<string, string> = { google: '谷歌免密钥接口：最快，但共用的代理 IP 常被谷歌限流', 'google-api': '谷歌云 Cloud Translation：用自己的 API 密钥，稳定（每月前 50 万字符免费）', youdao: '有道智云：需要应用 ID 与密钥，国内直连', ai: 'AI 翻译：较慢，公式与术语更讲究；服务商在 设置 → AI → 翻译用的 AI' }
+const ENGINE_TIP: Record<string, string> = { google: '免密钥，最快，但常被限流', 'google-api': '需要 API 密钥，稳定，每月前 50 万字符免费', youdao: '需要应用 ID 和密钥，国内可直连', ai: '较慢，公式和术语更准确；服务商在 设置 → AI → 翻译用的 AI' }
 // AI 翻译自己的模型、思考强度与 Fast（服务商默认与阅读助手共用）。
 const aiSettings = ref<any>(translationSettings(loadAiSettings()))
 const aiPicker = ref(false)
-const EFFORT_NAME: Record<string, string> = { none: '不思考', minimal: '极低', low: '低', medium: '中', high: '高', xhigh: '很高', max: '最高', ultra: '极致' }
+const EFFORT_NAME: Record<string, string> = { none: '不思考', minimal: '极低', low: '低', medium: '中', high: '高', xhigh: '超高', max: '最高', ultra: '极致' }
 // 模型只列具体的模型，没有「自动」：用哪个、什么强度都写在标签上。
 const aiModels = computed<any[]>(() => {
   const list: any[] = (aiSettings.value.provider === 'codex' ? nativeModelInventory.value : getProvider(aiSettings.value.provider)?.models || []).filter((item: any) => item.id)
@@ -132,7 +132,7 @@ defineExpose({ focus })
       <div class="tp-targets" role="radiogroup" aria-label="译成">
         <button v-for="item in TARGETS" :key="item.value" type="button" role="radio" :aria-checked="translator.target === item.value" :class="{ on: translator.target === item.value }" @click="translator.target = item.value">{{ item.label }}</button>
       </div>
-      <button type="button" class="tp-icon tp-clear" :class="{ armed: clearArmed }" :disabled="!translator.items.length" :aria-label="clearArmed ? '再点一次，清空翻译记录' : '清空翻译记录'" :data-tip="clearArmed ? '再点一次清空，清掉的找不回来' : '清空翻译记录'" @click="clearAll"><template v-if="clearArmed">再点一次</template><AppIcon v-else name="trash" :size="15" /></button>
+      <button type="button" class="tp-icon tp-clear" :class="{ armed: clearArmed }" :disabled="!translator.items.length" :aria-label="clearArmed ? '再点一次，清空翻译记录' : '清空翻译记录'" :data-tip="clearArmed ? '再点一次清空，无法恢复' : '清空翻译记录'" @click="clearAll"><template v-if="clearArmed">再点一次</template><AppIcon v-else name="trash" :size="15" /></button>
       <button type="button" class="tp-icon" aria-label="关闭翻译栏" data-tip="关闭翻译栏" :data-tip-key="shortcut" @click="emit('close')"><AppIcon name="close" :size="15" /></button>
     </header>
 
@@ -146,7 +146,7 @@ defineExpose({ focus })
         <div v-if="item.result" class="tp-result" v-html="renderMarkdown(item.result)"></div>
         <p v-else-if="item.status === 'running'" class="tp-pending"><span class="tp-dot"></span><span class="tp-dot"></span><span class="tp-dot"></span></p>
         <p v-if="item.status === 'error'" class="tp-error">{{ item.error || '翻译失败' }}</p>
-        <p v-if="item.fallback" class="tp-fallback" :data-tip="item.fallback">谷歌免密钥接口没成功，已改用{{ ENGINE_LABEL[item.engine || ''] }}</p>
+        <p v-if="item.fallback" class="tp-fallback" :data-tip="item.fallback">谷歌翻译失败，已改用{{ ENGINE_LABEL[item.engine || ''] }}</p>
         <div class="tp-actions">
           <button v-if="item.status === 'running'" type="button" class="tp-icon" aria-label="停止" data-tip="停止" @click="stopTranslation(item.id)"><AppIcon name="stop" :size="14" /></button>
           <template v-else>
@@ -162,12 +162,12 @@ defineExpose({ focus })
       <div class="tp-targets" role="radiogroup" aria-label="翻译服务">
         <button v-for="item in ENGINES" :key="item.value" type="button" role="radio" :aria-checked="translator.engine === item.value" :class="{ on: translator.engine === item.value }" :data-tip="ENGINE_TIP[item.value]" @click="translator.engine = item.value">{{ item.label }}</button>
       </div>
-      <button type="button" class="tp-auto" role="switch" :aria-checked="translator.auto" :class="{ on: translator.auto }" data-tip="选中文字后自动翻译，译文显示在鼠标旁" @click="translator.auto = !translator.auto"><i aria-hidden="true"></i>翻译模式</button>
+      <button type="button" class="tp-auto" role="switch" :aria-checked="translator.auto" :class="{ on: translator.auto }" data-tip="选中文字后在鼠标旁显示译文" @click="translator.auto = !translator.auto"><i aria-hidden="true"></i>划词翻译</button>
       <button v-if="keyed && keyReady" type="button" class="tp-link" @click="keyForm = !keyForm">{{ keyForm ? '收起' : '更换密钥' }}</button>
     </div>
     <Transition name="tp-hint"><p v-if="codexHint" class="tp-hint" role="note">Codex 翻译较慢，建议换成 DeepSeek、Kimi 等国产大模型。<button type="button" class="tp-link" @click="openAiSettings">去设置</button><button type="button" class="tp-hint-close" aria-label="不再提醒" data-tip="不再提醒" @click="dismissHint"><AppIcon name="close" :size="11" /></button></p></Transition>
     <div v-if="translator.engine === 'ai'" class="tp-ai">
-      <button type="button" class="tp-ai-chip" :aria-expanded="aiPicker" aria-label="翻译用的模型、思考强度与 Fast" @click="aiPicker = !aiPicker"><span>{{ aiLabel }}</span><AppIcon v-if="aiFast" name="bolt" :size="11" class="tp-ai-fast" /><AppIcon name="down" :size="11" /></button>
+      <button type="button" class="tp-ai-chip" :aria-expanded="aiPicker" aria-label="翻译用的模型与思考强度" @click="aiPicker = !aiPicker"><span>{{ aiLabel }}</span><AppIcon v-if="aiFast" name="bolt" :size="11" class="tp-ai-fast" /><AppIcon name="down" :size="11" /></button>
       <ModelPicker v-if="aiPicker" :model="aiSettings.model || ''" :effort="aiSettings.effort || ''" :models="aiModels" :fast="aiFast" no-default @model="id => chooseAi({ model: id })" @effort="value => chooseAi({ effort: value })" @fast="value => chooseAi({ fast: value })" @close="aiPicker = false" />
     </div>
     <form v-if="keyed && keyForm" class="tp-keys" :class="{ single: keyed === 'google-api' }" @submit.prevent="saveKey">
@@ -179,7 +179,7 @@ defineExpose({ focus })
     </form>
     <form class="tp-composer" @submit.prevent="submit">
       <textarea ref="field" v-model="draft" rows="1" placeholder="要翻译的文字" aria-label="要翻译的文字" @keydown="keydown"></textarea>
-      <button type="submit" class="tp-send" :disabled="!draft.trim()" aria-label="开始翻译" data-tip="翻译（回车）"><AppIcon name="arrow-up" :size="16" /></button>
+      <button type="submit" class="tp-send" :disabled="!draft.trim()" aria-label="翻译" data-tip="翻译" data-tip-key="Enter"><AppIcon name="arrow-up" :size="16" /></button>
     </form>
   </aside>
 </template>

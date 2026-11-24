@@ -51,7 +51,7 @@ try {
   await page.getByRole('button', { name: '打开 PDF 阅读示例.pdf', exact: true }).click();
   await page.waitForFunction(() => document.querySelector('.page-slot.page-ready'));
   await page.waitForTimeout(500);
-  await page.locator('[data-tip="框选公式或图表作为 AI 上下文"]').click();
+  await page.locator('[data-tip="框选公式或图表，发给阅读助手"]').click();
   const box = await page.locator('.page-slot').first().boundingBox();
   await page.mouse.move(box.x + 80, box.y + 100); await page.mouse.down();
   await page.mouse.move(box.x + 520, box.y + 520, { steps: 8 });

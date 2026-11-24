@@ -178,7 +178,7 @@ function runSearch(preserveCurrent = false, reveal = true) {
   searchRanges = matches.ranges
   searchTotal.value = searchRanges.length
   searchCurrent.value = searchRanges.length ? Math.max(1, Math.min(searchRanges.length, preserveCurrent ? searchCurrent.value : 1)) : 0
-  searchStatus.value = matches.limited ? '仅显示前 5000 处' : ''
+  searchStatus.value = matches.limited ? '仅显示前 5000 处匹配' : ''
   searchBusy.value = false
   searchHighlighter.apply(searchRanges, searchCurrent.value - 1)
   if (reveal) revealSearchMatch()
@@ -358,7 +358,7 @@ async function renderDocument() {
       if (child.type === 'link_open') {
         const href = child.attrGet('href') || ''
         if (/^(https?:|mailto:)/i.test(href)) { child.attrSet('target', '_blank'); child.attrSet('rel', 'noopener noreferrer') }
-        else if (!href.startsWith('#')) { child.attrSet('href', '#'); child.attrSet('data-local-link', href); child.attrSet('title', '本地文件，这里打不开') }
+        else if (!href.startsWith('#')) { child.attrSet('href', '#'); child.attrSet('data-local-link', href); child.attrSet('title', '本地文件，无法在这里打开') }
       }
     }
   }
@@ -404,7 +404,7 @@ function linkClick(event: MouseEvent) {
   const href = anchor?.getAttribute('href')
   // 指向本地文件的链接在这里打不开：点了要有回应，不能什么都不发生。
   const local = anchor?.getAttribute('data-local-link')
-  if (local) { event.preventDefault(); emit('error', `「${local}」是本地文件，这里打不开。请先把它导入文档库。`); return }
+  if (local) { event.preventDefault(); emit('error', `「${local}」是本地文件，无法在这里打开。可先把它加入文档库。`); return }
   if (href?.startsWith('#')) {
     event.preventDefault()
     const id = decodeURIComponent(href.slice(1))
@@ -468,13 +468,13 @@ defineExpose({ getOutline: () => headings.value.map(item => ({ title: item.title
       <button ref="outlineButton" class="quiet-button" :class="{ active: outlineOpen }" :aria-expanded="outlineOpen" data-tip="文档目录" :data-tip-key="shortcuts?.outline" @click="toggleOutline"><AppIcon name="list" :size="17" />目录</button>
       <span class="reader-format-label">Markdown</span>
       <div class="reader-zoom"><button @click="zoomOut()" data-tip="缩小" aria-label="缩小" :data-tip-key="shortcuts?.zoomOut" :disabled="zoom <= .5">−</button><ZoomChip :label="`${Math.round(zoom * 100)}%`" :percent="zoom * 100" :min="50" :max="300" :step="zoomStep * 100" tip="恢复 100%" @tap="resetZoom" @set="queueZoom($event / 100)" @step="emit('zoomStep', $event)" /><button @click="zoomIn()" data-tip="放大" aria-label="放大" :data-tip-key="shortcuts?.zoomIn" :disabled="zoom >= 3">＋</button></div>
-      <button class="quiet-button crop-toggle" :class="{ active: capture }" @click="toggleCapture" data-tip="框选公式、图表或一段内容作为 AI 上下文" :data-tip-key="shortcuts?.capture"><AppIcon name="crop" :size="17" />{{ capture ? '拖动框选' : '框选' }}</button>
+      <button class="quiet-button crop-toggle" :class="{ active: capture }" @click="toggleCapture" data-tip="框选公式、图表或段落，发给阅读助手" :data-tip-key="shortcuts?.capture"><AppIcon name="crop" :size="17" />{{ capture ? '拖动框选' : '框选' }}</button>
       <InkButton :active="ink.state.enabled" :tip-key="shortcuts?.inkPen" @click="toggleInk" />
       <button class="quiet-button" :class="{ active: raw }" @click="raw = !raw">{{ raw ? '阅读视图' : '查看源码' }}</button>
       <ReaderSearch ref="searchControl" v-model="searchQuery" :busy="searchBusy" :current="searchCurrent" :total="searchTotal" :status="searchStatus" :shortcut="props.findShortcut" @next="moveSearch(1)" @previous="moveSearch(-1)" @clear="clearSearch" />
     </div>
     <div class="reader-engine-body">
-      <aside v-if="outlineOpen" ref="outlinePanel" class="document-outline" @keydown="outlineKeydown"><p class="outline-heading">目录</p><button v-for="item in headings" :key="item.id" :class="`depth-${Math.min(3, Math.max(0, item.level - 1))}`" :style="{ '--depth': Math.max(0, item.level - 1) }" @click="goToHeading(item.id)"><span class="outline-title">{{ item.title }}</span></button><p v-if="!headings.length" class="subtle">此文档没有标题。</p></aside>
+      <aside v-if="outlineOpen" ref="outlinePanel" class="document-outline" @keydown="outlineKeydown"><p class="outline-heading">目录</p><button v-for="item in headings" :key="item.id" :class="`depth-${Math.min(3, Math.max(0, item.level - 1))}`" :style="{ '--depth': Math.max(0, item.level - 1) }" @click="goToHeading(item.id)"><span class="outline-title">{{ item.title }}</span></button><p v-if="!headings.length" class="subtle">此文档没有目录。</p></aside>
       <div class="markdown-viewport">
         <div ref="scroll" class="markdown-scroll" @scroll="scrolled"><div ref="stage" class="markdown-stage"><article ref="body" class="markdown-paper" tabindex="-1" :class="{ 'source-view': raw }" :style="{ fontSize: `${displayFontSize}px`, maxWidth: `${clampMarkdownContentWidth(props.contentWidth)}px`, zoom }" @mouseup="selectedText" @keyup="selectedText" @click="linkClick"><pre v-if="raw" style="font-size: inherit">{{ content }}</pre><div v-else v-html="content"></div></article></div></div>
         <InkPalette v-if="ink.state.enabled" :mode="ink.state.mode" :colors="ink.state.colors" :last-tool="ink.state.lastTool" :can-undo="ink.state.canUndo" :page-has-ink="ink.state.pageHasInk" :selected="ink.state.selected" :status="ink.state.status" clear-label="清除全部标记（可撤销）" @mode="ink.setMode" @color="ink.setColor" @delete-selected="ink.deleteSelection" @undo="ink.undo" @clear="ink.clearPage" @close="ink.exit" />

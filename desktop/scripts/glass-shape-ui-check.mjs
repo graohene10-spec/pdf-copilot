@@ -127,7 +127,7 @@ try {
     await compareState(`${theme}: Markdown outline`, outline, () => outline.click(), () => outline.click());
     const source = page.locator('.markdown-reader .quiet-button').filter({ hasText: /查看源码|阅读视图/ });
     await compareState(`${theme}: Markdown source`, source, () => source.click(), () => source.click());
-    const star = page.locator('[data-tip="收藏文档"]');
+    const star = page.locator('[data-tip="收藏文档"], [data-tip="取消收藏"]');
     await compareState(`${theme}: favorite control`, star, () => star.click(), () => star.click());
     const details = page.locator('[data-tip="文档详情与标签"]');
     await compareState(`${theme}: details control`, details, () => details.click(), () => page.locator('[data-tip="关闭文档详情"]').click());

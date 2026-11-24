@@ -192,7 +192,7 @@ export async function consolidate(documentId: string, force = false) {
   merging.add(documentId)
   const controller = new AbortController(), limit = window.setTimeout(() => controller.abort(), 90000)
   try {
-    await reviseMemory('把说同一个概念、同一种方法的几条合并成一条，掌握情况取其中最新的那个（列表里越靠前越新）；彼此无关的条目原样保留，不要为了少而硬并。', controller.signal, documentId)
+    await reviseMemory('把说同一件事的几条合并成一条，说法有出入的以最新的为准（列表里越靠前越新）；类别不同或彼此无关的条目原样保留，不要为了少而硬并。', controller.signal, documentId)
     stamps[documentId] = Date.now()
     try { localStorage.setItem(MERGE_KEY, JSON.stringify(stamps)) } catch { /* 下次再合并一遍也无妨 */ }
   } catch { /* 没合并成：下次整理时再试 */ }

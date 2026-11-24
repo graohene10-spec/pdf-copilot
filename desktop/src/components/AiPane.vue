@@ -398,7 +398,7 @@ function thinkingTime(message: Message) { return seconds((message.firstTokenAt |
 // 记忆的三种用法。说明里把「读」和「记」都说到，免得只知道一半。
 const MEMORY_MODES: { id: MemoryMode; label: string; note: string }[] = [
   { id: 'book', label: '本书', note: '只用这本书里记下的' },
-  { id: 'all', label: '全局', note: '所有书里记下的都用，包括这本书的' },
+  { id: 'all', label: '全局', note: '用所有书里记下的' },
   { id: 'off', label: '不用', note: '不读记忆，这段对话也不记' },
 ]
 const memoryNow = computed(() => memoryMode(state.value))
@@ -656,7 +656,7 @@ function resize(event: PointerEvent) {
 }
 function endResize() { if (!resizeStart) return; resizeStart = undefined; try { localStorage.setItem(COMPOSER_KEY, String(composerHeight.value)) } catch {} }
 function resetResize() { composerHeight.value = 76; try { localStorage.removeItem(COMPOSER_KEY) } catch {} }
-const EFFORT_LABELS: Record<string, string> = { '': '默认', none: '不思考', minimal: '极简', low: '低', medium: '中', high: '高', xhigh: '超高', max: '最高', ultra: '极致' }
+const EFFORT_LABELS: Record<string, string> = { '': '默认', none: '不思考', minimal: '极低', low: '低', medium: '中', high: '高', xhigh: '超高', max: '最高', ultra: '极致' }
 const pickerOpen = ref(false)
 // 模型与强度抽屉第一次拉开后保持挂载，收起时才有回弹动画。
 const drawerMounted = ref(false)
@@ -848,10 +848,10 @@ function pickImages(event: Event) {
 }
 // ---- 斜杠命令：/btw 顺便问、/compress 压缩对话、/usage 用量 ------------------------------
 const COMMANDS = [
-  { name: '/btw', args: '问题', label: '顺便问一句', hint: '快速问一个旁支问题，回答不写进对话记录' },
-  { name: '/compress', args: '要求（可选）', label: '压缩对话', hint: '把目前的对话写成摘要，之后只带摘要发送，省上下文' },
-  { name: '/usage', args: '', label: '查看用量', hint: '本次会话的 token 用量、上下文占用与明细' },
-  { name: '/summary', args: '', label: '总结文档', hint: '把这份文档写成一份总结，存进文档库' },
+  { name: '/btw', args: '问题', label: '顺便问一句', hint: '问一个旁支问题，不写进对话记录' },
+  { name: '/compress', args: '要求（可选）', label: '压缩对话', hint: '立即压缩对话，腾出上下文' },
+  { name: '/usage', args: '', label: '查看用量', hint: '本次会话的 token 用量与上下文占用' },
+  { name: '/summary', args: '', label: '总结文档', hint: '为这份文档写一份总结，可存进文档库' },
 ]
 const commandIndex = ref(0)
 // 只有还在输入命令名（以 / 开头、还没有空格）时才弹出命令列表。
@@ -883,7 +883,7 @@ function sendBtwReply() { const text = btwDraft.value.trim(); if (!text || btw.v
 function adoptBtw(target: 'new' | 'append' | 'side') {
   const turns = btwDone.value
   if (!turns.length) return
-  if (target === 'append' && busy.value) { attachNote('请等这一轮回答结束再并入。'); return }
+  if (target === 'append' && busy.value) { attachNote('请等这一轮回答结束再移入。'); return }
   const moved = adoptTurns(props.document.id, state.value.id, target, turns.map(turn => ({ question: turn.question, answer: turn.answer, startedAt: turn.startedAt, finishedAt: turn.finishedAt })))
   closeBtw()
   if (target === 'new') useConversation(moved.id)
@@ -980,7 +980,7 @@ async function revise(conversationId: string, text: string) {
   void send(text)
 }
 function send(question?: string) {
-  if (question === undefined && busy.value && prompt.value.trim()) { attachNote('这一轮还没答完。等它答完，或者先按停止。'); return }
+  if (question === undefined && busy.value && prompt.value.trim()) { attachNote('请等这一轮回答结束再发送，或先点停止。'); return }
   // 斜杠命令在本地处理，不当作问题发出去。
   const command = question === undefined ? prompt.value.trim().match(/^\/(btw|compress|usage|summary)(?:\s+([\s\S]*))?$/i) : null
   if (command) { prompt.value = ''; void runCommand(command[1]!.toLowerCase(), (command[2] || '').trim()); return }
@@ -1060,12 +1060,12 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
     <div class="ai-main">
     <header v-if="side" class="ai-header side-header">
       <span class="side-badge"><AppIcon name="branch" :size="13" />附属对话</span>
-      <span class="side-of" :title="mainTitle">挂在「{{ mainTitle || '新对话' }}」旁边</span>
-      <button class="header-button close-assistant" data-tip="收起附属对话（内容会保留）" aria-label="收起附属对话" @click="emit('close')"><AppIcon name="close" :size="15" /></button>
+      <span class="side-of" :title="mainTitle">主对话：{{ mainTitle || '新对话' }}</span>
+      <button class="header-button close-assistant" data-tip="收起附属对话，内容保留" aria-label="收起附属对话" @click="emit('close')"><AppIcon name="close" :size="15" /></button>
     </header>
     <header v-else class="ai-header" :class="{ draggable }" @pointerdown="grabHeader">
       <!-- 标题左边这颗键进对话管理。挪面板的位置直接拖整条表头。 -->
-      <button v-if="!side" type="button" class="header-button manage-entry" aria-label="对话管理" data-tip="对话管理：全部对话和记忆" @pointerdown.stop @click="historyOpen = false; emit('manage')"><AppIcon name="threads" :size="16" /></button>
+      <button v-if="!side" type="button" class="header-button manage-entry" aria-label="对话管理" data-tip="管理全部对话和记忆" @pointerdown.stop @click="historyOpen = false; emit('manage')"><AppIcon name="threads" :size="16" /></button>
       <div class="history-host">
         <button class="conversation-title" :aria-expanded="historyOpen" aria-label="对话记录" data-tip="对话记录" @click="historyOpen = !historyOpen"><span class="title-text">{{ title }}</span><small>{{ document.title }}</small></button>
         <Transition name="history-pop">
@@ -1094,16 +1094,16 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
             <div v-else class="history-list">
               <div v-for="item in history" :key="item.id" class="history-item" :class="{ current: item.id === conversationId }">
                 <button v-marquee class="history-open" @click="useConversation(item.id)"><span><AppIcon v-if="item.branchOf" name="branch" :size="12" class="branch-mark" /><span class="marquee-text">{{ item.title || '新对话' }}</span></span><small>{{ relative(item.updatedAt) }} · {{ Math.ceil(item.messages.length / 2) }} 问<template v-if="item.request"> · 回答中</template></small></button>
-                <button v-if="item.messages.length" class="history-delete" :class="{ armed: deleteArmed === item.id }" :aria-label="deleteArmed === item.id ? `再点一次，删除对话 ${item.title}` : `删除对话 ${item.title}`" :data-tip="deleteArmed === item.id ? '再点一次删除，删了找不回来' : '删除这段对话'" @click.stop="removeConversation(item.id)"><template v-if="deleteArmed === item.id">再点一次</template><AppIcon v-else name="trash" :size="13" /></button>
+                <button v-if="item.messages.length" class="history-delete" :class="{ armed: deleteArmed === item.id }" :aria-label="deleteArmed === item.id ? `再点一次，删除对话 ${item.title}` : `删除对话 ${item.title}`" :data-tip="deleteArmed === item.id ? '再点一次删除，无法恢复' : '删除这段对话'" @click.stop="removeConversation(item.id)"><template v-if="deleteArmed === item.id">再点一次</template><AppIcon v-else name="trash" :size="13" /></button>
               </div>
               <p v-if="!history.length" class="history-empty">还没有对话。</p>
             </div>
           </div>
         </Transition>
       </div>
-      <span v-if="taskSummary.running || taskSummary.queued" class="task-summary" :data-tip="`同时最多 ${taskSummary.limits.concurrent} 题，Codex ${taskSummary.limits.codex} 题`">{{ taskSummary.running }} 运行<template v-if="taskSummary.queued"> · {{ taskSummary.queued }} 等待</template></span>
+      <span v-if="taskSummary.running || taskSummary.queued" class="task-summary" :data-tip="`同时最多 ${taskSummary.limits.concurrent} 个请求，Codex 最多 ${taskSummary.limits.codex} 个`">{{ taskSummary.running }} 进行中<template v-if="taskSummary.queued"> · {{ taskSummary.queued }} 排队</template></span>
       <button class="header-button side-toggle" :class="{ on: sideOpen, has: hasSideContent && !sideOpen }" :aria-pressed="sideOpen" :aria-label="sideOpen ? '收起附属对话' : '打开附属对话'" :data-tip="sideOpen ? '收起附属对话' : hasSideContent ? '打开附属对话（有内容）' : '打开附属对话'" @click="toggleSide"><AppIcon name="branch" :size="15" /></button>
-      <button v-if="state.summary?.started" class="header-button draft-toggle" :class="{ on: draftOpen }" :aria-pressed="draftOpen" :aria-label="draftOpen ? '收起总结草稿' : '打开总结草稿'" :data-tip="draftOpen ? '收起总结草稿，回到原文' : '打开总结草稿'" @click="emit('draft', { conversationId: state.id })"><AppIcon name="doc" :size="16" /></button>
+      <button v-if="state.summary?.started" class="header-button draft-toggle" :class="{ on: draftOpen }" :aria-pressed="draftOpen" :aria-label="draftOpen ? '收起总结草稿' : '打开总结草稿'" :data-tip="draftOpen ? '收起总结草稿' : '打开总结草稿'" @click="emit('draft', { conversationId: state.id })"><AppIcon name="doc" :size="16" /></button>
       <button class="header-button" aria-label="新对话" :data-tip="messages.length ? '新对话' : '这已经是一段新对话'" :disabled="!messages.length" @click="startConversation"><AppIcon name="compose" :size="16" /></button>
       <button class="header-button close-assistant" data-tip="关闭阅读助手" aria-label="关闭阅读助手" @click="emit('close')"><AppIcon name="close" :size="15" /></button>
     </header>
@@ -1125,7 +1125,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
           <div v-if="message.note" class="note-card" :data-tip="`${noteLabel(message)}：${message.content.slice(0, 300)}`">
             <AppIcon class="note-icon" :name="message.note === 'self' ? 'pin' : 'branch'" :size="11" />
             <span class="note-text">{{ message.content }}</span>
-            <button type="button" class="note-remove" aria-label="移除这条摘录" @click="removeMessage(document.id, state.id, message.id)"><AppIcon name="close" :size="10" /></button>
+            <button type="button" class="note-remove" aria-label="移除摘录" @click="removeMessage(document.id, state.id, message.id)"><AppIcon name="close" :size="10" /></button>
           </div>
           <template v-else-if="message.role === 'user'">
             <SummarySetup v-if="editing === message.id && editOptions" v-model:extra="editExtra" editing :title="document.title" :options="editOptions" :outline="getOutline?.(document.id)" @start="submitSetupEdit(message)" @cancel="cancelEdit" />
@@ -1145,7 +1145,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
               <div v-else class="user-question">{{ message.content }}</div>
               <!-- 问题下面只占一行：左边是指上去才出现的「编辑」「复制」，右边是随问题发出的引文、图片、页码。 -->
               <div class="question-foot">
-                <div class="question-actions"><button v-if="!side || message.id === lastQuestionId" class="meta-button" :disabled="busy && message.id === lastQuestionId" aria-label="编辑问题" :data-tip="busy && message.id === lastQuestionId ? '正在回答，答完才能编辑' : '编辑后重新回答；改的不是最后一问时，会另开一个分支'" @click="startEdit(message)"><AppIcon name="edit" :size="13" /></button><button class="meta-button" :aria-label="copiedId === message.id ? '已复制' : '复制问题'" :data-tip="copiedId === message.id ? '已复制' : '复制'" @click="copyMessage(message)"><AppIcon :name="copiedId === message.id ? 'check' : 'copy'" :size="13" /></button></div>
+                <div class="question-actions"><button v-if="!side || message.id === lastQuestionId" class="meta-button" :disabled="busy && message.id === lastQuestionId" aria-label="编辑问题" :data-tip="busy && message.id === lastQuestionId ? '正在回答，答完才能编辑' : '编辑后重新回答；不是最后一问时另开分支'" @click="startEdit(message)"><AppIcon name="edit" :size="13" /></button><button class="meta-button" :aria-label="copiedId === message.id ? '已复制' : '复制问题'" :data-tip="copiedId === message.id ? '已复制' : '复制问题'" @click="copyMessage(message)"><AppIcon :name="copiedId === message.id ? 'check' : 'copy'" :size="13" /></button></div>
                 <div v-if="message.ask?.text || message.images?.length || message.ask?.includeDocument || message.excerpts?.length" class="sent-context" aria-label="随问题发送的上下文">
                   <span v-for="item in message.excerpts || []" :key="item.id" class="sent-quote sent-excerpt" :data-tip="`${excerptLabel(item.from)}：${item.text.slice(0, 300)}`"><AppIcon :name="item.from === 'self' ? 'pin' : 'branch'" :size="10" />{{ item.text.slice(0, 40) }}{{ item.text.length > 40 ? '…' : '' }}</span>
                   <img v-for="(image, index) in (message.images || []).slice(0, 5)" :key="index" :src="image" alt="随问题发送的图片" data-tip="双击放大" @dblclick="zoomed = image" />
@@ -1155,7 +1155,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
               </div>
             </template>
           </template>
-          <p v-else-if="message.summary" class="compact-mark" data-tip="这之前的对话已压缩；原文还在上面，助手带着要点继续"><i /></p>
+          <p v-else-if="message.summary" class="compact-mark" data-tip="以上对话已压缩，助手只参考要点"><i /></p>
           <template v-else>
             <button v-if="live(message) || message.reasoning || message.sources.length" class="thinking" :class="{ live: live(message), open: expanded.has(message.id) }" :aria-expanded="expanded.has(message.id)" @click="toggleReasoning(message.id)">
               <span class="thinking-star" aria-hidden="true">{{ live(message) ? spinner(message) : '✻' }}</span>
@@ -1209,11 +1209,11 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
         </div>
         <form v-if="btwReply" class="btw-reply" @submit.prevent="sendBtwReply"><input ref="btwInput" v-model="btwDraft" type="text" placeholder="接着问…" aria-label="接着问" @keydown.esc.stop.prevent="replyBtw" /><button type="submit" class="meta-button" :disabled="!btwDraft.trim() || btw.running" aria-label="发送" data-tip="发送" data-tip-key="Enter"><AppIcon name="arrow-up" :size="13" /></button></form>
         <p class="btw-tools">
-          <button type="button" class="meta-button" :class="{ on: btwReply }" :aria-pressed="btwReply" aria-label="接着聊" data-tip="接着聊" @click="replyBtw"><AppIcon name="chat-more" :size="14" /></button>
+          <button type="button" class="meta-button" :class="{ on: btwReply }" :aria-pressed="btwReply" aria-label="接着问" data-tip="接着问" @click="replyBtw"><AppIcon name="chat-more" :size="14" /></button>
           <i aria-hidden="true"></i>
-          <button type="button" class="meta-button" :disabled="!btwDone.length" aria-label="另起一段主对话" data-tip="另起一段主对话" @click="adoptBtw('new')"><AppIcon name="chat-new" :size="14" /></button>
-          <button type="button" class="meta-button" :disabled="!btwDone.length" :aria-label="side ? '并入这段附属对话' : '并入当前主对话'" :data-tip="side ? '并入这段附属对话' : '并入当前主对话'" @click="adoptBtw('append')"><AppIcon name="append" :size="14" /></button>
-          <button v-if="!side" type="button" class="meta-button" :disabled="!btwDone.length" aria-label="变成附属对话" data-tip="变成附属对话" @click="adoptBtw('side')"><AppIcon name="branch" :size="14" /></button>
+          <button type="button" class="meta-button" :disabled="!btwDone.length" aria-label="移到新的主对话" data-tip="移到新的主对话" @click="adoptBtw('new')"><AppIcon name="chat-new" :size="14" /></button>
+          <button type="button" class="meta-button" :disabled="!btwDone.length" :aria-label="side ? '移到这段附属对话' : '移到当前主对话'" :data-tip="side ? '移到这段附属对话' : '移到当前主对话'" @click="adoptBtw('append')"><AppIcon name="append" :size="14" /></button>
+          <button v-if="!side" type="button" class="meta-button" :disabled="!btwDone.length" aria-label="移到附属对话" data-tip="移到附属对话" @click="adoptBtw('side')"><AppIcon name="branch" :size="14" /></button>
         </p>
       </div>
     </Transition>
@@ -1236,13 +1236,13 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
           <span v-for="item in excerpts" :key="item.id" class="excerpt-chip" :class="{ arrived: arrivedExcerpt === item.id }" :data-tip="`${excerptLabel(item.from)}：${item.text.slice(0, 300)}`">
             <AppIcon class="note-icon" :name="item.from === 'self' ? 'pin' : 'branch'" :size="11" />
             <span class="note-text">{{ item.text }}</span>
-            <button type="button" class="note-remove" aria-label="移除这段摘录" @click="removeExcerpt(document.id, state.id, item.id)"><AppIcon name="close" :size="10" /></button>
+            <button type="button" class="note-remove" aria-label="移除摘录" @click="removeExcerpt(document.id, state.id, item.id)"><AppIcon name="close" :size="10" /></button>
           </span>
         </TransitionGroup>
         <!-- 随问题发出的图片：只有图。留住的带红框；刚截的那张点一下留住，双击放大。 -->
         <TransitionGroup v-if="shots.length" tag="div" name="shot" class="composer-shots" aria-label="随问题发送的图片">
           <span v-for="(shot, index) in shots" :key="shotKey(shot.image)" class="shot" :class="{ kept: shot.kept }">
-            <img :src="shot.image" :alt="shot.kept ? '已留住的图片' : '刚截的图'" :data-tip="shot.kept ? '双击放大' : '点一下留住，再截图会新增一张 · 双击放大'" draggable="false" @click="shot.kept || keepShot()" @dblclick="zoomed = shot.image" />
+            <img :src="shot.image" :alt="shot.kept ? '已保留的图片' : '刚截的图'" :data-tip="shot.kept ? '双击放大' : '单击保留，双击放大'" draggable="false" @click="shot.kept || keepShot()" @dblclick="zoomed = shot.image" />
             <button type="button" class="shot-remove" :aria-label="`移除第 ${index + 1} 张图片`" @click="dropShot(shot)"><AppIcon name="close" :size="10" /></button>
           </span>
         </TransitionGroup>
@@ -1252,11 +1252,11 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
           <p v-if="prediction && !prompt" :id="`prediction-${state.id}`" class="prompt-ghost"><span>{{ prediction }}</span><span class="visually-hidden">，按 Tab 或回车采用</span></p>
         </div>
         <div class="composer-actions">
-          <button type="button" class="attach-button" :disabled="busy || attachments.length >= MAX_ATTACHMENTS" aria-label="添加图片" :data-tip="busy ? '正在回答，答完才能添加图片' : attachments.length >= MAX_ATTACHMENTS ? `一次最多附 ${MAX_ATTACHMENTS} 张图片` : '添加图片（也可以 Ctrl+V 粘贴或拖进来）'" @click="attachInput?.click()"><AppIcon name="image" :size="16" /></button>
+          <button type="button" class="attach-button" :disabled="busy || attachments.length >= MAX_ATTACHMENTS" aria-label="添加图片" :data-tip="busy ? '正在回答，答完才能添加图片' : attachments.length >= MAX_ATTACHMENTS ? `一次最多附 ${MAX_ATTACHMENTS} 张图片` : '添加图片，也可粘贴或拖入'" @click="attachInput?.click()"><AppIcon name="image" :size="16" /></button>
           <input ref="attachInput" class="attach-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple tabindex="-1" aria-hidden="true" @change="pickImages" />
-          <label class="context-switch" :class="{ on: includeDocument }" :data-tip="busy ? '正在回答，答完才能切换' : includeDocument ? '已开启：提问时附带当前页与文档检索' : '已关闭：只发送问题与选区'"><input v-model="includeDocument" type="checkbox" role="switch" :disabled="busy" aria-label="当前页上下文与文档检索" /><span class="context-glyph" aria-hidden="true"><AppIcon name="book" :size="14" /><i class="context-slash" /></span><span class="context-label">文档上下文</span></label>
+          <label class="context-switch" :class="{ on: includeDocument }" :data-tip="busy ? '正在回答，答完才能切换' : includeDocument ? '已开启：提问时附带当前页与文档检索' : '已关闭：只发送问题与选区'"><input v-model="includeDocument" type="checkbox" role="switch" :disabled="busy" aria-label="文档上下文" /><span class="context-glyph" aria-hidden="true"><AppIcon name="book" :size="14" /><i class="context-slash" /></span><span class="context-label">文档上下文</span></label>
           <span class="composer-space" />
-          <button type="button" class="context-ring" :class="{ busy: compressing }" :data-tip="compressing ? '正在压缩对话' : `上下文 ${Math.round(contextRatio * 100)}% · 满了自动压缩，点击现在压缩`" aria-label="压缩对话" :style="{ '--ratio': contextRatio }" @click="runCommand('compress', '')"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5" /><circle class="ring-value" cx="10" cy="10" r="7.5" pathLength="100" /></svg></button>
+          <button type="button" class="context-ring" :class="{ busy: compressing }" :data-tip="compressing ? '正在压缩对话' : `自动压缩进度 ${Math.round(contextRatio * 100)}%，点击立即压缩`" aria-label="压缩对话" :style="{ '--ratio': contextRatio }" @click="runCommand('compress', '')"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5" /><circle class="ring-value" cx="10" cy="10" r="7.5" pathLength="100" /></svg></button>
           <div ref="pickerHost" class="model-picker-host">
             <button type="button" class="model-picker" :disabled="busy" :aria-expanded="pickerOpen" :aria-controls="`model-drawer-${state.id}`" aria-label="选择模型与思考强度" :data-tip="busy ? '正在回答，答完才能换模型' : '模型与思考强度'" @click="pickerOpen = !pickerOpen"><span class="picker-model">{{ modelLabel }}</span><span class="picker-effort">{{ EFFORT_LABELS[settings.effort || ''] || settings.effort }}</span><span v-if="bolts" class="picker-fast" :class="{ twin: bolts > 1 }"><AppIcon v-for="n in bolts" :key="n" name="bolt" :size="11" /></span><AppIcon name="down" :size="12" class="picker-chevron" /></button>
           </div>
@@ -1283,8 +1283,8 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
     <Teleport to="body"><Transition name="quote-pop">
       <div v-if="quotePop && !side" ref="quoteEl" class="quote-pop" :style="{ left: `${quotePop.left}px`, top: `${quotePop.top}px` }" role="toolbar" aria-label="引用所选文字" @pointerdown.prevent>
         <button type="button" @click="quoteAction('add')"><AppIcon name="plus" :size="13" />添加到对话<kbd>Ctrl ↓</kbd></button>
-        <button v-if="quotePop.from === 'main'" type="button" @click="quoteAction('side')"><AppIcon name="branch" :size="13" />在侧边对话提问<kbd>Ctrl →</kbd></button>
-        <button v-else type="button" @click="quoteAction('main')"><AppIcon name="arrow" :size="13" class="flip" />返回主对话提问<kbd>Ctrl ←</kbd></button>
+        <button v-if="quotePop.from === 'main'" type="button" @click="quoteAction('side')"><AppIcon name="branch" :size="13" />在附属对话提问<kbd>Ctrl →</kbd></button>
+        <button v-else type="button" @click="quoteAction('main')"><AppIcon name="arrow" :size="13" class="flip" />在主对话提问<kbd>Ctrl ←</kbd></button>
       </div>
     </Transition></Teleport>
   </aside>
@@ -1442,7 +1442,7 @@ button:disabled{opacity:.4;cursor:default}
 .quote-pop-enter-active{transition:opacity var(--dur-1) var(--ease-soft),scale var(--dur-2) var(--spring-snappy)}
 .quote-pop-leave-active{transition:opacity var(--dur-1) var(--ease-soft)}
 .quote-pop-enter-from{opacity:0;scale:.92}.quote-pop-leave-to{opacity:0}
-.ai-body{position:relative;flex:1;min-height:0;display:flex;-webkit-mask-image:linear-gradient(180deg,transparent 0,#000 14px,#000 calc(100% - 14px),transparent 100%);mask-image:linear-gradient(180deg,transparent 0,#000 14px,#000 calc(100% - 14px),transparent 100%)}
+.ai-body{position:relative;flex:1;min-height:0;display:flex;-webkit-mask-image:linear-gradient(180deg,transparent 0,#000 14px);mask-image:linear-gradient(180deg,transparent 0,#000 14px)}
 /* 上下沿的淡出遮罩挂在外层 .ai-body 上，而不是滚动容器本身。对话列表单独成一层（will-change）：
    半透明玻璃上的文字默认不走合成滚动，滚轮每动一帧都要把整屏文字重新栅格化，长回答里就一顿一顿的。 */
 .ai-messages{flex:1;min-width:0;overflow:auto;overscroll-behavior:contain;padding:18px 26px 8px 18px;scrollbar-width:none;will-change:transform}

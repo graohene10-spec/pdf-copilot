@@ -11,7 +11,7 @@ const tools: { mode: InkMode; label: string; tip: string }[] = [
   { mode: 'highlighter', label: '荧光笔', tip: '荧光笔：半透明涂抹文字' },
   { mode: 'underline', label: '划线', tip: '划线：拖动画一条手写横线' },
   { mode: 'eraser', label: '橡皮', tip: '橡皮：点按或拖过笔迹即擦除' },
-  { mode: 'select', label: '框选笔迹', tip: '框选：拖出一个框选中笔迹，再一起删除或换颜色（Shift 追加、Ctrl 反选、Ctrl+A 全选）' },
+  { mode: 'select', label: '框选笔迹', tip: '框选：选中笔迹后一起删除或换颜色' },
 ]
 const activeColor = () => props.colors[props.lastTool]
 const selecting = () => props.mode === 'select' && !!props.selected

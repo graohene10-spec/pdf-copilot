@@ -39,7 +39,7 @@ function openSettings() { window.dispatchEvent(new CustomEvent('kaizhi:open-ai-s
     <!-- 写完之后的思维链：底部那枚「✻ N s」点开才出现。 -->
     <div v-if="item.chainOpen && item.status !== 'running' && item.reasoning.trim()" class="ex-chain open"><p>{{ item.reasoning.trim() }}</p></div>
     <p v-if="item.status === 'error'" class="ex-error">{{ item.error || '解释失败' }}</p>
-    <p v-if="item.status === 'running' && elapsed >= 10 && (item.mode === 'visual' || item.text.includes('```ui'))" class="ex-slow">Intelligent UI 比较复杂，可能会慢一些</p>
+    <p v-if="item.status === 'running' && elapsed >= 10 && (item.mode === 'visual' || item.text.includes('```ui'))" class="ex-slow">可视化讲解需要更长时间</p>
     <p v-else-if="item.status === 'running' && elapsed >= 10" class="ex-slow">有点慢，<button type="button" @click="openSettings">换个更快的服务商</button></p>
   </div>
 </template>

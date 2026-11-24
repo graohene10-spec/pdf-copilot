@@ -28,7 +28,7 @@ const progressText = computed(() => {
 })
 const hint = computed(() => {
   if (canInstall.value || !info.value) return ''
-  return '暂时取不到这个版本的安装包校验信息（多半是网络连不上 GitHub 的下载服务器），可以稍后再试，或前往发布页下载。'
+  return '无法获取安装包的校验信息，可能是连不上 GitHub。可稍后再试，或前往下载页手动下载。'
 })
 
 function retry() { void updater.update() }
@@ -64,7 +64,7 @@ function notesClick(event: MouseEvent) {
         </div>
         <p><span>正在下载 {{ percent === null ? '' : `${percent}%` }}</span><span>{{ progressText }}</span></p>
       </div>
-      <p v-else-if="state.phase === 'ready'" class="update-status" role="status">更新包已下载并通过校验，正在安装…</p>
+      <p v-else-if="state.phase === 'ready'" class="update-status" role="status">更新已下载，正在安装…</p>
       <p v-else-if="state.phase === 'installing'" class="update-status" role="status">正在安装更新，开智会自动关闭并重新打开…</p>
       <p v-else-if="state.phase === 'error'" class="update-status update-error" role="alert">{{ state.error }}</p>
       <p v-else-if="hint" class="update-status">{{ hint }}</p>
@@ -78,7 +78,7 @@ function notesClick(event: MouseEvent) {
           <button type="button" class="update-text" @click="updater.skip()" aria-label="跳过此版本，不再自动提示">跳过此版本</button>
           <span class="update-space" />
           <button type="button" @click="updater.later()" aria-label="稍后提醒">稍后</button>
-          <button v-if="!canInstall" type="button" class="update-primary" @click="updater.openPage()" aria-label="前往发布页面下载"><AppIcon name="external" :size="14" />前往下载页</button>
+          <button v-if="!canInstall" type="button" class="update-primary" @click="updater.openPage()" aria-label="前往下载页"><AppIcon name="external" :size="14" />前往下载页</button>
           <button v-else-if="state.phase === 'error'" type="button" class="update-primary" @click="retry" aria-label="重试更新">重试</button>
           <button v-else type="button" class="update-primary" @click="updater.update()" aria-label="立即更新，完成后自动重启">立即更新</button>
         </template>

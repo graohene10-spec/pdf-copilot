@@ -132,12 +132,12 @@ function toggleMulti() { if (!options.complete) options.multi = !options.multi }
       </div>
       <!-- 三个开关。图解与可交互打开后，下面多出两行：放多少、偏向哪一类。 -->
       <div class="sum-row">
-        <button type="button" class="sum-line" role="switch" :aria-checked="options.complete" data-tip="一节一节写，定义、定理、公式、结论、例题每一条都写到；篇幅会长很多，用量也多" @click="options.complete = !options.complete">
+        <button type="button" class="sum-line" role="switch" :aria-checked="options.complete" data-tip="逐节写全定义、定理、公式、结论和例题，篇幅和用量都会大很多" @click="options.complete = !options.complete">
           <span class="sum-label wide">{{ COMPLETE }}</span><i class="sum-switch" aria-hidden="true"></i>
         </button>
       </div>
       <div class="sum-row">
-        <button type="button" class="sum-line" role="switch" :aria-checked="options.ui" data-tip="在文档里用 Intelligent UI：图解，和可以拖动、筛选的演示" @click="options.ui = !options.ui">
+        <button type="button" class="sum-line" role="switch" :aria-checked="options.ui" data-tip="在总结里加入图解和可拖动、筛选的演示" @click="options.ui = !options.ui">
           <span class="sum-label wide">图解与可交互</span><i class="sum-switch" aria-hidden="true"></i>
         </button>
         <div v-if="options.ui" class="sum-sub">
@@ -147,13 +147,13 @@ function toggleMulti() { if (!options.complete) options.multi = !options.multi }
         </div>
       </div>
       <div class="sum-row">
-        <button type="button" class="sum-line" role="switch" :aria-checked="rounds" :aria-disabled="options.complete || undefined" :data-tip="options.complete ? '不遗漏知识点时总是分多次写' : '文档很长时用：助手一段一段地读、一段一段地写，自己接着写到完，用量更多。不开就是一次写完'" @click="toggleMulti">
+        <button type="button" class="sum-line" role="switch" :aria-checked="rounds" :aria-disabled="options.complete || undefined" :data-tip="options.complete ? '开了「不遗漏知识点」时总是分多次写' : '分段读、分段写直到写完，适合长文档，用量更多'" @click="toggleMulti">
           <span class="sum-label wide">分多次写</span><i class="sum-switch" aria-hidden="true"></i>
         </button>
       </div>
       <label v-if="editing" class="sum-row sum-extra"><span class="sum-label wide">其他要求</span><textarea :value="extra" rows="2" maxlength="2000" placeholder="表里没有的，写在这里" @input="emit('update:extra', ($event.target as HTMLTextAreaElement).value)"></textarea></label>
     </div>
-    <footer class="sum-foot"><button type="button" class="sum-cancel" @click="emit('cancel')">{{ editing ? '取消' : '不总结了' }}</button><button type="button" class="sum-start" @click="emit('start')">{{ editing ? '重新总结' : '开始总结' }}</button></footer>
+    <footer class="sum-foot"><button type="button" class="sum-cancel" @click="emit('cancel')">取消</button><button type="button" class="sum-start" @click="emit('start')">{{ editing ? '重新总结' : '开始总结' }}</button></footer>
   </section>
 </template>
 

@@ -40,7 +40,7 @@ try {
   // The old footer is gone; the reader reaches the bottom and a small pill floats over it.
   assert.equal(await page.locator('.reading-status').count(), 0);
   const pill = page.locator('.reader-pane:visible .reading-pill');
-  assert.match(await pill.getAttribute('aria-label'), /阅读位置自动保存 · 第 1 \/ 4 页/);
+  assert.match(await pill.getAttribute('aria-label'), /阅读位置：第 1 \/ 4 页/);
   await page.mouse.move(700, 450);
   // The pill stays awake 2.2 s after the last saved page change, then folds; measure once the fold has finished.
   await page.waitForFunction(() => {

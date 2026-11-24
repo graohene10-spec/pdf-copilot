@@ -58,7 +58,7 @@ function restore() { if (undo.value) restoreMemory(undo.value.id, undo.value.ent
 
 <template>
   <section class="mem" aria-label="记忆">
-    <div class="mem-head"><h3>记忆</h3><i class="mem-what" tabindex="0" role="note" aria-label="记忆是什么" data-tip="一段对话答完，助手把你学了什么、掌握得怎样整理成几行；下次提问时先看这些，决定从哪讲起、讲多细。每条记忆都记在它那本书名下。新对话下面选「本书」只用这本书的，选「全局」所有书的都用，选「不用」既不读也不记">?</i><span v-if="total">{{ total }} 条</span><button type="button" class="text-action" @click="emit('manage')">管理对话…</button></div>
+    <div class="mem-head"><h3>记忆</h3><i class="mem-what" tabindex="0" role="note" aria-label="记忆是什么" data-tip="从对话里自动整理，助手回答时参考">?</i><span v-if="total">{{ total }} 条</span><button type="button" class="text-action" @click="emit('manage')">管理对话…</button></div>
     <p v-if="!memory.ready" class="mem-empty">正在读取…</p>
     <p v-else-if="!total" class="mem-empty">还没有记忆。</p>
     <div v-for="book in books" :key="book.key" class="mem-book" :class="{ folded: folded.has(book.key) }">

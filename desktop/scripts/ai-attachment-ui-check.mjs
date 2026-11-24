@@ -62,7 +62,7 @@ async function readyPdf() {
 async function select(index) { await page.getByRole('tab', { name: names[index], exact: true }).click(); await readyPdf(); await prompt().waitFor(); }
 async function crop(index = 0) {
   await readyPdf();
-  await page.locator('[data-tip="框选公式或图表作为 AI 上下文"]').click();
+  await page.locator('[data-tip="框选公式或图表，发给阅读助手"]').click();
   const bounds = await page.locator('#page-surface').boundingBox();
   const x = bounds.x + 35 + index * 8, y = bounds.y + 50 + index * 14;
   await page.mouse.move(x, y); await page.mouse.down();

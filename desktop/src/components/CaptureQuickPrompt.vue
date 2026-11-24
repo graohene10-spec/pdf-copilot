@@ -106,7 +106,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <div class="capture-quick-footer">
-        <button class="capture-continue" aria-label="继续到阅读助手" @click="emit('continue')"><AppIcon name="sparkle" :size="14" />自己提问<AppIcon class="continue-arrow" name="arrow" :size="14" /></button>
+        <button class="capture-continue" aria-label="在阅读助手里自己提问" @click="emit('continue')"><AppIcon name="sparkle" :size="14" />自己提问<AppIcon class="continue-arrow" name="arrow" :size="14" /></button>
         <button class="capture-cancel" aria-label="取消框选提问" data-tip="取消" data-tip-key="Esc" @click="emit('cancel')"><kbd>Esc</kbd></button>
       </div>
       <p v-if="status" class="capture-quick-status" role="status">{{ status }}</p>

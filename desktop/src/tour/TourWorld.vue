@@ -52,16 +52,16 @@ const box = computed(() => { const frame = props.scene.frame; return frame ? { l
 const hole = computed(() => { const frame = props.scene.frame; return frame ? { clipPath: `path(evenodd, "M0 0H1280V800H0Z M${frame.x} ${frame.y}h${frame.width}v${frame.height}h${-frame.width}Z")` } : {} })
 const beside = computed(() => { const frame = props.scene.frame; return frame ? { left: `${frame.x + frame.width + 26}px`, top: `${frame.y + frame.height / 2}px` } : {} })
 const away = computed(() => props.scene.scroll > 110)
-/* 管理对话那一页的示意：两本书、五段对话、三条记忆。t1 可以被拖到第二本书里。 */
+/* 管理对话那一页的示意：两本书、五段对话、四条记忆。t1 可以被拖到第二本书里。记忆是 [正文, 类别]。 */
 type Talk = { id: string; title: string; meta: string; items?: [string, string][] }
 const CM_BOOKS: { id: string; title: string; kind: 'square' | 'round'; talks: Talk[] }[] = [
   { id: 'b0', title: '线性代数讲义', kind: 'square', talks: [
-    { id: 't0', title: '特征值是什么', meta: '3 问 · 刚刚', items: [['特征值的定义', '已弄懂'], ['相似对角化', '问过还不熟']] },
+    { id: 't0', title: '特征值是什么', meta: '3 问 · 刚刚', items: [['第 5 章读到 5.2', '进度'], ['以为能对角化的矩阵都能正交对角化', '难点']] },
     { id: 't1', title: '行列式为什么能判可逆', meta: '2 问 · 1 小时前' },
-    { id: 't2', title: '特征值与特征向量', meta: '4 问 · 昨天', items: [['特征向量的几何意义', '已弄懂']] },
+    { id: 't2', title: '特征值与特征向量', meta: '4 问 · 昨天', items: [['做了习题 5.1–5.8', '进度']] },
   ] },
   { id: 'b1', title: 'Attention Is All You Need', kind: 'round', talks: [
-    { id: 't3', title: '自注意力怎么算', meta: '5 问 · 2 天前', items: [['缩放点积注意力', '已弄懂']] },
+    { id: 't3', title: '自注意力怎么算', meta: '5 问 · 2 天前', items: [['英文原文先用中文讲大意，再举例', '偏好']] },
     { id: 't4', title: '位置编码', meta: '2 问 · 3 天前' },
   ] },
 ]
@@ -73,13 +73,13 @@ const cmBooks = computed(() => {
 /* 根到每段对话的折线：行高 40、间隔 8，和真的那页一样先平、再斜、再平。 */
 const cmLinks = (count: number) => { const mid = (count * 48 - 8) / 2; return Array.from({ length: count }, (_, index) => `M0 ${mid}L14 ${mid}L32 ${index * 48 + 20}L46 ${index * 48 + 20}`) }
 const ribbonStyle = computed(() => props.scene.ribbonAt ? { left: `${props.scene.ribbonAt.x}px`, top: `${props.scene.ribbonAt.y}px`, translate: props.scene.ribbonFlip ? '-100% -50%' : '0 -50%' } : undefined)
-/* 记忆栏：线性代数讲义的三条可以挪、可以让助手合并；合并后两条特征值的并成一条。 */
-type Mem = { id: string; name: string; state: string }
+/* 记忆栏：线性代数讲义的三条可以挪、可以让助手合并；合并后两条进度并成一条。text 是记下的事，kind 是类别（偏好、背景、进度、难点、已会）。 */
+type Mem = { id: string; text: string; kind: string }
 const MEM: Record<string, Mem> = {
-  r0: { id: 'r0', name: '特征值的定义', state: '已弄懂' },
-  r1: { id: 'r1', name: '相似对角化', state: '问过还不熟' },
-  r2: { id: 'r2', name: '特征向量的几何意义', state: '已弄懂' },
-  m: { id: 'm', name: '特征值与特征向量', state: '已弄懂' },
+  r0: { id: 'r0', text: '第 5 章读到 5.2', kind: '进度' },
+  r1: { id: 'r1', text: '以为能对角化的矩阵都能正交对角化', kind: '难点' },
+  r2: { id: 'r2', text: '做了习题 5.1–5.8', kind: '进度' },
+  m: { id: 'm', text: '第 5 章读到 5.2，做了习题 5.1–5.8', kind: '进度' },
 }
 const memRows = computed(() => props.scene.memMerged ? [MEM.m!, MEM.r1!] : props.scene.memSwap ? [MEM.r0!, MEM.r2!, MEM.r1!] : [MEM.r0!, MEM.r1!, MEM.r2!])
 const memCount = computed(() => memRows.value.length + 1)
@@ -323,7 +323,7 @@ const files = computed(() => {
               <p class="tw-me">{{ TEXT.question }}</p>
               <p class="tw-say">{{ reply[0] }}<span class="tw-q" :class="{ on: scene.quote }">{{ reply[1] }}</span>{{ reply[2] }}</p>
               <p v-if="scene.answer >= replyLength" class="tw-meta"><AppIcon name="copy" :size="13" /><AppIcon name="retry" :size="13" /><AppIcon class="tw-branch" name="branch" :size="13" /></p>
-              <Transition name="tw-pop"><div v-if="scene.quotePop" class="tw-menu tw-quote"><span><AppIcon name="append" :size="13" />引用到输入框</span><span class="tw-quote-side"><AppIcon name="branch" :size="13" />在侧边对话提问</span></div></Transition>
+              <Transition name="tw-pop"><div v-if="scene.quotePop" class="tw-menu tw-quote"><span><AppIcon name="append" :size="13" />引用到输入框</span><span class="tw-quote-side"><AppIcon name="branch" :size="13" />在附属对话提问</span></div></Transition>
               <Transition name="tw-fade"><p v-if="scene.branch" class="tw-note"><AppIcon name="branch" :size="12" />新分支从这条回答开始，原对话在对话记录里</p></Transition>
             </template>
             <template v-else-if="scene.shotSent">
@@ -333,9 +333,9 @@ const files = computed(() => {
             <div v-else class="tw-empty"><AppIcon name="sparkle" :size="22" /><span>总结这一页</span><span>这个公式怎么来的</span><p class="tw-mem"><em>记忆</em><b v-for="item in MEMORY" :key="item.id" :class="[`tw-mem-${item.id}`, { on: scene.mem === item.id }]">{{ item.label }}</b></p></div>
           </div>
           <Transition name="tw-pop"><div v-if="scene.btw" class="tw-btw"><p><b>/btw</b>{{ TEXT.btwAsk }}</p><p>{{ TEXT.btwReply.slice(0, scene.btwAnswer) }}</p></div></Transition>
-          <Transition name="tw-pop"><div v-if="scene.commands" class="tw-menu tw-cmds"><span class="tw-cmd-btw"><b>/btw</b>顺便问一句</span><span><b>/compress</b>压缩对话</span><span><b>/usage</b>查看用量</span></div></Transition>
+          <Transition name="tw-pop"><div v-if="scene.commands" class="tw-menu tw-cmds"><span class="tw-cmd-btw"><b>/btw</b>顺便问一句</span><span><b>/compress</b>压缩对话</span><span><b>/usage</b>查看用量</span><span><b>/summary</b>总结文档</span></div></Transition>
           <TransitionGroup v-if="scene.shots" tag="div" name="tw-shot" class="tw-shots"><b v-for="index in scene.shots" :key="index" class="tw-shot" :class="[`tw-shot-${index - 1}`, { kept: index <= scene.kept }]"><i>{{ SHOTS[index - 1] }}</i></b></TransitionGroup>
-          <div class="tw-ask" :class="{ typed: scene.draft }"><span>{{ scene.draft || '问问这一页' }}<i v-if="scene.draft" class="tw-caret"></i></span><b class="tw-send"><AppIcon name="arrow-up" :size="14" /></b></div>
+          <div class="tw-ask" :class="{ typed: scene.draft }"><span>{{ scene.draft || '问问这一页' }}<i v-if="scene.draft" class="tw-caret"></i></span><svg class="tw-context" viewBox="0 0 20 20" :style="{ '--ratio': scene.asked ? .18 : .06 }"><circle cx="10" cy="10" r="7.5" /><circle cx="10" cy="10" r="7.5" pathLength="100" /></svg><b class="tw-send"><AppIcon name="arrow-up" :size="14" /></b></div>
         </div>
         <div v-if="scene.side" class="tw-sidechat">
           <header><span class="tw-chip"><AppIcon name="branch" :size="12" />附属对话</span></header>
@@ -443,10 +443,10 @@ const files = computed(() => {
           <p v-if="scene.memBusy || scene.memNote" class="tw-mem-note">{{ scene.memBusy ? '助手正在看这些记忆，按你说的改…' : scene.memNote }}<b v-if="!scene.memBusy">撤销</b></p>
           <h4><span>线性代数讲义</span><small>{{ memRows.length }}</small><AppIcon name="arrow" :size="9" /></h4>
           <div class="tw-mem-rows" :class="{ still: scene.memStill }">
-            <p v-for="row in memRows" :key="row.id" class="tw-mem-row" :class="[`tw-mem-${row.id}`, { lifted: row.id === 'r1' && scene.memDrag !== null, fresh: row.id === 'm' }]" :style="{ translate: `0 ${memMove(row.id)}px` }"><AppIcon class="tw-grip" name="grip" :size="12" /><b>{{ row.name }}</b><em>{{ row.state }}</em></p>
+            <p v-for="row in memRows" :key="row.id" class="tw-mem-row" :class="[`tw-mem-${row.id}`, { lifted: row.id === 'r1' && scene.memDrag !== null, fresh: row.id === 'm' }]" :style="{ translate: `0 ${memMove(row.id)}px` }"><AppIcon class="tw-grip" name="grip" :size="12" /><span><b>{{ row.text }}</b><em>{{ row.kind }}</em></span></p>
           </div>
           <h4><span>Attention Is All You Need</span><small>1</small><AppIcon name="arrow" :size="9" /></h4>
-          <p class="tw-mem-row"><AppIcon class="tw-grip" name="grip" :size="12" /><b>缩放点积注意力</b><em>已弄懂</em></p>
+          <p class="tw-mem-row"><AppIcon class="tw-grip" name="grip" :size="12" /><span><b>英文原文先用中文讲大意，再举例</b><em>偏好</em></span></p>
         </div>
       </aside>
     </section></Transition>
@@ -730,6 +730,7 @@ const files = computed(() => {
 .tw-mem-row.fresh{animation:tw-sum-new 2.2s ease-out both}
 .tw-grip{flex:none;margin-right:4px;color:var(--muted);opacity:0;transition:opacity .2s}
 .tw-mem-row.lifted .tw-grip{opacity:1}
+.tw-mem-row span{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .tw-cm-side-list .tw-mem-ask{position:relative;clip-path:inset(-4px 0 -3px 0);display:flex;align-items:center;gap:4px;height:32px;margin:2px 0 10px;border-bottom:1.5px solid var(--ink);font-size:11.5px}
 .tw-mem-ask em{flex:1;min-width:0;overflow:hidden;white-space:nowrap;color:var(--muted)}
 .tw-mem-ask.typed em{flex:none;color:var(--ink)}
@@ -912,7 +913,11 @@ const files = computed(() => {
 .tw-ask{display:flex;align-items:center;height:44px;padding:0 7px 0 15px;border:1px solid var(--glass-outline);border-radius:999px;color:var(--muted);transition:border-color .2s}
 .tw-ask.typed{border-color:color-mix(in srgb,var(--accent) 60%,transparent);color:var(--ink)}
 .tw-ask span{white-space:nowrap;overflow:hidden}
-.tw-send{display:grid;place-items:center;flex:none;width:30px;height:30px;margin-left:auto;border-radius:50%;background:var(--ink);color:var(--surface)}
+/* 输入框旁的小圆环：离自动压缩还有多远。 */
+.tw-context{--ratio:0;flex:none;width:18px;height:18px;margin-left:auto;rotate:-90deg}
+.tw-context circle{fill:none;stroke:color-mix(in srgb,var(--ink) 14%,transparent);stroke-width:2.6}
+.tw-context circle+circle{stroke:var(--secondary);stroke-linecap:round;stroke-dasharray:100;stroke-dashoffset:calc(100 - var(--ratio) * 100)}
+.tw-send{display:grid;place-items:center;flex:none;width:30px;height:30px;margin-left:6px;border-radius:50%;background:var(--ink);color:var(--surface)}
 .tw-sidechat{flex:0 0 250px;display:flex;flex-direction:column;gap:10px;padding-left:12px;border-left:1px solid var(--line-soft);animation:tw-page .4s var(--ease-out)}
 .tw-quoted{align-self:flex-start;padding:3px 9px;border-left:2px solid var(--accent);color:var(--secondary);font-size:12px}
 

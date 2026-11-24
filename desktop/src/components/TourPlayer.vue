@@ -157,7 +157,7 @@ onBeforeUnmount(() => { alive = false; ++session; document.removeEventListener('
           </div>
           <footer v-if="full" class="tour-foot">
             <button type="button" class="tour-quiet" :class="{ on: memory.hidden }" role="switch" :aria-checked="memory.hidden" @click="toggleHidden"><i><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.4 6.6 11.4 12.6 4.8" /></svg></i>启动时不再自动弹出</button>
-            <span class="tour-hint">循环播放 · 点画面暂停 · 以后可以从设置里打开</span>
+            <span class="tour-hint">点画面暂停 · 可在设置里再次打开</span>
             <button type="button" class="tour-confirm" :disabled="phase !== 'play'" @click="confirm"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.4 6.6 11.4 12.6 4.8" /></svg>看完了</button>
           </footer>
         </div>
