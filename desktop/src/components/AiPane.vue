@@ -756,7 +756,7 @@ function keydown(event: KeyboardEvent) {
     if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); prompt.value = ''; return }
   }
   if (event.key === 'Escape' && btw.value && !prompt.value) { event.preventDefault(); event.stopPropagation(); closeBtw(); return }
-  if (preferences.value.assistant.predictQuestions && prediction.value && !prompt.value) {
+  if (preferences.value.assistant.predictQuestions && prediction.value && !prompt.value && !composing.value && !event.isComposing && event.keyCode !== 229) {
     // Tab 或回车：采用预判的问题，放进输入框里可以再改；发送仍用发送键。
     if ((event.key === 'Tab' || event.key === 'Enter') && plain) { event.preventDefault(); prompt.value = prediction.value; hintLearned('predict-accept'); return }
     if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); dismissed = predictionKey(predictContext()); prediction.value = ''; return }
@@ -1003,6 +1003,8 @@ function send(question?: string) {
 }
 // ---- Predicted next question --------------------------------------------------
 const prediction = ref('')
+// 输入法正在拼字：输入框里还没有字，但猜到的问题和占位文字要让开。
+const composing = ref(false)
 let predicting: AbortController | undefined
 let predictionOwner = ''
 let predictTimer: ReturnType<typeof setTimeout> | undefined
@@ -1247,9 +1249,9 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
           </span>
         </TransitionGroup>
         <div class="prompt-box">
-          <textarea ref="input" v-model="prompt" @paste="pasteImages" :style="{ height: `${composerHeight}px` }" :placeholder="prediction ? '' : placeholder" aria-label="向 AI 提问" :aria-describedby="prediction ? `prediction-${state.id}` : undefined" @keydown="keydown" @input="clearNote" />
+          <textarea ref="input" v-model="prompt" @paste="pasteImages" :style="{ height: `${composerHeight}px` }" :placeholder="prediction || composing ? '' : placeholder" aria-label="向 AI 提问" :aria-describedby="prediction ? `prediction-${state.id}` : undefined" @keydown="keydown" @input="clearNote" @compositionstart="composing = true" @compositionend="composing = false" @blur="composing = false" />
           <!-- 预判的问题：像 Claude Code 一样以淡色出现在空输入框里，按 Tab 或回车采用。 -->
-          <p v-if="prediction && !prompt" :id="`prediction-${state.id}`" class="prompt-ghost"><span>{{ prediction }}</span><span class="visually-hidden">，按 Tab 或回车采用</span></p>
+          <p v-if="prediction && !prompt && !composing" :id="`prediction-${state.id}`" class="prompt-ghost"><span>{{ prediction }}</span><span class="visually-hidden">，按 Tab 或回车采用</span></p>
         </div>
         <div class="composer-actions">
           <button type="button" class="attach-button" :disabled="busy || attachments.length >= MAX_ATTACHMENTS" aria-label="添加图片" :data-tip="busy ? '正在回答，答完才能添加图片' : attachments.length >= MAX_ATTACHMENTS ? `一次最多附 ${MAX_ATTACHMENTS} 张图片` : '添加图片，也可粘贴或拖入'" @click="attachInput?.click()"><AppIcon name="image" :size="16" /></button>
