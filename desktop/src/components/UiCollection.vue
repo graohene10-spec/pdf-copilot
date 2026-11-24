@@ -111,7 +111,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', keydown, true))
       <button type="button" class="uc-danger" @click="remove">删除</button><button type="button" @click="confirming = null">取消</button>
     </div></Transition>
     <div ref="list" class="uc-list" @pointerdown.stop="startBand">
-      <p v-if="!shown.length" class="uc-empty">{{ query ? `没有和「${query}」相关的 Intelligent UI。` : '还没有。' }}</p>
+      <p v-if="!shown.length" class="uc-empty">{{ query ? `没有和「${query}」相关的 Intelligent UI。` : '还没有 Intelligent UI。' }}</p>
       <section v-for="group in groups" :key="group.doc" class="uc-group">
         <h3><AppIcon name="book" :size="14" />{{ group.name }}<span>{{ group.list.length }}</span></h3>
         <TransitionGroup tag="div" class="uc-grid" name="uc-item" appear>

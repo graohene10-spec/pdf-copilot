@@ -139,13 +139,13 @@ async function copy() {
   <section ref="root" class="draft-pane" :style="{ left: `${box.left}px`, width: `${box.width}px` }" role="region" aria-label="总结草稿" @keydown.esc.stop="ask ? (ask = null) : emit('close')">
     <header class="draft-head" :class="{ running: busy }">
       <div class="draft-title"><h3>总结草稿</h3><p :title="title">{{ name }}</p></div>
-      <button v-if="!busy && draft.missed" type="button" class="draft-warn" data-tip="助手抄的原文和草稿对不上，那几处没有改动。点一下让它对照草稿重新给" @click="emit('retry')">{{ draft.missed }} 处没改成 · 让助手重来</button>
+      <button v-if="!busy && draft.missed" type="button" class="draft-warn" data-tip="这几处要改的原文在草稿里没找到。点击让助手重新修改" @click="emit('retry')">{{ draft.missed }} 处未修改 · 重试</button>
       <!-- 助手在忙的时候不在这里写它读到第几段：表头下沿一道流光就够了（和快速解释卡片上的那道一样）。 -->
       <span v-if="!busy && size" class="draft-state">{{ size }} 字</span>
       <span v-else-if="busy" class="draft-live" role="status">{{ draft.writing ? (draft.last === 'edit' ? '正在改' : '正在写') : '助手在忙' }}</span>
       <button v-if="saved" type="button" class="draft-link" :data-tip="`已存为 ${saved}`" @click="emit('open')">已存 · 打开</button>
       <button type="button" class="draft-icon" :disabled="!size" aria-label="复制" :data-tip="size ? '复制 Markdown 原文' : '还没有内容可以复制'" @click="copy"><AppIcon name="copy" :size="15" /></button>
-      <button type="button" class="draft-save" :disabled="!size || busy || saving" :data-tip="saving ? '正在存' : !size ? '还没有内容可以存' : busy ? '助手写完才能存' : saved ? '再存一次，覆盖上次存的那份' : '存成 Markdown，放在原文档的文件夹里，并加入文档库'" @click="emit('save', draft.text)">{{ saving ? '正在存…' : saved ? '再存一次' : '存入文档库' }}</button>
+      <button type="button" class="draft-save" :disabled="!size || busy || saving" :data-tip="saving ? '正在存' : !size ? '还没有内容可以存' : busy ? '助手写完才能存' : saved ? '覆盖上次存的文件' : '存为 Markdown，放在原文档所在文件夹并加入文档库'" @click="emit('save', draft.text)">{{ saving ? '正在存…' : saved ? '再存一次' : '存入文档库' }}</button>
       <button type="button" class="draft-icon" aria-label="收起草稿" data-tip="收起草稿，回到原文" @click="emit('close')"><AppIcon name="close" :size="15" /></button>
     </header>
     <div ref="scroller" class="draft-scroll" @scroll.passive="ask = null">

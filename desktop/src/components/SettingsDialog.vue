@@ -284,7 +284,7 @@ function record(event: KeyboardEvent, action: ShortcutAction) {
   if (event.key === 'Tab' && !event.ctrlKey && !event.altKey && !event.metaKey) return
   if (event.isComposing || event.keyCode === 229 || ['Control', 'Alt', 'Shift', 'Meta'].includes(event.key)) return
   const binding = shortcutFromEvent(event)
-  if (!binding) { captureError.value = '使用 F11 或 Ctrl、Alt、Meta 加其他按键；浏览器保留快捷键不可使用。'; return }
+  if (!binding) { captureError.value = '这个组合不能用。请用 F11，或 Ctrl、Alt、Meta 加其他键。'; return }
   event.preventDefault()
   draft.value.shortcuts[action] = binding
   recording.value = null; captureError.value = ''
@@ -385,9 +385,9 @@ function failureText(item: RenderFailure) {
               <p class="answer-font-preview" :style="{ fontFamily: sketchAnswerStack }">换别的形状也行，定律照样成立——只是没法算。Gauss 1835</p>
             </template>
             <template v-if="draft.appearance.style === 'sketch' || draft.appearance.style === 'warm'">
-              <label class="setting-check"><input v-model="draft.appearance.manifold.show" type="checkbox" :disabled="saving" aria-label="格子纸上显示旋转的流形" /><span>背景动画</span></label>
-              <label class="setting-check"><input v-model="draft.appearance.manifold.reader" type="checkbox" :disabled="saving || !draft.appearance.manifold.show" aria-label="阅读时也显示流形" /><span>阅读时也显示</span></label>
-              <div class="scene-list" :class="{ off: !draft.appearance.manifold.show }" role="group" aria-label="轮换的流形" @mouseleave="scenePeek = undefined">
+              <label class="setting-check"><input v-model="draft.appearance.manifold.show" type="checkbox" :disabled="saving" aria-label="背景动画" /><span>背景动画</span></label>
+              <label class="setting-check"><input v-model="draft.appearance.manifold.reader" type="checkbox" :disabled="saving || !draft.appearance.manifold.show" aria-label="阅读时也显示背景动画" /><span>阅读时也显示</span></label>
+              <div class="scene-list" :class="{ off: !draft.appearance.manifold.show }" role="group" aria-label="轮换的画面" @mouseleave="scenePeek = undefined">
                 <div class="scene-list-head"><span>轮换的画面</span><small>{{ draft.appearance.manifold.shapes.length }} / {{ SCENES.length }}</small><button type="button" :disabled="saving || !draft.appearance.manifold.show" @click="setAllScenes(draft.appearance.manifold.shapes.length < SCENES.length)">{{ draft.appearance.manifold.shapes.length < SCENES.length ? '全选' : '只留一个' }}</button></div>
                 <div v-for="group in SCENE_GROUPS" :key="group.kind" class="scene-group">
                   <span class="scene-group-label">{{ group.label }}</span>
@@ -404,7 +404,7 @@ function failureText(item: RenderFailure) {
               <div v-if="draft.appearance.glassLegibility === 'thicken'" class="setting-row transparency-row"><label for="glass-compensation">补偿强度</label><div class="transparency-control"><input id="glass-compensation" v-model.number="draft.appearance.glassCompensation" :style="{ '--value': draft.appearance.glassCompensation }" :disabled="saving || draft.appearance.glassTransparency === 0" type="range" min="0" max="100" step="1" aria-label="可读性补偿强度" @pointerdown="peek(true)" @keydown="peek(false)" :aria-valuetext="`${draft.appearance.glassCompensation}%`" /><output for="glass-compensation">{{ draft.appearance.glassCompensation }}%</output><span class="slider-endpoints" aria-hidden="true"><span>通透</span><span>清楚</span></span></div></div>
               <label class="setting-row"><span>玻璃底色</span><select v-model="draft.appearance.glassTint" :disabled="saving || draft.appearance.glassTransparency === 0" aria-label="玻璃底色"><option v-for="item in GLASS_TINTS" :key="item.id" :value="item.id">{{ item.label }}</option></select></label>
             </div>
-            <HelpTip>这几项只在图片底板下生效。身后的图片和文字颜色太接近时，那一块玻璃会自动加厚，所以有的面板发白、有的不发白。补偿强度调低，玻璃更通透，对比度改用文字光晕补；「切换字色」保持透明，按身后明暗换字色；「取自底图颜色」让玻璃带上图片的色调。</HelpTip>
+            <HelpTip>只对图片底板生效。「加厚玻璃」在文字看不清的地方加厚玻璃，强度越低越通透；「切换字色」保持透明，按背后深浅换字色；「取自底图颜色」让玻璃带上图片的色调。</HelpTip>
             <h3 class="section-heading">底板</h3>
             <div class="settings-group background-setting">
               <div class="backdrop-grid" role="radiogroup" aria-label="底板">
@@ -448,7 +448,7 @@ function failureText(item: RenderFailure) {
             <label class="setting-check"><input v-model="draft.pdf.fitOnPanelOverflow" type="checkbox" aria-label="侧栏打开后页面超宽时适应宽度" /><span>侧栏打开后，仅在页面超宽时适应宽度</span></label>
             <label class="setting-check"><input v-model="draft.pdf.openAssistantOnCapture" type="checkbox" aria-label="PDF 框选后自动打开阅读助手" /><span>PDF 框选后自动打开阅读助手</span></label>
             </div>
-            <HelpTip>启用 AI 页的框选快捷提问后，优先显示选区旁的按钮。</HelpTip>
+            <HelpTip>开启 AI 页的「框选快捷提问」时，先显示选区旁的提问气泡。</HelpTip>
             <h3 class="section-heading">Markdown</h3>
             <div class="settings-group">
             <label class="setting-row"><span>默认字号</span><span class="number-control"><input v-model.number="draft.markdown.fontSize" type="number" min="13" max="28" step="1" aria-label="Markdown 默认字号" /><span>px</span></span></label>

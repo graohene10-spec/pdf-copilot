@@ -51,7 +51,7 @@ function check() { void updater.check({ manual: true, includePrerelease: prerele
       <label class="setting-check"><input v-model="autoCheck" type="checkbox" :disabled="props.disabled" aria-label="自动检查更新" /><span>自动检查更新</span></label>
       <label class="setting-check"><input v-model="prerelease" type="checkbox" :disabled="props.disabled" aria-label="接收测试版更新" aria-describedby="update-prerelease-help" /><span>接收测试版更新</span></label>
     </div>
-    <p class="settings-help">上次检查：{{ lastChecked }}　<HelpTip id="update-prerelease-help">测试版供提前试用新功能，可能不够稳定；关闭后，等到更高的正式版发布时再更新。<template v-if="isDesktop && state.status && !state.status.installed">免安装版同样一键更新：新版本会直接替换当前文件夹里的程序，文档库和设置保留。</template></HelpTip></p>
+    <p class="settings-help">上次检查：{{ lastChecked }}　<HelpTip id="update-prerelease-help">测试版先带上新功能，可能不稳定。关闭后只更新到正式版。<template v-if="isDesktop && state.status && !state.status.installed">免安装版更新时直接替换当前文件夹里的程序，文档库和设置保留。</template></HelpTip></p>
   </section>
 </template>
 

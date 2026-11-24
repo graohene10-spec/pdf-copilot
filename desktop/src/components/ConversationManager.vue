@@ -226,7 +226,7 @@ function setMode(documentId: string, talk: ChatState, mode: MemoryMode) {
   const before = memoryMode(talk), kept = clone(memory.entries[talk.id]), id = talk.id
   if (before === mode) return
   flip(() => { setConversationMemory(documentId, id, mode); version.value++ })
-  record(`记忆改为「${MODES.find(item => item.id === mode)!.label}」`, () => { setConversationMemory(documentId, id, before); if (kept) restoreMemory(id, kept) })
+  record(`把记忆改为「${MODES.find(item => item.id === mode)!.label}」`, () => { setConversationMemory(documentId, id, before); if (kept) restoreMemory(id, kept) })
 }
 function forget(conversationId: string, index: number) {
   const kept = clone(memory.entries[conversationId])
@@ -274,7 +274,7 @@ async function moveKeys(keys: string[], doc: Book, at = 0) {
   prune(); moving.value = undefined; query.value = ''; folded.delete(doc.id); version.value++; saveOrder()
   await nextTick(); glide(snap)
   if (!changed) { if (busy) say(`${busy} 段正在回答，没有移动。`); return }
-  record(moved.length ? `把 ${moved.length} 段对话移到《${doc.title}》${busy ? `（${busy} 段正在回答，没动）` : ''}` : '调整顺序', async () => {
+  record(moved.length ? `把 ${moved.length} 段对话移到《${doc.title}》${busy ? `（${busy} 段正在回答，未移动）` : ''}` : '调整顺序', async () => {
     for (const item of moved) await moveConversation(doc.id, item.conversationId, item.from)
     order.talks = before; order.books = booksBefore; picked.clear(); prune(); saveOrder()
   })
@@ -423,7 +423,7 @@ const memReorder = useReorder({
     let at = 0
     for (const id of talks) { const entry = memory.entries[id]!; entry.items = texts.slice(at, at + entry.items.length); at += entry.items.length }
     replaceMemory(snapshotMemory())
-    record('挪了一条记忆', () => replaceMemory(before))
+    record('移动一条记忆', () => replaceMemory(before))
   },
   hold: 240,
 })
@@ -436,7 +436,7 @@ function memGrab(event: PointerEvent, row: { talk: { id: string }; item: string 
 watch(ready, value => { if (value) void organizeBacklog() }, { immediate: true })
 watch(organizing, value => { if (!value) version.value++ })
 const lit = ref('')
-onMounted(() => offerSpaced('manager-gestures', ['右键'], '操作，拖动是移动和排序'))
+onMounted(() => offerSpaced('manager-gestures', ['右键'], '打开菜单，拖动可移动或排序'))
 // 右边一栏：哪几本书的记忆收起来了。
 const foldedMem = reactive(new Set<string>())
 function foldMem(id: string) { if (foldedMem.has(id)) foldedMem.delete(id); else foldedMem.add(id) }
@@ -455,9 +455,9 @@ async function askMemory() {
   try {
     const { changed, removed } = await reviseMemory(text, memRequest.signal)
     memAsk.value = ''
-    if (changed || removed) { record(`让助手改了记忆：改 ${changed} 条，删 ${removed} 条`, () => replaceMemory(before)); noteMemory(`改好了：改写 ${changed} 条，去掉 ${removed} 条`, { undo: true }) }
-    else noteMemory('助手看过了，没有需要改的')
-  } catch (error: any) { if (memRequest?.signal.aborted) noteMemory('已停下，记忆没有改动'); else noteMemory(error?.message || String(error), { bad: true }) }
+    if (changed || removed) { record(`修改记忆（改写 ${changed} 条，删除 ${removed} 条）`, () => replaceMemory(before)); noteMemory(`已改写 ${changed} 条，删除 ${removed} 条`, { undo: true }) }
+    else noteMemory('没有需要改的记忆')
+  } catch (error: any) { if (memRequest?.signal.aborted) noteMemory('已停止，记忆未改动'); else noteMemory(error?.message || String(error), { bad: true }) }
   finally { memBusy.value = false; memRequest = undefined }
 }
 function stopMemory() { memRequest?.abort() }
@@ -500,7 +500,7 @@ function memDown(event: PointerEvent, row: MemRow, group: { rows: MemRow[] }) {
     if (!to || (to.row.talk.id === row.talk.id && (to.row.index + (to.after ? 1 : 0) === row.index || to.row.index + (to.after ? 1 : 0) === row.index + 1))) return
     const before = snapshotMemory()
     flip(() => moveItem(row.talk.id, row.index, to.row.talk.id, to.row.index + (to.after ? 1 : 0)))
-    record('挪了一条记忆', () => replaceMemory(before))
+    record('移动一条记忆', () => replaceMemory(before))
   }
   window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up)
 }
@@ -531,7 +531,7 @@ function memKey(event: KeyboardEvent, row: MemRow, group: { rows: MemRow[] }) {
     const same = other.talk.id === row.talk.id, to = up ? other.index : other.index + 1
     const before = snapshotMemory()
     flip(() => moveItem(row.talk.id, row.index, other.talk.id, to))
-    record('挪了一条记忆', () => replaceMemory(before))
+    record('移动一条记忆', () => replaceMemory(before))
     focusMem(`${other.talk.id}:${!up && same ? other.index : to}`)
   }
 }
@@ -652,7 +652,7 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey, true); clea
                   </button>
                 </div>
                 <template v-if="memoryMode(talk) !== 'off' && itemsOf(talk.id).length">
-                  <button type="button" class="cm-act cm-knob has" :class="{ shut: !opened.has(talk.id) }" :data-f="`m:${talk.id}`" :aria-expanded="opened.has(talk.id)" :data-tip="opened.has(talk.id) ? '收起记忆' : '看这段对话记下了什么'" :aria-label="`记忆 ${itemsOf(talk.id).length} 条`" @click="toggle(opened, talk.id)"><AppIcon v-if="opened.has(talk.id)" name="arrow" :size="11" /><template v-else>{{ itemsOf(talk.id).length }}</template></button>
+                  <button type="button" class="cm-act cm-knob has" :class="{ shut: !opened.has(talk.id) }" :data-f="`m:${talk.id}`" :aria-expanded="opened.has(talk.id)" :data-tip="opened.has(talk.id) ? '收起记忆' : '展开记忆'" :aria-label="`记忆 ${itemsOf(talk.id).length} 条`" @click="toggle(opened, talk.id)"><AppIcon v-if="opened.has(talk.id)" name="arrow" :size="11" /><template v-else>{{ itemsOf(talk.id).length }}</template></button>
                   <div v-if="opened.has(talk.id)" v-links class="cm-kids">
                     <svg class="cm-links" aria-hidden="true"></svg>
                     <div v-for="(item, place) in itemsOf(talk.id)" :key="item" class="cm-kid" :data-f="`i:${talk.id}:${item}`"><div class="cm-item"><span><b>{{ parts(item)[0] }}</b><em v-if="parts(item)[1]">{{ parts(item)[1] }}</em></span><button type="button" class="cm-act" aria-label="忘掉这一条" data-tip="忘掉这一条" @click="forget(talk.id, place)"><AppIcon name="close" :size="11" /></button></div></div>
@@ -675,12 +675,12 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey, true); clea
       <Transition name="cm-bar">
         <footer v-if="doomed || drag || picked.size" class="cm-bar">
           <template v-if="doomed">
-            <span>删除 <b>{{ doomed.length }}</b> 段对话，它们记下的记忆一起删掉</span>
+            <span>删除 <b>{{ doomed.length }}</b> 段对话和它们的记忆</span>
             <button type="button" class="cm-button" @click="doomed = undefined">取消</button><button type="button" class="cm-button danger" @click="remove">删除</button>
           </template>
           <template v-else-if="drag">
             <span>{{ drop?.line ? '松手放在红线处' : drop ? '松手移到这本书' : '拖到一本书或一段对话旁边' }}</span>
-            <span class="cm-other" :class="{ on: drop?.book === OTHER }" data-drop><AppIcon name="folder" :size="14" />树上没有的书…</span>
+            <span class="cm-other" :class="{ on: drop?.book === OTHER }" data-drop><AppIcon name="folder" :size="14" />其他书…</span>
           </template>
           <template v-else>
             <span><b>{{ picked.size }}</b> 段已选</span>
@@ -700,12 +700,12 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey, true); clea
         <path class="a-block" d="M330 180h44v44h-44zM24 20h18v18H24zM50 20h8v8h-8z" />
         <circle class="a-ball" cx="352" cy="62" r="13" />
       </svg>
-      <header class="cm-side-head"><h3 data-tip="一段对话答完，助手把你学了什么、掌握得怎样整理成几行；下次提问时先看这些，决定从哪讲起、讲多细。每条记忆都记在它那本书名下。新对话下面选「本书」只用这本书的，选「全局」所有书的都用，选「不用」既不读也不记">记忆</h3><b>{{ remembered }}</b><span>条</span></header>
+      <header class="cm-side-head"><h3 data-tip="从对话里自动整理，助手回答时参考">记忆</h3><b>{{ remembered }}</b><span>条</span></header>
       <div class="cm-shelf">
         <p v-if="ready && !remembered" class="cm-side-note">还没有记忆。</p>
-        <p v-if="organizing" class="cm-organizing" role="status"><i class="cm-spin" aria-hidden="true"></i>正在整理 {{ organizing }}</p>
-        <form v-if="remembered" class="cm-mem-ask" :class="{ busy: memBusy }" :aria-busy="memBusy" @submit.prevent="askMemory"><input v-model="memAsk" :readonly="memBusy" maxlength="500" placeholder="让助手改：比如 把循环相关的合并成一条" aria-label="让助手改记忆" @keydown.enter="($event.isComposing || $event.keyCode === 229) && $event.preventDefault()" @keydown.esc.prevent.stop="!$event.isComposing && memAskEsc($event)" /><button v-if="memBusy" type="button" class="cm-act" aria-label="停下" data-tip="助手正在改，点一下停下" @click="stopMemory"><AppIcon name="stop" :size="13" /></button><button v-else type="submit" class="cm-act" :disabled="!memAsk.trim()" aria-label="让助手改" :data-tip="memAsk.trim() ? '让助手按这句话改记忆；改完可以撤销' : '先写一句要怎么改'"><AppIcon name="arrow-up" :size="13" /></button></form>
-        <p v-if="memBusy || memNote" class="cm-mem-note" :class="{ bad: memNote?.bad }" role="status">{{ memBusy ? '助手正在看这些记忆，按你说的改…' : memNote!.text }}<button v-if="!memBusy && memNote?.undo" type="button" @click="undoLast(); memNote = null">撤销</button></p>
+        <p v-if="organizing" class="cm-organizing" role="status"><i class="cm-spin" aria-hidden="true"></i>正在整理记忆 {{ organizing }}</p>
+        <form v-if="remembered" class="cm-mem-ask" :class="{ busy: memBusy }" :aria-busy="memBusy" @submit.prevent="askMemory"><input v-model="memAsk" :readonly="memBusy" maxlength="500" placeholder="让助手改：比如 把循环相关的合并成一条" aria-label="让助手改记忆" @keydown.enter="($event.isComposing || $event.keyCode === 229) && $event.preventDefault()" @keydown.esc.prevent.stop="!$event.isComposing && memAskEsc($event)" /><button v-if="memBusy" type="button" class="cm-act" aria-label="停止" data-tip="停止修改" @click="stopMemory"><AppIcon name="stop" :size="13" /></button><button v-else type="submit" class="cm-act" :disabled="!memAsk.trim()" aria-label="让助手改" :data-tip="memAsk.trim() ? '按这句话修改记忆' : '先写要怎么改'"><AppIcon name="arrow-up" :size="13" /></button></form>
+        <p v-if="memBusy || memNote" class="cm-mem-note" :class="{ bad: memNote?.bad }" role="status">{{ memBusy ? '正在修改记忆…' : memNote!.text }}<button v-if="!memBusy && memNote?.undo" type="button" @click="undoLast(); memNote = null">撤销</button></p>
         <section v-for="group in groups" :key="group.root.id" class="cm-group" :class="{ folded: foldedMem.has(group.root.id) }">
           <h4><button type="button" class="cm-fold" :aria-expanded="!foldedMem.has(group.root.id)" :data-tip="foldedMem.has(group.root.id) ? '展开' : '收起'" @click="foldMem(group.root.id)"><span>{{ group.root.title }}</span><small>{{ group.rows.length }}</small><AppIcon name="arrow" :size="10" /></button></h4>
           <ul v-if="!foldedMem.has(group.root.id)"><li v-for="row in group.rows" :key="memRowKey(row)" :class="{ on: lit === row.id, 'reorder-lifted': memReorder.dragging.value === memRowKey(row) }" tabindex="0" :data-mem="`${row.talk.id}:${row.index}`" :data-reorder-id="memRowKey(row)" @pointerdown="memGrab($event, row, group)" @keydown="memKey($event, row, group)" :data-tip="`来自「${row.talk.title || '新对话'}」`" @click="!memDragged && reveal(row.id)"><AppIcon name="grip" :size="12" class="cm-grip" aria-hidden="true" /><input v-if="memEdit === `${row.talk.id}:${row.index}`" v-model="memText" class="cm-mem-edit" maxlength="80" aria-label="修改这条记忆" @click.stop @keydown.enter.prevent="!$event.isComposing && $event.keyCode !== 229 && (saveMemEdit(row), focusMem(`${row.talk.id}:${row.index}`))" @keydown.esc.prevent.stop="memEdit = ''; focusMem(`${row.talk.id}:${row.index}`)" @blur="saveMemEdit(row)" /><span v-else><b>{{ parts(row.item)[0] }}</b><em v-if="parts(row.item)[1]">{{ parts(row.item)[1] }}</em></span><button type="button" class="cm-act" aria-label="修改这一条" data-tip="修改这一条" @click.stop="startMemEdit(row)"><AppIcon name="edit" :size="11" /></button><button type="button" class="cm-act" aria-label="忘掉这一条" data-tip="忘掉这一条" @click.stop="forget(row.talk.id, row.index)"><AppIcon name="close" :size="11" /></button></li></ul>

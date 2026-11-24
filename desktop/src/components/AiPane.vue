@@ -398,7 +398,7 @@ function thinkingTime(message: Message) { return seconds((message.firstTokenAt |
 // 记忆的三种用法。说明里把「读」和「记」都说到，免得只知道一半。
 const MEMORY_MODES: { id: MemoryMode; label: string; note: string }[] = [
   { id: 'book', label: '本书', note: '只用这本书里记下的' },
-  { id: 'all', label: '全局', note: '所有书里记下的都用，包括这本书的' },
+  { id: 'all', label: '全局', note: '用所有书里记下的' },
   { id: 'off', label: '不用', note: '不读记忆，这段对话也不记' },
 ]
 const memoryNow = computed(() => memoryMode(state.value))
@@ -848,10 +848,10 @@ function pickImages(event: Event) {
 }
 // ---- 斜杠命令：/btw 顺便问、/compress 压缩对话、/usage 用量 ------------------------------
 const COMMANDS = [
-  { name: '/btw', args: '问题', label: '顺便问一句', hint: '快速问一个旁支问题，回答不写进对话记录' },
-  { name: '/compress', args: '要求（可选）', label: '压缩对话', hint: '把目前的对话写成摘要，之后只带摘要发送，省上下文' },
-  { name: '/usage', args: '', label: '查看用量', hint: '本次会话的 token 用量、上下文占用与明细' },
-  { name: '/summary', args: '', label: '总结文档', hint: '把这份文档写成一份总结，存进文档库' },
+  { name: '/btw', args: '问题', label: '顺便问一句', hint: '问一个旁支问题，不写进对话记录' },
+  { name: '/compress', args: '要求（可选）', label: '压缩对话', hint: '立即压缩对话，腾出上下文' },
+  { name: '/usage', args: '', label: '查看用量', hint: '本次会话的 token 用量与上下文占用' },
+  { name: '/summary', args: '', label: '总结文档', hint: '为这份文档写一份总结，可存进文档库' },
 ]
 const commandIndex = ref(0)
 // 只有还在输入命令名（以 / 开头、还没有空格）时才弹出命令列表。
@@ -883,7 +883,7 @@ function sendBtwReply() { const text = btwDraft.value.trim(); if (!text || btw.v
 function adoptBtw(target: 'new' | 'append' | 'side') {
   const turns = btwDone.value
   if (!turns.length) return
-  if (target === 'append' && busy.value) { attachNote('请等这一轮回答结束再并入。'); return }
+  if (target === 'append' && busy.value) { attachNote('请等这一轮回答结束再移入。'); return }
   const moved = adoptTurns(props.document.id, state.value.id, target, turns.map(turn => ({ question: turn.question, answer: turn.answer, startedAt: turn.startedAt, finishedAt: turn.finishedAt })))
   closeBtw()
   if (target === 'new') useConversation(moved.id)
@@ -980,7 +980,7 @@ async function revise(conversationId: string, text: string) {
   void send(text)
 }
 function send(question?: string) {
-  if (question === undefined && busy.value && prompt.value.trim()) { attachNote('这一轮还没答完。等它答完，或者先按停止。'); return }
+  if (question === undefined && busy.value && prompt.value.trim()) { attachNote('请等这一轮回答结束再发送，或先点停止。'); return }
   // 斜杠命令在本地处理，不当作问题发出去。
   const command = question === undefined ? prompt.value.trim().match(/^\/(btw|compress|usage|summary)(?:\s+([\s\S]*))?$/i) : null
   if (command) { prompt.value = ''; void runCommand(command[1]!.toLowerCase(), (command[2] || '').trim()); return }
@@ -1060,12 +1060,12 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
     <div class="ai-main">
     <header v-if="side" class="ai-header side-header">
       <span class="side-badge"><AppIcon name="branch" :size="13" />附属对话</span>
-      <span class="side-of" :title="mainTitle">挂在「{{ mainTitle || '新对话' }}」旁边</span>
-      <button class="header-button close-assistant" data-tip="收起附属对话（内容会保留）" aria-label="收起附属对话" @click="emit('close')"><AppIcon name="close" :size="15" /></button>
+      <span class="side-of" :title="mainTitle">主对话：{{ mainTitle || '新对话' }}</span>
+      <button class="header-button close-assistant" data-tip="收起附属对话，内容保留" aria-label="收起附属对话" @click="emit('close')"><AppIcon name="close" :size="15" /></button>
     </header>
     <header v-else class="ai-header" :class="{ draggable }" @pointerdown="grabHeader">
       <!-- 标题左边这颗键进对话管理。挪面板的位置直接拖整条表头。 -->
-      <button v-if="!side" type="button" class="header-button manage-entry" aria-label="对话管理" data-tip="对话管理：全部对话和记忆" @pointerdown.stop @click="historyOpen = false; emit('manage')"><AppIcon name="threads" :size="16" /></button>
+      <button v-if="!side" type="button" class="header-button manage-entry" aria-label="对话管理" data-tip="管理全部对话和记忆" @pointerdown.stop @click="historyOpen = false; emit('manage')"><AppIcon name="threads" :size="16" /></button>
       <div class="history-host">
         <button class="conversation-title" :aria-expanded="historyOpen" aria-label="对话记录" data-tip="对话记录" @click="historyOpen = !historyOpen"><span class="title-text">{{ title }}</span><small>{{ document.title }}</small></button>
         <Transition name="history-pop">
@@ -1094,16 +1094,16 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
             <div v-else class="history-list">
               <div v-for="item in history" :key="item.id" class="history-item" :class="{ current: item.id === conversationId }">
                 <button v-marquee class="history-open" @click="useConversation(item.id)"><span><AppIcon v-if="item.branchOf" name="branch" :size="12" class="branch-mark" /><span class="marquee-text">{{ item.title || '新对话' }}</span></span><small>{{ relative(item.updatedAt) }} · {{ Math.ceil(item.messages.length / 2) }} 问<template v-if="item.request"> · 回答中</template></small></button>
-                <button v-if="item.messages.length" class="history-delete" :class="{ armed: deleteArmed === item.id }" :aria-label="deleteArmed === item.id ? `再点一次，删除对话 ${item.title}` : `删除对话 ${item.title}`" :data-tip="deleteArmed === item.id ? '再点一次删除，删了找不回来' : '删除这段对话'" @click.stop="removeConversation(item.id)"><template v-if="deleteArmed === item.id">再点一次</template><AppIcon v-else name="trash" :size="13" /></button>
+                <button v-if="item.messages.length" class="history-delete" :class="{ armed: deleteArmed === item.id }" :aria-label="deleteArmed === item.id ? `再点一次，删除对话 ${item.title}` : `删除对话 ${item.title}`" :data-tip="deleteArmed === item.id ? '再点一次删除，无法恢复' : '删除这段对话'" @click.stop="removeConversation(item.id)"><template v-if="deleteArmed === item.id">再点一次</template><AppIcon v-else name="trash" :size="13" /></button>
               </div>
               <p v-if="!history.length" class="history-empty">还没有对话。</p>
             </div>
           </div>
         </Transition>
       </div>
-      <span v-if="taskSummary.running || taskSummary.queued" class="task-summary" :data-tip="`同时最多 ${taskSummary.limits.concurrent} 题，Codex ${taskSummary.limits.codex} 题`">{{ taskSummary.running }} 运行<template v-if="taskSummary.queued"> · {{ taskSummary.queued }} 等待</template></span>
+      <span v-if="taskSummary.running || taskSummary.queued" class="task-summary" :data-tip="`同时最多 ${taskSummary.limits.concurrent} 个请求，Codex 最多 ${taskSummary.limits.codex} 个`">{{ taskSummary.running }} 进行中<template v-if="taskSummary.queued"> · {{ taskSummary.queued }} 排队</template></span>
       <button class="header-button side-toggle" :class="{ on: sideOpen, has: hasSideContent && !sideOpen }" :aria-pressed="sideOpen" :aria-label="sideOpen ? '收起附属对话' : '打开附属对话'" :data-tip="sideOpen ? '收起附属对话' : hasSideContent ? '打开附属对话（有内容）' : '打开附属对话'" @click="toggleSide"><AppIcon name="branch" :size="15" /></button>
-      <button v-if="state.summary?.started" class="header-button draft-toggle" :class="{ on: draftOpen }" :aria-pressed="draftOpen" :aria-label="draftOpen ? '收起总结草稿' : '打开总结草稿'" :data-tip="draftOpen ? '收起总结草稿，回到原文' : '打开总结草稿'" @click="emit('draft', { conversationId: state.id })"><AppIcon name="doc" :size="16" /></button>
+      <button v-if="state.summary?.started" class="header-button draft-toggle" :class="{ on: draftOpen }" :aria-pressed="draftOpen" :aria-label="draftOpen ? '收起总结草稿' : '打开总结草稿'" :data-tip="draftOpen ? '收起总结草稿' : '打开总结草稿'" @click="emit('draft', { conversationId: state.id })"><AppIcon name="doc" :size="16" /></button>
       <button class="header-button" aria-label="新对话" :data-tip="messages.length ? '新对话' : '这已经是一段新对话'" :disabled="!messages.length" @click="startConversation"><AppIcon name="compose" :size="16" /></button>
       <button class="header-button close-assistant" data-tip="关闭阅读助手" aria-label="关闭阅读助手" @click="emit('close')"><AppIcon name="close" :size="15" /></button>
     </header>
@@ -1125,7 +1125,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
           <div v-if="message.note" class="note-card" :data-tip="`${noteLabel(message)}：${message.content.slice(0, 300)}`">
             <AppIcon class="note-icon" :name="message.note === 'self' ? 'pin' : 'branch'" :size="11" />
             <span class="note-text">{{ message.content }}</span>
-            <button type="button" class="note-remove" aria-label="移除这条摘录" @click="removeMessage(document.id, state.id, message.id)"><AppIcon name="close" :size="10" /></button>
+            <button type="button" class="note-remove" aria-label="移除摘录" @click="removeMessage(document.id, state.id, message.id)"><AppIcon name="close" :size="10" /></button>
           </div>
           <template v-else-if="message.role === 'user'">
             <SummarySetup v-if="editing === message.id && editOptions" v-model:extra="editExtra" editing :title="document.title" :options="editOptions" :outline="getOutline?.(document.id)" @start="submitSetupEdit(message)" @cancel="cancelEdit" />
@@ -1236,7 +1236,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
           <span v-for="item in excerpts" :key="item.id" class="excerpt-chip" :class="{ arrived: arrivedExcerpt === item.id }" :data-tip="`${excerptLabel(item.from)}：${item.text.slice(0, 300)}`">
             <AppIcon class="note-icon" :name="item.from === 'self' ? 'pin' : 'branch'" :size="11" />
             <span class="note-text">{{ item.text }}</span>
-            <button type="button" class="note-remove" aria-label="移除这段摘录" @click="removeExcerpt(document.id, state.id, item.id)"><AppIcon name="close" :size="10" /></button>
+            <button type="button" class="note-remove" aria-label="移除摘录" @click="removeExcerpt(document.id, state.id, item.id)"><AppIcon name="close" :size="10" /></button>
           </span>
         </TransitionGroup>
         <!-- 随问题发出的图片：只有图。留住的带红框；刚截的那张点一下留住，双击放大。 -->
@@ -1442,7 +1442,7 @@ button:disabled{opacity:.4;cursor:default}
 .quote-pop-enter-active{transition:opacity var(--dur-1) var(--ease-soft),scale var(--dur-2) var(--spring-snappy)}
 .quote-pop-leave-active{transition:opacity var(--dur-1) var(--ease-soft)}
 .quote-pop-enter-from{opacity:0;scale:.92}.quote-pop-leave-to{opacity:0}
-.ai-body{position:relative;flex:1;min-height:0;display:flex;-webkit-mask-image:linear-gradient(180deg,transparent 0,#000 14px,#000 calc(100% - 14px),transparent 100%);mask-image:linear-gradient(180deg,transparent 0,#000 14px,#000 calc(100% - 14px),transparent 100%)}
+.ai-body{position:relative;flex:1;min-height:0;display:flex;-webkit-mask-image:linear-gradient(180deg,transparent 0,#000 14px);mask-image:linear-gradient(180deg,transparent 0,#000 14px)}
 /* 上下沿的淡出遮罩挂在外层 .ai-body 上，而不是滚动容器本身。对话列表单独成一层（will-change）：
    半透明玻璃上的文字默认不走合成滚动，滚轮每动一帧都要把整屏文字重新栅格化，长回答里就一顿一顿的。 */
 .ai-messages{flex:1;min-width:0;overflow:auto;overscroll-behavior:contain;padding:18px 26px 8px 18px;scrollbar-width:none;will-change:transform}
