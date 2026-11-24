@@ -20,16 +20,16 @@ export const memoryMode = (conversation: { memory?: unknown }): MemoryMode => co
 const MODE_KEY = 'ai.memory.mode'
 export function defaultMemoryMode(): MemoryMode { try { const value = localStorage.getItem(MODE_KEY); return value === 'all' || value === 'off' ? value : 'book' } catch { return 'book' } }
 export function rememberMemoryMode(mode: MemoryMode) { try { localStorage.setItem(MODE_KEY, mode) } catch { /* 只在这次有效 */ } }
-export type MemoryEntry = { documentId: string; documentTitle: string; title: string; at: number; items: string[]; /** 整理时这段对话有多少条消息。 */ count: number; /** 只留在本书，还是所有书共用。老记录没有这一项，算共用。 */ scope?: 'book' | 'all' }
+export type MemoryEntry = { documentId: string; documentTitle: string; title: string; at: number; items: string[]; /** 整理时这段对话有多少条消息。 */ count: number; v?: number; /** 只留在本书，还是所有书共用。老记录没有这一项，算共用。 */ scope?: 'book' | 'all' }
 const KEY = 'ai.memory.v1'
-const MAX_ITEMS = 8
+const MAX_ITEMS = 5
 export const memory = reactive<{ entries: Record<string, MemoryEntry>; ready: boolean }>({ entries: {}, ready: false })
 const loaded: Promise<void> = (async () => {
   try {
     const value = JSON.parse(await library.getSetting(KEY) || '{}')
     for (const [id, entry] of Object.entries<any>(value?.entries || {})) {
       if (!entry || !Array.isArray(entry.items)) continue
-      memory.entries[id] = { documentId: String(entry.documentId || ''), documentTitle: String(entry.documentTitle || ''), title: String(entry.title || ''), at: Number(entry.at) || 0, count: Number(entry.count) || 0, ...(entry.scope === 'book' ? { scope: 'book' as const } : {}), items: entry.items.filter((item: unknown) => typeof item === 'string' && item.trim()).slice(0, MAX_ITEMS) }
+      memory.entries[id] = { documentId: String(entry.documentId || ''), documentTitle: String(entry.documentTitle || ''), title: String(entry.title || ''), at: Number(entry.at) || 0, count: Number(entry.count) || 0, ...(Number(entry.v) ? { v: Number(entry.v) } : {}), ...(entry.scope === 'book' ? { scope: 'book' as const } : {}), items: entry.items.filter((item: unknown) => typeof item === 'string' && item.trim()).slice(0, MAX_ITEMS) }
     }
   } catch { /* 读不到就从空的开始 */ }
   // 以前各段对话各记各的，同一件事会记好几遍：打开时先清一遍。
@@ -45,7 +45,6 @@ export function forgetItem(conversationId: string, index: number) {
   const entry = memory.entries[conversationId]
   if (!entry) return
   entry.items.splice(index, 1)
-  if (!entry.items.length) delete memory.entries[conversationId]
   persist()
 }
 /** 读者自己改一条的写法。 */
@@ -79,7 +78,7 @@ export function revisePrompt(instruction: string, rows: { n: number; book: strin
     '按要求修改这份记录，然后只输出一个 JSON 数组，不要任何别的话，也不要放进代码块：[{"id": 编号, "text": "这一条现在的写法"}]',
     '- 要求没有涉及的条目原样保留，照抄进数组；',
     '- 要删掉的条目不要出现在数组里；把几条合并成一条时，留其中一个编号，其余的不出现；',
-    '- 每条不超过 40 个字；掌握情况仍然只用「已弄懂、问过还不熟、反复卡住」这三种说法；',
+    '- 每条一句话，不超过 50 个字；开头方括号里的类别（偏好、背景、进度、难点、已会）保留；',
     '- 不要添加记录里没有的内容，不要推测读者的身份和水平；',
     '- 数组里的先后就是之后显示的先后。',
     '\n记录：',
@@ -127,17 +126,30 @@ export function retagMemory(conversationId: string, patch: Partial<Pick<MemoryEn
   if (entry) { Object.assign(entry, patch); persist() }
 }
 
-/** 整理用的提示词：只记学了什么、掌握得怎样，不猜读者是谁。 */
+/** 记忆的写法版本：换了提取方式以后，旧版整理的对话在后台重新整理一遍。 */
+export const MEMORY_VERSION = 2
+/**
+ * 整理用的提示词。做法参照 mem0 的事实提取：只从读者自己说的话里提取以后还用得上的事实，
+ * 和已有的记忆对照后决定新增、改写还是不动；问过一次不等于不会。
+ */
 export function memoryPrompt(documentTitle: string, transcript: string, previous: string[], elsewhere: string[] = []) {
   return [
-    `下面是读者和阅读助手围绕《${documentTitle}》的一段对话。请整理出读者在这段对话里学了什么，供以后判断讲解的起点和深度。`,
-    '要求：',
-    `- 每行一条，以「- 」开头，最多 ${MAX_ITEMS} 条，每条不超过 40 个字；`,
-    '- 每条写清楚是哪个概念、方法或结论，再写掌握情况，只用这三种说法之一：已弄懂、问过还不熟、反复卡住；',
-    '- 只写对话里确实出现的内容。不要推测读者的身份、目的、水平或情绪，不要记姓名、联系方式等个人信息；',
-    '- 寒暄、怎么用软件、与学习无关的闲聊不记；没有值得记的就只回复「无」。',
-    previous.length ? `\n此前为这段对话整理过的记录（在它的基础上更新，合并重复的，掌握情况有变化就改）：\n${previous.map(item => `- ${item}`).join('\n')}` : '',
-    elsewhere.length ? `\n这本书的其他对话里已经记过下面这些。同一个概念不要换个说法再记一遍：这段对话没有带来新情况就不写；掌握情况变了，就照它原来的说法写出现在的情况（会替换掉旧的那条）：\n${elsewhere.map(item => `- ${item}`).join('\n')}` : '',
+    `你在替一位阅读助手维护它对读者的长期记忆。下面是读者和助手围绕《${documentTitle}》的一段对话。从中提取以后陪这位读者读书时还用得上的事实。`,
+    '值得记的只有这几类，每条前面用方括号标出类别：',
+    '- [偏好] 读者对讲解方式、语言、格式、详略明确提过的要求。例：[偏好] 英文原文要先用中文讲大意，再给例子',
+    '- [背景] 读者自己说出的基础、专业、读这本书的目的。例：[背景] 学过线性代数，为了准备抽象代数考试',
+    '- [进度] 读到哪里、做完了哪些题、约好接下来看什么。例：[进度] 第 1 章读完，做了习题 1.40–1.52',
+    '- [难点] 读者明确表示没懂、同一处追问了两次以上，或者自己做错的地方；写出具体卡在哪一步。例：[难点] 分不清「对运算封闭」和「对逆元封闭」，以为有限子集的结论对无限集也成立',
+    '- [已会] 读者自己正确复述、做对，或明说已经明白的内容。',
+    '规则：',
+    '- 主要依据读者说的话；助手讲了什么不算读者的事实。',
+    '- 读者只是问了一次某个概念，不算难点，也不用记。不要把问过的概念逐条列出来。',
+    '- 不要推测。读者没说过的身份、水平、情绪一律不写；不记姓名、联系方式等个人信息。',
+    `- 宁少勿滥：最多 ${MAX_ITEMS} 条，通常 0–3 条，每条一句话、不超过 50 个字，写成离开这段对话也看得懂的完整句子。`,
+    '- 没有值得记的就只回复「无」。这很常见。',
+    '输出：每行一条，以「- 」开头，不要别的话。',
+    previous.length ? `\n这段对话此前记下的（在它的基础上更新：仍然成立的照抄，变了的改写，不成立的去掉，再加上新的）：\n${previous.map(item => `- ${item}`).join('\n')}` : '',
+    elsewhere.length ? `\n这位读者别处已经记过的（已经有的不要重复；情况变了，就照原来的说法写出现在的情况，它会替换旧的那条）：\n${elsewhere.map(item => `- ${item}`).join('\n')}` : '',
     `\n对话：\n"""\n${transcript}\n"""`,
   ].filter(Boolean).join('\n')
 }
@@ -147,7 +159,7 @@ export function parseMemory(text: string): string[] {
 
 type Turn = { role: 'user' | 'assistant'; content: string }
 /** 一条记录说的是哪件事：去掉末尾的掌握情况和标点空白，用来认出「同一件事记了两遍」。 */
-export const topicOf = (item: string) => item.replace(/[，,。；;：:、\s]*(已弄懂|问过还不熟|反复卡住)[。.\s]*$/, '').replace(/[\s，,。；;：:、「」《》()（）]/g, '').toLowerCase()
+export const topicOf = (item: string) => item.replace(/^\[[^\]]{1,4}\]\s*/, '').replace(/[，,。；;：:、\s]*(已弄懂|问过还不熟|反复卡住)[。.\s]*$/, '').replace(/[\s，,。；;：:、「」《》()（）]/g, '').toLowerCase()
 /**
  * 一本书里说同一件事的记录只留一条：留最新整理的那段对话里的（keep 给了就以它为准）。
  * 不问模型，只认「去掉掌握情况后一字不差」或者一条完全包含另一条。返回删了几条。
@@ -164,7 +176,7 @@ export function tidy(documentId: string, keep?: string): number {
       if (seen.some(other => other === topic || (Math.min(other.length, topic.length) >= 8 && (other.includes(topic) || topic.includes(other))))) { removed++; return false }
       seen.push(topic); return true
     })
-    if (kept.length !== entry.items.length) { if (kept.length) entry.items = kept; else delete memory.entries[id] }
+    if (kept.length !== entry.items.length) entry.items = kept
   }
   return removed
 }
@@ -195,20 +207,22 @@ export async function memorize(conversation: { id: string; title: string; docume
   await loaded
   const previous = memory.entries[conversation.id]
   if (memoryMode(conversation) === 'off') return
-  if (running.has(conversation.id) || turns.length < 2 || previous?.count === turns.length) return
+  const current = previous?.v === MEMORY_VERSION ? previous : undefined
+  if (running.has(conversation.id) || turns.length < 2 || current?.count === turns.length) return
   running.add(conversation.id)
   const controller = new AbortController(), limit = window.setTimeout(() => controller.abort(), 60000)
   try {
     // 只看还没整理过的部分，前面带两条衔接；太长的回答截掉后半。
-    const fresh = turns.slice(Math.max(0, (previous?.count || 0) - 2)).slice(-16)
-    const transcript = fresh.map(turn => `${turn.role === 'user' ? '读者' : '助手'}：${turn.content.slice(0, turn.role === 'user' ? 1500 : 2500)}`).join('\n\n').slice(0, 24000)
+    const fresh = turns.slice(Math.max(0, (current?.count || 0) - 2)).slice(-40)
+    const transcript = fresh.map(turn => `${turn.role === 'user' ? '读者' : '助手'}：${turn.content.slice(0, turn.role === 'user' ? 1500 : 500)}`).join('\n\n').slice(-30000)
     const { complete } = await import('./complete')
     const elsewhere = Object.entries(memory.entries).filter(([id, entry]) => id !== conversation.id && entry.documentId === conversation.documentId).flatMap(([, entry]) => entry.items).slice(0, 60)
-    const items = parseMemory(await complete({ kind: 'memory', fast: true, signal: controller.signal, messages: [{ role: 'user', content: memoryPrompt(documentTitle, transcript, previous?.items || [], elsewhere) }] }))
-    const kept = items.length ? items : previous?.items || []
+    const items = parseMemory(await complete({ kind: 'memory', fast: true, signal: controller.signal, messages: [{ role: 'user', content: memoryPrompt(documentTitle, transcript, current?.items || [], elsewhere) }] }))
+    const kept = items.length ? items : current?.items || []
     // 整理要等模型回话，这期间读者可能改了设置：按现在的来。
     const mode = memoryMode(conversation)
-    if (kept.length && mode !== 'off') memory.entries[conversation.id] = { documentId: conversation.documentId, documentTitle, title: conversation.title, at: Date.now(), items: kept, count: turns.length, scope: mode }
+    // 没有值得记的也留一条空记录，免得每次都再问一遍模型。
+    if (mode !== 'off') memory.entries[conversation.id] = { documentId: conversation.documentId, documentTitle, title: conversation.title, at: Date.now(), items: kept, count: turns.length, v: MEMORY_VERSION, scope: mode }
     // 同一件事只留最新的一条；条目攒多了，让助手在后台把说同一件事的合并掉。读者不用自己动手。
     tidy(conversation.documentId, conversation.id)
     persist()
@@ -244,7 +258,7 @@ export function memoryInstructions(current: { id: string; documentId: string; mo
     '# 读者的学习记录',
     mode === 'book' ? '下面是读者以前在这本书里学过的内容，由系统自动整理，可能不全，也可能过时。' : '下面是读者以前在这个应用里学过的内容，由系统自动整理，可能不全，也可能过时。',
     lines.join('\n'),
-    '这份记录首先用来判断讲解的起点和深浅：读者已弄懂的概念可以直接用、不必从头解释；还不熟或卡住过的，用到时多铺垫一步。',
+    '[偏好] 是读者提过的要求，照做；[背景][进度] 用来定讲解的起点；[已会] 的可以直接用、不必从头解释；[难点] 用到时多铺垫一步。',
     '也可以把当前的问题和读者学过的东西联系起来，但要过一道门槛：',
     '- 只有某一条和当前的问题有实质关系时才联系：它是这个问题的前提，是同一个思想的另一种形式，或者读者上次卡住的正是这里，而且提一句确实能让这次讲得更清楚。这时自然地带上即可，不用回避。',
     '- 只是沾边的不要提：同属一个领域、出现了同一个词、勉强能做个类比，都不算。多数问题和记录里的任何一条都没有这种关系，不联系是常态，不是疏漏。',

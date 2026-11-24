@@ -9,7 +9,7 @@ import { useReorder } from '../ui/reorder'
 import { searchTalks } from '../ai/conversation-search'
 import { hintLearned, offerSpaced } from '../ui/hints'
 import { library } from '../sdk'
-import { booksReady, conversationBooks, conversationBundle, conversations, deleteConversation, forgetBook, loadConversations, memorizeNow, moveConversation, rememberBook, revealTarget, renameConversation, restoreConversations, setConversationMemory, type ChatState } from '../ai/workspace'
+import { booksReady, conversationBooks, conversationBundle, conversations, deleteConversation, forgetBook, loadConversations, forkPoint, organizeBacklog, organizing, moveConversation, rememberBook, revealTarget, renameConversation, restoreConversations, setConversationMemory, type ChatState } from '../ai/workspace'
 import { editItem, forgetItem, moveItem, replaceMemory, reviseMemory, snapshotMemory, memory, memoryMode, memoryReady, restoreMemory, type MemoryMode } from '../ai/memory'
 
 type Book = { id: string; title: string; kind: string }
@@ -30,7 +30,25 @@ const recent = (id: string): ChatState[] => conversations(id).filter(item => ite
 function talks(id: string): ChatState[] {
   void version.value
   const rank = order.talks[id] || []
-  return recent(id).map((item, index) => ({ item, at: rank.indexOf(item.id), index })).sort((a, b) => a.at - b.at || a.index - b.index).map(entry => entry.item)
+  const flat = recent(id).map((item, index) => ({ item, at: rank.indexOf(item.id), index })).sort((a, b) => a.at - b.at || a.index - b.index).map(entry => entry.item)
+  // 分支跟在它分出来的那段对话后面，缩进一级。
+  const known = new Set(flat.map(item => item.id)), parentOf = (item: ChatState) => item.branchOf && item.branchOf.conversationId !== item.id && known.has(item.branchOf.conversationId) ? item.branchOf.conversationId : ''
+  const out: ChatState[] = [], seen = new Set<string>()
+  const put = (item: ChatState, depth: number) => {
+    if (seen.has(item.id)) return
+    seen.add(item.id); out.push(item); depths.set(item.id, Math.min(depth, 3))
+    for (const kid of flat) if (parentOf(kid) === item.id) put(kid, depth + 1)
+  }
+  for (const item of flat) if (!parentOf(item)) put(item, 0)
+  for (const item of flat) put(item, 0)
+  return out
+}
+const depths = new Map<string, number>()
+const depthOf = (id: string) => depths.get(id) || 0
+// 分支自己的部分：从第几问分出去，之后又问了几问。
+function forkOf(root: { list: ChatState[] }, talk: ChatState) {
+  const source = root.list.find(item => item.id === talk.branchOf?.conversationId), at = forkPoint(talk, source)
+  return { at: Math.ceil(at / 2), own: Math.ceil((talk.messages.length - at) / 2), title: source?.title || talk.branchOf?.title || '原对话' }
 }
 onMounted(async () => {
   await Promise.all([booksReady, memoryReady()])
@@ -64,7 +82,7 @@ const folded = reactive(new Set<string>()), opened = reactive(new Set<string>())
 const itemsOf = (id: string) => memory.entries[id]?.items || []
 const memoryOf = (root: { list: ChatState[] }) => root.list.reduce((sum, talk) => sum + itemsOf(talk.id).length, 0)
 // 记忆是「概念：掌握得怎样」一行：拆开，概念深一点，掌握情况淡一点。
-const parts = (item: string) => { const at = item.search(/[：:]/); return at > 0 ? [item.slice(0, at), item.slice(at + 1).trim()] : [item, ''] }
+const parts = (item: string) => { const tag = item.match(/^\[([^\]]{1,4})\]\s*(.+)$/s); if (tag) return [tag[2]!, tag[1]!]; const at = item.search(/[：:]/); return at > 0 ? [item.slice(0, at), item.slice(at + 1).trim()] : [item, ''] }
 // 选中的，按树上的先后排好（移动后保持它们原来的相对顺序）。
 const pickedInOrder = () => roots.value.flatMap(root => root.list.map(talk => key(root.id, talk.id))).filter(id => picked.has(id))
 function relative(time: number) {
@@ -369,7 +387,7 @@ function peekIn(talk: ChatState, event: PointerEvent) {
   // 已经在看一段了，移到下一段马上换，不用再等。
   peekTimer = setTimeout(() => {
     let answerAt = talk.messages.length - 1
-    while (answerAt >= 0 && !(talk.messages[answerAt]!.role === 'assistant' && talk.messages[answerAt]!.content && !talk.messages[answerAt]!.failed)) answerAt--
+    while (answerAt >= 0 && !(talk.messages[answerAt]!.role === 'assistant' && talk.messages[answerAt]!.content && !talk.messages[answerAt]!.failed && !talk.messages[answerAt]!.summary)) answerAt--
     const asked = talk.messages.slice(0, answerAt < 0 ? undefined : answerAt).reverse().find(message => message.role === 'user')
     if (!asked && answerAt < 0) return
     const box = el.getBoundingClientRect(), page = dialog.value!.getBoundingClientRect()
@@ -414,26 +432,9 @@ function memGrab(event: PointerEvent, row: { talk: { id: string }; item: string 
   memList = (event.currentTarget as HTMLElement).parentElement; memGroup = group.root.id
   memReorder.pointerdown(event, memRowKey(row))
 }
-// 可以记、但还没整理过的对话（这个功能出来之前的那些）。
-const pending = computed(() => roots.value.flatMap(root => root.list.filter(talk => memoryMode(talk) !== 'off' && !talk.request && talk.messages.length >= 2 && !memory.entries[talk.id]).map(talk => ({ root, talk }))))
-const organizing = ref('')
-async function organize(list = pending.value) {
-  if (organizing.value) return
-  const had = remembered.value
-  let done = 0
-  for (const { root, talk } of list) { organizing.value = `${++done} / ${list.length}`; await memorizeNow(root.id, talk.id).catch(() => {}) }
-  organizing.value = ''; version.value++
-  if (remembered.value > had) say(`整理出 ${remembered.value - had} 条记忆`)
-}
-// 还没整理过的对话不用读者来点：管理页一打开就在后台整理，每段对话这次打开应用只试一回。
-const triedOrganize = new Set<string>()
-watch([ready, () => pending.value.length], () => {
-  if (!ready.value || organizing.value) return
-  const fresh = pending.value.filter(item => !triedOrganize.has(item.talk.id))
-  if (!fresh.length) return
-  for (const item of fresh) triedOrganize.add(item.talk.id)
-  void organize(fresh)
-}, { immediate: true })
+// 还没整理过的对话在后台自己整理（应用打开后就开始，不等这一页）；这里只显示进度。
+watch(ready, value => { if (value) void organizeBacklog() }, { immediate: true })
+watch(organizing, value => { if (!value) version.value++ })
 const lit = ref('')
 onMounted(() => offerSpaced('manager-gestures', ['右键'], '操作，拖动是移动和排序'))
 // 右边一栏：哪几本书的记忆收起来了。
@@ -544,12 +545,20 @@ function reveal(id: string) {
 }
 
 // ---- 父子之间的折线：量出来画，位置变了跟着滑 ----
-const GAP = 60
+const GAP = 60, INDENT = 26
 function draw(el: HTMLElement) {
   const svg = el.querySelector<SVGSVGElement>(':scope > svg.cm-links')
   if (!svg) return
   const mid = (el.offsetHeight / 2).toFixed(1)
-  const lines = ([...el.children].filter(child => child.classList.contains('cm-kid')) as HTMLElement[]).map(kid => { const y = (kid.offsetTop + kid.offsetHeight / 2).toFixed(1); return `M0 ${mid}L${GAP * .3} ${mid}L${GAP * .7} ${y}L${GAP} ${y}` })
+  // 分支不从书上引线：从它分出来的那段对话底下拐一道弯过来。
+  const above: HTMLElement[] = []
+  const lines = ([...el.children].filter(child => child.classList.contains('cm-kid')) as HTMLElement[]).map(kid => {
+    const y = (kid.offsetTop + kid.offsetHeight / 2).toFixed(1), depth = Number(kid.dataset.depth) || 0, parent = above[depth - 1]
+    above[depth] = kid; above.length = depth + 1
+    if (!depth || !parent) return `M0 ${mid}L${GAP * .3} ${mid}L${GAP * .7} ${y}L${GAP} ${y}`
+    const x = GAP + (depth - 1) * INDENT + 13, from = (parent.offsetTop + parent.offsetHeight / 2 + 20).toFixed(1)
+    return `M${x} ${from}L${x} ${from}L${x} ${y}L${GAP + depth * INDENT} ${y}`
+  })
   if (svg.childElementCount !== lines.length) {
     svg.innerHTML = lines.map(d => `<path style='d:path("${d}")' d="${d}"/>`).join('')
     if (!opening.value) svg.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 360, easing: 'ease-out' })
@@ -633,12 +642,13 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey, true); clea
             <button type="button" class="cm-act cm-knob" :class="{ shut: folded.has(root.id) }" :data-f="`k:${root.id}`" :aria-expanded="!folded.has(root.id)" :aria-label="folded.has(root.id) ? '展开' : '收起'" @click="toggle(folded, root.id)"><template v-if="folded.has(root.id)">{{ root.list.length }}</template><AppIcon v-else name="arrow" :size="11" /></button>
             <div v-if="!folded.has(root.id)" v-links class="cm-kids">
               <svg class="cm-links" aria-hidden="true"></svg>
-              <div v-for="(talk, index) in root.list" :key="talk.id" class="cm-kid" :data-f="`c:${talk.id}`" :style="{ '--i': at + 1 + Math.min(index, 8) * .6 }">
+              <div v-for="(talk, index) in root.list" :key="talk.id" class="cm-kid" :class="{ branch: depthOf(talk.id) }" :data-depth="depthOf(talk.id)" :data-f="`c:${talk.id}`" :style="{ '--i': at + 1 + Math.min(index, 8) * .6, '--depth': depthOf(talk.id) }">
                 <div class="cm-talk" :class="{ picked: picked.has(key(root.id, talk.id)), lifted: drag && picked.has(key(root.id, talk.id)), has: memoryMode(talk) !== 'off' && itemsOf(talk.id).length, mute: memoryMode(talk) === 'off', lit: lit === key(root.id, talk.id) }" :data-key="key(root.id, talk.id)" :data-f="`t:${talk.id}`" @contextmenu.prevent.stop="talkMenu(root, talk, $event)" @pointerenter="peekIn(talk, $event)" @pointerleave="peekOut">
                   <input v-if="renaming === key(root.id, talk.id)" ref="field" v-model="draft" class="cm-rename" maxlength="60" aria-label="对话名称" @keydown.enter.prevent="!$event.isComposing && $event.keyCode !== 229 && endRename(true)" @keydown.esc.prevent.stop="endRename(false)" @blur="endRename(true)" @pointerdown.stop />
                   <button v-else type="button" class="cm-talk-open" @click="openTalk(root, talk, $event)">
-                    <AppIcon v-if="talk.branchOf" name="branch" :size="12" /><span class="cm-title">{{ talk.title || '新对话' }}</span>
-                    <small><template v-if="talk.request">回答中 · </template>{{ Math.ceil(talk.messages.length / 2) }} 问 · {{ relative(talk.updatedAt) }}</small>
+                    <AppIcon v-if="talk.branchOf" name="branch" :size="12" /><span class="cm-title">{{ depthOf(talk.id) ? (talk.title || '新对话').replace(/ · 分支$/, '') : talk.title || '新对话' }}</span>
+                    <small v-if="depthOf(talk.id)" :data-tip="`从「${forkOf(root, talk).title}」第 ${forkOf(root, talk).at} 问之后分出`"><template v-if="talk.request">回答中 · </template>第 {{ forkOf(root, talk).at }} 问后 · +{{ forkOf(root, talk).own }} 问</small>
+                    <small v-else><template v-if="talk.request">回答中 · </template>{{ Math.ceil(talk.messages.length / 2) }} 问 · {{ relative(talk.updatedAt) }}</small>
                   </button>
                 </div>
                 <template v-if="memoryMode(talk) !== 'off' && itemsOf(talk.id).length">
@@ -825,6 +835,7 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey, true); clea
 .cm-links{position:absolute;left:-60px;top:0;width:60px;height:100%;overflow:visible;pointer-events:none}
 .cm-links :deep(path){fill:none;stroke:var(--cm-line);stroke-width:1.4;stroke-linejoin:miter;transition:d .36s cubic-bezier(.22,.9,.28,1)}
 .cm-kid{display:flex;align-items:center}
+.cm-kid.branch>.cm-talk{margin-left:calc(var(--depth) * 26px);width:calc(320px - var(--depth) * 26px)}
 .cm-page.opening .cm-root{animation:cm-node .5s var(--ease-out) both;animation-delay:calc(var(--i,0) * 70ms)}
 .cm-page.opening .cm-kid{animation:cm-node .46s var(--ease-out) both;animation-delay:calc(var(--i,0) * 70ms + 90ms)}
 .cm-page.opening .cm-links{animation:cm-in .5s var(--ease-out) both;animation-delay:calc(var(--i,0) * 70ms + 160ms)}

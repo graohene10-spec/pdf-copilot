@@ -5,7 +5,7 @@ import { library } from '../sdk'
 import { recordUsage } from './usage'
 import { WINDOW, compactionPrompt, fullness, handoff, splitForCompaction } from './compaction'
 import { SUMMARY_READING, summaryDraft, summaryInstructions, summaryContinues, lastSummaryOptions, readSwitches, MAX_SUMMARY_ROUNDS, type SummaryState, type SummaryOptions } from './summary'
-import { defaultMemoryMode, forgetConversation, memorize, memoryInstructions, memoryMode, memoryReady, rememberMemoryMode, retagMemory, type MemoryMode } from './memory'
+import { MEMORY_VERSION, memory, defaultMemoryMode, forgetConversation, memorize, memoryInstructions, memoryMode, memoryReady, rememberMemoryMode, retagMemory, type MemoryMode } from './memory'
 
 export type Usage = { input?: number; output?: number; reasoning?: number; estimated: boolean }
 export type Message = {
@@ -245,8 +245,7 @@ export function restoreConversations(documentId: string, items: ChatState[]) {
 export function memorizeNow(documentId: string, conversationId: string): Promise<void> {
   const conversation = chats(documentId).list.find(item => item.id === conversationId)
   if (!conversation || conversation.sideOf || memoryMode(conversation) === 'off' || conversation.request) return Promise.resolve()
-  const turns = conversation.messages.filter(message => !message.note && !message.summary && message.content && !(message.failed && message.role === 'assistant')).map(message => ({ role: message.role, content: message.content }))
-  return memorize(conversation, conversationBooks[documentId]?.title || '', turns)
+  return memorize(conversation, conversationBooks[documentId]?.title || '', memoryTurns(conversation))
 }
 /** 把一段对话（连同它的附属对话）挪到另一本书名下。正在回答的不能挪。 */
 export async function moveConversation(fromId: string, conversationId: string, to: { id: string; title: string; kind: string }): Promise<boolean> {
@@ -286,11 +285,47 @@ export function rememberBook(descriptor: { id: string; title: string; kind: stri
 export function forgetBook(documentId: string) { if (conversationBooks[documentId]) { delete conversationBooks[documentId]; saveBooks() } }
 
 // ---- 记忆：对话告一段落后，整理出读者学了什么 ----
+/** 分支是从第几条消息之后分出去的：和原对话开头相同的那一段。 */
+export function forkPoint(branch: ChatState, source: ChatState | undefined): number {
+  if (!source) return 0
+  let at = 0
+  while (at < branch.messages.length && at < source.messages.length && branch.messages[at]!.role === source.messages[at]!.role && branch.messages[at]!.content === source.messages[at]!.content) at++
+  return at
+}
+const memoryTurns = (conversation: ChatState) => {
+  // 分支里抄过来的那段已经在原对话里整理过，只看分出去以后的。
+  const from = conversation.branchOf ? forkPoint(conversation, chats(conversation.documentId).list.find(item => item.id === conversation.branchOf!.conversationId)) : 0
+  return conversation.messages.slice(from).filter(message => !message.note && !message.summary && message.content && !(message.failed && message.role === 'assistant')).map(message => ({ role: message.role, content: message.content }))
+}
+/** 正在后台整理第几段 / 共几段；空着就是没在整理。 */
+export const organizing = ref('')
+const triedBacklog = new Set<string>()
+/**
+ * 把还没整理进记忆的对话（或者用旧办法整理的）在后台补上。应用打开后自己跑，不用读者去点；
+ * 每段对话这次打开应用只试一回。
+ */
+export async function organizeBacklog(): Promise<void> {
+  if (organizing.value) return
+  await booksReady; await memoryReady()
+  const ids = Object.keys(conversationBooks)
+  await Promise.all(ids.map(id => loadConversations(id).catch(() => {})))
+  const list = ids.flatMap(id => chats(id).list).filter(talk => !talk.sideOf && !talk.summary && memoryMode(talk) !== 'off' && !talk.request && talk.messages.length >= 2 && memory.entries[talk.id]?.v !== MEMORY_VERSION && !triedBacklog.has(talk.id))
+  if (!list.length) return
+  // 旧的在前：新对话记下的以后覆盖旧对话里说同一件事的。
+  list.sort((a, b) => a.updatedAt - b.updatedAt)
+  let done = 0
+  try {
+    for (const talk of list) {
+      triedBacklog.add(talk.id); organizing.value = `${++done} / ${list.length}`
+      await memorize(talk, conversationBooks[talk.documentId]?.title || '', memoryTurns(talk)).catch(() => {})
+    }
+  } finally { organizing.value = '' }
+}
+if (typeof window !== 'undefined') setTimeout(() => { void organizeBacklog() }, 12000)
 const memoryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 function runMemory(conversation: ChatState) {
   if (conversation.sideOf || memoryMode(conversation) === 'off' || conversation.request) return
-  const turns = conversation.messages.filter(message => !message.note && !message.summary && message.content && !(message.failed && message.role === 'assistant')).map(message => ({ role: message.role, content: message.content }))
-  void memorize(conversation, conversationBooks[conversation.documentId]?.title || '', turns)
+  void memorize(conversation, conversationBooks[conversation.documentId]?.title || '', memoryTurns(conversation))
 }
 /** 答完之后过一会儿再整理：接着追问的话，等这一串问完一起整理。 */
 function scheduleMemory(conversation: ChatState, delay = 40000) {
