@@ -547,6 +547,8 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
     // 同一张图只发一次（同一块地方截了两遍）。
     const images = [...new Set([...(selection.image ? [selection.image] : []), ...attached])]
     if (images.reduce((sum, image) => sum + image.length, 0) > 8 * 1024 * 1024) throw new Error('图片总量太大，请减少几张或换小一点的图片。')
+    // 以前留下的长对话：发问时就已经到量，这一问照常发，同时在后台压缩。
+    if (!state.summary && !sendOptions.replace && fullness(state.messages) >= 1) void compressConversation(descriptor, state.id, '', false)
     const user: Message = { id: crypto.randomUUID(), role: 'user', content: question, sources: [], images, ...(sendOptions.auto ? { auto: true } : {}), ...(excerpts.length ? { excerpts } : {}), ask: { includeDocument, selectionOnly: sendOptions.selectionOnly, page: context.page, text: selection.text ? String(selection.text).slice(0, 20000) : undefined } }
     const wireContent = sendOptions.selectionOnly
       ? `${question}${excerptText(excerpts)}${selection.text ? '\n\n[用户选中的内容]\n' + selection.text : ''}${selection.image ? '\n\n[附图是用户在文档里框选的区域，问题针对它]' : ''}${attached.length ? `\n\n[用户附上了 ${attached.length} 张图片]` : ''}`
