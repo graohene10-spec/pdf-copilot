@@ -132,7 +132,7 @@ watch(tab, () => void nextTick(locate))
           <p class="cp-read"><small><AppIcon :name="hero.icon" :size="13" />{{ hero.small }}</small><b>{{ hero.big }}</b><span>{{ hero.sub }}</span></p>
         </div>
         <!-- 到点 -->
-        <button v-if="clock.ringing" type="button" class="cp-go cp-ok" @click="done">好</button>
+        <button v-if="clock.ringing" type="button" class="cp-go cp-ok" @click="done">关闭</button>
         <template v-else>
           <div class="cp-tabs" role="tablist">
             <button type="button" role="tab" :aria-selected="tab === 'timer'" :class="{ on: tab === 'timer' }" @click="tab = 'timer'">计时</button>
@@ -153,7 +153,7 @@ watch(tab, () => void nextTick(locate))
                 <span v-for="(unit, index) in ['时', '分', '秒']" :key="unit" class="cp-unit" :style="{ '--i': index }">{{ unit }}</span>
               </div>
               <p class="cp-presets"><button v-for="minutes in PRESETS" :key="minutes" type="button" :class="{ on: total === minutes * 60000 }" @click="preset(minutes)">{{ minutes < 60 ? `${minutes} 分` : `${minutes / 60} 小时` }}</button></p>
-              <button type="button" class="cp-go" :aria-label="total ? '开始倒计时' : '开始正计时'" :data-tip="total ? '开始倒计时' : '没填时间：正计时'" @click="start"><AppIcon name="play" :size="14" />{{ total ? '开始' : '正计时' }}</button>
+              <button type="button" class="cp-go" :aria-label="total ? '开始倒计时' : '开始正计时'" :data-tip="total ? '开始倒计时' : '未设时长，从 0 开始计时'" @click="start"><AppIcon name="play" :size="14" />{{ total ? '开始' : '正计时' }}</button>
             </template>
           </template>
           <!-- 闹钟 -->

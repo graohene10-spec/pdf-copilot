@@ -61,7 +61,7 @@ function discard() {
     <div class="ec-head" @dblclick.stop="startAsk">
       <AppIcon class="ec-spark" name="sparkle" :size="13" />
       <ExplainTitle ref="title" :item="item" :limit="60" @ask="askExplain(item, $event)" />
-      <button type="button" class="ec-tool en-keep" :class="{ on: saved }" :disabled="item.status !== 'done'" :aria-pressed="saved" :aria-label="saved ? '已记入文档' : '记入文档'" :data-tip="saved ? '已记入文档，点一下取消' : '记入文档'" @click="keep"><AppIcon name="bookmark" :size="13" /></button>
+      <button type="button" class="ec-tool en-keep" :class="{ on: saved }" :disabled="item.status !== 'done'" :aria-pressed="saved" :aria-label="saved ? '已记入文档' : '记入文档'" :data-tip="saved ? '已记入文档，点击取消' : '记入文档'" @click="keep"><AppIcon name="bookmark" :size="13" /></button>
       <button type="button" class="ec-tool" aria-label="关闭" data-tip="关闭" @click="discard"><AppIcon name="close" :size="12" /></button>
     </div>
     <i class="ec-rule" :class="{ running: item.status === 'running' }" aria-hidden="true"></i>
@@ -70,7 +70,7 @@ function discard() {
       <button type="button" class="ec-tool" :disabled="item.status === 'running'" aria-label="深入" data-tip="深入" data-tip-fast @click="again('deeper')"><AppIcon name="deeper" :size="16" /></button>
       <button type="button" class="ec-tool" :disabled="item.status === 'running'" aria-label="简化" data-tip="简化" data-tip-fast @click="again('simpler')"><AppIcon name="simpler" :size="16" /></button>
       <button type="button" class="ec-tool" :disabled="item.status === 'running'" aria-label="举例" data-tip="举例" data-tip-fast @click="again('example')"><AppIcon name="example" :size="16" /></button>
-      <button type="button" class="ec-tool" :disabled="item.status === 'running'" aria-label="可视化讲解" data-tip="可视化讲解（Intelligent UI）" data-tip-fast @click="again('visual')"><AppIcon name="visual" :size="16" /></button>
+      <button type="button" class="ec-tool" :disabled="item.status === 'running'" aria-label="可视化讲解" data-tip="可视化讲解" data-tip-fast @click="again('visual')"><AppIcon name="visual" :size="16" /></button>
     </p><ThoughtChip :item="item" /></div>
     <i class="en-resize" aria-hidden="true" data-tip="拖动调整大小，双击恢复" @pointerdown="startResize" @dblclick="resetSize"></i>
   </aside>

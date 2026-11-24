@@ -47,17 +47,17 @@ function keydown(event: KeyboardEvent) { if (event.key === 'Escape') { event.pre
     <section ref="card" class="usage-card" role="dialog" aria-label="用量" tabindex="-1" @keydown="keydown">
       <header class="usage-head">
         <h3>用量</h3>
-        <button type="button" class="usage-icon" :aria-label="copied ? '已复制' : '复制用量'" :data-tip="copied ? '已复制' : '复制为文字'" @click="copy"><AppIcon :name="copied ? 'check' : 'copy'" :size="15" /></button>
+        <button type="button" class="usage-icon" :aria-label="copied ? '已复制' : '复制用量'" :data-tip="copied ? '已复制' : '复制用量'" @click="copy"><AppIcon :name="copied ? 'check' : 'copy'" :size="15" /></button>
         <button type="button" class="usage-icon" aria-label="关闭" data-tip="关闭" data-tip-key="Esc" @click="emit('close')"><AppIcon name="close" :size="14" /></button>
       </header>
 
       <div class="usage-meter">
         <div class="usage-row"><span>当前对话上下文</span><span class="usage-note">{{ count(contextUsed) }} / {{ count(contextLimit) }} tokens</span><b :class="tone(contextRatio)">{{ percent(contextRatio) }}</b></div>
         <div class="usage-bar" :class="tone(contextRatio)"><i :style="{ width: percent(contextRatio) }"></i></div>
-        <p v-if="contextRatio >= .6" class="usage-tip">上下文快满了：输入 <code>/compress</code> 把对话压缩成摘要。</p>
+        <p v-if="contextRatio >= .6" class="usage-tip">对话快满时会自动压缩，点输入框旁的圆环可立即压缩。</p>
       </div>
       <div class="usage-meter">
-        <div class="usage-row"><span>今天 · 所有模型</span><span class="usage-note">{{ count(todayTokens) }} tokens · 近两周单日最多的</span><b class="calm">{{ percent(todayRatio) }}</b></div>
+        <div class="usage-row"><span>今天 · 所有模型</span><span class="usage-note">{{ count(todayTokens) }} tokens · 占近两周单日峰值</span><b class="calm">{{ percent(todayRatio) }}</b></div>
         <div class="usage-bar daily"><i :style="{ width: percent(todayRatio) }"></i></div>
       </div>
 
@@ -81,7 +81,7 @@ function keydown(event: KeyboardEvent) { if (event.key === 'Escape') { event.pre
           <div class="usage-row"><span>请求</span><b>{{ item.requests }}</b></div>
         </div>
       </template>
-      <p v-else class="usage-empty">这次打开应用后还没有向模型发过请求。当前模型：{{ model }}</p>
+      <p v-else class="usage-empty">本次会话还没有请求。当前模型：{{ model }}</p>
 
       <template v-if="summary.byKind.length">
         <h4 class="usage-muted">用在哪里（本次会话）</h4>

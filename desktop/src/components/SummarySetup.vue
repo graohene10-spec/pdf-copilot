@@ -153,7 +153,7 @@ function toggleMulti() { if (!options.complete) options.multi = !options.multi }
       </div>
       <label v-if="editing" class="sum-row sum-extra"><span class="sum-label wide">其他要求</span><textarea :value="extra" rows="2" maxlength="2000" placeholder="表里没有的，写在这里" @input="emit('update:extra', ($event.target as HTMLTextAreaElement).value)"></textarea></label>
     </div>
-    <footer class="sum-foot"><button type="button" class="sum-cancel" @click="emit('cancel')">{{ editing ? '取消' : '取消' }}</button><button type="button" class="sum-start" @click="emit('start')">{{ editing ? '重新总结' : '开始总结' }}</button></footer>
+    <footer class="sum-foot"><button type="button" class="sum-cancel" @click="emit('cancel')">取消</button><button type="button" class="sum-start" @click="emit('start')">{{ editing ? '重新总结' : '开始总结' }}</button></footer>
   </section>
 </template>
 

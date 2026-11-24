@@ -284,7 +284,7 @@ export function normalizePreferences(value: unknown, legacyTheme?: string | null
 }
 export function preferenceErrors(value: AppPreferences): string[] {
   const errors: string[] = []
-  if (!['system', 'light', 'dark'].includes(value.appearance.theme)) errors.push('请选择有效外观。')
+  if (!['system', 'light', 'dark'].includes(value.appearance.theme)) errors.push('请选择有效主题。')
   if (!['grid', 'list'].includes(value.appearance.libraryView)) errors.push('请选择有效文档视图。')
   if (!UI_STYLES.some(item => item.id === value.appearance.style)) errors.push('请选择有效界面风格。')
   if (!SKETCH_ANSWER_FONTS.some(item => item.id === value.appearance.sketchAnswerFont)) errors.push('请选择有效的回答字体。')
@@ -310,25 +310,25 @@ export function preferenceErrors(value: AppPreferences): string[] {
   errors.push(...captureQuestionErrors(value.assistant?.captureQuestions))
   const avatar = value.assistant?.avatar
   if (!avatar || !AVATARS.some(item => item.id === avatar.kind)) errors.push('请选择有效的助手形象。')
-  else if (avatar.image !== null && !validAvatarImage(avatar.image)) errors.push('助手形象图片无效，请选择 3 MB 以内的 PNG、JPEG、GIF 或 WebP。')
+  else if (avatar.image !== null && !validAvatarImage(avatar.image)) errors.push('助手形象图片无效，请选择 2 MB 以内的 PNG、JPEG、GIF 或 WebP。')
   else if (avatar.kind === 'custom' && !avatar.image) errors.push('请先选择自定义助手形象的图片。')
   const greeting = value.assistant?.greeting
-  if (!greeting || !GREETING_STYLES.some(item => item.id === greeting.style) || typeof greeting.custom !== 'string') errors.push('请选择有效的问候语样式。')
+  if (!greeting || !GREETING_STYLES.some(item => item.id === greeting.style) || typeof greeting.custom !== 'string') errors.push('请选择有效的问候样式。')
   else if (greeting.custom.length > MAX_GREETING_CHARS) errors.push(`自定义问候最多 ${MAX_GREETING_CHARS} 个字符。`)
   else if (greeting.style === 'custom' && !greeting.custom.trim()) errors.push('请至少写一句自定义问候，每行一句。')
-  if (typeof value.assistant?.predictQuestions !== 'boolean') errors.push('问题预测选项无效。')
+  if (typeof value.assistant?.predictQuestions !== 'boolean') errors.push('猜你想问选项无效。')
   if (!PREDICT_LEVELS.some(item => item.id === value.assistant?.predictLevel)) errors.push('猜你想问的问题水平无效。')
   if (typeof value.assistant?.explainVisual !== 'boolean') errors.push('快速解释选项无效。')
   if (value.pdf.initialZoom !== 'fit-width') check('PDF 初始缩放', value.pdf.initialZoom, 25, 400)
   check('缩放步长', value.pdf.zoomStep, 5, 50)
   check('Markdown 字号', value.markdown.fontSize, 13, 28)
   check('Markdown 内容宽度', value.markdown.contentWidth, 600, 1400)
-  if (typeof value.pdf.fitOnPanelOverflow !== 'boolean') errors.push('自动适应选项无效。')
-  if (typeof value.pdf.openAssistantOnCapture !== 'boolean') errors.push('框选提问选项无效。')
+  if (typeof value.pdf.fitOnPanelOverflow !== 'boolean') errors.push('适应宽度选项无效。')
+  if (typeof value.pdf.openAssistantOnCapture !== 'boolean') errors.push('框选后打开阅读助手的选项无效。')
   if (typeof value.pdf.quickAskOnCapture !== 'boolean') errors.push('框选快捷提问选项无效。')
   if (!['single', 'spread'].includes(value.pdf.pageLayout) || typeof value.pdf.coverAlone !== 'boolean') errors.push('页面视图选项无效。')
   for (const { action, label } of SHORTCUTS) {
-    if (normalizeShortcut(value.shortcuts[action]) === null) errors.push(`${label}：请选择 F11 或带 Ctrl、Alt、Meta 的按键组合，并避开浏览器保留快捷键。`)
+    if (normalizeShortcut(value.shortcuts[action]) === null) errors.push(`${label}：这个组合不能用，请改用 F11，或 Ctrl、Alt、Meta 加其他键。`)
     if (!['zoomIn', 'zoomOut'].includes(action) && /Wheel(?:Up|Down)$/.test(value.shortcuts[action])) errors.push(`${label}：滚轮组合只用于放大和缩小。`)
   }
   for (const conflict of shortcutConflicts(value.shortcuts)) errors.push(`${shortcutLabel(conflict.binding)} 已同时用于 ${conflict.actions.map(action => SHORTCUTS.find(item => item.action === action)?.label).join('、')}。`)

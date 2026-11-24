@@ -91,7 +91,7 @@ const position = computed(() => ({
 function togglePin() {
   props.card.pinned = !props.card.pinned
   // 钉住之后能切换「跟着书页走 / 停在屏幕上」：没用过的话提一句（一共两次）。
-  if (props.card.pinned && props.card.anchor) offerHint('explain-layer', ['📄'], '点卡片右上角这个图标：跟着书页走 / 停在屏幕上')
+  if (props.card.pinned && props.card.anchor) offerHint('explain-layer', ['📄'], '切换跟着书页走或停在屏幕上')
 }
 function toggleFollow() { props.card.follow = props.card.follow === 'page' ? 'screen' : 'page'; hintLearned('explain-layer') }
 // 右键：交给应用的菜单（复制、换个讲法、钉住、图层、关闭），不弹浏览器自带的那个。
@@ -163,8 +163,8 @@ watch(() => props.card.item.status, (status, previous) => { if (previous === 'ru
         <div class="ec-head" @pointerdown.stop="startDrag" @dblclick.stop="startAsk">
           <AppIcon class="ec-spark" name="sparkle" :size="13" />
           <ExplainTitle ref="title" :item="card.item" :limit="48" @ask="askExplain(card.item, $event)" />
-          <button v-if="card.pinned && card.anchor" type="button" class="ec-tool" :aria-label="card.follow === 'page' ? '跟着书页走' : '停在屏幕上'" :data-tip="card.follow === 'page' ? '现在跟着书页走，点一下改成停在屏幕上' : '现在停在屏幕上，点一下改成跟着书页走'" @click="toggleFollow"><AppIcon :name="card.follow === 'page' ? 'doc' : 'fullscreen'" :size="13" /></button>
-          <button type="button" class="ec-tool ec-pin" :class="{ on: card.pinned }" :aria-pressed="card.pinned" :aria-label="card.pinned ? '拔下图钉' : '钉住'" :data-tip="card.pinned ? '拔下图钉（之后点别处就消失）' : '钉住：不会自己消失，可以拖动'" @click="togglePin"><AppIcon name="pin" :size="13" /></button>
+          <button v-if="card.pinned && card.anchor" type="button" class="ec-tool" :aria-label="card.follow === 'page' ? '跟着书页走' : '停在屏幕上'" :data-tip="card.follow === 'page' ? '跟着书页走，点击改为停在屏幕上' : '停在屏幕上，点击改为跟着书页走'" @click="toggleFollow"><AppIcon :name="card.follow === 'page' ? 'doc' : 'fullscreen'" :size="13" /></button>
+          <button type="button" class="ec-tool ec-pin" :class="{ on: card.pinned }" :aria-pressed="card.pinned" :aria-label="card.pinned ? '取消钉住' : '钉住'" :data-tip="card.pinned ? '取消钉住，点别处会关闭' : '钉住，点别处不关闭'" @click="togglePin"><AppIcon name="pin" :size="13" /></button>
         </div>
         <!-- 标题下面一道细线；解释还在写的时候有一点光顺着它滑过去。 -->
         <i class="ec-rule" :class="{ running: card.item.status === 'running' }" aria-hidden="true"></i>
@@ -173,7 +173,7 @@ watch(() => props.card.item.status, (status, previous) => { if (previous === 'ru
           <button type="button" class="ec-tool" :disabled="card.item.status === 'running'" aria-label="深入" data-tip="深入" data-tip-fast @click="rerunExplain(card.item, 'deeper')"><AppIcon name="deeper" :size="16" /></button>
           <button type="button" class="ec-tool" :disabled="card.item.status === 'running'" aria-label="简化" data-tip="简化" data-tip-fast @click="rerunExplain(card.item, 'simpler')"><AppIcon name="simpler" :size="16" /></button>
           <button type="button" class="ec-tool" :disabled="card.item.status === 'running'" aria-label="举例" data-tip="举例" data-tip-fast @click="rerunExplain(card.item, 'example')"><AppIcon name="example" :size="16" /></button>
-          <button type="button" class="ec-tool" :disabled="card.item.status === 'running'" aria-label="可视化讲解" data-tip="可视化讲解（Intelligent UI）" data-tip-fast @click="rerunExplain(card.item, 'visual')"><AppIcon name="visual" :size="16" /></button>
+          <button type="button" class="ec-tool" :disabled="card.item.status === 'running'" aria-label="可视化讲解" data-tip="可视化讲解" data-tip-fast @click="rerunExplain(card.item, 'visual')"><AppIcon name="visual" :size="16" /></button>
         </p><ThoughtChip :item="card.item" /></div>
       </div>
     </Transition>
