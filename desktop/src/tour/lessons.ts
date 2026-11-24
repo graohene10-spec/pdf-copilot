@@ -46,6 +46,9 @@ export type Scene = {
   sideAnswer: number
   branch: boolean
   commands: boolean
+  /** 上下文圆环填到几成（null 用默认）；compacting 是正在压缩。 */
+  ctxFill: number | null
+  compacting: boolean
   btw: boolean
   btwAnswer: number
   pop: boolean
@@ -147,7 +150,7 @@ export const freshScene = (): Scene => ({
   view: 'reader', look: '', dark: false, picker: false, picture: false, preview: false, chrome: true, ai: true, doc: 'algebra', split: false, scroll: 0, zoom: 1, fit: false, selected: 0,
   card: 'none', cardAt: { x: 0, y: 0 }, running: false, words: 0, drawn: false, visual: false, lambda: 2.5,
   settings: '', link: false, key: 0, codex: false, slots: { assistant: '未选择', translation: '未选择', explain: '未选择' }, menu: '',
-  draft: '', asked: false, answer: 0, quote: false, quotePop: false, side: false, sideAsk: '', sideAnswer: 0, branch: false, commands: false, btw: false, btwAnswer: 0,
+  draft: '', asked: false, answer: 0, quote: false, quotePop: false, side: false, sideAsk: '', sideAnswer: 0, branch: false, commands: false, ctxFill: null, compacting: false, btw: false, btwAnswer: 0,
   pop: false, column: false, auto: false, ink: '', hl: 0, pen: 0, ul: 0, mark: false, art: 0, markMenu: false,
   files: 6, ghost: null, query: '', fileMenu: false, grouped: false, starred: false, outline: false, finding: false, find: '', clock: 'idle', minutes: 5, follow: 'page', hold: 0, desk: 0,
   crop: false, frame: null, quick: false, ctx: null, rightOn: false, quickOff: false, shots: 0, kept: 0, shotSent: false, shotAnswer: 0, asking: false, cardDraft: '', cardAsk: false, cardAnswer: 0,
@@ -443,6 +446,18 @@ const assistant: Play = async (stage, scene, say) => {
   scene.draft = ''; scene.btw = true
   await stage.tween(900, k => { scene.btwAnswer = Math.round(k * TEXT.btwReply.length) }, true)
   await stage.wait(1100)
+
+  // 上下文圆环：到量自动压缩，点一下立即压缩。原来的消息都还在。
+  say({ text: '对话长了会自动压缩，圆环显示进度；点圆环立即压缩', top: true })
+  scene.btw = false
+  stage.look('.tw-ask', 1.7, [.7, -1.2])
+  await stage.tween(1300, k => { scene.ctxFill = .18 + k * .74 }, true)
+  await click(stage, '.tw-context')
+  scene.compacting = true
+  await stage.wait(1500)
+  scene.compacting = false
+  await stage.tween(500, k => { scene.ctxFill = .92 - k * .64 }, true)
+  await stage.wait(900)
 
   // 对话记录最上面是搜索框：搜所有文档的对话，标题和内容都搜。
   say({ text: '点对话标题打开对话记录，可以搜所有文档的对话', top: true })
@@ -1102,7 +1117,7 @@ export const LESSONS: Lesson[] = [
   { id: 'setup', title: '接入 AI', note: '连接服务，给每个功能选模型', steps: 4, play: setup },
   { id: 'explain', title: '快速解释', note: '选中文字后按中键', steps: 8, play: explain },
   { id: 'visual', title: '用图解释', note: '图解、可拖的图、合集', steps: 3, play: visual },
-  { id: 'assistant', title: '阅读助手', note: '记忆、提问、附属对话、分支、指令、搜对话', steps: 7, play: assistant },
+  { id: 'assistant', title: '阅读助手', note: '记忆、提问、附属对话、分支、指令、压缩、搜对话', steps: 8, play: assistant },
   { id: 'summary', title: '总结', note: '勾章节、边写边改、存进文库', steps: 6, play: summary },
   { id: 'capture', title: '截图提问', note: '框选、右键拖动、固定多张', steps: 9, play: capture },
   { id: 'manage', title: '管理对话', note: '移动、撤销、改记忆、搜索对话', steps: 8, play: manage },
