@@ -334,8 +334,9 @@ const files = computed(() => {
           </div>
           <Transition name="tw-pop"><div v-if="scene.btw" class="tw-btw"><p><b>/btw</b>{{ TEXT.btwAsk }}</p><p>{{ TEXT.btwReply.slice(0, scene.btwAnswer) }}</p></div></Transition>
           <Transition name="tw-pop"><div v-if="scene.commands" class="tw-menu tw-cmds"><span class="tw-cmd-btw"><b>/btw</b>顺便问一句</span><span><b>/compress</b>压缩对话</span><span><b>/usage</b>查看用量</span><span><b>/summary</b>总结文档</span></div></Transition>
+          <Transition name="tw-pop"><p v-if="scene.compacting" class="tw-compacting"><i>✻</i><span>正在压缩对话…</span></p></Transition>
           <TransitionGroup v-if="scene.shots" tag="div" name="tw-shot" class="tw-shots"><b v-for="index in scene.shots" :key="index" class="tw-shot" :class="[`tw-shot-${index - 1}`, { kept: index <= scene.kept }]"><i>{{ SHOTS[index - 1] }}</i></b></TransitionGroup>
-          <div class="tw-ask" :class="{ typed: scene.draft }"><span>{{ scene.draft || '问问这一页' }}<i v-if="scene.draft" class="tw-caret"></i></span><svg class="tw-context" viewBox="0 0 20 20" :style="{ '--ratio': scene.asked ? .18 : .06 }"><circle cx="10" cy="10" r="7.5" /><circle cx="10" cy="10" r="7.5" pathLength="100" /></svg><b class="tw-send"><AppIcon name="arrow-up" :size="14" /></b></div>
+          <div class="tw-ask" :class="{ typed: scene.draft }"><span>{{ scene.draft || '问问这一页' }}<i v-if="scene.draft" class="tw-caret"></i></span><svg class="tw-context" :class="{ busy: scene.compacting }" viewBox="0 0 20 20" :style="{ '--ratio': scene.ctxFill ?? (scene.asked ? .18 : .06) }"><circle cx="10" cy="10" r="7.5" /><circle cx="10" cy="10" r="7.5" pathLength="100" /></svg><b class="tw-send"><AppIcon name="arrow-up" :size="14" /></b></div>
         </div>
         <div v-if="scene.side" class="tw-sidechat">
           <header><span class="tw-chip"><AppIcon name="branch" :size="12" />附属对话</span></header>
@@ -914,6 +915,12 @@ const files = computed(() => {
 .tw-ask.typed{border-color:color-mix(in srgb,var(--accent) 60%,transparent);color:var(--ink)}
 .tw-ask span{white-space:nowrap;overflow:hidden}
 /* 输入框旁的小圆环：离自动压缩还有多远。 */
+.tw-compacting{display:flex;align-items:center;gap:6px;margin:0 0 6px 4px;font-size:12px;font-weight:600}
+.tw-compacting i{font-style:normal;color:#d97757;animation:tw-ctx-spin 1.6s linear infinite}
+.tw-compacting span{background:linear-gradient(90deg,var(--muted) 38%,var(--ink) 50%,var(--muted) 62%);background-size:300% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:tw-ctx-shimmer 2s linear infinite}
+@keyframes tw-ctx-shimmer{from{background-position:100% 0}to{background-position:0 0}}
+@keyframes tw-ctx-spin{to{rotate:360deg}}
+.tw-context.busy{animation:tw-ctx-spin 1.2s linear infinite}
 .tw-context{--ratio:0;flex:none;width:18px;height:18px;margin-left:auto;rotate:-90deg}
 .tw-context circle{fill:none;stroke:color-mix(in srgb,var(--ink) 14%,transparent);stroke-width:2.6}
 .tw-context circle+circle{stroke:var(--secondary);stroke-linecap:round;stroke-dasharray:100;stroke-dashoffset:calc(100 - var(--ratio) * 100)}
