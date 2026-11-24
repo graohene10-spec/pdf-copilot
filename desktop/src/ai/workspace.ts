@@ -3,6 +3,7 @@ import { loadAiSettings, loadApiKey } from './settings.mjs'
 import { RequestScheduler } from './request-scheduler.mjs'
 import { library } from '../sdk'
 import { recordUsage } from './usage'
+import { WINDOW, compactionPrompt, fullness, handoff, splitForCompaction } from './compaction'
 import { SUMMARY_READING, summaryDraft, summaryInstructions, summaryContinues, lastSummaryOptions, readSwitches, MAX_SUMMARY_ROUNDS, type SummaryState, type SummaryOptions } from './summary'
 import { defaultMemoryMode, forgetConversation, memorize, memoryInstructions, memoryMode, memoryReady, rememberMemoryMode, retagMemory, type MemoryMode } from './memory'
 
@@ -53,7 +54,7 @@ scheduler.subscribe((value: any) => Object.assign(taskSummary, value))
 
 const STORAGE_PREFIX = 'ai.conversations.v1.'
 const MAX_STORED_CONVERSATIONS = 40
-const MAX_MESSAGES = 60
+const MAX_MESSAGES = 200
 /** 输入框里一次最多附上的图片数。 */
 export const MAX_ATTACHMENTS = 6
 // 输入框里已经确认要发的图片：粘贴、拖进来的，还有点过「留住」的截图。按文档记，发出后清掉。
@@ -123,7 +124,7 @@ function inheritedContext(main: ChatState) {
 const NOTE_LABEL = { self: '读者从这段对话里摘出来、要接着讨论的片段', main: '读者从主对话带过来的片段', side: '读者从附属对话带回来的片段' } as const
 /** 一条消息发给模型时的文字：摘要、摘录卡片带上说明。 */
 function wireText(message: Message) {
-  if (message.summary) return `[此前对话的摘要，供参考]\n${message.content}`
+  if (message.summary) return `[更早的对话已压缩。下面是当时的交接摘要，接着它继续，不要向读者提起这份摘要]\n${message.content}`
   if (message.note) return `[${NOTE_LABEL[message.note]}]\n${message.content}`
   return message.content + excerptText(message.excerpts)
 }
@@ -461,7 +462,7 @@ export function conversationTokens(state: ChatState): number {
   let chars = 0, tokens = 0, kept = 0
   for (const message of [...state.messages].reverse()) {
     if ((message.failed && !message.content) || message.compressed) continue
-    if (kept >= 12 || chars + message.content.length > 40000) break
+    if (kept >= WINDOW.messages || chars + message.content.length > WINDOW.chars) break
     chars += message.content.length; kept++
     tokens += estimateTokens(message.content)
   }
@@ -506,7 +507,6 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
     // A local OpenAI-compatible server (Ollama, LM Studio) behind 自定义接口 needs no key.
     const keyless = snapshot.provider === 'custom' && /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/i.test(snapshot.baseUrl || '')
     if (snapshot.provider !== 'codex' && !apiKey && !keyless) { if (valid()) onSettings(); throw new Error('请先连接 AI 服务。') }
-    if (state.messages.length >= MAX_MESSAGES || state.messages.reduce((sum, message) => sum + message.content.length, question.length) > 150000) throw new Error('这段对话已经很长，请新建对话继续，以控制上下文与内存。')
     // 框选截图在前，输入框里粘贴或添加的图片随后。
     const attached = (sendOptions.attachments || []).slice(0, MAX_ATTACHMENTS)
     // 同一张图只发一次（同一块地方截了两遍）。
@@ -609,6 +609,8 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
   } finally {
     if (answer) {
       answer.finishedAt = Date.now(); answer.activity = ''; state.updatedAt = answer.finishedAt
+      // 上下文到量了：后台压缩，不挡下一问。
+      if (!state.summary && fullness(state.messages) >= 1) void compressConversation(descriptor, state.id, '', false)
       if (answer.usage) recordUsage({ kind: state.sideOf ? 'side' : 'chat', provider: snapshot.provider, model: snapshot.model || '', ms: answer.finishedAt - (answer.startedAt || answer.finishedAt), estimated: answer.usage.estimated, input: answer.usage.input || 0, output: answer.usage.output || 0, reasoning: answer.usage.reasoning || 0 })
     }
     documentSession?.close()
@@ -649,26 +651,31 @@ export function resendQuestion(descriptor: { id: string; title: string; kind: st
   return target.id
 }
 
+/** 正在压缩的对话 → 取消用的控制器。 */
+export const compacting = reactive(new Map<string, AbortController>())
 /**
- * /compress：把这段对话里还没压缩过的问答交给模型写成一份摘要，之后的请求只带摘要和其后的消息。
- * 原来的消息仍留在界面上（标为已压缩），随时可以翻看。
+ * 压缩：较早的问答交给模型写成交接摘要（只给模型看），最近几轮原样留下。
+ * 上下文到量时自动做，/compress 或点上下文圆环可以手动做。原来的消息照常留在界面上。
  */
-export async function compressConversation(descriptor: { id: string; title: string }, conversationId: string, instructions = '', signal: AbortSignal): Promise<void> {
+export async function compressConversation(descriptor: { id: string; title: string }, conversationId: string, instructions = '', manual = true): Promise<void> {
+  if (compacting.has(conversationId)) return
   const state = chatState(descriptor.id, conversationId)
-  const pending = state.messages.filter(message => !message.compressed && !(message.failed && !message.content))
-  if (pending.filter(message => !message.summary).length < 2) throw new Error('对话还很短，不需要压缩。')
-  const transcript = pending.map(message => `${message.summary ? '【此前的摘要】' : message.role === 'user' ? '读者' : '助手'}：${message.content.slice(0, 12000)}`).join('\n\n')
-  const { complete } = await import('./complete')
-  const summary = await complete({ kind: 'compress', signal, messages: [{ role: 'user', content: [
-    `下面是读者与阅读助手围绕《${descriptor.title}》的一段对话。请把它压缩成一份简明的摘要，供之后继续对话时代替原文使用：`,
-    '保留读者关心的问题、已经得出的结论、关键的定义 / 公式 / 页码引用，以及尚未解决的问题；去掉寒暄与重复。用读者使用的语言，分条列出，不超过 400 字。',
-    instructions && `读者对摘要的额外要求：${instructions}`,
-    `[对话]\n${transcript}`,
-  ].filter(Boolean).join('\n\n') }] })
-  signal.throwIfAborted()
-  if (!summary.trim()) throw new Error('没有得到摘要，请稍后再试。')
-  for (const message of pending) message.compressed = true
-  state.messages.push({ id: crypto.randomUUID(), role: 'assistant', content: summary.trim(), sources: [], summary: true, finishedAt: Date.now() })
-  state.updatedAt = Date.now()
-  schedulePersist(descriptor.id)
+  const { old } = splitForCompaction(state.messages)
+  if (old.filter(message => !message.summary).length < 2) { if (manual) throw new Error('对话还很短，不需要压缩。'); return }
+  const controller = new AbortController(); compacting.set(conversationId, controller)
+  try {
+    const { complete } = await import('./complete')
+    const summary = await complete({ kind: 'compress', signal: controller.signal, messages: [{ role: 'user', content: compactionPrompt(descriptor.title, old, instructions) }] })
+    controller.signal.throwIfAborted()
+    if (!summary.trim()) throw new Error('没有得到摘要，请稍后再试。')
+    for (const message of old) message.compressed = true
+    // 摘要放在留下的那几轮之前，顺序和发给模型的一致。
+    const at = state.messages.indexOf(old.at(-1)!) + 1
+    state.messages.splice(at, 0, { id: crypto.randomUUID(), role: 'assistant', content: handoff(summary, old), sources: [], summary: true, finishedAt: Date.now() })
+    // 界面上最多留这么多条；更早的已经在摘要里。
+    while (state.messages.length > MAX_MESSAGES && state.messages[0]!.compressed) state.messages.shift()
+    schedulePersist(descriptor.id)
+  } catch (error) {
+    if (manual && !controller.signal.aborted) throw error
+  } finally { compacting.delete(conversationId) }
 }
