@@ -121,7 +121,7 @@ async function crop(offset = 0, expectsQuick = true) {
   await readyPdf();
   const scale = await page.locator('.pdf-reader:visible .reader-zoom button[data-tip="适应宽度"]').innerText();
   const before = expectsQuick ? await page.screenshot({ animations: 'disabled' }) : null;
-  await page.locator('[data-tip="框选公式或图表作为 AI 上下文"]').click();
+  await page.locator('[data-tip="框选公式或图表，发给阅读助手"]').click();
   await activeSurface().locator('xpath=self::*[contains(@class,"capture-mode")]').waitFor();
   const bounds = await activeSurface().boundingBox(); assert.ok(bounds);
   const rectangle = { x: bounds.x + 35 + offset * 11, y: bounds.y + 45 + offset * 15, width: 152 + offset * 9, height: 88 + offset * 5 };

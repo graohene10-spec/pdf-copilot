@@ -39,7 +39,7 @@ try {
   for (const theme of ['light', 'dark']) {
     if (theme === 'dark') await page.locator('[data-tip="切换深色主题"]').click();
     await page.waitForFunction(theme => document.documentElement.dataset.theme === theme, theme);
-    await page.locator('[data-tip="框选公式或图表作为 AI 上下文"]').click();
+    await page.locator('[data-tip="框选公式或图表，发给阅读助手"]').click();
     const bounds = await page.locator('#page-surface').boundingBox();
     const start = { x: bounds.x + bounds.width * .065, y: bounds.y + bounds.width * .09 };
     const end = { x: bounds.x + bounds.width * .83, y: bounds.y + bounds.width * .34 };
