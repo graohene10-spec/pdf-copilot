@@ -2,7 +2,7 @@
 // 字按顺序出现、中间隔几个字也算（打「特征向」能找到「特征值与特征向量」），或者打错、多打了一个字也算。
 export type Snippet = { before: string; hit: string; after: string }
 export type Found<T> = { item: T; score: number; title: Snippet | null; snippet: Snippet | null; messageId?: string }
-type Talk = { title?: string; updatedAt?: number; messages: { id: string; content: string; auto?: boolean }[] }
+type Talk = { title?: string; updatedAt?: number; messages: { id: string; content: string; auto?: boolean; summary?: boolean }[] }
 type Range = { start: number; end: number; loose: boolean }
 
 /** 在一段（已转小写的）文字里找一个词。 */
@@ -44,7 +44,7 @@ export function searchTalks<T extends Talk>(list: T[], query: string, limit = 80
   const found: Found<T>[] = []
   for (const item of list) {
     const title = item.title || '', low = title.toLowerCase()
-    const texts = item.messages.filter(message => !message.auto && message.content)
+    const texts = item.messages.filter(message => !message.auto && !message.summary && message.content)
     let lows: string[] | undefined
     let score = 0, titleHit: Snippet | null = null, snippet: Snippet | null = null, messageId: string | undefined, missed = false
     for (const token of tokens) {

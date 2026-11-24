@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import { fullness } from '../ai/compaction'
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, reactive, defineAsyncComponent } from 'vue'
 import 'katex/dist/katex.min.css'
 import { getProvider, getNativeModels, getNativeStatus } from '../ai/providers.mjs'
 import { nativeModelInventory, registerNativeModelInventory } from '../ai/native-models'
-import { newSummaryConversation, cancelSummary, setConversationMemory, adoptTurns, addExcerpt, removeExcerpt, removeMessage, compressConversation, sideConversation, chatState, sendChat, stopChat, configureRequests, taskSummary, conversations, activeConversationId, selectConversation, newConversation, deleteConversation, loadConversations, conversationTokens, contextWindow, branchConversation, resendQuestion, watchConversation, allConversations, revealTarget, pinMessage, MAX_ATTACHMENTS, pendingImages, setPendingImages, keepImage, type Message, type ChatState } from '../ai/workspace'
+import { newSummaryConversation, cancelSummary, setConversationMemory, adoptTurns, addExcerpt, removeExcerpt, removeMessage, compressConversation, compacting, sideConversation, chatState, sendChat, stopChat, configureRequests, taskSummary, conversations, activeConversationId, selectConversation, newConversation, deleteConversation, loadConversations, conversationTokens, contextWindow, branchConversation, resendQuestion, watchConversation, allConversations, revealTarget, pinMessage, MAX_ATTACHMENTS, pendingImages, setPendingImages, keepImage, type Message, type ChatState } from '../ai/workspace'
 import { renderMarkdown, renderDiagrams } from '../ai/render'
 import { memoryMode, type MemoryMode } from '../ai/memory'
 import { summaryChat, summaryRequest, parseSummaryRequest, requestExtra, rememberSummaryOptions, type SummaryOptions } from '../ai/summary'
@@ -405,7 +406,7 @@ const expanded = ref(new Set<string>())
 function toggleReasoning(id: string) { const next = new Set(expanded.value); if (next.has(id)) next.delete(id); else next.add(id); expanded.value = next }
 const contextUsed = computed(() => conversationTokens(state.value))
 const contextLimit = computed(() => contextWindow(settings.value.provider, settings.value.model || ''))
-const contextRatio = computed(() => Math.min(1, contextUsed.value / Math.max(1, contextLimit.value)))
+const contextRatio = computed(() => fullness(state.value.messages))
 
 // ---- Answer rendering ----------------------------------------------------
 function jump(source: any) { emit('jump', { page: source.page, rect: source.rect, ...(source.line ? { line: source.line } : {}) }) }
@@ -527,7 +528,7 @@ const tickColumn = ref<HTMLElement>()
 const tickPointer = ref<number | null>(null)
 const hoverTop = ref(0)
 // 每条刻度占一整格、格与格首尾相接，指针在两条之间也落在某一条上，没有点不到的空隙。
-const tickSlot = computed(() => { const room = (messageList.value?.clientHeight || 400) - 96; return Math.max(8, Math.min(10, room / Math.max(1, marks.value.length))) })
+const tickSlot = computed(() => { const room = (messageList.value?.clientHeight || 400) - 96; return Math.max(3, Math.min(10, room / Math.max(1, marks.value.length))) })
 // 预览卡对准某一个刻度：按屏幕上的实际位置算。刻度栏是 top:50% 再 translateY(-50%) 居中的，
 // offsetTop 不算这段位移，用它会让卡片整体往下偏半个刻度栏。
 function railTop(tick: HTMLElement) {
@@ -867,7 +868,7 @@ function pickCommand(item = commandMatches.value[commandIndex.value]) {
   focusPrompt()
 }
 const usageOpen = ref(false)
-const compressing = ref<AbortController | null>(null)
+const compressing = computed(() => compacting.get(state.value.id) || null)
 type BtwTurn = { id: string; question: string; answer: string; startedAt: number; finishedAt?: number }
 type Btw = { turns: BtwTurn[]; running: boolean; error: string; controller: AbortController }
 const btw = ref<Btw | null>(null)
@@ -928,11 +929,10 @@ async function runCommand(name: string, args: string) {
   if (name === 'summary') { summarize(args); return }
   if (name === 'compress') {
     if (busy.value || compressing.value) { attachNote('请等这一轮回答结束再压缩。'); return }
-    const controller = new AbortController(); compressing.value = controller
     follow = true; scheduleScroll()
-    try { await compressConversation({ ...props.document }, state.value.id, args, controller.signal) }
-    catch (error: any) { if (!controller.signal.aborted) attachNote(error?.message || String(error)) }
-    finally { if (compressing.value === controller) compressing.value = null; scheduleScroll() }
+    try { await compressConversation({ ...props.document }, state.value.id, args) }
+    catch (error: any) { attachNote(error?.message || String(error)) }
+    finally { scheduleScroll() }
     return
   }
   if (name === 'btw') {
@@ -941,7 +941,6 @@ async function runCommand(name: string, args: string) {
     await askBtw(args)
   }
 }
-const compressedBefore = (message: Message) => { const index = messages.value.indexOf(message); return messages.value.slice(0, index).filter(item => item.compressed && !item.summary).length }
 // ---- 总结模式 ----
 /** 开一段总结对话，停在设置表格上。extra 是跟在 /summary 后面写的要求，放进输入框里等读者确认。 */
 function summarize(extra = '') {
@@ -1156,10 +1155,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
               </div>
             </template>
           </template>
-          <div v-else-if="message.summary" class="summary-card">
-            <p class="summary-head"><AppIcon name="history" :size="13" />对话摘要<span>以上 {{ compressedBefore(message) }} 条消息已压缩，之后只带这份摘要</span></p>
-            <div v-answer="message" class="answer-body" />
-          </div>
+          <p v-else-if="message.summary" class="compact-mark" data-tip="这之前的对话已压缩；原文还在上面，助手带着要点继续"><i /></p>
           <template v-else>
             <button v-if="live(message) || message.reasoning || message.sources.length" class="thinking" :class="{ live: live(message), open: expanded.has(message.id) }" :aria-expanded="expanded.has(message.id)" @click="toggleReasoning(message.id)">
               <span class="thinking-star" aria-hidden="true">{{ live(message) ? spinner(message) : '✻' }}</span>
@@ -1184,7 +1180,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
             </div>
           </template>
         </article>
-        <p v-if="compressing" class="compressing-line"><span class="thinking-star" aria-hidden="true">✻</span>正在压缩对话…<button type="button" class="meta-button" aria-label="取消压缩" data-tip="取消" @click="compressing?.abort()"><AppIcon name="close" :size="12" /></button></p>
+        <p v-if="compressing" class="thinking live compressing-line"><span class="thinking-star" aria-hidden="true">{{ spinnerFor(state.id)[Math.floor(now / 120) % spinnerFor(state.id).length] }}</span><span class="thinking-label">正在压缩对话…</span><button type="button" class="meta-button" aria-label="取消压缩" data-tip="取消" @click="compressing?.abort()"><AppIcon name="close" :size="12" /></button></p>
         <p v-if="errorText" class="ai-error">{{ errorText }}</p>
         <p class="ai-status" role="status" aria-live="polite">{{ liveStatus }}</p>
       </div>
@@ -1260,7 +1256,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
           <input ref="attachInput" class="attach-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple tabindex="-1" aria-hidden="true" @change="pickImages" />
           <label class="context-switch" :class="{ on: includeDocument }" :data-tip="busy ? '正在回答，答完才能切换' : includeDocument ? '已开启：提问时附带当前页与文档检索' : '已关闭：只发送问题与选区'"><input v-model="includeDocument" type="checkbox" role="switch" :disabled="busy" aria-label="当前页上下文与文档检索" /><span class="context-glyph" aria-hidden="true"><AppIcon name="book" :size="14" /><i class="context-slash" /></span><span class="context-label">文档上下文</span></label>
           <span class="composer-space" />
-          <span class="context-ring" :data-tip="`上下文约 ${count(contextUsed)} / ${count(contextLimit)} tokens`" aria-hidden="true" :style="{ '--ratio': contextRatio }"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5" /><circle class="ring-value" cx="10" cy="10" r="7.5" pathLength="100" /></svg></span>
+          <button type="button" class="context-ring" :class="{ busy: compressing }" :data-tip="compressing ? '正在压缩对话' : `上下文 ${Math.round(contextRatio * 100)}% · 满了自动压缩，点击现在压缩`" aria-label="压缩对话" :style="{ '--ratio': contextRatio }" @click="runCommand('compress', '')"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5" /><circle class="ring-value" cx="10" cy="10" r="7.5" pathLength="100" /></svg></button>
           <div ref="pickerHost" class="model-picker-host">
             <button type="button" class="model-picker" :disabled="busy" :aria-expanded="pickerOpen" :aria-controls="`model-drawer-${state.id}`" aria-label="选择模型与思考强度" :data-tip="busy ? '正在回答，答完才能换模型' : '模型与思考强度'" @click="pickerOpen = !pickerOpen"><span class="picker-model">{{ modelLabel }}</span><span class="picker-effort">{{ EFFORT_LABELS[settings.effort || ''] || settings.effort }}</span><span v-if="bolts" class="picker-fast" :class="{ twin: bolts > 1 }"><AppIcon v-for="n in bolts" :key="n" name="bolt" :size="11" /></span><AppIcon name="down" :size="12" class="picker-chevron" /></button>
           </div>
@@ -1373,11 +1369,10 @@ button:disabled{opacity:.4;cursor:default}
 .history-pop-enter-from,.history-pop-leave-to{opacity:0;transform:translateY(-6px) scale(.95)}
 /* 消息区；原生滚动条隐藏，右侧导航条代替。 */
 .ai-columns{position:relative;flex:1;min-height:0;display:flex}
-.ai-message.compressed{opacity:.5}
-.summary-card{padding:10px 13px 12px;border-radius:12px;border:1px dashed var(--hairline);background:color-mix(in srgb,var(--ink) 3%,transparent)}
-.summary-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 6px;font-size:12.5px;font-weight:650}
-.summary-head span{font-weight:400;color:var(--muted);font-size:11.5px}
-.compressing-line{display:flex;align-items:center;gap:6px;color:var(--secondary);font-size:12.5px}
+.compressing-line{margin:0;cursor:default}
+.ai-message.summary{margin:0;padding:0}
+.compact-mark{margin:2px 0;padding:6px 0;cursor:default}
+.compact-mark i{display:block;height:0;border-top:1px dashed var(--hairline)}
 .btw-card{position:relative;margin:0 12px 6px;padding:9px 12px 8px;max-height:40%;overflow:auto;border-radius:12px;border:1px solid var(--hairline);background:var(--bar-glass);box-shadow:0 8px 22px -14px rgb(0 0 0 / .3)}
 .btw-head{display:flex;align-items:center;gap:7px;margin:0 0 5px;font-size:12.5px}
 .btw-tag{padding:1px 6px;border-radius:5px;background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);font:600 11px var(--font-mono,ui-monospace,monospace)}
@@ -1738,7 +1733,10 @@ textarea::placeholder{color:var(--muted);font-family:'Anthropic Serif','Source H
 /* 玻璃按身后的明暗换成相反字色时，主色也换成对应的深浅，保证开启状态读得清楚。 */
 :root:not([data-theme='dark']) .ai-pane[data-glass-ink='light'] .context-switch{--context-on:color-mix(in srgb,var(--accent) 45%,#fff)}
 :root[data-theme='dark'] .ai-pane[data-glass-ink='dark'] .context-switch{--context-on:color-mix(in srgb,var(--accent) 60%,#000)}
-.context-ring{--ratio:0;display:grid;place-items:center;width:24px;height:24px;flex-shrink:0}
+.context-ring{--ratio:0;display:grid;place-items:center;width:24px;height:24px;min-width:0;padding:0;border:0;background:none;box-shadow:none;flex-shrink:0;cursor:pointer}
+.context-ring.busy svg{animation:ring-spin 1.2s linear infinite}
+.context-ring.busy .ring-value{stroke-dashoffset:70}
+@keyframes ring-spin{to{rotate:270deg}}
 .context-ring svg{width:18px;height:18px;rotate:-90deg}
 .context-ring circle{fill:none;stroke:color-mix(in srgb,var(--ink) 14%,transparent);stroke-width:2.6}
 .context-ring .ring-value{stroke:var(--secondary);stroke-linecap:round;stroke-dasharray:100;stroke-dashoffset:calc(100 - var(--ratio) * 100);transition:stroke-dashoffset var(--dur-smooth) var(--spring-smooth)}
