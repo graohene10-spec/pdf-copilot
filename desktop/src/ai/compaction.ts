@@ -4,8 +4,8 @@
  */
 export type Turn = { role: 'user' | 'assistant'; content: string; compressed?: boolean; summary?: boolean; failed?: boolean; note?: unknown; auto?: boolean }
 
-/** 每次请求最多带这么多历史；到这个量就自动压缩。 */
-export const WINDOW = { messages: 24, chars: 60000 }
+/** 每次请求最多带这么多历史；到这个量就自动压缩。主要看字数，条数只是兜底：短问短答不会几轮就压缩。 */
+export const WINDOW = { messages: 60, chars: 60000 }
 /** 压缩时原样留下的最近几轮。 */
 const TAIL = { messages: 6, chars: 16000 }
 /** 摘要之外，读者原话最多保留这么多字（从最近的往前取）。 */

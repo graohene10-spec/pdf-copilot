@@ -11,7 +11,7 @@ import { streamNativeDocument } from './native.mjs';
 export function boundedHistory(messages) {
   const latest = messages.at(-1), kept = []; let chars = latest?.content?.length || 0;
   for (const message of messages.slice(0, -1).reverse()) {
-    if (kept.length >= 24 || chars + message.content.length > 60000) break;
+    if (kept.length >= 60 || chars + message.content.length > 60000) break;
     kept.unshift({ role: message.role, content: message.content }); chars += message.content.length;
   }
   return [...kept, latest];
