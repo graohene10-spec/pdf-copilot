@@ -206,3 +206,75 @@ details.answer-fold::details-content{margin-left:10px;padding-left:16px;border-l
 details.answer-fold[open]::details-content{block-size:auto;padding-top:.35em;padding-bottom:.15em}
 details.answer-fold[open]{margin-bottom:.7em}
 @media (prefers-reduced-motion:reduce){details.answer-fold::details-content,details.answer-fold>summary::before{transition:none}}
+
+/* ---- 现代化外观（盖在上面的规则之上）----
+   图解和可交互界面不跟着主题变花样：系统无衬线、细边框、白底、一种强调色、等宽数字。
+   主题只留下强调色和纸面底色；暖色极简主题连这两样也不带，完全用中性色。 */
+.iui{--iui-ink:var(--surface-ink,var(--ink));--iui-mute:color-mix(in srgb,var(--iui-ink) 58%,transparent);--iui-line:color-mix(in srgb,var(--iui-ink) 13%,transparent);--iui-fill:color-mix(in srgb,var(--iui-ink) 4.5%,transparent);--iui-bg:var(--surface);--iui-accent:var(--accent);
+  --iui-1:var(--iui-accent);--iui-2:#d9892b;--iui-3:#5b6ee1;--iui-4:#d1556b;--iui-5:#64748b;
+  gap:14px;margin:.7em 0 1.1em;font-family:'Segoe UI Variable Text','Segoe UI','Microsoft YaHei UI','PingFang SC',system-ui,sans-serif;font-size:13.5px;line-height:1.55;font-style:normal;font-weight:400;letter-spacing:0;color:var(--iui-ink);font-variant-numeric:tabular-nums;text-shadow:none}
+:root[data-style='sketch'] .iui{--iui-1:var(--iui-accent);--iui-2:#d9892b;--iui-bg:#fffefb}
+:root[data-style='sketch'][data-theme='dark'] .iui{--iui-bg:var(--surface)}
+:root[data-style='warm'] .iui{--iui-accent:#0f8a7a;--iui-ink:#1f2328;--iui-bg:#fff}
+:root[data-style='warm'][data-theme='dark'] .iui{--iui-accent:#35b8a6;--iui-ink:#e6e8eb;--iui-bg:#17191c}
+.iui :is(button,input,select,textarea,th,td,strong,p,span,li){font-family:inherit;letter-spacing:0}
+.iui-card{padding:18px 20px 16px;border:1px solid var(--iui-line);border-radius:14px;background:var(--iui-bg);box-shadow:none;rotate:none}
+.iui-title{font-size:15px;font-weight:650;line-height:1.4;color:var(--iui-ink)}
+.iui-sub,.iui-xlabel,.iui-label,.iui-note,.iui-legend,.iui-step-why{color:var(--iui-mute)}
+.iui-sub{margin:0 0 12px;font-size:12.5px}
+.iui-wait,.iui-error{border:1px solid var(--iui-line);border-radius:12px;background:var(--iui-fill)}
+/* 图表：实线细网格、一条够粗的线。 */
+.iui-grid{stroke:color-mix(in srgb,var(--iui-ink) 9%,transparent);stroke-dasharray:none}
+.iui-base{stroke:color-mix(in srgb,var(--iui-ink) 26%,transparent)}
+.iui-axis{fill:var(--iui-mute)}
+.iui-line{stroke-width:2.4}
+.iui-tip{border-radius:10px;background:var(--iui-bg);box-shadow:0 0 0 1px var(--iui-line),0 10px 24px -12px rgb(0 0 0 / .3)}
+/* 参数：名字在左、数值在右，下面一整条滑块；不再各装一个灰盒子。 */
+.iui-controls{grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px 24px;margin:14px 0 6px}
+.iui-param{padding:0;border-radius:0;background:none;font-size:13.5px;color:var(--iui-ink)}
+.iui-param strong{font-size:13.5px;font-weight:650}
+.iui-param input[type=range]{appearance:none;height:16px;margin:2px 0 0;background:none;accent-color:var(--iui-accent)}
+.iui-param input[type=range]::-webkit-slider-runnable-track{height:5px;border-radius:99px;background:color-mix(in srgb,var(--iui-ink) 12%,transparent)}
+.iui-param input[type=range]::-webkit-slider-thumb{appearance:none;width:15px;height:15px;margin-top:-5px;border:0;border-radius:50%;background:var(--iui-accent);box-shadow:0 0 0 3px var(--iui-bg)}
+.iui-check input{accent-color:var(--iui-accent)}
+.iui-reset{height:30px;padding:0 13px;border:1px solid var(--iui-line);border-radius:9px;font-size:12.5px;color:var(--iui-ink)}
+.iui-output{border-top:1px solid var(--iui-line);font-size:13px;color:var(--iui-mute)}
+.iui-output strong{font-size:16px;color:var(--iui-ink)}
+/* 数字卡：细边白底，标签在上、数字在下。 */
+.iui-cards{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.iui-metric{padding:16px 18px;border:1px solid var(--iui-line);border-radius:14px;background:var(--iui-bg)}
+.iui-metric .iui-label{order:-1;font-size:12.5px}
+.iui-value{font-size:27px;font-weight:700;letter-spacing:-.01em}
+/* 表格：表头是一行淡色小字，行与行之间一条细线。 */
+.iui-table{font-size:13.5px}
+.iui-table th,.iui-table td{padding:12px 12px;border-bottom:1px solid var(--iui-line)}
+.iui-table th{padding-top:6px;padding-bottom:9px;font-size:12px;font-weight:500;color:var(--iui-mute)}
+.iui-table tbody tr:last-child td{border-bottom:0}
+.iui-tabs{border-radius:10px;background:var(--iui-fill)}
+.iui-tabs button{border-radius:8px}
+.iui-tabs button.on{background:var(--iui-bg);color:var(--iui-ink);box-shadow:0 0 0 1px var(--iui-line)}
+.iui-badge{height:22px;border-radius:7px;background:var(--iui-fill);font-weight:550}
+.iui-field input:not([type=checkbox]):not([type=radio]),.iui-field select,.iui-field textarea{border:1px solid var(--iui-line);border-radius:9px;background:var(--iui-bg)}
+.iui-submit{border-radius:10px;background:var(--iui-ink);color:var(--iui-bg)}
+/* 图解：平的。不抖、不发光，重点只用强调色描一道。 */
+.iui-dia-card,:root[data-style='sketch'] .iui-dia-card{--dia-line:color-mix(in srgb,var(--iui-ink) 42%,transparent);--dia-faint:color-mix(in srgb,var(--iui-ink) 15%,transparent);--dia-hot:var(--iui-accent);--dia-hot-soft:color-mix(in srgb,var(--iui-accent) 11%,transparent)}
+.iui-dia .ink{filter:none!important}
+.iui-shape,:root[data-style='sketch'] .iui-shape,:root[data-style='sketch'] .iui-shape.soft{stroke-width:1.3}
+.iui-shape.hot,.iui-edge.hot,.iui-span.hot{filter:none}
+.iui-shape.hot{stroke-width:1.8}
+.iui-dl{font-size:12.5px;color:var(--iui-ink)}
+.iui-dl.muted{color:var(--iui-mute)}
+.iui-dl.region,.iui-dl.edge{background:color-mix(in srgb,var(--iui-bg) 86%,transparent)}
+.iui-dl.node{border:1px solid color-mix(in srgb,var(--iui-ink) 24%,transparent);border-radius:9px;background:var(--iui-bg);font-weight:500}
+.iui-dl.node.point{border-radius:50%}
+.iui-dl.node.hot{border-color:var(--iui-accent);background:color-mix(in srgb,var(--iui-accent) 9%,var(--iui-bg));box-shadow:none}
+.iui-step-no{border:1px solid color-mix(in srgb,var(--iui-ink) 26%,transparent);background:var(--iui-bg);font-weight:600}
+.iui-step:not(:last-child)::before{width:1px;background:var(--iui-line)}
+.iui-flow.across .iui-step:not(:last-child)::before{height:1px}
+.iui-step.hot .iui-step-no{border-color:var(--iui-accent);background:var(--iui-accent);color:var(--iui-bg);box-shadow:none}
+.iui-step-text{font-size:13.5px}
+.iui-optable td{background:hsl(var(--hue,0) 38% 58% / .13)}
+:root[data-theme='dark'] .iui-optable td{background:hsl(var(--hue,0) 34% 56% / .2)}
+.iui-optable td.hot{outline:1.5px solid var(--iui-accent);box-shadow:none}
+.iui-end.open{fill:var(--iui-bg)}
+.iui-slice{stroke:var(--iui-bg)}
