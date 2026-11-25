@@ -1,4 +1,5 @@
-import { computed, ref, shallowRef } from 'vue'
+import { computed, ref, shallowRef, watch } from 'vue'
+import { setCompactLimit } from '../ai/compaction'
 import { library } from '../sdk'
 import { SETTINGS_KEY, defaultPreferences, normalizePreferences, preferenceErrors, type AppPreferences, type AppearancePreferences } from './model'
 export * from './model'
@@ -6,6 +7,7 @@ export * from './background'
 export * from './quick-prompts'
 
 const preferences = ref<AppPreferences>(defaultPreferences())
+watch(() => preferences.value.assistant.compactK, value => setCompactLimit(value * 1000), { immediate: true })
 const loaded = ref(false)
 const appearancePreview = shallowRef<AppearancePreferences | null>(null)
 export const effectiveAppearance = computed(() => appearancePreview.value ?? preferences.value.appearance)

@@ -8,11 +8,15 @@ import { normalizeDocumentLimits, MODEL_STATE_CHARACTERS } from '../../../extens
 import { streamNativeDocument } from './native.mjs';
 
 // Only the latest turn sends pixels; earlier turns retain bounded text history.
-export function boundedHistory(messages) {
-  const latest = messages.at(-1), kept = []; let chars = latest?.content?.length || 0;
+const roughTokens = text => { const cjk = text.match(/[\u3000-\u9fff\uac00-\ud7af\uff00-\uffef]/g)?.length || 0; return Math.ceil(cjk + (text.length - cjk) / 4); };
+// 历史按 token 估算截断；上限就是设置里的自动压缩大小（留一成余量，压缩在后台做，这期间不丢最近的几轮）。
+export function boundedHistory(limit, messages) {
+  const room = (Number(limit) || 40000) * 1.1;
+  const latest = messages.at(-1), kept = []; let used = roughTokens(latest?.content || '');
   for (const message of messages.slice(0, -1).reverse()) {
-    if (kept.length >= 60 || chars + message.content.length > 60000) break;
-    kept.unshift({ role: message.role, content: message.content }); chars += message.content.length;
+    const cost = roughTokens(message.content);
+    if (used + cost > room) break;
+    kept.unshift({ role: message.role, content: message.content }); used += cost;
   }
   return [...kept, latest];
 }
@@ -25,7 +29,7 @@ export async function streamDocumentChat(options, document, seed) {
   const remaining = document.remaining || seed.remaining || limits;
   const vision = getModel(options.provider, options.model)?.vision !== false;
   const tools = toolsForVision(vision && remaining.images > 0);
-  const messages = withSeed(boundedHistory(options.messages), seed);
+  const messages = withSeed(boundedHistory(options.historyTokens, options.messages), seed);
   const common = { ...options, messages, extraInstructions: DOCUMENT_INSTRUCTIONS + '\n' + (document.instructions || '') + (options.extraInstructions ? '\n' + options.extraInstructions : '') };
   if (remaining.calls <= 0) return streamChat(common);
   if (options.provider === 'codex') {

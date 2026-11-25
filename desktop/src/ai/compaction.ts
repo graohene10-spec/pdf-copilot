@@ -4,24 +4,30 @@
  */
 export type Turn = { role: 'user' | 'assistant'; content: string; compressed?: boolean; summary?: boolean; failed?: boolean; note?: unknown; auto?: boolean }
 
-/** 每次请求最多带这么多历史；到这个量就自动压缩。主要看字数，条数只是兜底：短问短答不会几轮就压缩。 */
-export const WINDOW = { messages: 60, chars: 60000 }
-/** 压缩时原样留下的最近几轮。 */
-const TAIL = { messages: 6, chars: 16000 }
+/** 粗估 token 数：中日韩字符一字一个，其余四个字符一个。 */
+export function estimateTokens(text: string): number {
+  if (!text) return 0
+  const cjk = text.match(/[\u3000-\u9fff\uac00-\ud7af\uff00-\uffef]/g)?.length || 0
+  return Math.ceil(cjk + (text.length - cjk) / 4)
+}
+/** 对话到多少 token 自动压缩（设置里可调）；每次请求带的历史也以它为上限。 */
+export const DEFAULT_LIMIT = 40000
+let limit = DEFAULT_LIMIT
+export const compactLimit = () => limit
+export function setCompactLimit(tokens: number) { limit = Number.isFinite(tokens) && tokens >= 2000 ? Math.round(tokens) : DEFAULT_LIMIT }
 /** 摘要之外，读者原话最多保留这么多字（从最近的往前取）。 */
 const QUOTES = 6000
 
 export const liveTurns = <T extends Turn>(messages: T[]) => messages.filter(message => !message.compressed && message.content && !(message.failed && !message.content))
+/** 还会随请求带出去的对话有多少 token。 */
+export const liveTokens = (messages: Turn[]) => liveTurns(messages).reduce((sum, message) => sum + estimateTokens(message.content), 0)
 /** 0–1：离自动压缩还有多远。 */
-export function fullness(messages: Turn[]): number {
-  const live = liveTurns(messages)
-  return Math.min(1, Math.max(live.length / WINDOW.messages, live.reduce((sum, message) => sum + message.content.length, 0) / WINDOW.chars))
-}
-/** 较早的部分交给模型写摘要，最近几轮（从读者的一问开始）原样留下。 */
-export function splitForCompaction<T extends Turn>(messages: T[]): { old: T[]; tail: T[] } {
-  const live = liveTurns(messages)
-  let start = live.length, chars = 0
-  while (start > 0 && live.length - start < TAIL.messages && chars + live[start - 1]!.content.length <= TAIL.chars) chars += live[--start]!.content.length
+export const fullness = (messages: Turn[], tokens = limit) => Math.min(1, liveTokens(messages) / Math.max(1, tokens))
+/** 较早的部分交给模型写摘要；最近几轮（最多 6 条、约上限的四分之一，从读者的一问开始）原样留下。 */
+export function splitForCompaction<T extends Turn>(messages: T[], tokens = limit): { old: T[]; tail: T[] } {
+  const live = liveTurns(messages), room = Math.min(8000, tokens / 4)
+  let start = live.length, used = 0
+  while (start > 0 && live.length - start < 6 && used + estimateTokens(live[start - 1]!.content) <= room) used += estimateTokens(live[--start]!.content)
   while (start < live.length && (live[start]!.role !== 'user' || live[start]!.summary)) start++
   return { old: live.slice(0, start), tail: live.slice(start) }
 }

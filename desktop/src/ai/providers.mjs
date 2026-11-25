@@ -19,9 +19,10 @@ export const PROVIDERS = [
     { id: 'gpt-5.4', name: 'GPT-5.4', efforts: ['none', 'low', 'medium', 'high', 'xhigh'], defaultEffort: 'medium', vision: true },
   ] },
   { id: 'anthropic', name: 'Claude（Anthropic）', protocol: 'anthropic', baseUrl: 'https://api.anthropic.com', defaultModel: 'claude-opus-5-5', models: [
-    { id: 'claude-opus-5-5', name: 'Claude Opus 5.5', efforts: CLAUDE_EFFORTS, defaultEffort: 'medium', vision: true },
-    { id: 'claude-sonnet-5-5', name: 'Claude Sonnet 5.5', efforts: CLAUDE_EFFORTS, defaultEffort: 'high', vision: true },
-    { id: 'claude-haiku-5-5', name: 'Claude Haiku 5.5', efforts: CLAUDE_EFFORTS, defaultEffort: 'medium', vision: true },
+    { id: 'claude-fable-5-2', name: 'Fable 5.2', efforts: CLAUDE_EFFORTS, defaultEffort: 'medium', vision: true },
+    { id: 'claude-opus-5-5', name: 'Opus 5.5', efforts: CLAUDE_EFFORTS, defaultEffort: 'medium', vision: true },
+    { id: 'claude-sonnet-5-5', name: 'Sonnet 5.5', efforts: CLAUDE_EFFORTS, defaultEffort: 'high', vision: true },
+    { id: 'claude-haiku-5-5', name: 'Haiku 5.5', efforts: CLAUDE_EFFORTS, defaultEffort: 'medium', vision: true },
   ] },
   { id: 'kimi', name: 'Kimi（月之暗面）', protocol: 'chat', baseUrl: 'https://api.moonshot.cn/v1', defaultModel: 'kimi-k2-turbo-preview', models: [
     { id: 'kimi-k2-turbo-preview', name: 'Kimi K2 Turbo', efforts: [], defaultEffort: '', vision: false },

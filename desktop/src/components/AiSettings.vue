@@ -1,5 +1,6 @@
 <script setup lang="ts">
 // AI 设置分两步：先把要用的服务连上（各家的 API Key、本机 Codex 的登录），再给每个功能挑一个模型。
+import ModelCombo from './ModelCombo.vue'
 import { ref, reactive, computed, onBeforeUnmount } from 'vue'
 import { PROVIDERS, PROTOCOLS, getProvider } from '../ai/providers.mjs'
 import { nativeModelInventory, codexCheck, checkCodex } from '../ai/native-models'
@@ -169,8 +170,7 @@ defineExpose({ save, hasChanges: () => edited.value })
           <option v-for="item in (PROVIDERS as any[])" :key="item.id" :value="item.id">{{ item.name }}{{ connected(item.id) ? '' : '（未连接）' }}</option>
         </select></label>
         <template v-if="!following(slot)">
-          <label>模型<select v-if="slot.target.provider === 'codex'" v-model="slot.target.model" :aria-label="`${slot.label}模型`" :disabled="refreshing" @change="settle(slot)"><option v-if="slot.target.model && !modelsOf('codex').some(item => item.id === slot.target.model)" :value="slot.target.model">{{ slot.target.model }}</option><option v-for="item in modelsOf('codex').filter(item => item.id)" :key="item.id" :value="item.id">{{ item.name || item.id }}</option></select><input v-else v-model="slot.target.model" :aria-label="`${slot.label}模型`" :list="`models-${slot.id}`" placeholder="模型名称" @change="settle(slot)" /></label>
-          <datalist :id="`models-${slot.id}`"><option v-for="item in modelsOf(slot.target.provider)" :key="item.id" :value="item.id">{{ item.name }}</option></datalist>
+          <label>模型<select v-if="slot.target.provider === 'codex'" v-model="slot.target.model" :aria-label="`${slot.label}模型`" :disabled="refreshing" @change="settle(slot)"><option v-if="slot.target.model && !modelsOf('codex').some(item => item.id === slot.target.model)" :value="slot.target.model">{{ slot.target.model }}</option><option v-for="item in modelsOf('codex').filter(item => item.id)" :key="item.id" :value="item.id">{{ item.name || item.id }}</option></select><ModelCombo v-else v-model="slot.target.model" :models="modelsOf(slot.target.provider)" :label="`${slot.label}模型`" @change="settle(slot)" /></label>
           <label v-if="effortsOf(slot).length">思考强度<select v-model="slot.target.effort" :aria-label="`${slot.label}思考强度`"><option v-if="slot.id === 'assistant'" value="">模型默认</option><option v-for="item in effortsOf(slot)" :key="item" :value="item">{{ EFFORT[item] || item }}</option></select></label>
           <label v-if="tiersOf(slot).length">速度<select :value="tierOf(slot)" :aria-label="`${slot.label}响应速度`" @change="setTier(slot, ($event.target as HTMLSelectElement).value)"><option value="">标准</option><option v-for="item in tiersOf(slot)" :key="item.id" :value="item.id">{{ TIER[item.id] || item.name || item.id }}</option></select></label>
           <label v-else-if="supportsFast(slot.target.provider)" class="check"><input v-model="slot.target.fast" type="checkbox" /> Fast：更快出字，额度消耗更多</label>

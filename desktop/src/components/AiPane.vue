@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { fullness } from '../ai/compaction'
+import { fullness, liveTokens } from '../ai/compaction'
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, reactive, defineAsyncComponent } from 'vue'
 import 'katex/dist/katex.min.css'
 import { getProvider, getNativeModels, getNativeStatus } from '../ai/providers.mjs'
@@ -406,7 +406,8 @@ const expanded = ref(new Set<string>())
 function toggleReasoning(id: string) { const next = new Set(expanded.value); if (next.has(id)) next.delete(id); else next.add(id); expanded.value = next }
 const contextUsed = computed(() => conversationTokens(state.value))
 const contextLimit = computed(() => contextWindow(settings.value.provider, settings.value.model || ''))
-const contextRatio = computed(() => fullness(state.value.messages))
+const compactAt = computed(() => preferences.value.assistant.compactK * 1000)
+const contextRatio = computed(() => fullness(state.value.messages, compactAt.value))
 
 // ---- Answer rendering ----------------------------------------------------
 function jump(source: any) { emit('jump', { page: source.page, rect: source.rect, ...(source.line ? { line: source.line } : {}) }) }
@@ -1048,7 +1049,13 @@ onMounted(() => {
     void nextTick(place)
     setTimeout(() => revealRest(() => void nextTick(place)), 260)
   })
-  observer = new ResizeObserver(() => updateRail())
+  // 输入框变高（多行、贴图）时消息区变矮：把滚动位置补上，原来看到的最后一行不被挡住。
+  let listHeight = messageList.value?.clientHeight || 0
+  observer = new ResizeObserver(() => {
+    const list = messageList.value
+    if (list) { const now = list.clientHeight; if (listHeight && now < listHeight) list.scrollTop += listHeight - now; listHeight = now }
+    updateRail()
+  })
   if (messageList.value) observer.observe(messageList.value)
 })
 onBeforeUnmount(() => { unwatch?.(); cancelAnimationFrame(scrollFrame); cancelAnimationFrame(revealFrame); rememberScroll(); clearInterval(ticker); clearTimeout(predictTimer); predicting?.abort(); observer?.disconnect(); if (renderFrame) cancelAnimationFrame(renderFrame); pickerRequest?.abort(); document.removeEventListener('pointerdown', pickerOutside, true); window.removeEventListener('keydown', strayEscape, true); document.removeEventListener('pointerdown', historyOutside, true) })
@@ -1258,7 +1265,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
           <input ref="attachInput" class="attach-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple tabindex="-1" aria-hidden="true" @change="pickImages" />
           <label class="context-switch" :class="{ on: includeDocument }" :data-tip="busy ? '正在回答，答完才能切换' : includeDocument ? '已开启：提问时附带当前页与文档检索' : '已关闭：只发送问题与选区'"><input v-model="includeDocument" type="checkbox" role="switch" :disabled="busy" aria-label="文档上下文" /><span class="context-glyph" aria-hidden="true"><AppIcon name="book" :size="14" /><i class="context-slash" /></span><span class="context-label">文档上下文</span></label>
           <span class="composer-space" />
-          <button type="button" class="context-ring" :class="{ busy: compressing }" :data-tip="compressing ? '正在压缩对话' : `上下文约 ${count(contextUsed)} tokens · ${Math.round(contextRatio * 100)}%，满了自动压缩，点击立即压缩`" aria-label="压缩对话" :style="{ '--ratio': contextRatio }" @click="runCommand('compress', '')"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5" /><circle class="ring-value" cx="10" cy="10" r="7.5" pathLength="100" /></svg></button>
+          <button type="button" class="context-ring" :class="{ busy: compressing }" :data-tip="compressing ? '正在压缩对话' : `上下文 ${count(liveTokens(state.messages))} / ${count(compactAt)} tokens，满了自动压缩，点击立即压缩`" aria-label="压缩对话" :style="{ '--ratio': contextRatio }" @click="runCommand('compress', '')"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5" /><circle class="ring-value" cx="10" cy="10" r="7.5" pathLength="100" /></svg></button>
           <div ref="pickerHost" class="model-picker-host">
             <button type="button" class="model-picker" :disabled="busy" :aria-expanded="pickerOpen" :aria-controls="`model-drawer-${state.id}`" aria-label="选择模型与思考强度" :data-tip="busy ? '正在回答，答完才能换模型' : '模型与思考强度'" @click="pickerOpen = !pickerOpen"><span class="picker-model">{{ modelLabel }}</span><span class="picker-effort">{{ EFFORT_LABELS[settings.effort || ''] || settings.effort }}</span><span v-if="bolts" class="picker-fast" :class="{ twin: bolts > 1 }"><AppIcon v-for="n in bolts" :key="n" name="bolt" :size="11" /></span><AppIcon name="down" :size="12" class="picker-chevron" /></button>
           </div>
@@ -1630,6 +1637,9 @@ button:disabled{opacity:.4;cursor:default}
 .ai-error{margin:0 0 12px;padding:9px 12px;border-radius:var(--r-md);background:color-mix(in srgb,var(--danger) 12%,transparent);border:1px solid color-mix(in srgb,var(--danger) 25%,transparent);font-size:12px;line-height:1.6;color:var(--danger);overflow-wrap:anywhere}
 /* 输入栏：一片薄玻璃，只用细边与内高光与底板分开，没有厚重投影。 */
 .ai-composer{flex-shrink:0;padding:6px 10px 10px;container:composer / inline-size}
+/* 消息一直显示到输入框的边线：消息区伸到输入框外圈留白的下面，留白本身是透明的。 */
+.ai-body{margin-bottom:-6px}
+:root[data-style='warm'] .ai-body{margin-bottom:-14px}
 /* 输入栏很窄时（最小窗口）芯片才允许省略文字；平时完整显示「文档上下文」，由模型按钮先让出宽度。 */
 @container composer (max-width: 300px){.context-switch{flex-shrink:1}}
 @container composer (max-width: 290px){.context-label{display:none}.context-switch{padding:0 7px}}

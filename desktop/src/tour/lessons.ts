@@ -210,7 +210,7 @@ export const PICTURE = '湖边日落.jpg'
 export const SUM_NAME = '线代讲义 5.1–5.2 特征值'
 export const sumLength = SUM.blocks.reduce((total, block) => total + block[1].length, 0)
 /* 后两个所属的服务在这一课里没有连接，菜单里是灰的。 */
-export const MODELS = ['DeepSeek Flash', 'DeepSeek V4 Pro', 'GPT-5.4（未连接）', 'Claude Opus 5.5（未连接）']
+export const MODELS = ['DeepSeek Flash', 'DeepSeek V4 Pro', 'GPT-5.4（未连接）', 'Opus 5.5（未连接）']
 export const replyLength = TEXT.reply.join('').length
 
 export type Caption = { text: string; keys?: string[]; mouse?: boolean | 'left' | 'right'; top?: boolean }
