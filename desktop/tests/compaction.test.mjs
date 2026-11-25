@@ -13,7 +13,7 @@ test('压缩留下最近几轮，从读者的一问开始', () => {
 test('已压缩的不再计入，圆环与摘要篇幅跟着原文走', () => {
   const list = turns(WINDOW.messages)
   assert.equal(fullness(list), 1)
-  list.slice(0, 18).forEach(item => { item.compressed = true })
+  list.slice(0, WINDOW.messages - 6).forEach(item => { item.compressed = true })
   assert.equal(fullness(list), 6 / WINDOW.messages)
   assert.equal(summaryBudget(1000), 800); assert.equal(summaryBudget(12000), 2000); assert.equal(summaryBudget(900000), 4000)
 })
