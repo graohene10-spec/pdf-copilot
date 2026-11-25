@@ -2,7 +2,7 @@
  * 图解：讲概念用的静态示意图（韦恩图、嵌套、映射、关系图 / 交换图、推理链、概念树、运算表、轮换、数轴、象限）。
  * 和 intelligent-ui.ts 里的组件一样由模型写 JSON、这里用 SVG + DOM 画出来，不执行任何模型给的代码。
  *
- * 画法统一：细线、少量主色，重点（focus）描一道主色并带一点光；铅笔草稿主题下线条手绘、重点换成红铅笔。
+ * 画法统一、平的：细线、中性色，重点（focus）只用强调色描一道，不抖、不发光；各主题只换强调色。
  * 图上的文字都是 HTML 叠在 SVG 上，支持 Markdown 和 $...$ 公式。
  *
  * DIAGRAM_SKILLS 是给模型看的「图解目录」：每一种图写明适合讲什么、JSON 怎么写，模型按内容自己挑。
@@ -51,17 +51,14 @@ function canvas(root: HTMLElement, spec: any, W: number, H: number): Canvas {
   const id = `iui-d${++serial}`
   const svg = s('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': text(spec.title || spec.type, 80) }) as SVGSVGElement
   const defs = s('defs')
-  // 箭头两种：普通和重点；草稿主题的手绘抖动滤镜（别的主题用 CSS 关掉）。
+  // 箭头两种：普通和重点。
   for (const [name, className] of [['a', 'iui-ah'], ['h', 'iui-ah hot']]) {
     const marker = s('marker', { id: `${id}-${name}`, viewBox: '0 0 10 10', refX: 8.5, refY: 5, markerWidth: 7, markerHeight: 7, orient: 'auto-start-reverse', markerUnits: 'userSpaceOnUse' })
     marker.append(s('path', { d: 'M1 1.2L8.6 5L1 8.8', class: className }))
     defs.append(marker)
   }
-  const wobble = s('filter', { id: `${id}-w`, x: '-5%', y: '-5%', width: '110%', height: '110%' })
-  wobble.append(s('feTurbulence', { type: 'fractalNoise', baseFrequency: .012, numOctaves: 1, seed: serial % 97 }), s('feDisplacementMap', { in: 'SourceGraphic', scale: 3 }))
-  defs.append(wobble)
   svg.append(defs)
-  const ink = s('g', { class: 'ink', filter: `url(#${id}-w)` }) as SVGGElement
+  const ink = s('g', { class: 'ink' }) as SVGGElement
   svg.append(ink)
   const layer = h('div', 'iui-dia-labels')
   wrap.append(svg, layer)
@@ -367,7 +364,7 @@ function cycle(spec: any, root: HTMLElement) {
   list(spec.cycles, 8).forEach((cyc: any, order: number) => {
     const members = list(cyc, 12).map((item: any) => text(item, 12)).filter((name: string) => points.includes(name))
     const hot = order === num(spec.focus, -1)
-    if (members.length === 1) { const [x, y] = at(members[0]!), dx = x - CX, dy = y - CY, l = Math.hypot(dx, dy) || 1; c.ink.append(s('circle', { class: `iui-edge${hot ? ' hot' : ''}`, cx: x + dx / l * 22, cy: y + dy / l * 22, r: 11 })); return }
+    if (members.length === 1) { const [x, y] = at(members[0]!), dx = x - CX, dy = y - CY, l = Math.hypot(dx, dy) || 1; c.ink.append(s('circle', { class: `iui-edge${hot ? ' hot' : ''}`, cx: x + dx / l * 30, cy: y + dy / l * 30, r: 11 })); return }
     members.forEach((name: string, index: number) => {
       const a = at(name), b = at(members[(index + 1) % members.length]!)
       c.ink.append(s('path', { class: `iui-edge tone-${order % 5 + 1}${hot ? ' hot' : ''}`, d: arrowPath(a[0], a[1], b[0], b[1], 15, 16, members.length === 2 ? 26 : -Math.hypot(b[0] - a[0], b[1] - a[1]) * .12), 'marker-end': arrowHead(c, hot) }))

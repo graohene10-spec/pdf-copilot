@@ -116,11 +116,16 @@ function ticks(low: number, high: number, count = 5) {
 
 // ---- 图表 ---------------------------------------------------------------------
 type Series = { name: string; points: [number, number][] }
-const W = 560, H = 300, PAD = { left: 46, right: 14, top: 14, bottom: 34 }
+const W = 560, H = 300, PAD = { left: 46, right: 14, top: 10, bottom: 30 }
+/** 一张卡片：标题和副标题排在卡头左边，右边留给「重置」这类操作。 */
 function frame(root: HTMLElement, title?: string, subtitle?: string) {
   const card = h('section', 'iui-card')
-  if (title) card.append(h('h4', 'iui-title', text(title, 80)))
-  if (subtitle) card.append(h('p', 'iui-sub', text(subtitle, 300)))
+  if (title || subtitle) {
+    const head = h('header', 'iui-head'), heading = h('div', 'iui-heading')
+    if (title) heading.append(h('h4', 'iui-title', text(title, 80)))
+    if (subtitle) heading.append(h('p', 'iui-sub', text(subtitle, 300)))
+    head.append(heading); card.append(head)
+  }
   root.append(card)
   return card
 }
@@ -143,6 +148,13 @@ function tooltipFor(host: HTMLElement) {
 /** 直角坐标的图：折线、散点、柱状共用坐标轴。categories 有值时横轴是分类。 */
 function plot(host: HTMLElement, kind: 'line' | 'scatter' | 'bar', series: Series[], options: { categories?: string[]; xLabel?: string; yLabel?: string; unit?: string }) {
   host.replaceChildren()
+  // 图上方一行：左边纵轴名，右边图例；横轴名在图下靠右。都不压在刻度上。
+  if (options.yLabel || series.length > 1 || series[0]?.name) {
+    const top = h('div', 'iui-plot-head')
+    top.append(h('span', 'iui-ylabel', text(options.yLabel, 24)))
+    if (series.length > 1 || series[0]?.name) top.append(legend(series.map(item => item.name)))
+    host.append(top)
+  }
   const wrap = h('div', 'iui-plot'), svg = s('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img' }) as SVGSVGElement
   wrap.append(svg); host.append(wrap)
   legible(svg)
@@ -162,7 +174,10 @@ function plot(host: HTMLElement, kind: 'line' | 'scatter' | 'bar', series: Serie
     svg.append(s('text', { class: 'iui-axis', x: PAD.left - 8, y: py(tick) + 4, 'text-anchor': 'end' }, format(tick) + (options.unit || '')))
   }
   if (categories) categories.forEach((name, index) => { if (categories.length <= 14 || index % Math.ceil(categories.length / 12) === 0) svg.append(s('text', { class: 'iui-axis', x: px(index), y: H - PAD.bottom + 18, 'text-anchor': 'middle' }, text(name, 12))) })
-  else for (const tick of ticks(x0, x1, 6)) if (tick >= x0 && tick <= x1) svg.append(s('text', { class: 'iui-axis', x: px(tick), y: H - PAD.bottom + 18, 'text-anchor': 'middle' }, format(tick)))
+  else for (const tick of ticks(x0, x1, 6)) if (tick >= x0 && tick <= x1) {
+    svg.append(s('line', { class: 'iui-grid', x1: px(tick), x2: px(tick), y1: PAD.top, y2: H - PAD.bottom }))
+    svg.append(s('text', { class: 'iui-axis', x: px(tick), y: H - PAD.bottom + 18, 'text-anchor': 'middle' }, format(tick)))
+  }
   svg.append(s('line', { class: 'iui-base', x1: PAD.left, x2: W - PAD.right, y1: py(Math.max(y0, Math.min(y1, 0))), y2: py(Math.max(y0, Math.min(y1, 0))) }))
   const label = (index: number, point: [number, number]) => categories ? categories[index] ?? '' : format(point[0])
   series.forEach((item, order) => {
@@ -189,8 +204,6 @@ function plot(host: HTMLElement, kind: 'line' | 'scatter' | 'bar', series: Serie
       svg.append(dot)
     })
   })
-  if (options.yLabel) svg.append(s('text', { class: 'iui-axis', x: 12, y: PAD.top + 2, 'text-anchor': 'start' }, text(options.yLabel, 24)))
-  if (series.length > 1 || series[0]?.name) host.append(legend(series.map(item => item.name)))
   if (options.xLabel) host.append(h('p', 'iui-xlabel', text(options.xLabel, 40)))
 }
 function legend(names: string[]) {
@@ -254,7 +267,9 @@ const builders: Record<string, Builder> = {
     const card = frame(root, spec.title, spec.subtitle), columns = list(spec.columns, 8).map(value => text(value, 30)), rows = list(spec.rows, 100).map(row => list(row, 8))
     const filterIndex = typeof spec.filter === 'number' ? spec.filter : columns.indexOf(String(spec.filter))
     const table = h('table', 'iui-table'), head = h('tr'), body = h('tbody')
-    for (const column of columns) head.append(h('th', '', column))
+    // 整列都是数（可带单位、百分号）的列右对齐，个位对着个位。
+    const numeric = columns.map((_, index) => rows.length > 0 && rows.every(row => /^[-+−]?[\d.,]+\s*(%|[A-Za-z]{0,4}|[一-鿿]{0,2})$/.test(text(row[index]?.text ?? row[index]).trim())))
+    columns.forEach((column, index) => head.append(h('th', numeric[index] ? 'num' : '', column)))
     const thead = h('thead'); thead.append(head); table.append(thead, body)
     const draw = (only?: string) => {
       body.replaceChildren()
@@ -262,7 +277,7 @@ const builders: Record<string, Builder> = {
         if (only !== undefined && text(row[filterIndex]?.text ?? row[filterIndex]) !== only) continue
         const line = h('tr')
         columns.forEach((_, index) => {
-          const cell = row[index], td = h('td')
+          const cell = row[index], td = h('td', numeric[index] ? 'num' : '')
           if (cell && typeof cell === 'object') td.append(h('span', 'iui-badge' + tone(cell.tone), text(cell.text, 40))); else write(td, text(cell, 200))
           line.append(td)
         })
@@ -283,7 +298,7 @@ const builders: Record<string, Builder> = {
   // 可以拖的模拟：参数滑块和开关改变后，曲线和读数用表达式重新算。
   sim(spec, root) {
     const card = frame(root, spec.title, spec.subtitle), scope: Scope = {}
-    const controls = h('div', 'iui-controls'), chart = h('div'), outputs = h('div', 'iui-outputs')
+    const controls = h('div', 'iui-controls'), chart = h('div', 'iui-sim-plot'), outputs = h('div', 'iui-outputs')
     const params = list(spec.params, 6), toggles = list(spec.toggles, 4), initial: Scope = {}
     const axis = spec.plot?.x || {}, name = /^[A-Za-z_]\w*$/.test(axis.name) ? axis.name : 'x'
     let curves: { name: string; run: Compiled }[] = [], readouts: { label: string; unit: string; digits: number; run: Compiled; value: HTMLElement }[] = []
@@ -305,12 +320,20 @@ const builders: Record<string, Builder> = {
       if (!/^[A-Za-z_]\w*$/.test(param?.name)) continue
       const min = number(param.min, 0), max = number(param.max, 10), step = number(param.step, (max - min) / 100) || .01
       scope[param.name] = initial[param.name] = Math.min(max, Math.max(min, number(param.value, (min + max) / 2)))
-      const box = h('label', 'iui-param'), value = h('strong'), slider = h('input')
+      // 一个参数一行：名字在左、当前值在右；下面是滑块（已拖过的一段用强调色），再下面是两端的最小 / 最大值。
+      const box = h('label', 'iui-param'), value = h('strong', 'iui-param-value'), slider = h('input'), unit = param.unit ? ' ' + text(param.unit, 10) : ''
       slider.type = 'range'; slider.min = String(min); slider.max = String(max); slider.step = String(step); slider.value = String(scope[param.name])
-      const show = () => { value.textContent = `${format(scope[param.name]!)}${param.unit ? ' ' + text(param.unit, 10) : ''}` }
+      // 读数按步长定小数位：步长 0.05 就一直显示两位，拖动时数字不跳宽。
+      const places = Math.min(4, (String(step).split('.')[1] || '').length)
+      const show = () => {
+        const current = scope[param.name]!
+        value.textContent = `${Math.abs(current) >= 1e6 || current !== 0 && Math.abs(current) < 1e-3 ? format(current) : current.toFixed(places)}${unit}`
+        slider.style.setProperty('--p', `${max > min ? (current - min) / (max - min) * 100 : 0}%`)
+      }
       slider.addEventListener('input', () => { scope[param.name] = Number(slider.value); show(); update() })
       slider.dataset.name = param.name
-      box.append(h('span', '', text(param.label || param.name, 30)), value, slider); controls.append(box); show()
+      const scale = h('span', 'iui-scale'); scale.append(h('span', '', format(min)), h('span', '', format(max)))
+      box.append(h('span', 'iui-param-name', text(param.label || param.name, 30)), value, slider, scale); controls.append(box); show()
     }
     const options = h('div', 'iui-options')
     for (const toggle of toggles) {
@@ -320,6 +343,7 @@ const builders: Record<string, Builder> = {
       input.addEventListener('change', () => { scope[toggle.name] = input.checked ? 1 : 0; update() })
       box.append(input, h('span', '', text(toggle.label || toggle.name, 40))); options.append(box)
     }
+    // 「重置」放在卡头右上角（没有标题时放在开关那一行的右端）。
     if (params.length || toggles.length) {
       const reset = h('button', 'iui-reset', '重置'); reset.type = 'button'
       reset.onclick = () => {
@@ -327,9 +351,13 @@ const builders: Record<string, Builder> = {
         for (const input of card.querySelectorAll<HTMLInputElement>('input[data-name]')) { if (input.type === 'checkbox') input.checked = Boolean(initial[input.dataset.name!]); else { input.value = String(initial[input.dataset.name!]); input.dispatchEvent(new Event('input')) } }
         update()
       }
-      options.append(reset)
+      const head = card.querySelector('.iui-head')
+      if (head) head.append(reset); else options.append(reset)
     }
-    card.append(controls, options, chart, outputs)
+    // 图在上，参数紧贴在图下面，读数和公式最后。
+    card.append(chart, controls)
+    if (options.childElementCount) card.append(options)
+    if (readouts.length) card.append(outputs)
     if (spec.formula) { const formula = h('div', 'iui-formula'); formula.innerHTML = renderMarkdown(`$$${text(spec.formula, 300)}$$`); card.append(formula) }
     if (spec.note) card.append(h('p', 'iui-sub', text(spec.note, 400)))
     update()
@@ -385,25 +413,20 @@ function build(spec: any, root: HTMLElement, context: Context) {
 
 const waiting = new WeakMap<HTMLElement, number>()
 /**
- * 一张图第一次出现时「画」出来：线条描出来、文字依次浮现，只这一遍。
+ * 一张图第一次出现时轻轻淡入、线条描出来，整段不超过半秒，不逐个弹出。
  * 回答还在写的时候整段会反复重排（界面也跟着重建），所以记下每张图第一次出现的时刻，重建时从动画的那个进度接着走，不会从头再来。
  */
 const born = new Map<string, number>()
-const ENTRANCE = 1500
+const ENTRANCE = 520
 function entrance(host: HTMLElement) {
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
   const key = host.dataset.ui || '', now = performance.now()
   if (!born.has(key)) { born.set(key, now); if (born.size > 400) born.delete(born.keys().next().value!) }
   const age = now - born.get(key)!
   if (age >= ENTRANCE) return
-  // 实线才描边（虚线本身就靠 dasharray 画，改成淡入）。
-  let order = 0
-  for (const shape of host.querySelectorAll<SVGGeometryElement>('.iui-shape,.iui-edge,.iui-line,.iui-span')) {
-    shape.style.setProperty('--i', String(Math.min(14, order++)))
+  // 实线才描边（虚线本身就靠 dasharray 画，跟着整体淡入）。
+  for (const shape of host.querySelectorAll<SVGGeometryElement>('.iui-shape,.iui-edge,.iui-line,.iui-span'))
     if (!/\b(dashed|faint)\b/.test(shape.getAttribute('class') || '')) { shape.setAttribute('pathLength', '1'); shape.classList.add('iui-drawn') }
-  }
-  for (const [selector, cap] of [['.iui-dl', 18], ['.iui-step', 10], ['.iui-region', 6], ['.iui-bar', 16], ['.iui-dot', 24], ['.iui-slice', 10], ['.iui-metric', 8], ['.iui-optable tr', 10], ['.iui-table tbody tr', 12], ['.iui-end,.iui-dot-mark', 10]] as const)
-    host.querySelectorAll<HTMLElement>(selector).forEach((element, index) => element.style.setProperty('--i', String(Math.min(cap, index))))
   host.style.setProperty('--iui-age', `${-Math.round(age)}ms`)
   host.classList.add('iui-fresh')
   // 走完就撤掉：之后拖滑块重画曲线、筛选表格都不再带入场动画。
@@ -428,11 +451,16 @@ export function mountIntelligentUi(root: HTMLElement, options: Context & { strea
 }
 
 /**
- * 写给模型看的说明。画的东西两处完全一样（同一套组件、同一个渲染器），只是侧重不同：
- * 阅读助手里图解和可交互并重，按内容选；快速解释是一张小卡片，首选图解，可交互只是可选的补充。
+ * 写给模型看的说明。三份用的是同一套组件、同一个渲染器，区别在什么时候画：
+ * 对话（assistant）和总结文档（document）默认是文字，只在去掉图读者明显更难懂时才画；
+ * 快速解释（explain）是读者主动点了「可视化讲解」，要画，但要挑对那一种，概念确实没有可画的结构时只给文字。
  */
-const WRITING = '写法：语言标记为 ui 的代码块，内容是一段 JSON，顶层是一个组件或组件数组，阅读器会把它画出来。图上的文字要短，公式写成 $...$；用 focus 标出最关键的那一处。示例数据要注明是示例，不要编造文档里没有的真实数据。'
-const FOLD = '内容分层多、一张图放不下，或读者要「自己点开看」的大纲、分支总结：不用 ui 代码块，在正文里写折叠段落——`<details>` 单独一行，下一行 `<summary>标题</summary>`，空一行后写这一层的正文（列表、公式、表格都行，也可以再套一层），最后 `</details>` 单独一行。正文里只有这两个标签会生效，其他 HTML 标签会原样显示成文字，不要写。'
+const WRITING = '写法：语言标记为 ui 的代码块，内容是一段 JSON（顶层是一个组件或组件数组）。图上文字要短，公式写 $...$，用 focus 标出最关键的一处。示意用的数据注明「示例」，不编造文档里没有的真实数据。sim 的表达式必须和正文公式是同一个模型，参数给合理的初值、范围和单位。'
+const FOLD = '内容分层多、要读者自己点开看（大纲、分支总结）：不用 ui，在正文写折叠段落——`<details>` 单独一行，下一行 `<summary>标题</summary>`，空一行写这一层正文（可再套一层），最后 `</details>` 单独一行。只有这两个标签生效，别的 HTML 不要写。'
+const PLACE = '图与文字：不看图，文字也要能读懂；图放在讲到那一处；图上已有的不在文字里再抄一遍，文字只补图上看不出的。'
+// 什么结构用哪种图解：三份指引共用。图解目录本身只留名字和写法，什么时候用都写在这里，免得两处说法打架。
+const STRUCTURE = '交集、「既是…又是…」→ venn；一层套一层的包含 → nest；函数、同态、核与像 → map；交换图，或箭头本身就是要点的关系 → graph；有限运算表 → optable；置换、轨道 → cycle；区间、解集、邻域 → axis；有层级的分类 → tree；按两个性质分四类 → quadrant'
+const CATALOG = DIAGRAM_CATALOG.map(line => line.replace(/——适合：.*?。写法：/, '：'))
 const INTERACTIVE = {
   cards: '- cards：{"type":"cards","items":[{"label":"说明","value":"98.6%","badge":"正常","tone":"good|warn|bad|info","note":""}]}',
   chart: '- chart：{"type":"chart","kind":"line|bar|scatter|pie","title":"","x":["A","B"]或数字数组,"series":[{"name":"","data":[1,2]}],"unit":"%","xLabel":"","yLabel":""}；散点用 "series":[{"name":"","points":[[x,y]]}]；饼图用 "items":[{"label":"","value":1}]',
@@ -443,39 +471,54 @@ const INTERACTIVE = {
 }
 export const UI_INSTRUCTIONS = {
   assistant: [
-    '回答里可以放 ui 代码块：阅读器把它画成图解或能操作的界面。这是你讲解的主要手段之一，不是点缀——一张图讲得清的，不要用三段话去绕。',
-    '下面这些情况应当主动画，不用等读者开口要图：',
-    '- 概念之间有结构：包含、交集、层级、分类、对应、先后、因果、互为前提。',
-    '- 一段推导、证明或算法有好几步，每一步依赖前一步。',
-    '- 一个过程、流程或状态怎样一步步变化。',
-    '- 两个以上的东西在几个方面做对比，或者读者容易把它们弄混。',
-    '- 一个量随别的量变化：公式里有参数、曲线有形状、存在临界点。',
-    '- 空间、几何、方向的关系，或者读者问「为什么」「有什么区别」「怎么理解」而答案本身是一个结构。',
-    '- 读者说没看懂、请你换个讲法：先换成图，再配几句话。',
-    '拿不准时偏向画。图放在讲到那一处的地方，前面一两句引出，后面接着用文字把图上看不出的补完；图和文字各讲各的，不要把图上已有的内容再用文字抄一遍。一次回答一般一到两处，复杂的问题可以更多。',
-    '不画的情况只有这些：答案就是一个事实、一个数、一句定义或一句是否；读者只要原文的出处或翻译；纯粹的闲聊。',
+    '回答默认是文字。ui 代码块会被画成图解或可操作的界面，但只在通过这道检验时才画：去掉这张图，读者是否明显更难懂？是才画。',
+    '必须画（读者没开口也画）：',
+    '- 读者要图、要能调参数，或说没看懂而难点在结构 → 画。',
+    '- 一个量随参数连续变化，曲线形状、临界点或趋势是理解的关键 → sim。',
+    '- 三个以上对象在同样几个维度上比较 → table，不再配一张重复数据的图。',
+    `- 概念本身就是结构：${STRUCTURE}。`,
+    '- 多步推导或证明，步骤之间的依赖比每步内容更要紧 → flow。',
+    '- 算法在一组具体数据上的逐步状态 → table，一行一步。',
+    '- 有真实的数值序列（文档里的数据，或按公式算出的值）要看趋势 → chart。',
+    '不要画：',
+    '- 答案是一个事实、定义、是非或一个数。',
+    '- 图只是把文字要点装进框：每个定义一张卡片、几个并列概念连成一张网。',
+    '- 两三项的简单并列 → 一句话或短列表。',
+    '- 没有真实数据的统计图；文字已经说完的信息再画一遍。',
+    '- 闲聊、翻译、找出处；上一条回答刚画过同样的图（读者没要求重画）。',
+    '数量：通常 0 处，需要时 1 处，确有两种不同需要时最多 2 处；拿不准就不画。',
+    '选型：表格能说清就不用图；图解能说清就不上可交互；cards 只放读者要盯住的几个关键数；form 只在确实要读者填几项设置再继续时用。',
+    PLACE,
     WRITING,
     FOLD,
-    '组件分两类，同等看待，按内容选：讲「是什么、怎么来的、彼此什么关系」用图解；讲「怎么变、差多少、让读者动手试」用可交互。两者都合适时可以各放一个——先用图解把结构讲清，再给一个可交互的让读者自己拨一拨。',
-    '【图解】静态示意图，讲概念的结构。先想清楚结构是什么（包含？交集？映射？推导？分类？运算？区间？），再挑最贴切的一种：',
-    ...DIAGRAM_CATALOG,
-    '【可交互】读者能动手的界面：量随参数变化用 sim，数据对比用 chart，条目多、要筛选用 table，几个关键数字用 cards，需要读者填写后再继续用 form：',
+    '【图解】',
+    ...CATALOG,
+    '【可交互】',
     ...Object.values(INTERACTIVE),
   ].join('\n'),
-  // 写进文档里的（总结文档）：没有「交给助手」的表单，其余和回答里一样。
+  // 写进文档里的（总结文档）：数量由总结设置另给（summary.ts），这里只管画不画、画什么；没有「交给助手」的表单。
   document: [
+    '文档以文字为主，只在去掉图读者会明显更难懂的地方画。全篇数量跟着内容走，不是每节一张；同样的图不在各节重复。',
+    `该画：概念本身是结构（${STRUCTURE}）；步骤依赖要紧的推导 → flow；量随参数连续变化、形状或临界点是关键 → sim；三个以上对象同维度比较 → table；有真实数据的趋势 → chart。`,
+    '不画：定义、结论的罗列，两三项并列，把要点装进框，没有真实数据的统计图，和正文重复的信息。',
+    '选型：表格说得清就不用图，图解说得清就不上可交互；不用 form。',
+    PLACE,
     WRITING,
-    '【图解】静态示意图，讲概念的结构。先想清楚结构是什么（包含？交集？映射？推导？分类？运算？区间？），再挑最贴切的一种：',
-    ...DIAGRAM_CATALOG,
-    '【可交互】读者能动手的界面：量随参数变化用 sim，数据对比用 chart，条目多、要筛选用 table，几个关键数字用 cards。不要用 form。',
+    '【图解】',
+    ...CATALOG,
+    '【可交互】',
     INTERACTIVE.sim, INTERACTIVE.chart, INTERACTIVE.table, INTERACTIVE.cards, INTERACTIVE.badges,
   ].join('\n'),
+  // 快速解释里读者主动点了「可视化讲解」：要画，重点是挑对那一种。
   explain: [
-    '这是一张就地弹出的小卡片：用一个 ui 代码块把选中的概念画出来。',
+    '这是一张就地弹出的小卡片，读者主动要了可视化讲解：用一个 ui 代码块把选中的概念讲清。要紧的是挑对那一种，不是画得多。',
+    `先判断它真正的结构再选：${STRUCTURE}；证明或推导的骨架 → flow；量随参数连续变化、形状或临界点是要点 → sim；几个对象在同样几个维度上比较 → table；有真实数值 → chart。`,
+    '只画一个；确有两种不同视角（如先 flow 讲推导、再 sim 看参数）才画两个。不用 form、cards，不把定义文字装进框里充数。',
+    '概念确实没有可画的结构（单纯的术语、定义、事实）：不硬画，只用文字讲清，开头一句说明为什么不画。',
     WRITING,
-    '首选【图解】。先判断这个概念的结构（包含？交集？映射？推导？分类？运算？区间？），从图解目录里挑最贴切的一种，最多两种：',
-    ...DIAGRAM_CATALOG,
-    '【可交互】是可选项，只在图解讲不出来时才用，或者放在图解后面作补充：量确实随参数连续变化用 sim，有真实数据要对比用 chart 或 table。不要为了互动而做互动，不要用 form、cards。',
+    '【图解】',
+    ...CATALOG,
+    '【可交互】',
     INTERACTIVE.sim, INTERACTIVE.chart, INTERACTIVE.table,
   ].join('\n'),
 }
