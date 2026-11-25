@@ -495,6 +495,11 @@ function failureText(item: RenderFailure) {
             <div class="quick-prompts-heading"><h3>快速解释</h3></div>
             <div class="settings-group"><label class="setting-check"><input v-model="draft.assistant.explainVisual" type="checkbox" :disabled="saving" aria-label="默认用可视化讲解" /><span>默认用可视化讲解（中键解释直接出图）</span></label></div>
           </section>
+          <section v-if="ready && tab === 'ai'" class="quick-prompts-section" aria-label="对话压缩设置">
+            <div class="quick-prompts-heading"><h3>对话压缩</h3></div>
+            <div class="settings-group"><label class="setting-row"><span>自动压缩大小</span><span class="number-control"><input v-model.number="draft.assistant.compactK" type="number" min="8" max="400" step="1" :disabled="saving" aria-label="自动压缩大小" aria-describedby="compact-help" /><span>千 tokens</span></span></label></div>
+            <HelpTip id="compact-help">对话超过这个长度时，较早的部分自动压缩成摘要。每次提问带的历史也不超过它。</HelpTip>
+          </section>
           <section v-if="ready && tab === 'ai'" class="quick-prompts-section prediction-section" aria-label="猜你想问设置">
             <div class="quick-prompts-heading"><h3>猜你想问</h3></div>
             <div class="settings-group"><label class="setting-check"><input v-model="draft.assistant.predictQuestions" type="checkbox" :disabled="saving" aria-label="启用猜你想问" aria-describedby="predict-help" /><span>启用猜你想问</span></label><label class="setting-row"><span>问题水平</span><select v-model="draft.assistant.predictLevel" :disabled="saving || !draft.assistant.predictQuestions" aria-label="猜你想问的问题水平"><option v-for="item in PREDICT_LEVELS" :key="item.id" :value="item.id">{{ item.label }} · {{ item.note }}</option></select></label></div>

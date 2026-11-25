@@ -3,7 +3,8 @@ import { loadAiSettings, loadApiKey } from './settings.mjs'
 import { RequestScheduler } from './request-scheduler.mjs'
 import { library } from '../sdk'
 import { recordUsage } from './usage'
-import { WINDOW, compactionPrompt, fullness, handoff, splitForCompaction } from './compaction'
+import { compactLimit, compactionPrompt, estimateTokens, fullness, handoff, liveTokens, splitForCompaction } from './compaction'
+export { estimateTokens }
 import { SUMMARY_READING, summaryDraft, summaryInstructions, summaryContinues, lastSummaryOptions, readSwitches, MAX_SUMMARY_ROUNDS, type SummaryState, type SummaryOptions } from './summary'
 import { MEMORY_VERSION, memory, defaultMemoryMode, forgetConversation, memorize, memoryInstructions, memoryMode, memoryReady, rememberMemoryMode, retagMemory, type MemoryMode } from './memory'
 
@@ -481,28 +482,14 @@ export function loadConversations(documentId: string): Promise<void> {
 
 // ---- Token estimates and model context windows. ----
 /** Rough token count: CJK characters ≈ 1 token each, other text ≈ 4 characters per token. */
-export function estimateTokens(text: string): number {
-  if (!text) return 0
-  const cjk = text.match(/[　-鿿가-힯＀-￯]/g)?.length || 0
-  return Math.ceil(cjk + (text.length - cjk) / 4)
-}
 export function contextWindow(provider: string, model: string): number {
   const id = `${provider}:${model}`.toLowerCase()
   if (id.includes('deepseek')) return 128_000
   if (/gpt-5|gpt-6|codex/.test(id)) return 400_000
   return 200_000
 }
-/** Tokens the next request carries from this conversation (bounded like the request history). */
-export function conversationTokens(state: ChatState): number {
-  let chars = 0, tokens = 0, kept = 0
-  for (const message of [...state.messages].reverse()) {
-    if ((message.failed && !message.content) || message.compressed) continue
-    if (kept >= WINDOW.messages || chars + message.content.length > WINDOW.chars) break
-    chars += message.content.length; kept++
-    tokens += estimateTokens(message.content)
-  }
-  return tokens + estimateTokens(state.draft)
-}
+/** Tokens the next request carries from this conversation. */
+export const conversationTokens = (state: ChatState): number => Math.min(liveTokens(state.messages), compactLimit()) + estimateTokens(state.draft)
 function titleFrom(question: string) {
   const line = question.replace(/\s+/g, ' ').trim()
   return line.length > 28 ? line.slice(0, 27) + '…' : line
@@ -557,7 +544,7 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
     const draftNow = draft ? `\n\n[草稿面板里现在的文档全文；要修改就在它的基础上改]\n${draft.slice(0, 60000)}` : ''
     // 重新回答中间的某一问：只把它之前的对话带给模型。
     const before = sendOptions.replace ? state.messages.findIndex(message => message.id === sendOptions.replace) : -1
-    const history = boundedHistory([...(state.inherited || []).map(item => ({ role: item.role, content: `[主对话里的内容（开启附属对话时）]\n${item.content}` })), ...(before < 0 ? state.messages : state.messages.slice(0, before)).filter(message => !message.failed && !message.compressed).map(message => message.summary || message.note ? { role: 'user', content: wireText(message) } : ({ role: message.role, content: (state.summary && message.role === 'assistant' ? withoutDrafts(wireText(message)) : wireText(message)) + (message.sources.length ? '\n[此前查到的相关位置]\n' + JSON.stringify(message.sources.slice(0, 8).map(item => ({ sourceId: item.sourceId, page: item.page, line: item.line, text: item.text.slice(0, 400) }))) : '') })), { ...user, content: wireContent + draftNow }])
+    const history = boundedHistory(compactLimit(), [...(state.inherited || []).map(item => ({ role: item.role, content: `[主对话里的内容（开启附属对话时）]\n${item.content}` })), ...(before < 0 ? state.messages : state.messages.slice(0, before)).filter(message => !message.failed && !message.compressed).map(message => message.summary || message.note ? { role: 'user', content: wireText(message) } : ({ role: message.role, content: (state.summary && message.role === 'assistant' ? withoutDrafts(wireText(message)) : wireText(message)) + (message.sources.length ? '\n[此前查到的相关位置]\n' + JSON.stringify(message.sources.slice(0, 8).map(item => ({ sourceId: item.sourceId, page: item.page, line: item.line, text: item.text.slice(0, 400) }))) : '') })), { ...user, content: wireContent + draftNow }])
     // The scheduler reports the first queue position before the answer bubble exists.
     let waiting = ''
     ticket = scheduler.acquire({ owner: `${descriptor.id}:${state.id}`, provider: snapshot.provider, signal, onState: (value: any) => {
@@ -595,7 +582,7 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
     const remembered = memoryInstructions({ id: owner.id, documentId: descriptor.id, mode: memoryMode(owner) })
     // 总结对话用自己的一套提示词，不带学习记录；Intelligent UI 的写法只在读者打开时给。
     const extraInstructions = state.summary ? summaryInstructions(descriptor.title, state.summary.options, state.summary.options.ui ? UI_INSTRUCTIONS.document : '') : UI_INSTRUCTIONS.assistant + (remembered ? '\n\n' + remembered : '')
-    const options = { ...snapshot, apiKey, signal, messages: history, extraInstructions,
+    const options = { ...snapshot, apiKey, signal, messages: history, historyTokens: compactLimit(), extraInstructions,
       onDelta: (text: string) => { if (valid() && answer) { answer.firstTokenAt ||= Date.now(); answer.content += text; answer.activity = '正在回答'; output() } },
       onReasoning: (text: string) => { if (valid() && answer) { answer.reasoning = (answer.reasoning || '') + text; answer.activity = '思考中'; output() } },
       onProgress: (text: string) => activity(text.replace(/[…。]+$/, '')),
