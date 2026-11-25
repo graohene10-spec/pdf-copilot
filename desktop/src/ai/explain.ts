@@ -20,8 +20,8 @@ const MODES: Record<Exclude<ExplainMode, 'ask'>, string> = {
   deeper: '讲得更深入一些：给出准确的定义、来由或推导要点，以及它和上下文里其他概念的关系。不超过 300 字。',
   example: '举一个具体的小例子把它讲明白（数字、图景或类比都可以），例子要贴合这段上下文。不超过 200 字。',
   simpler: '说得再浅一点：假设读者没有学过这个领域，用日常的话讲，不用术语。不超过 120 字。',
-  // 可视化讲解：必须给出一个 ui 代码块（Intelligent UI），写法随请求一起告诉模型。
-  visual: '用一张图把它讲明白：先用一两句话点题，然后必须给出一个 ui 代码块。优先用图解——集合关系用 venn 或 nest，函数 / 同态用 map，交换关系或概念网用 graph，证明步骤用 flow，分类用 tree，有限运算用 optable，置换用 cycle，区间用 axis，按两个性质分类用 quadrant。可交互的是可选项：只有量确实随参数连续变化时才用 sim，有真实数据对比时才用 chart 或 table，可以单独用，也可以跟在图解后面。图里是示意的就注明「示例」。图外的文字不超过 80 字。',
+  // 可视化讲解：读者主动要图，给一个 ui 代码块（Intelligent UI）；选哪种、写法随请求一起告诉模型（UI_INSTRUCTIONS.explain）。
+  visual: '用一张图把它讲明白：先用一两句话点题，再给出一个 ui 代码块，选最能体现它结构的那一种。图里是示意的就注明「示例」。图外的文字不超过 80 字。只有它确实没有可画的结构（单纯的术语、定义、事实）时才不画，改用不超过 150 字的文字讲清，开头一句说明为什么不画。',
 }
 /** 自由提问：读者就选中的内容自己问一句。 */
 export function askPrompt(term: string, context: string, question: string, previous = '') {
