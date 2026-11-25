@@ -116,7 +116,7 @@ function ticks(low: number, high: number, count = 5) {
 
 // ---- 图表 ---------------------------------------------------------------------
 type Series = { name: string; points: [number, number][] }
-const W = 560, H = 300, PAD = { left: 46, right: 14, top: 10, bottom: 30 }
+const W = 560, PAD = { left: 46, right: 14, top: 10, bottom: 36 }
 /** 一张卡片：标题和副标题排在卡头左边，右边留给「重置」这类操作。 */
 function frame(root: HTMLElement, title?: string, subtitle?: string) {
   const card = h('section', 'iui-card')
@@ -155,6 +155,8 @@ function plot(host: HTMLElement, kind: 'line' | 'scatter' | 'bar', series: Serie
     if (series.length > 1 || series[0]?.name) top.append(legend(series.map(item => item.name)))
     host.append(top)
   }
+  // 窄处（对话栏、快速解释卡片）把图画得高一些，否则曲线被压扁成一条。
+  const H = (host.clientWidth || W) < 440 ? 380 : 300
   const wrap = h('div', 'iui-plot'), svg = s('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img' }) as SVGSVGElement
   wrap.append(svg); host.append(wrap)
   legible(svg)
@@ -171,12 +173,12 @@ function plot(host: HTMLElement, kind: 'line' | 'scatter' | 'bar', series: Serie
   const py = (y: number) => H - PAD.bottom - (y - y0) / (y1 - y0) * (H - PAD.top - PAD.bottom)
   for (const tick of yTicks) {
     svg.append(s('line', { class: 'iui-grid', x1: PAD.left, x2: W - PAD.right, y1: py(tick), y2: py(tick) }))
-    svg.append(s('text', { class: 'iui-axis', x: PAD.left - 8, y: py(tick) + 4, 'text-anchor': 'end' }, format(tick) + (options.unit || '')))
+    svg.append(s('text', { class: 'iui-axis', x: PAD.left - 8, y: py(tick), 'text-anchor': 'end', 'dominant-baseline': 'middle' }, format(tick) + (options.unit || '')))
   }
-  if (categories) categories.forEach((name, index) => { if (categories.length <= 14 || index % Math.ceil(categories.length / 12) === 0) svg.append(s('text', { class: 'iui-axis', x: px(index), y: H - PAD.bottom + 18, 'text-anchor': 'middle' }, text(name, 12))) })
+  if (categories) categories.forEach((name, index) => { if (categories.length <= 14 || index % Math.ceil(categories.length / 12) === 0) svg.append(s('text', { class: 'iui-axis', x: px(index), y: H - PAD.bottom + 12, 'text-anchor': 'middle', 'dominant-baseline': 'hanging' }, text(name, 12))) })
   else for (const tick of ticks(x0, x1, 6)) if (tick >= x0 && tick <= x1) {
     svg.append(s('line', { class: 'iui-grid', x1: px(tick), x2: px(tick), y1: PAD.top, y2: H - PAD.bottom }))
-    svg.append(s('text', { class: 'iui-axis', x: px(tick), y: H - PAD.bottom + 18, 'text-anchor': 'middle' }, format(tick)))
+    svg.append(s('text', { class: 'iui-axis', x: px(tick), y: H - PAD.bottom + 12, 'text-anchor': 'middle', 'dominant-baseline': 'hanging' }, format(tick)))
   }
   svg.append(s('line', { class: 'iui-base', x1: PAD.left, x2: W - PAD.right, y1: py(Math.max(y0, Math.min(y1, 0))), y2: py(Math.max(y0, Math.min(y1, 0))) }))
   const label = (index: number, point: [number, number]) => categories ? categories[index] ?? '' : format(point[0])
@@ -227,7 +229,7 @@ function pie(host: HTMLElement, items: { label: string; value: number }[]) {
     slice.addEventListener('pointerleave', tip.hide)
     svg.append(slice); angle = end
   })
-  wrap.append(svg); host.append(wrap, legend(items.map(item => item.label)))
+  wrap.append(svg, legend(items.map(item => item.label))); host.append(wrap)
 }
 
 // ---- 各种组件 -----------------------------------------------------------------
@@ -261,7 +263,9 @@ const builders: Record<string, Builder> = {
     const series: Series[] = list(spec.series, 5).map(item => ({ name: text(item?.name, 30), points: Array.isArray(item?.points)
       ? list(item.points, 600).map(point => [number(point?.[0], NaN), number(point?.[1], NaN)] as [number, number])
       : list(item?.data, 600).map((value, index) => [categories ? index : number(spec.x?.[index], index), number(value, NaN)] as [number, number]) }))
-    plot(card, kind, series, { categories: kind === 'scatter' ? undefined : categories, xLabel: spec.xLabel, yLabel: spec.yLabel, unit: text(spec.unit, 6) })
+    // 画在卡片里自己的一格：plot 每次会清空它的容器，不能把卡头一起清掉。
+    const body = h('div'); card.append(body)
+    plot(body, kind, series, { categories: kind === 'scatter' ? undefined : categories, xLabel: spec.xLabel, yLabel: spec.yLabel, unit: text(spec.unit, 6) })
   },
   table(spec, root) {
     const card = frame(root, spec.title, spec.subtitle), columns = list(spec.columns, 8).map(value => text(value, 30)), rows = list(spec.rows, 100).map(row => list(row, 8))

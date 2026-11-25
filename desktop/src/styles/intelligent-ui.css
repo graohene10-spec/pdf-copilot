@@ -1,115 +1,166 @@
-/* Intelligent UI：回答里的可操作界面（ai/intelligent-ui.ts）。颜色都取主题变量，三种界面风格通用。 */
-.iui{--iui-1:var(--accent);--iui-2:#e39a4b;--iui-3:#55ab82;--iui-4:#d9707c;--iui-5:#9482d8;display:grid;gap:12px;margin:.4em 0 1em;font-family:inherit;font-size:13px;line-height:1.5;color:var(--surface-ink,var(--ink))}
-:root[data-style='sketch'] .iui{--iui-1:var(--pencil);--iui-2:var(--red-pencil)}
-.iui-card{position:relative;padding:14px 14px 12px;border:1px solid var(--line,var(--hairline));border-radius:var(--r-md,12px);background:color-mix(in srgb,var(--surface) 78%,transparent)}
-.iui-title{margin:0 0 2px;font-size:13.5px;font-weight:650}
-.iui-sub,.iui-xlabel{margin:2px 0 8px;font-size:12px;color:var(--surface-muted,var(--muted))}
-.iui-xlabel{text-align:center;margin:4px 0 0}
-.iui-wait,.iui-error{margin:0;padding:10px 12px;border:1px dashed var(--line,var(--hairline));border-radius:10px;font-size:12.5px;color:var(--surface-muted,var(--muted))}
-.iui-error{color:var(--danger)}
-.iui-badges{display:flex;flex-wrap:wrap;gap:6px}
-.iui-badge{display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:999px;background:color-mix(in srgb,var(--surface-ink,var(--ink)) 8%,transparent);font-size:11.5px;font-weight:600;white-space:nowrap}
-.iui-badge.tone-good{background:color-mix(in srgb,#3f9a63 18%,transparent);color:color-mix(in srgb,#2f8553 80%,var(--surface-ink,var(--ink)))}
-.iui-badge.tone-warn{background:color-mix(in srgb,#d99a2b 20%,transparent);color:color-mix(in srgb,#a66d0c 80%,var(--surface-ink,var(--ink)))}
-.iui-badge.tone-bad{background:color-mix(in srgb,var(--danger) 16%,transparent);color:var(--danger)}
-.iui-badge.tone-info{background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent)}
-.iui-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
-.iui-metric{position:relative;display:grid;gap:2px;padding:14px;border-radius:var(--r-md,12px);background:color-mix(in srgb,var(--surface-ink,var(--ink)) 5%,transparent)}
-.iui-metric .iui-badge{position:absolute;right:10px;top:10px}
-.iui-value{font-size:26px;font-weight:650;line-height:1.25;font-variant-numeric:tabular-nums}
-.iui-value.tone-good{color:#2f9a5c}.iui-value.tone-bad{color:var(--danger)}.iui-value.tone-warn{color:#b9790f}
-.iui-label,.iui-note{font-size:12px;color:var(--surface-muted,var(--muted))}
-.iui-plot{position:relative}
-[hidden].iui-tip{display:none}
-.iui-plot svg{display:block;width:100%;height:auto;overflow:visible}
-.iui-pie svg{max-width:240px;margin:0 auto}
-.iui-grid{stroke:color-mix(in srgb,var(--surface-ink,var(--ink)) 10%,transparent);stroke-dasharray:3 4}
-.iui-base{stroke:color-mix(in srgb,var(--surface-ink,var(--ink)) 30%,transparent)}
-.iui-axis{fill:var(--surface-muted,var(--muted));font-size:calc(11px*var(--k,1));font-variant-numeric:tabular-nums}
-.iui-line{fill:none;stroke-width:2.2;stroke-linejoin:round;stroke-linecap:round}
-.iui-bar,.iui-dot,.iui-slice{transition:opacity var(--dur-1,.12s)}
-.iui-bar:hover,.iui-dot:hover,.iui-slice:hover{opacity:.75}
-.iui-slice{stroke:var(--surface);stroke-width:2}
-.iui-tip{position:absolute;z-index:2;display:grid;gap:2px;padding:6px 9px;border-radius:8px;background:var(--surface);box-shadow:0 0 0 1px var(--line,var(--hairline)),0 8px 20px -8px rgb(0 0 0 / .35);font-size:12px;white-space:nowrap;pointer-events:none}
-.iui-legend{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 14px;margin-top:6px;font-size:12px;color:var(--surface-muted,var(--muted))}
-.iui-legend span::before{content:'';display:inline-block;width:8px;height:8px;margin-right:6px;border-radius:50%;background:var(--dot)}
-.iui-tabs{display:flex;gap:2px;margin:6px 0 8px;padding:2px;border-radius:999px;background:color-mix(in srgb,var(--surface-ink,var(--ink)) 6%,transparent)}
-.iui-tabs button{flex:1;height:28px;padding:0 10px;border:0;border-radius:999px;background:none;box-shadow:none;font-size:12.5px;color:var(--surface-muted,var(--muted))}
-.iui-tabs button.on{background:var(--surface);color:var(--surface-ink,var(--ink));box-shadow:0 1px 2px rgb(0 0 0 / .12)}
-.iui-table-wrap{overflow:auto}
-.iui-table{width:100%;border-collapse:collapse;font-size:13px}
-.iui-table th,.iui-table td{padding:8px 10px;border-bottom:1px solid var(--hairline,var(--line));text-align:left}
-.iui-table th{font-weight:650}
-.iui-controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:8px 0}
-.iui-param{display:grid;gap:4px;padding:10px 12px;border-radius:10px;background:color-mix(in srgb,var(--surface-ink,var(--ink)) 5%,transparent);font-size:12px;color:var(--surface-muted,var(--muted))}
-.iui-param strong{font-size:18px;color:var(--surface-ink,var(--ink));font-variant-numeric:tabular-nums}
-.iui-param input{width:100%;accent-color:var(--accent)}
-.iui-options{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin-bottom:8px}
-.iui-check{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer}
-.iui-check input{margin:0;accent-color:var(--accent)}
-.iui-reset{margin-left:auto;height:26px;padding:0 12px;border:1px solid var(--line,var(--hairline));border-radius:999px;background:transparent;box-shadow:none;font-size:12px;color:var(--surface-muted,var(--muted))}
-.iui-outputs{display:grid;gap:4px;margin-top:8px}
-.iui-output{display:flex;align-items:baseline;justify-content:space-between;gap:12px;font-size:12.5px;color:var(--surface-muted,var(--muted))}
-.iui-output strong{font-size:20px;color:var(--surface-ink,var(--ink));font-variant-numeric:tabular-nums}
-.iui-formula{margin-top:4px}
-.iui-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-top:8px}
-.iui-field{display:grid;gap:5px;min-width:0}
-.iui-field.wide,.iui-submit{grid-column:1/-1}
-.iui-field input:not([type=checkbox]):not([type=radio]),.iui-field select,.iui-field textarea{width:100%;min-width:0;height:34px;padding:0 10px;border:1px solid var(--line,var(--hairline));border-radius:10px;background:var(--surface);color:inherit;font:inherit;font-size:13px}
-.iui-field textarea{height:auto;padding:8px 10px;resize:vertical}
-.iui-radio{display:flex;flex-wrap:wrap;gap:6px 14px}
-.iui-submit{height:36px;border:0;border-radius:999px;background:var(--surface-ink,var(--ink));color:var(--surface);box-shadow:none;font-size:13px;font-weight:600}
-.iui-submit:disabled{opacity:.45}
+/* Intelligent UI：回答里的图解和可操作界面（ai/intelligent-ui.ts、ai/diagrams.ts）。
+   外观以现代为主：系统无衬线、1px 低对比细边、几乎不用阴影、中性色，强调色只用在图形和交互上，数字等宽。
+   主题只留一点呼应：液态玻璃 / 新液态玻璃是半透明底和更圆的角，铅笔草稿是纸色底和红铅笔强调色；暖色极简完全中性。 */
 
-/* 字体跟着所在的回答走；说明文字里的公式照常渲染。 */
-.iui button,.iui input,.iui select,.iui textarea{font-family:inherit}
+/* ---- 颜色与主题 ---- */
+.iui{
+  --iui-ink:var(--surface-ink,var(--ink));
+  --iui-bg:var(--surface);
+  --iui-accent:var(--accent);
+  --iui-on-accent:#fff;
+  --iui-radius:14px;
+  --iui-mute:color-mix(in srgb,var(--iui-ink) 64%,transparent);
+  --iui-line:color-mix(in srgb,var(--iui-ink) 12%,transparent);
+  --iui-line-2:color-mix(in srgb,var(--iui-ink) 22%,transparent);
+  --iui-fill:color-mix(in srgb,var(--iui-ink) 4.5%,transparent);
+  --iui-fill-2:color-mix(in srgb,var(--iui-ink) 8%,transparent);
+  --iui-good:#1d8a4b;--iui-warn:#ad6a00;--iui-bad:#c43d33;--iui-info:var(--iui-accent);
+  --iui-1:var(--iui-accent);--iui-2:#d9892b;--iui-3:#8a63d2;--iui-4:#3f9a5c;--iui-5:#64748b;
+}
+:root[data-theme='dark'] .iui{
+  --iui-on-accent:#111;
+  --iui-line:color-mix(in srgb,var(--iui-ink) 15%,transparent);
+  --iui-line-2:color-mix(in srgb,var(--iui-ink) 26%,transparent);
+  --iui-fill:color-mix(in srgb,var(--iui-ink) 6%,transparent);
+  --iui-fill-2:color-mix(in srgb,var(--iui-ink) 11%,transparent);
+  --iui-good:#5cc98a;--iui-warn:#e5a54b;--iui-bad:#f08a80;
+  --iui-2:#e9a25a;--iui-3:#a98bea;--iui-4:#6cc488;--iui-5:#9aa6b8;
+}
+:root[data-style='glass'] .iui{--iui-bg:color-mix(in srgb,var(--surface) 82%,transparent);--iui-radius:16px}
+:root[data-material='crystal'] .iui{--iui-radius:18px}
+:root[data-style='sketch'] .iui{--iui-bg:color-mix(in srgb,var(--paper,#fbf8f0) 35%,#fff);--iui-radius:10px}
+:root[data-style='sketch'][data-theme='dark'] .iui{--iui-bg:var(--paper-2,#34322d)}
+:root[data-style='warm'] .iui{--iui-ink:#1f2328;--iui-bg:#fff;--iui-accent:#0f8a7a;--iui-radius:12px}
+:root[data-style='warm'][data-theme='dark'] .iui{--iui-ink:#e7e8ea;--iui-bg:#232323;--iui-accent:#3fbfac}
+
+/* ---- 底子：卡片、卡头、提示 ---- */
+.iui{container-type:inline-size;display:grid;gap:12px;margin:.8em 0 1.1em;color:var(--iui-ink);font-family:'Segoe UI Variable Text','Segoe UI','Microsoft YaHei UI','PingFang SC',system-ui,sans-serif;font-size:14px;font-style:normal;font-weight:400;line-height:1.6;letter-spacing:0;font-variant-numeric:tabular-nums;text-shadow:none}
 .iui .katex{font-size:1.05em}
+.iui-card{position:relative;min-width:0;padding:18px 20px;border:1px solid var(--iui-line);border-radius:var(--iui-radius);background:var(--iui-bg)}
+.iui-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}
+.iui-heading{min-width:0}
+.iui-title{font-size:15px;font-weight:600;line-height:1.4}
+.iui-sub{margin-top:2px;font-size:12.5px;line-height:1.5;color:var(--iui-mute)}
+.iui-card>.iui-title{margin-bottom:12px}
+.iui-card>.iui-sub{margin-top:12px}
+.iui-wait,.iui-error{padding:10px 14px;border:1px solid var(--iui-line);border-radius:12px;background:var(--iui-fill);font-size:13px;color:var(--iui-mute)}
+.iui-error{color:var(--iui-bad)}
 
-/* ---- 图解（ai/diagrams.ts）：细线、少量主色；重点描一道主色带一点光。铅笔草稿：线条手绘抖动，重点用红铅笔。 ---- */
-.iui-dia-card{--dia-line:color-mix(in srgb,var(--surface-ink,var(--ink)) 46%,transparent);--dia-faint:color-mix(in srgb,var(--surface-ink,var(--ink)) 16%,transparent);--dia-hot:var(--accent);--dia-hot-soft:color-mix(in srgb,var(--accent) 16%,transparent)}
-:root[data-style='sketch'] .iui-dia-card{--dia-line:color-mix(in srgb,var(--pencil,#2b2a27) 78%,transparent);--dia-faint:color-mix(in srgb,var(--pencil,#2b2a27) 32%,transparent);--dia-hot:var(--red-pencil,#c0392b);--dia-hot-soft:color-mix(in srgb,var(--red-pencil,#c0392b) 14%,transparent)}
-.iui-dia{position:relative;width:100%}
-/* 图是等比缩放的：放在很宽的文档栏里会被撑得老大，里面却只有几个圈。限一个上限，居中放。 */
-.iui-dia{max-width:560px;margin-inline:auto}
+/* ---- 标签、数字卡 ---- */
+.iui-badges{display:flex;flex-wrap:wrap;gap:6px}
+.iui-badge{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:6px;background:var(--iui-fill-2);font-size:12px;font-weight:500;line-height:1;white-space:nowrap}
+.iui-badge.tone-good{background:color-mix(in srgb,var(--iui-good) 13%,transparent);color:var(--iui-good)}
+.iui-badge.tone-warn{background:color-mix(in srgb,var(--iui-warn) 14%,transparent);color:var(--iui-warn)}
+.iui-badge.tone-bad{background:color-mix(in srgb,var(--iui-bad) 12%,transparent);color:var(--iui-bad)}
+.iui-badge.tone-info{background:color-mix(in srgb,var(--iui-info) 12%,transparent);color:var(--iui-info)}
+.iui-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.iui-metric{position:relative;display:flex;flex-direction:column;min-width:0;padding:14px 16px;border:1px solid var(--iui-line);border-radius:var(--iui-radius);background:var(--iui-bg)}
+.iui-metric:has(>.iui-badge) .iui-label{padding-right:52px}
+.iui-metric .iui-label{order:-1;font-size:12.5px;color:var(--iui-mute)}
+.iui-metric .iui-badge{position:absolute;top:12px;right:12px}
+.iui-value{margin-top:4px;font-size:26px;font-weight:650;line-height:1.2;letter-spacing:-.02em}
+.iui-value.tone-good{color:var(--iui-good)}.iui-value.tone-warn{color:var(--iui-warn)}.iui-value.tone-bad{color:var(--iui-bad)}
+.iui-note{margin-top:6px;font-size:12px;line-height:1.5;color:var(--iui-mute)}
+
+/* ---- 图表：实线淡网格，轴名和图例在图外 ---- */
+.iui-plot{position:relative}
+.iui-plot svg{display:block;width:100%;height:auto;overflow:visible}
 .markdown-paper .iui-plot{max-width:680px;margin-inline:auto}
+.iui-plot-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:4px 16px;margin-bottom:6px;font-size:12px;color:var(--iui-mute)}
+.iui-legend{display:flex;flex-wrap:wrap;gap:4px 14px;margin-left:auto;font-size:12px;color:var(--iui-mute)}
+.iui-legend span{display:inline-flex;align-items:center;gap:6px}
+.iui-legend span::before{content:'';width:10px;height:10px;border-radius:3px;background:var(--dot)}
+.iui-pie .iui-legend{justify-content:center;margin:12px 0 0}
+.iui-pie svg{max-width:220px;margin:0 auto}
+.iui-xlabel{margin-top:2px;font-size:12px;text-align:right;color:var(--iui-mute)}
+.iui-grid{stroke:var(--iui-line);stroke-width:1}
+.iui-base{stroke:var(--iui-line-2);stroke-width:1}
+.iui-axis{fill:var(--iui-mute);font-size:calc(11px*var(--k,1));font-variant-numeric:tabular-nums}
+.iui-line{fill:none;stroke-width:2.2;stroke-linejoin:round;stroke-linecap:round}
+/* 线宽按屏幕像素算：图在窄处等比缩小时，曲线和网格不跟着变细。 */
+.iui-plot :is(.iui-line,.iui-grid,.iui-base){vector-effect:non-scaling-stroke}
+.iui-bar,.iui-dot,.iui-slice{transition:opacity .12s}
+.iui-bar:hover,.iui-dot:hover,.iui-slice:hover{opacity:.72}
+.iui-slice{stroke:var(--iui-bg);stroke-width:2}
+.iui-tip{position:absolute;z-index:2;display:grid;gap:1px;padding:6px 10px;border:1px solid var(--iui-line-2);border-radius:8px;background:var(--surface);box-shadow:0 6px 16px -8px rgb(0 0 0 / .25);font-size:12px;white-space:nowrap;pointer-events:none}
+[hidden].iui-tip{display:none}
+
+/* ---- 表格：表头一行淡色小字，行之间一条细线；数字列右对齐 ---- */
+.iui-table-wrap{overflow-x:auto}
+.iui-table{width:100%;border-collapse:collapse;font-size:13.5px}
+.iui-table th,.iui-table td{padding:10px 12px;border:0;border-bottom:1px solid var(--iui-line);background:none;text-align:left;vertical-align:top}
+.iui-table th{padding-top:2px;padding-bottom:8px;font-size:12px;font-weight:500;color:var(--iui-mute);white-space:nowrap}
+.iui-table .num{text-align:right}
+.iui-table tbody tr:last-child td{border-bottom:0}
+.iui-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
+
+/* ---- 模拟：图在上，参数紧贴图下；名字左、读数右，滑块下面是两端的最小 / 最大值 ---- */
+.iui-controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px 32px;margin-top:16px}
+.iui-param{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;gap:6px 12px;font-size:13.5px}
+.iui-param-value{font-weight:600;text-align:right;white-space:nowrap}
+.iui-param input[type=range],.iui-scale{grid-column:1/-1}
+.iui-scale{display:flex;justify-content:space-between;gap:8px;margin-top:-4px;font-size:11.5px;color:var(--iui-mute)}
+.iui-options{display:flex;flex-wrap:wrap;align-items:center;gap:8px 20px;margin-top:14px}
+.iui-check{display:inline-flex;align-items:center;gap:8px;font-size:13.5px;cursor:pointer}
+.iui-outputs{margin-top:16px;border-top:1px solid var(--iui-line)}
+.iui-output{display:flex;align-items:baseline;justify-content:space-between;gap:16px;padding:10px 0;border-bottom:1px solid var(--iui-line);font-size:13px;color:var(--iui-mute)}
+.iui-output:last-child{border-bottom:0;padding-bottom:0}
+.iui-output strong{font-size:15px;font-weight:600;color:var(--iui-ink);white-space:nowrap}
+.iui-formula{margin-top:12px;padding-top:12px;border-top:1px solid var(--iui-line);overflow-x:auto;text-align:center}
+.iui-formula .katex-display{margin:4px 0}
+.iui-formula .katex{font-size:1.15em}
+
+/* ---- 表单 ---- */
+.iui-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px 16px}
+.iui-field{display:grid;align-content:start;gap:6px;min-width:0}
+.iui-field .iui-label{font-size:12.5px;color:var(--iui-mute)}
+.iui-field.wide,.iui-submit{grid-column:1/-1}
+.iui-radio{display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px;min-height:28px}
+.iui-submit{justify-self:start}
+
+/* ---- 图解：平的，不抖、不发光；重点只用强调色描一道 ---- */
+.iui-dia-card{--dia-line:color-mix(in srgb,var(--iui-ink) 45%,transparent);--dia-faint:color-mix(in srgb,var(--iui-ink) 16%,transparent);--dia-hot:var(--iui-accent);--dia-hot-soft:color-mix(in srgb,var(--iui-accent) 11%,transparent)}
+.iui-dia{position:relative;width:100%;max-width:560px;margin-inline:auto}
 .iui-dia>svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
-:root:not([data-style='sketch']) .iui-dia .ink{filter:none}
 .iui-dia-labels{position:absolute;inset:0;pointer-events:none}
-.iui-dl{position:absolute;translate:-50% -50%;max-width:42%;padding:1px 4px;border-radius:6px;font-size:12.5px;line-height:1.35;text-align:center;white-space:nowrap;color:var(--surface-ink,var(--ink));pointer-events:auto}
+.iui-dl{position:absolute;translate:-50% -50%;width:max-content;max-width:min(44%,240px);padding:1px 4px;border-radius:6px;font-size:13px;line-height:1.35;text-align:center;white-space:normal;color:var(--iui-ink);pointer-events:auto}
 .iui-dl[data-align='left']{translate:0 -50%;text-align:left}
 .iui-dl[data-align='right']{translate:-100% -50%;text-align:right}
 .iui-dl .katex{font-size:1.04em}
-.iui-dl.muted{color:var(--surface-muted,var(--muted));font-size:11.5px}
-.iui-dl.set{font-weight:650}
-.iui-dl.region{font-size:12px;background:color-mix(in srgb,var(--surface) 72%,transparent)}
-.iui-dl.edge{font-size:12px;background:color-mix(in srgb,var(--surface) 80%,transparent)}
-.iui-dl.node{padding:4px 11px;border:1px solid var(--dia-line);border-radius:999px;background:var(--surface);font-weight:550}
-.iui-dl.node.root{font-weight:700}
-.iui-dl.node.point{min-width:26px;padding:3px 7px;border-radius:50%}
+.iui-dl.item{max-width:30%}
+.iui-dl.muted{font-size:12px;color:var(--iui-mute)}
+.iui-dl.set{font-weight:600}
+.iui-dl.set .katex{font-size:1.2em}
+.iui-dl.set.title{max-width:40%}
+.iui-dl.region,.iui-dl.edge{font-size:12.5px;background:color-mix(in srgb,var(--iui-bg) 88%,transparent)}
+.iui-dl.venn-region{max-width:22%}
+.iui-dl.venn-region.tight{max-width:15%}
+.iui-dl.node{padding:4px 12px;border:1px solid var(--iui-line-2);border-radius:8px;background:var(--iui-bg);font-weight:500}
+.iui-dl.node.root{background:color-mix(in srgb,var(--iui-ink) 5%,var(--surface));font-weight:600}
+.iui-dl.node.point{min-width:28px;padding:3px 7px;border-radius:50%}
 .iui-dl.hot{color:var(--dia-hot)}
-.iui-dl.node.hot{border-color:var(--dia-hot);box-shadow:0 0 0 3px var(--dia-hot-soft),0 0 14px -2px color-mix(in srgb,var(--dia-hot) 50%,transparent);color:var(--surface-ink,var(--ink))}
+.iui-dl.node.hot{border-color:var(--dia-hot);background:color-mix(in srgb,var(--dia-hot) 9%,var(--surface));color:var(--iui-ink)}
 .iui-dl.has-note{cursor:help;text-decoration:underline dotted color-mix(in srgb,currentColor 40%,transparent);text-underline-offset:3px}
-.iui-shape{fill:none;stroke:var(--dia-line);stroke-width:1.4}
+.iui-dl.mark-no,.iui-dia-key>i{display:grid;place-items:center;width:17px;height:17px;padding:0;border-radius:50%;background:var(--dia-hot);color:var(--iui-on-accent);font-size:10.5px;font-style:normal;font-weight:600;line-height:1}
+.iui-dia-legend{display:flex;flex-wrap:wrap;gap:4px 16px;margin-top:10px;font-size:12.5px}
+.iui-dia-key{display:inline-flex;align-items:center;gap:6px}
+.iui-dia-note{margin-top:12px}
+.iui-shape{fill:none;stroke:var(--dia-line);stroke-width:1.3}
 .iui-shape.soft{stroke:var(--dia-faint)}
-/* 草稿主题的线过一道抖动滤镜会被抹淡：描粗一点，圆和框才不会断。 */
-:root[data-style='sketch'] .iui-shape{stroke-width:1.7}
-:root[data-style='sketch'] .iui-shape.soft{stroke-width:1.9}
 .iui-shape.fill{fill:var(--dia-hot-soft)}
+.iui-shape.hot{stroke:var(--dia-hot);stroke-width:1.8}
 .iui-shape.dashed,.iui-edge.dashed{stroke-dasharray:5 4}
-.iui-shape.hot{stroke:var(--dia-hot);stroke-width:1.8;filter:drop-shadow(0 0 4px color-mix(in srgb,var(--dia-hot) 45%,transparent))}
 .iui-region{fill:var(--dia-hot-soft)}
-.iui-region.hot{fill:color-mix(in srgb,var(--dia-hot) 26%,transparent)}
-.iui-edge{fill:none;stroke:var(--dia-line);stroke-width:1.4;stroke-linecap:round}
+.iui-region.hot{fill:color-mix(in srgb,var(--dia-hot) 20%,transparent)}
+.iui-edge{fill:none;stroke:var(--dia-line);stroke-width:1.3;stroke-linecap:round}
 .iui-edge.faint{stroke:var(--dia-faint);stroke-dasharray:2 3}
-.iui-edge.hot{stroke:var(--dia-hot);stroke-width:1.9;filter:drop-shadow(0 0 3px color-mix(in srgb,var(--dia-hot) 50%,transparent))}
-.iui-ah{fill:none;stroke:var(--dia-line);stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.iui-edge.hot{stroke:var(--dia-hot);stroke-width:1.8}
+.iui-ah{fill:none;stroke:var(--dia-line);stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round}
 .iui-ah.hot{stroke:var(--dia-hot)}
 .iui-dot-mark{fill:var(--dia-line)}
-.iui-span{fill:none;stroke-width:4;stroke-linecap:round;stroke:var(--iui-c,var(--dia-line));opacity:.85}
+.iui-span{fill:none;stroke:var(--iui-c,var(--dia-line));stroke-width:4;stroke-linecap:round}
 .iui-end{fill:var(--iui-c,var(--dia-line));stroke:var(--iui-c,var(--dia-line));stroke-width:1.5}
-.iui-end.open{fill:var(--surface)}
-.iui-end.hot{--iui-c:var(--dia-hot)}
-.iui-span.hot{--iui-c:var(--dia-hot);filter:drop-shadow(0 0 3px color-mix(in srgb,var(--dia-hot) 50%,transparent))}
+.iui-end.open{fill:var(--iui-bg)}
 :is(.iui-span,.iui-end,.iui-edge).tone-1{--iui-c:var(--iui-1)}
 :is(.iui-span,.iui-end,.iui-edge).tone-2{--iui-c:var(--iui-2)}
 :is(.iui-span,.iui-end,.iui-edge).tone-3{--iui-c:var(--iui-3)}
@@ -117,82 +168,113 @@
 :is(.iui-span,.iui-end,.iui-edge).tone-5{--iui-c:var(--iui-5)}
 .iui-edge[class*='tone-']:not(.hot){stroke:var(--iui-c)}
 .iui-span.hot.hot,.iui-end.hot.hot{--iui-c:var(--dia-hot)}
-.iui-dia-note{margin:8px 0 0}
-/* 推理链：编号、细线串起来，关键一步描主色。 */
-.iui-flow{display:flex;flex-direction:column;gap:0;margin:2px 0 0;padding:0;list-style:none}
-.iui-step{position:relative;display:flex;gap:10px;padding:0 0 14px}
+/* 推理链：编号圆点、一条细线串起来，关键一步填强调色。 */
+.iui-flow{display:flex;flex-direction:column;margin:0;padding:0;list-style:none}
+.iui-step{position:relative;display:flex;gap:12px;margin:0;padding:0 0 16px}
 .iui-step:last-child{padding-bottom:0}
-.iui-step:not(:last-child)::before{content:'';position:absolute;left:11px;top:24px;bottom:2px;width:1.4px;background:var(--dia-line)}
-.iui-step-no{flex:none;display:grid;place-items:center;width:23px;height:23px;border:1.4px solid var(--dia-line);border-radius:50%;font-size:11.5px;font-weight:650;background:var(--surface)}
-.iui-step-body{min-width:0;padding-top:2px}
-.iui-step-text{font-size:13px;line-height:1.5}
-.iui-step-why{display:block;margin-top:2px;color:var(--surface-muted,var(--muted));font-size:11.5px}
-.iui-step.hot .iui-step-no{border-color:var(--dia-hot);color:var(--dia-hot);box-shadow:0 0 0 3px var(--dia-hot-soft),0 0 12px -2px color-mix(in srgb,var(--dia-hot) 50%,transparent)}
+.iui-step:not(:last-child)::before{content:'';position:absolute;left:11.5px;top:28px;bottom:4px;width:1px;background:var(--iui-line-2)}
+.iui-step-no{flex:none;display:grid;place-items:center;width:24px;height:24px;border:1px solid var(--iui-line-2);border-radius:50%;background:var(--iui-bg);font-size:12px;font-weight:600}
+.iui-step-body{min-width:0;padding-top:1px}
+.iui-step-text{font-size:14px;line-height:1.55}
+.iui-step-why{display:block;margin-top:2px;font-size:12px;color:var(--iui-mute)}
+.iui-step.hot .iui-step-no{border-color:var(--dia-hot);background:var(--dia-hot);color:var(--iui-on-accent)}
 .iui-step.hot .iui-step-text{font-weight:600}
-.iui-flow.across{flex-direction:row;flex-wrap:wrap;gap:8px 0}
-.iui-flow.across .iui-step{flex:1 1 0;min-width:110px;flex-direction:column;align-items:flex-start;padding:0 18px 0 0}
-.iui-flow.across .iui-step:not(:last-child)::before{left:27px;right:4px;top:11px;bottom:auto;width:auto;height:1.4px}
+.iui-flow.across{flex-direction:row;flex-wrap:wrap;gap:12px 0}
+.iui-flow.across .iui-step{flex:1 1 0;flex-direction:column;align-items:flex-start;gap:8px;min-width:96px;padding:0 16px 0 0}
+.iui-flow.across .iui-step:not(:last-child)::before{left:32px;right:8px;top:12px;bottom:auto;width:auto;height:1px}
 /* 运算表：同一结果同一色，指到哪格就把那一列也提亮。 */
 .iui-optable-wrap{overflow-x:auto}
-.iui-optable{border-collapse:separate;border-spacing:3px;margin:0 auto;font-variant-numeric:tabular-nums}
-.iui-optable th,.iui-optable td{min-width:30px;height:28px;padding:0 6px;border-radius:6px;text-align:center;font-size:12.5px}
-.iui-optable th{color:var(--surface-muted,var(--muted));font-weight:650}
-.iui-optable th.op{color:var(--dia-hot)}
-.iui-optable td{background:hsl(var(--hue,0) 62% 62% / .2);color:var(--surface-ink,var(--ink))}
-:root[data-theme='dark'] .iui-optable td{background:hsl(var(--hue,0) 55% 55% / .28)}
-.iui-optable td.hot{outline:1.8px solid var(--dia-hot);outline-offset:-1px;box-shadow:0 0 10px -2px color-mix(in srgb,var(--dia-hot) 55%,transparent)}
-.iui-optable tr:hover>td,.iui-optable .cross{filter:brightness(.94) saturate(1.5)}
+.iui-optable{margin:0 auto;border-collapse:separate;border-spacing:4px}
+.iui-optable :is(th,td){min-width:34px;height:32px;padding:0 6px;border:0;border-radius:7px;text-align:center;font-size:13px}
+.iui-optable th{background:none;font-weight:500;color:var(--iui-mute)}
+.iui-optable th.op{color:var(--dia-hot);font-weight:600}
+.iui-optable td{background:hsl(var(--hue,0) 45% 55% / .14);color:var(--iui-ink)}
+:root[data-theme='dark'] .iui-optable td{background:hsl(var(--hue,0) 40% 60% / .2)}
+.iui-optable td.hot{outline:1.5px solid var(--dia-hot);outline-offset:-1.5px}
+.iui-optable tr:hover>td,.iui-optable .cross{filter:brightness(.95) saturate(1.4)}
 .iui-optable tr:hover>th:first-child{color:var(--dia-hot)}
-/* 文字太长时换行，不再一路伸出图框；仍超出的由 settle() 挪回来。 */
-.iui-dl{white-space:normal;width:max-content;max-width:min(44%,240px)}
-.iui-dl.item{max-width:30%}
-.iui-dl.set.title{max-width:40%}
-.iui-dia-legend{display:flex;flex-wrap:wrap;gap:4px 14px;margin:8px 2px 0;font-size:12px;color:var(--surface-ink,var(--ink))}
-.iui-dia-key{display:inline-flex;align-items:center;gap:6px}
-.iui-dia-key>i{flex:none;width:16px;height:10px;border:1.5px dashed var(--dia-hot);border-radius:4px}
-.iui-dl.venn-region{max-width:22%}
-.iui-dl.venn-region.tight{max-width:15%}
-.iui-dl.mark-no{display:grid;place-items:center;width:17px;height:17px;padding:0;border-radius:50%;background:var(--dia-hot);color:var(--surface,#fff);font-size:10.5px;font-weight:700;line-height:1}
-.iui-dia-key>i{display:grid;place-items:center;width:17px;height:17px;border:0;border-radius:50%;background:var(--dia-hot);color:var(--surface,#fff);font-size:10.5px;font-style:normal;font-weight:700}
 
-/* ---- 第一次出现：把图画出来（线描出来、色块和文字依次浮现），只走一遍；--iui-age 让流式重排时从原进度接着走。 ---- */
+/* ---- 按钮与输入框：盖掉全局的玻璃胶囊 ---- */
+.iui :is(.iui-reset,.iui-tabs button,.iui-submit){display:inline-flex;align-items:center;justify-content:center;gap:6px;flex:none;border-radius:8px;background-image:none;box-shadow:none;font-size:12.5px;line-height:1;white-space:nowrap;cursor:pointer;transition:background-color .12s,border-color .12s,color .12s,opacity .12s}
+.iui .iui-reset{height:28px;padding:0 12px;border:1px solid var(--iui-line-2);background:transparent;color:var(--iui-ink)}
+.iui .iui-tabs button{height:28px;padding:0 12px;border:1px solid var(--iui-line);background:transparent;color:var(--iui-mute)}
+.iui .iui-tabs button.on{border-color:transparent;background:var(--iui-fill-2);color:var(--iui-ink);font-weight:600}
+.iui .iui-submit{height:36px;padding:0 18px;border:0;border-radius:10px;background:var(--iui-ink);color:var(--iui-bg);font-size:13.5px;font-weight:600}
+.iui .iui-submit:disabled{opacity:.4;cursor:default}
+.iui :is(.iui-reset,.iui-tabs button:not(.on)):hover:not(:disabled){border-color:var(--iui-line-2);background:var(--iui-fill);color:var(--iui-ink)}
+.iui .iui-submit:hover:not(:disabled){background:var(--iui-ink);opacity:.86}
+.iui .iui-field :is(input:not([type=checkbox]):not([type=radio]),select,textarea){width:100%;min-width:0;height:36px;padding:0 12px;border:1px solid var(--iui-line-2);border-radius:9px;background-color:var(--iui-bg);box-shadow:none;color:var(--iui-ink);font-size:14px}
+.iui .iui-field select{padding-right:32px}
+.iui .iui-field textarea{height:auto;min-height:76px;padding:8px 12px;line-height:1.5;resize:vertical}
+.iui .iui-field :is(input,select,textarea):focus{border-color:var(--iui-accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--iui-accent) 18%,transparent)}
+.iui :is(input[type=radio],input[type=checkbox]:not([role])){accent-color:var(--iui-accent)}
+html:root .iui.iui input[type=radio]{width:15px;height:15px;margin:0;padding:0;border:0;box-shadow:none}
+/* 滑块：细轨道，已拖过的一段用强调色（--p 由脚本给出），圆形拇指。 */
+.iui .iui-param input[type=range]{appearance:none;-webkit-appearance:none;width:100%;height:20px;margin:0;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none;cursor:pointer}
+.iui .iui-param input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:99px;background:linear-gradient(to right,var(--iui-accent) var(--p,50%),var(--iui-fill-2) var(--p,50%))}
+.iui .iui-param input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;margin-top:-6px;border:0;border-radius:50%;background:var(--iui-accent);box-shadow:0 0 0 2px var(--iui-bg);transition:box-shadow .12s}
+.iui .iui-param input[type=range]:hover::-webkit-slider-thumb{box-shadow:0 0 0 2px var(--iui-bg),0 0 0 6px color-mix(in srgb,var(--iui-accent) 16%,transparent)}
+.iui .iui-param input[type=range]:focus-visible{outline:none}
+.iui .iui-param input[type=range]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 2px var(--iui-bg),0 0 0 5px var(--iui-accent)}
+.iui .iui-param input[type=range]::-moz-range-track{height:4px;border-radius:99px;background:var(--iui-fill-2)}
+.iui .iui-param input[type=range]::-moz-range-progress{height:4px;border-radius:99px;background:var(--iui-accent)}
+.iui .iui-param input[type=range]::-moz-range-thumb{width:16px;height:16px;border:0;border-radius:50%;background:var(--iui-accent)}
+
+/* ---- 挡住外面漏进来的规则 ----
+   回答正文（AiPane 的 .answer-body、文档的 .markdown-paper）给 h4 / p / table / th / tr 定了字体、边距和底色，
+   铅笔草稿主题又给表格、输入框、按钮换了手写体、荧光笔底和悬停时的歪斜。那些选择器比上面的重，
+   这里用 html:root .iui.iui 把组件要的几项再压一次（只压这几项，别的仍走上面的规则）。 */
+html:root .iui.iui :is(h4,p,table,th,td,input,select,textarea,button,label,strong,small,li){font-family:inherit;letter-spacing:0}
+html:root .iui.iui :is(input,select,textarea){font-weight:400}
+html:root .iui.iui h4.iui-title{margin:0;font-size:15px;font-weight:600;line-height:1.4}
+html:root .iui.iui .iui-card>h4.iui-title{margin-bottom:12px}
+html:root .iui.iui p.iui-sub{margin:2px 0 0}
+html:root .iui.iui .iui-card>p.iui-sub{margin:12px 0 0}
+html:root .iui.iui p:is(.iui-wait,.iui-error,.iui-xlabel){margin:0}
+html:root .iui.iui p.iui-xlabel{margin-top:2px}
+html:root .iui.iui :is(.iui-value,.iui-param-value,.iui-output strong){font-weight:600}
+html:root .iui.iui strong.iui-value{font-weight:650}
+html:root .iui.iui table.iui-table{min-width:0;font-size:13.5px;line-height:1.5}
+html:root .iui.iui .iui-table tr{background:none;border:0}
+html:root .iui.iui .iui-table :is(th,td){border:0;border-bottom:1px solid var(--iui-line);background:none}
+html:root .iui.iui .iui-table :is(th,td){padding:10px 12px}
+html:root .iui.iui .iui-table :is(th,td):first-child{padding-left:0}
+html:root .iui.iui .iui-table :is(th,td):last-child{padding-right:0}
+html:root .iui.iui .iui-table th{padding-top:2px;padding-bottom:8px;color:var(--iui-mute);font-weight:500}
+html:root .iui.iui .iui-table tbody tr:last-child td{border-bottom:0}
+html:root .iui.iui table.iui-optable{min-width:0;font-size:13px}
+html:root .iui.iui .iui-optable tr{background:none;border:0}
+html:root .iui.iui .iui-optable :is(th,td){border:0}
+html:root .iui.iui .iui-optable th{background:none;color:var(--iui-mute);font-weight:500}
+html:root .iui.iui .iui-optable th.op{color:var(--dia-hot)}
+html:root .iui.iui .iui-optable td{background:hsl(var(--hue,0) 45% 55% / .14)}
+html:root[data-theme='dark'] .iui.iui .iui-optable td{background:hsl(var(--hue,0) 40% 60% / .2)}
+html:root .iui.iui :is(ol.iui-flow,li.iui-step){margin:0;padding-left:0}
+html:root .iui.iui ol.iui-flow:not(.across)>li.iui-step:not(:last-child){padding-bottom:16px}
+html:root .iui.iui button{rotate:none!important}
+
+/* ---- 窄处（对话栏、快速解释卡片，约 360px）：卡片内边距收一点，参数一列一个 ---- */
+@container (max-width:460px){
+  .iui-card{padding:14px 14px 14px}
+  .iui-controls{grid-template-columns:1fr;gap:12px}
+  .iui-cards{grid-template-columns:1fr;gap:8px}
+  .iui-value{font-size:22px}
+  .iui-metric{padding:12px 14px}
+  html:root .iui.iui .iui-table :is(th,td):not(:first-child):not(:last-child){padding-inline:8px}
+  .iui-flow.across{flex-wrap:nowrap}
+  .iui-flow.across .iui-step{min-width:0;padding-right:8px}
+}
+
+/* ---- 第一次出现：整块淡入、线描出来、柱子长出来，一起走完，不超过半秒；--iui-age 让流式重排时从原进度接着走。 ---- */
 @media (prefers-reduced-motion:no-preference){
 .iui-fresh{--at:var(--iui-age,0ms)}
-.iui-fresh .iui-drawn{stroke-dasharray:1;animation:iui-draw .72s cubic-bezier(.33,.7,.2,1) both;animation-delay:calc(var(--i,0)*60ms + var(--at))}
-.iui-fresh :is(.iui-shape,.iui-edge):not(.iui-drawn){animation:iui-fade .5s ease both;animation-delay:calc(var(--i,0)*60ms + 120ms + var(--at))}
-.iui-fresh .iui-region{animation:iui-fade .6s ease both;animation-delay:calc(var(--i,0)*90ms + 420ms + var(--at))}
-.iui-fresh .iui-dl{animation:iui-fade .42s ease both;animation-delay:calc(var(--i,0)*38ms + 260ms + var(--at))}
-.iui-fresh :is(.iui-end,.iui-dot-mark){animation:iui-fade .4s ease both;animation-delay:calc(var(--i,0)*50ms + 380ms + var(--at))}
-.iui-fresh .iui-step{animation:iui-rise .46s var(--ease-out,ease) both;animation-delay:calc(var(--i,0)*120ms + var(--at))}
-.iui-fresh .iui-step::before{transform-origin:top;animation:iui-grow .36s ease both;animation-delay:calc(var(--i,0)*120ms + 150ms + var(--at))}
-.iui-fresh .iui-flow.across .iui-step::before{transform-origin:left;animation-name:iui-grow-x}
-.iui-fresh .iui-optable tr,.iui-fresh .iui-table tbody tr{animation:iui-fade .4s ease both;animation-delay:calc(var(--i,0)*45ms + var(--at))}
-.iui-fresh .iui-metric{animation:iui-rise .44s var(--ease-out,ease) both;animation-delay:calc(var(--i,0)*70ms + var(--at))}
-.iui-fresh .iui-bar{transform-box:fill-box;transform-origin:50% 100%;animation:iui-bar .6s cubic-bezier(.25,.8,.25,1) both;animation-delay:calc(var(--i,0)*40ms + var(--at))}
-.iui-fresh .iui-dot{animation:iui-fade .35s ease both;animation-delay:calc(var(--i,0)*18ms + 420ms + var(--at))}
-.iui-fresh .iui-slice{transform-origin:120px 120px;animation:iui-slice .55s var(--ease-out,ease) both;animation-delay:calc(var(--i,0)*70ms + var(--at))}
-.iui-fresh :is(.iui-axis,.iui-grid,.iui-base,.iui-legend,.iui-xlabel){animation:iui-fade .5s ease both;animation-delay:var(--at)}
+.iui-fresh>*{animation:iui-in .3s cubic-bezier(.2,.7,.2,1) both;animation-delay:var(--at)}
+.iui-fresh .iui-drawn{stroke-dasharray:1;animation:iui-draw .46s cubic-bezier(.33,.7,.2,1) both;animation-delay:var(--at)}
+.iui-fresh .iui-bar{transform-box:fill-box;transform-origin:50% 100%;animation:iui-bar .4s cubic-bezier(.25,.8,.25,1) both;animation-delay:var(--at)}
 }
-@keyframes iui-draw{from{stroke-dashoffset:1;opacity:0}18%{opacity:1}to{stroke-dashoffset:0;opacity:1}}
-@keyframes iui-fade{from{opacity:0}}
-@keyframes iui-rise{from{opacity:0;transform:translateY(7px)}}
-@keyframes iui-grow{from{transform:scaleY(0)}}
-@keyframes iui-grow-x{from{transform:scaleX(0)}}
+@keyframes iui-in{from{opacity:0;transform:translateY(4px)}}
+@keyframes iui-draw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
 @keyframes iui-bar{from{transform:scaleY(0)}}
-@keyframes iui-slice{from{opacity:0;transform:scale(.9) rotate(-14deg)}}
-
-/* ---- 模拟：参数名和当前值排在一行、滑块在下面；只有「重置」时把它收到标题那一行的右上角，不单占一行。 ---- */
-.iui-param{grid-template-columns:1fr auto;align-items:baseline;gap:6px 10px;padding:10px 12px 12px}
-.iui-param strong{font-size:16px;font-weight:650;line-height:1.2}
-.iui-param input{grid-column:1/-1}
-.iui-card:has(>.iui-title) .iui-options:not(:has(.iui-check)){position:absolute;top:10px;right:12px;margin:0}
-.iui-reset{transition:color var(--dur-1,.12s),border-color var(--dur-1,.12s),background-color var(--dur-1,.12s)}
-.iui-reset:hover{color:var(--surface-ink,var(--ink));border-color:color-mix(in srgb,var(--surface-ink,var(--ink)) 34%,transparent);background:color-mix(in srgb,var(--surface-ink,var(--ink)) 5%,transparent)}
-.iui-output{padding-top:8px;border-top:1px solid var(--hairline,var(--line))}
-.iui-output strong{font-size:18px;font-weight:650}
-.iui-outputs{gap:8px;margin-top:10px}
-.iui-card>.iui-title{margin:0 0 6px!important}
-.iui-dl.set .katex{font-size:1.22em}
 
 /* 折叠段落：回答里的 <details>。一行标题带一个小箭头，点开后正文缩进在一条细线右边，可以一层套一层。 */
 details.answer-fold{margin:0 0 .3em;interpolate-size:allow-keywords}
@@ -206,75 +288,3 @@ details.answer-fold::details-content{margin-left:10px;padding-left:16px;border-l
 details.answer-fold[open]::details-content{block-size:auto;padding-top:.35em;padding-bottom:.15em}
 details.answer-fold[open]{margin-bottom:.7em}
 @media (prefers-reduced-motion:reduce){details.answer-fold::details-content,details.answer-fold>summary::before{transition:none}}
-
-/* ---- 现代化外观（盖在上面的规则之上）----
-   图解和可交互界面不跟着主题变花样：系统无衬线、细边框、白底、一种强调色、等宽数字。
-   主题只留下强调色和纸面底色；暖色极简主题连这两样也不带，完全用中性色。 */
-.iui{--iui-ink:var(--surface-ink,var(--ink));--iui-mute:color-mix(in srgb,var(--iui-ink) 58%,transparent);--iui-line:color-mix(in srgb,var(--iui-ink) 13%,transparent);--iui-fill:color-mix(in srgb,var(--iui-ink) 4.5%,transparent);--iui-bg:var(--surface);--iui-accent:var(--accent);
-  --iui-1:var(--iui-accent);--iui-2:#d9892b;--iui-3:#5b6ee1;--iui-4:#d1556b;--iui-5:#64748b;
-  gap:14px;margin:.7em 0 1.1em;font-family:'Segoe UI Variable Text','Segoe UI','Microsoft YaHei UI','PingFang SC',system-ui,sans-serif;font-size:13.5px;line-height:1.55;font-style:normal;font-weight:400;letter-spacing:0;color:var(--iui-ink);font-variant-numeric:tabular-nums;text-shadow:none}
-:root[data-style='sketch'] .iui{--iui-1:var(--iui-accent);--iui-2:#d9892b;--iui-bg:#fffefb}
-:root[data-style='sketch'][data-theme='dark'] .iui{--iui-bg:var(--surface)}
-:root[data-style='warm'] .iui{--iui-accent:#0f8a7a;--iui-ink:#1f2328;--iui-bg:#fff}
-:root[data-style='warm'][data-theme='dark'] .iui{--iui-accent:#35b8a6;--iui-ink:#e6e8eb;--iui-bg:#17191c}
-.iui :is(button,input,select,textarea,th,td,strong,p,span,li){font-family:inherit;letter-spacing:0}
-.iui-card{padding:18px 20px 16px;border:1px solid var(--iui-line);border-radius:14px;background:var(--iui-bg);box-shadow:none;rotate:none}
-.iui-title{font-size:15px;font-weight:650;line-height:1.4;color:var(--iui-ink)}
-.iui-sub,.iui-xlabel,.iui-label,.iui-note,.iui-legend,.iui-step-why{color:var(--iui-mute)}
-.iui-sub{margin:0 0 12px;font-size:12.5px}
-.iui-wait,.iui-error{border:1px solid var(--iui-line);border-radius:12px;background:var(--iui-fill)}
-/* 图表：实线细网格、一条够粗的线。 */
-.iui-grid{stroke:color-mix(in srgb,var(--iui-ink) 9%,transparent);stroke-dasharray:none}
-.iui-base{stroke:color-mix(in srgb,var(--iui-ink) 26%,transparent)}
-.iui-axis{fill:var(--iui-mute)}
-.iui-line{stroke-width:2.4}
-.iui-tip{border-radius:10px;background:var(--iui-bg);box-shadow:0 0 0 1px var(--iui-line),0 10px 24px -12px rgb(0 0 0 / .3)}
-/* 参数：名字在左、数值在右，下面一整条滑块；不再各装一个灰盒子。 */
-.iui-controls{grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px 24px;margin:14px 0 6px}
-.iui-param{padding:0;border-radius:0;background:none;font-size:13.5px;color:var(--iui-ink)}
-.iui-param strong{font-size:13.5px;font-weight:650}
-.iui-param input[type=range]{appearance:none;height:16px;margin:2px 0 0;background:none;accent-color:var(--iui-accent)}
-.iui-param input[type=range]::-webkit-slider-runnable-track{height:5px;border-radius:99px;background:color-mix(in srgb,var(--iui-ink) 12%,transparent)}
-.iui-param input[type=range]::-webkit-slider-thumb{appearance:none;width:15px;height:15px;margin-top:-5px;border:0;border-radius:50%;background:var(--iui-accent);box-shadow:0 0 0 3px var(--iui-bg)}
-.iui-check input{accent-color:var(--iui-accent)}
-.iui-reset{height:30px;padding:0 13px;border:1px solid var(--iui-line);border-radius:9px;font-size:12.5px;color:var(--iui-ink)}
-.iui-output{border-top:1px solid var(--iui-line);font-size:13px;color:var(--iui-mute)}
-.iui-output strong{font-size:16px;color:var(--iui-ink)}
-/* 数字卡：细边白底，标签在上、数字在下。 */
-.iui-cards{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
-.iui-metric{padding:16px 18px;border:1px solid var(--iui-line);border-radius:14px;background:var(--iui-bg)}
-.iui-metric .iui-label{order:-1;font-size:12.5px}
-.iui-value{font-size:27px;font-weight:700;letter-spacing:-.01em}
-/* 表格：表头是一行淡色小字，行与行之间一条细线。 */
-.iui-table{font-size:13.5px}
-.iui-table th,.iui-table td{padding:12px 12px;border-bottom:1px solid var(--iui-line)}
-.iui-table th{padding-top:6px;padding-bottom:9px;font-size:12px;font-weight:500;color:var(--iui-mute)}
-.iui-table tbody tr:last-child td{border-bottom:0}
-.iui-tabs{border-radius:10px;background:var(--iui-fill)}
-.iui-tabs button{border-radius:8px}
-.iui-tabs button.on{background:var(--iui-bg);color:var(--iui-ink);box-shadow:0 0 0 1px var(--iui-line)}
-.iui-badge{height:22px;border-radius:7px;background:var(--iui-fill);font-weight:550}
-.iui-field input:not([type=checkbox]):not([type=radio]),.iui-field select,.iui-field textarea{border:1px solid var(--iui-line);border-radius:9px;background:var(--iui-bg)}
-.iui-submit{border-radius:10px;background:var(--iui-ink);color:var(--iui-bg)}
-/* 图解：平的。不抖、不发光，重点只用强调色描一道。 */
-.iui-dia-card,:root[data-style='sketch'] .iui-dia-card{--dia-line:color-mix(in srgb,var(--iui-ink) 42%,transparent);--dia-faint:color-mix(in srgb,var(--iui-ink) 15%,transparent);--dia-hot:var(--iui-accent);--dia-hot-soft:color-mix(in srgb,var(--iui-accent) 11%,transparent)}
-.iui-dia .ink{filter:none!important}
-.iui-shape,:root[data-style='sketch'] .iui-shape,:root[data-style='sketch'] .iui-shape.soft{stroke-width:1.3}
-.iui-shape.hot,.iui-edge.hot,.iui-span.hot{filter:none}
-.iui-shape.hot{stroke-width:1.8}
-.iui-dl{font-size:12.5px;color:var(--iui-ink)}
-.iui-dl.muted{color:var(--iui-mute)}
-.iui-dl.region,.iui-dl.edge{background:color-mix(in srgb,var(--iui-bg) 86%,transparent)}
-.iui-dl.node{border:1px solid color-mix(in srgb,var(--iui-ink) 24%,transparent);border-radius:9px;background:var(--iui-bg);font-weight:500}
-.iui-dl.node.point{border-radius:50%}
-.iui-dl.node.hot{border-color:var(--iui-accent);background:color-mix(in srgb,var(--iui-accent) 9%,var(--iui-bg));box-shadow:none}
-.iui-step-no{border:1px solid color-mix(in srgb,var(--iui-ink) 26%,transparent);background:var(--iui-bg);font-weight:600}
-.iui-step:not(:last-child)::before{width:1px;background:var(--iui-line)}
-.iui-flow.across .iui-step:not(:last-child)::before{height:1px}
-.iui-step.hot .iui-step-no{border-color:var(--iui-accent);background:var(--iui-accent);color:var(--iui-bg);box-shadow:none}
-.iui-step-text{font-size:13.5px}
-.iui-optable td{background:hsl(var(--hue,0) 38% 58% / .13)}
-:root[data-theme='dark'] .iui-optable td{background:hsl(var(--hue,0) 34% 56% / .2)}
-.iui-optable td.hot{outline:1.5px solid var(--iui-accent);box-shadow:none}
-.iui-end.open{fill:var(--iui-bg)}
-.iui-slice{stroke:var(--iui-bg)}

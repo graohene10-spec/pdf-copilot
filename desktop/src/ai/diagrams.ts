@@ -364,7 +364,7 @@ function cycle(spec: any, root: HTMLElement) {
   list(spec.cycles, 8).forEach((cyc: any, order: number) => {
     const members = list(cyc, 12).map((item: any) => text(item, 12)).filter((name: string) => points.includes(name))
     const hot = order === num(spec.focus, -1)
-    if (members.length === 1) { const [x, y] = at(members[0]!), dx = x - CX, dy = y - CY, l = Math.hypot(dx, dy) || 1; c.ink.append(s('circle', { class: `iui-edge${hot ? ' hot' : ''}`, cx: x + dx / l * 30, cy: y + dy / l * 30, r: 11 })); return }
+    if (members.length === 1) { const [x, y] = at(members[0]!), dx = x - CX, dy = y - CY, l = Math.hypot(dx, dy) || 1; c.ink.append(s('circle', { class: `iui-edge${hot ? ' hot' : ''}`, cx: x + dx / l * 21, cy: y + dy / l * 21, r: 11 })); return }
     members.forEach((name: string, index: number) => {
       const a = at(name), b = at(members[(index + 1) % members.length]!)
       c.ink.append(s('path', { class: `iui-edge tone-${order % 5 + 1}${hot ? ' hot' : ''}`, d: arrowPath(a[0], a[1], b[0], b[1], 15, 16, members.length === 2 ? 26 : -Math.hypot(b[0] - a[0], b[1] - a[1]) * .12), 'marker-end': arrowHead(c, hot) }))
@@ -404,8 +404,9 @@ function axis(spec: any, root: HTMLElement) {
 
 // ---- 象限 ---------------------------------------------------------------------
 function quadrant(spec: any, root: HTMLElement) {
-  const c = canvas(root, spec, 560, 360)
-  const L = 70, R = 530, T = 22, B = 318, MX = (L + R) / 2, MY = (T + B) / 2
+  // 窄处（对话栏、快速解释卡片）把画布收窄：文字相对变大，左边纵轴的字和格子里的条目才放得下。
+  const W = (root.clientWidth || 560) < 440 ? 420 : 560, c = canvas(root, spec, W, 360)
+  const L = 70, R = W - 30, T = 22, B = 318, MX = (L + R) / 2, MY = (T + B) / 2
   c.ink.append(s('rect', { class: 'iui-shape soft', x: L, y: T, width: R - L, height: B - T, rx: 12 }))
   c.ink.append(s('path', { class: 'iui-edge', d: `M${MX} ${T}L${MX} ${B}M${L} ${MY}L${R} ${MY}` }))
   const x = spec.x || {}, y = spec.y || {}
@@ -423,7 +424,7 @@ function quadrant(spec: any, root: HTMLElement) {
     const [x0, y0] = boxes[key]!, width = MX - L, height = MY - T
     items.forEach((item, index) => {
       const columns = items.length > 3 ? 2 : 1, col = index % columns, row = Math.floor(index / columns), rowsCount = Math.ceil(items.length / columns)
-      c.label(x0 + width * (col + .5) / columns, y0 + 30 + (height - 30) * (row + .5) / rowsCount, text(item.label, 40), { className: `node${item.focus ? ' hot' : ''}`, note: item.note })
+      c.label(x0 + width * (col + .5) / columns, y0 + 34 + (height - 38) * (row + .5) / rowsCount, text(item.label, 40), { className: `node${item.focus ? ' hot' : ''}`, note: item.note })
     })
   }
 }
