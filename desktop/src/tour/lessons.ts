@@ -1,10 +1,13 @@
 import type { Director, Point } from './director'
+import { outline, type PlanScene } from './lesson-outline'
+import { learn, freshLearn, type LearnScene } from './lesson-learn'
 
 /* 示意界面的状态：脚本只改这里，画面跟着变。 */
 export type Look = 'glass' | 'crystal' | 'warm' | 'sketch'
 export type SlotId = 'assistant' | 'translation' | 'explain'
 export type Scene = {
-  view: 'reader' | 'library' | 'collection'
+  /** board 是学习进度页（大纲与进度一课）。 */
+  view: 'reader' | 'library' | 'board'
   /** 外观一课里临时换的风格；空着就跟随应用当前的风格。 */
   look: '' | Look
   dark: boolean
@@ -144,6 +147,10 @@ export type Scene = {
   fileName: string
   /** 窗口底部的提示。 */
   toast: string
+  /** 大纲与进度一课：大纲栏、学习进度页、文库书卡上的进度条；别的课里是 null。 */
+  plan: PlanScene | null
+  /** 学习一课：设定表、摸底和带读的对话、助手栏左边的大纲。 */
+  learn: LearnScene
 }
 
 export const freshScene = (): Scene => ({
@@ -157,6 +164,8 @@ export const freshScene = (): Scene => ({
   ribbonAt: null, ribbonFlip: false, ribbonLift: false, manager: false, cmPeek: false, cmDrag: null, cmSlot: false, cmMoved: false, cmFlash: '', cmQuery: '',
   memDrag: null, memShift: 0, memSwap: false, memStill: false, memAsk: '', memBusy: false, memNote: '', memMerged: false, talk: '', histOpen: false, histQuery: '',
   mem: 'book', sum: '', sumFold: false, sumPicked: 0, sumFull: false, sumWords: 0, sumSel: 0, sumAsk: false, sumNote: '', sumSent: false, sumFixed: false, sumSaved: false, fileHover: '', markDrag: null, markShift: 0, markSwap: false, markStill: false, renaming: null, fileName: '', toast: '',
+  plan: null,
+  learn: freshLearn(),
 })
 
 export const TEXT = {
@@ -191,8 +200,10 @@ export const SUM = {
 }
 /* 搜对话：字按顺序出现就算，可以不全。管理页里搜「特征向」，对话记录里搜「对角」。 */
 export type Hit = { title: [string, string, string]; meta: string; snip?: [string, string, string] }
-export const FIND: { manage: string; manageHits: Hit[]; history: string; historyHits: Hit[] } = {
+export const FIND: { manage: string; manageHits: Hit[]; opened: { title: string; ask: string; reply: string }; history: string; historyHits: Hit[] } = {
   manage: '特征向',
+  // 管理页里点第二条结果打开的那段对话：命中的那一问。
+  opened: { title: '特征值是什么', ask: '特征值是什么？', reply: '大多数向量被 A 作用后会转向。特征向量是例外：它留在原来那条直线上，只被拉长或缩短。这个方向就是特征向量。' },
   manageHits: [
     { title: ['特征值与', '特征向', '量'], meta: '线性代数讲义 · 4 问 · 昨天' },
     { title: ['特征值是什么', '', ''], meta: '线性代数讲义 · 3 问 · 刚刚', snip: ['…它留在原来那条直线上，只被拉长或缩短。这个方向就是', '特征向', '量。'] },
@@ -376,20 +387,11 @@ const visual: Play = async (stage, scene, say) => {
   await stage.tween(900, k => slide(1 + k * 2))
   await stage.tween(500, k => slide(3 - k * .8))
   stage.release()
-  await stage.wait(300)
-
-  say('固定后收进侧栏的 Intelligent UI')
-  await click(stage, '.tw-pin')
-  scene.card = 'pinned'
-  await stage.wait(300)
-  stage.look(null, 1)
-  await click(stage, '.tw-nav-ui')
-  scene.view = 'collection'
-  await stage.wait(1500)
+  await stage.wait(1200)
 }
 
 const assistant: Play = async (stage, scene, say) => {
-  say({ text: '新对话选用哪些记忆：「本书」只用这本书里记下的，「全局」用所有书里记下的', top: true })
+  say({ text: '新对话选用哪些记忆：这本书的，或所有书的', top: true })
   stage.place({ x: 900, y: 790 })
   stage.look('.tw-mem', 1.7, [.5, .5])
   await stage.move('.tw-mem-all', { ms: 800 })
@@ -427,9 +429,10 @@ const assistant: Play = async (stage, scene, say) => {
   await stage.tween(700, k => { scene.sideAnswer = Math.round(k * TEXT.sideReply.length) }, true)
   await stage.wait(500)
 
-  say('点回答下面的分支图标，从这条回答开出分支')
+  say('点分支图标，从这条回答开出分支')
   await click(stage, '.tw-branch')
-  scene.branch = true
+  // 和真的一样：换到分支那段对话，它没有附属对话，右边那栏收起。
+  scene.branch = true; scene.side = false
   await stage.wait(900)
 
   say({ text: '输入 / 调出指令', top: true })
@@ -448,7 +451,7 @@ const assistant: Play = async (stage, scene, say) => {
   await stage.wait(1100)
 
   // 上下文圆环：到量自动压缩，点一下立即压缩。原来的消息都还在。
-  say({ text: '对话长了会自动压缩，圆环显示进度；点圆环立即压缩', top: true })
+  say({ text: '点圆环压缩对话', top: true })
   scene.btw = false
   stage.look('.tw-ask', 1.7, [.7, -1.2])
   await stage.tween(1300, k => { scene.ctxFill = .18 + k * .74 }, true)
@@ -460,8 +463,8 @@ const assistant: Play = async (stage, scene, say) => {
   await stage.wait(900)
 
   // 对话记录最上面是搜索框：搜所有文档的对话，标题和内容都搜。
-  say({ text: '点对话标题打开对话记录，可以搜所有文档的对话', top: true })
-  scene.btw = false; scene.side = false
+  // 标题在助手栏顶上，字幕放下面才不会挡住它。
+  say('点标题打开对话记录，能搜所有文档的对话')
   stage.look('.tw-ai', 1.45, [.5, .3])
   await click(stage, '.tw-title')
   scene.histOpen = true
@@ -519,13 +522,13 @@ const capture: Play = async (stage, scene, say) => {
   stage.look('.tw-ask', 1.6, [.5, -1.1])
   await stage.wait(1500)
 
-  say({ text: '点一下输入框里的图把它留住；不留住，再截一张会换掉它', mouse: 'left', top: true })
+  say({ text: '点一下图把它留住，不然再截一张会换掉它', mouse: 'left', top: true })
   await stage.wait(700)
   await click(stage, '.tw-shot-0')
   scene.kept = 1
   await stage.wait(1600)
 
-  say('第二种截法：在文档里右键，开启「右键拖动截图」')
+  say('在文档里右键，开启「右键拖动截图」')
   stage.look({ x: 600, y: 520 }, 1.4)
   await stage.move('.tw-page', { at: [.5, .5] })
   await stage.tween(620, k => { scene.scroll = k * 120 })
@@ -563,7 +566,7 @@ const capture: Play = async (stage, scene, say) => {
   scene.quickOff = true
   await stage.wait(700)
 
-  say({ text: '之后右键一拖，图直接进输入框，不弹气泡', mouse: 'right' })
+  say({ text: '之后右键一拖，图直接进输入框', mouse: 'right' })
   await frame(stage, scene, '.tw-ul', [10, 7])
   stage.look({ x: 800, y: 480 }, 1.15)
   await stage.wait(900)
@@ -584,11 +587,14 @@ const translate: Play = async (stage, scene, say) => {
 
   say('顶栏的翻译图标打开翻译栏')
   stage.look(null, 1)
+  // 等镜头退到顶栏露出来再点。
+  await stage.wait(300)
   await click(stage, '.tw-tr')
   scene.pop = false; scene.selected = 0; scene.column = true
   await stage.wait(1000)
 
-  say('打开自动翻译，选中就出译文')
+  // 开关在翻译栏最底下，字幕放上面才不会盖住它。
+  say({ text: '打开「划词翻译」，选中就出译文', top: true })
   await click(stage, '.tw-auto')
   scene.auto = true
   await stage.wait(200)
@@ -652,7 +658,8 @@ const bookmark: Play = async (stage, scene, say) => {
   await stage.wait(900)
 
   say('右键书签换图案，也可以换成自己的图片')
-  await click(stage, '.tw-ribbon-new')
+  await stage.move('.tw-ribbon-new')
+  await stage.click('right')
   scene.markMenu = true
   await stage.wait(320)
   await click(stage, '.tw-art-2')
@@ -678,7 +685,7 @@ const bookmark: Play = async (stage, scene, say) => {
   await stage.wait(900)
 
   // 挪书签：位置按书页自己的坐标记（平的那一头在哪、中线多高）。
-  say({ text: '按住书签上下拖，松手的位置就是新的标记处', mouse: 'left' })
+  say({ text: '按住书签上下拖，挪到新的位置', mouse: 'left' })
   stage.look('.tw-page', 1.25, [.62, .3])
   await stage.wait(500)
   const page = stage.box('.tw-page'), tab = stage.box('.tw-ribbon-new')
@@ -753,14 +760,14 @@ const manage: Play = async (stage, scene, say) => {
   stage.look(null, 1)
   await stage.wait(1400)
 
-  say('左边是书，右边是它的对话。鼠标停在一段对话上，显示最后一轮问答')
+  say('鼠标停在一段对话上，显示最后一轮问答')
   stage.look('.tw-cm-t1', 1.12, [.75, .9])
   await stage.move('.tw-cm-t1', { at: [.3, .5], ms: 800 })
   await stage.wait(450)
   scene.cmPeek = true
   await stage.wait(2200)
 
-  say({ text: '拖到别的书是移动，拖到同一本书里是排序，红线是落点', mouse: 'left' })
+  say({ text: '把对话拖到另一本书，红线是落点', mouse: 'left' })
   scene.cmPeek = false
   stage.look('.tw-cm-b1', 1.2, [.5, -.2])
   await stage.wait(400)
@@ -778,7 +785,7 @@ const manage: Play = async (stage, scene, say) => {
   await stage.wait(1500)
 
   // 记忆栏：按住一条，它浮起来跟着走，下面那条让开；松手落进新位置。
-  say({ text: '右栏是助手从对话里自动记下的事，类别标在后面。按住一条拖动可以换位置', mouse: 'left' })
+  say({ text: '右栏是自动记下的记忆，按住一条拖动换位置', mouse: 'left' })
   scene.cmFlash = ''
   stage.look('.tw-cm-side', 1.5, [.5, .55])
   await stage.wait(300)
@@ -796,18 +803,18 @@ const manage: Play = async (stage, scene, say) => {
   scene.memStill = false
   await stage.wait(900)
 
-  say('在上面的输入框写一句要求，助手照着改记忆；改完可以撤销')
+  say('写一句要求，让助手改记忆；改完可以撤销')
   await click(stage, '.tw-mem-ask')
   await stage.type('把两条进度合并成一条', value => { scene.memAsk = value }, 70)
   await stage.wait(250)
   await click(stage, '.tw-mem-ask b')
   scene.memBusy = true
   await stage.wait(1700)
-  scene.memBusy = false; scene.memAsk = ''; scene.memMerged = true; scene.memNote = '改好了：改写 1 条，去掉 1 条'
+  scene.memBusy = false; scene.memAsk = ''; scene.memMerged = true; scene.memNote = '已改写 1 条，删除 1 条'
   await stage.wait(2000)
 
   // 搜索框在左上角，Ctrl + F 直接到那里。打字后树换成一列结果。
-  say({ text: '搜索对话：标题和内容都搜，字不全也能找到', keys: ['Ctrl', 'F'] })
+  say({ text: '搜索对话，标题和内容都搜', keys: ['Ctrl', 'F'] })
   scene.memNote = ''
   stage.look('.tw-cm-main', 1.25, [.35, .3])
   await stage.move('.tw-cm-find', { ms: 800 })
@@ -815,11 +822,11 @@ const manage: Play = async (stage, scene, say) => {
   await stage.type(FIND.manage, value => { scene.cmQuery = value }, 260)
   await stage.wait(1600)
 
-  say({ text: '点一条结果，打开那段对话并滚到命中的那条；Esc 清掉搜索', mouse: 'left' })
+  say({ text: '点一条结果，打开那段对话', mouse: 'left' })
   await stage.move('.tw-cm-hit-1', { at: [.3, .3], ms: 700 })
   await stage.wait(400)
   await stage.click()
-  scene.manager = false; scene.cmQuery = ''; scene.talk = '特征值是什么'; scene.asked = true; scene.answer = replyLength
+  scene.manager = false; scene.cmQuery = ''; scene.talk = FIND.opened.title
   stage.look('.tw-ai', 1.3, [.5, .3])
   await stage.wait(2000)
 }
@@ -839,7 +846,7 @@ const library: Play = async (stage, scene, say) => {
   scene.ghost = null; scene.files = 7
   await stage.wait(350)
   await stage.tween(600, k => { scene.desk = 1 - k })
-  stage.look({ x: 700, y: 330 }, 1.2)
+  stage.look({ x: 760, y: 330 }, 1.2)
   await stage.wait(500)
 
   say({ text: '搜索标题和正文', keys: ['Ctrl', 'K'] })
@@ -849,9 +856,11 @@ const library: Play = async (stage, scene, say) => {
   scene.query = ''
   await stage.wait(300)
 
+  // 镜头偏下一些：菜单靠下的「放进」一项不落到字幕底下。
   say('右键文档，放进分组或收藏')
-  stage.look('.tw-file-1', 1.7, [.7, .6])
-  await click(stage, '.tw-file-1', [.6, .4])
+  stage.look('.tw-file-1', 1.7, [.7, .85])
+  await stage.move('.tw-file-1', { at: [.6, .4] })
+  await stage.click('right')
   scene.fileMenu = true
   await stage.wait(260)
   await click(stage, '.tw-fm-group')
@@ -873,7 +882,7 @@ const library: Play = async (stage, scene, say) => {
   }
 
   // 重命名：名字变成输入框，回车生效；磁盘上的文件一起改名。
-  say({ text: '重命名：名字变成输入框，回车后磁盘上的文件跟着改', keys: ['F2'] })
+  say({ text: '重命名，磁盘上的文件跟着改名', keys: ['F2'] })
   await stage.move('.tw-fm-rename', { ms: 500 })
   scene.fileHover = 'rename'
   await stage.wait(400)
@@ -901,6 +910,8 @@ const summary: Play = async (stage, scene, say) => {
   scene.view = 'library'; scene.ai = false
   say({ text: '右键文档，选「总结…」；在阅读助手里输入 /summary 也一样', mouse: 'right' })
   stage.place({ x: 700, y: 620 })
+  // 等文库画出来再量卡片，不然镜头对准的是鼠标那一点，卡片被切掉一半。
+  await stage.wait(0)
   stage.look('.tw-file-1', 1.5, [.7, .7])
   await stage.move('.tw-file-1', { at: [.6, .4], ms: 800 })
   await stage.wait(200)
@@ -915,7 +926,7 @@ const summary: Play = async (stage, scene, say) => {
   stage.look(null, 1)
   await stage.wait(1000)
 
-  say('范围：勾一章是整章；点小箭头展开，可以只勾其中几节')
+  say('点小箭头展开一章，可以只勾其中几节')
   stage.look('.tw-sum-list', 1.55, [.5, .6])
   await click(stage, '.tw-sum-unfold')
   scene.sumFold = true
@@ -927,14 +938,14 @@ const summary: Play = async (stage, scene, say) => {
   scene.sumPicked = 2
   await stage.wait(1300)
 
-  say('要一条不落，打开「不遗漏知识点」；这时总是分多次写')
+  say('要一条不落，打开「不遗漏知识点」')
   stage.look('.tw-sum-full', 1.55, [.5, .2])
   await stage.wait(350)
   await click(stage, '.tw-sum-full .tw-switch')
   scene.sumFull = true
   await stage.wait(1500)
 
-  say('点「开始总结」，原文的位置换成草稿，内容边写边出现')
+  say('点「开始总结」，草稿边写边出现')
   await click(stage, '.tw-sum-go')
   scene.sum = 'draft'
   stage.look(null, 1)
@@ -958,7 +969,7 @@ const summary: Play = async (stage, scene, say) => {
   scene.sumFixed = true
   await stage.wait(1700)
 
-  say('点「存入文档库」：助手按内容起名，存成 Markdown，放在原文档的文件夹里')
+  say('点「存入文档库」，存成 Markdown')
   await click(stage, '.tw-draft-save')
   scene.sumSaved = true; scene.toast = `已存为「${SUM_NAME}.md」，在原文档的文件夹里。`
   stage.look(null, 1)
@@ -982,7 +993,8 @@ const tabs: Play = async (stage, scene, say) => {
   await stage.move('.tw-t1', { at: [.5, .5] })
   await stage.wait(900)
   scene.ai = false; scene.split = true
-  await stage.wait(700)
+  await stage.tween(450, k => { scene.zoom = 1 - k * .2 })
+  await stage.wait(250)
   await stage.move('.tw-page.paper', { at: [.5, .4] })
   await stage.wait(1000)
 }
@@ -1018,7 +1030,7 @@ const view: Play = async (stage, scene, say) => {
   await stage.wait(600)
 
   // 侧边面板把阅读区挤窄时，页面自动缩小；面板关掉，回到原来的比例。
-  say('打开侧边面板时页面自动缩小，关掉后恢复原来的比例')
+  say('侧边面板打开时页面自动缩小，关掉后复原')
   stage.look(null, 1)
   await click(stage, '.tw-tr')
   scene.column = true
@@ -1071,13 +1083,20 @@ const look: Play = async (stage, scene, say) => {
     await stage.wait(480)
   }
 
+  // 设置窗是模态的，点不到侧栏：先关掉它，切完再打开。
   say('深色和浅色随时切换')
+  await click(stage, '.tw-dialog-close')
+  scene.settings = ''
+  await stage.wait(350)
   await click(stage, '.tw-dark')
   scene.dark = true
   await stage.wait(800)
   await stage.click()
   scene.dark = false
   await stage.wait(400)
+  await click(stage, '.tw-set')
+  scene.settings = 'look'
+  await stage.wait(450)
 
   // 只有两种液态玻璃有底板：预设几种，也可以加自己的图片。
   say('液态玻璃可以拿自己的图片做底板')
@@ -1094,7 +1113,7 @@ const look: Play = async (stage, scene, say) => {
   await stage.wait(900)
 
   // 设置窗让开：整个窗口换成这张图，侧栏、顶栏、助手栏的玻璃透出它。
-  say('整个窗口换上这张图，玻璃面板透出后面的颜色')
+  say('整个窗口换上这张图')
   await stage.wait(900)
   stage.look('.tw-side', 1.7, [.6, .4])
   await stage.move('.tw-side', { at: [.7, .55], ms: 1000 })
@@ -1105,7 +1124,8 @@ const look: Play = async (stage, scene, say) => {
   stage.look(null, 1)
   await stage.wait(1000)
 
-  say('点「采用」。图片留在「我的图片」里，随时换回预设')
+  // 预览条在窗口底部，字幕放上面才不会盖住「采用」。
+  say({ text: '点「采用」；图片留在「我的图片」里', top: true })
   await click(stage, '.tw-scene-ok')
   scene.preview = false
   await stage.wait(500)
@@ -1116,15 +1136,17 @@ const look: Play = async (stage, scene, say) => {
 export const LESSONS: Lesson[] = [
   { id: 'setup', title: '接入 AI', note: '连接服务，给每个功能选模型', steps: 4, play: setup },
   { id: 'explain', title: '快速解释', note: '选中文字后按中键', steps: 8, play: explain },
-  { id: 'visual', title: '用图解释', note: '图解、可拖的图、合集', steps: 3, play: visual },
+  { id: 'visual', title: '用图解释', note: '图解、可拖的图', steps: 2, play: visual },
   { id: 'assistant', title: '阅读助手', note: '记忆、提问、附属对话、分支、指令、压缩、搜对话', steps: 8, play: assistant },
-  { id: 'summary', title: '总结', note: '勾章节、边写边改、存进文库', steps: 6, play: summary },
-  { id: 'capture', title: '截图提问', note: '框选、右键拖动、固定多张', steps: 9, play: capture },
+  { id: 'summary', title: '总结', note: '勾章节、边写边改、存进文档库', steps: 6, play: summary },
+  { id: 'learn', title: '学习', note: '摸底、出大纲、一步步带读', steps: 8, play: learn },
+  { id: 'outline', title: '大纲与进度', note: '右键安排、调整次序、让助手改、学习进度', steps: 8, play: outline },
+  { id: 'capture', title: '截图提问', note: '框选、右键拖动、留住多张', steps: 10, play: capture },
   { id: 'manage', title: '管理对话', note: '移动、撤销、改记忆、搜索对话', steps: 8, play: manage },
   { id: 'translate', title: '翻译', note: '划词翻译与翻译栏', steps: 3, play: translate },
   { id: 'ink', title: '标记', note: 'Alt + 1 / 2 / 3 直接拿起工具', steps: 4, play: ink },
   { id: 'bookmark', title: '书签', note: '夹在页边，可以拖，Ctrl + ↑ ↓ 跳转，书能排顺序', steps: 9, play: bookmark },
-  { id: 'library', title: '文库', note: '导入、搜索、分组、收藏、重命名、撤销', steps: 6, play: library },
+  { id: 'library', title: '文档库', note: '导入、搜索、分组、收藏、重命名、撤销', steps: 6, play: library },
   { id: 'tabs', title: '多文档', note: '标签页与并排阅读', steps: 2, play: tabs },
   { id: 'view', title: '阅读视图', note: '目录、搜索、缩放、收起界面', steps: 5, play: view },
   { id: 'focus', title: '计时', note: '倒计时与提醒', steps: 3, play: focus },

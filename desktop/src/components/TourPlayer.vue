@@ -16,7 +16,7 @@ const scene = reactive(freshScene())
 const memory = reactive(loadTour())
 const caption = ref<Caption>({ text: '' })
 const current = shallowRef<Lesson>(LESSONS.find(item => !memory.done.includes(item.id)) || LESSONS[0])
-const phase = ref<'play' | 'check' | 'all'>('play'), paused = ref(false), titled = ref(false), cut = ref(false), beat = ref(0)
+const phase = ref<'play' | 'check' | 'all'>('play'), paused = ref(false), titled = ref(false), cut = ref(false), still = ref(false), beat = ref(0)
 const full = ref(Boolean(props.startFull)), leaving = ref(false)
 let session = 0, alive = true
 
@@ -36,15 +36,18 @@ async function start(lesson: Lesson, intro = full.value) {
   current.value = lesson; phase.value = 'play'; paused.value = false
   for (; alive && mine === session; intro = false) {
     Object.assign(scene, freshScene())
-    caption.value = { text: '' }; beat.value = 0; titled.value = intro; cut.value = false
+    caption.value = { text: '' }; beat.value = 0; titled.value = intro; cut.value = !intro; still.value = true
     await nextTick()
     const finished = await director.play(async stage => {
-      if (intro) { await stage.wait(1000); titled.value = false; await stage.wait(260) }
-      await lesson.play(stage, scene, value => { beat.value++; caption.value = typeof value === 'string' ? { text: value } : value })
+      if (intro) await stage.wait(1000)
+      const playing = lesson.play(stage, scene, value => { beat.value++; caption.value = typeof value === 'string' ? { text: value } : value })
+      // 复位和这一段开场摆的状态都不走过渡，摆好了再揭开（片头淡出或画面淡入）：不然开场那一下能看见界面从上一遍的样子变过来。
+      await Promise.all([playing, stage.wait(80).then(() => { still.value = false; cut.value = false; titled.value = false })])
       await stage.wait(700)
+      stage.hide()
     })
     if (!finished || mine !== session) return
-    cut.value = true
+    caption.value = { text: '' }; cut.value = true
     await sleep(240)
   }
 }
@@ -127,7 +130,7 @@ onBeforeUnmount(() => { alive = false; ++session; document.removeEventListener('
         </nav>
         <div class="tour-stage">
           <div ref="viewport" class="tour-view" :class="{ paused }" :role="full ? undefined : 'button'" :aria-label="full ? undefined : '展开使用教程'" @click="viewClick">
-            <div class="tour-film" :class="{ cut }"><div class="tour-camera"><TourWorld :scene="scene" /></div></div>
+            <div class="tour-film" :class="{ cut, still }"><div class="tour-camera"><TourWorld :scene="scene" /></div></div>
             <div ref="ripples" class="tour-ripples"></div>
             <svg ref="cursor" class="tour-cursor" width="16" height="22" viewBox="-1 -1 16 22" aria-hidden="true"><path d="M0 0V17L4.6 12.9 7.6 19.6 10.2 18.4 7.3 11.9H13Z" /></svg>
             <template v-if="full">
@@ -212,6 +215,7 @@ onBeforeUnmount(() => { alive = false; ++session; document.removeEventListener('
 .tour.full .tour-view{max-height:calc(94vh - 150px);border:1px solid var(--glass-outline);border-radius:14px}
 .tour-film{position:absolute;inset:0;transition:opacity .22s var(--ease-soft)}
 .tour-film.cut{opacity:0}
+.tour-film.still :deep(*){transition:none!important}
 /* 镜头：位移和缩放写在这一层。画布自己带着 CSS 缩放（为了文字清晰），位移要是写在画布上会被一起放大。 */
 /* 草稿主题给对话框的那一点歪斜这里不要：画面歪了，量出来的元素位置就带着误差，鼠标会点偏几个像素。 */
 .tour-dialog{rotate:none!important}
