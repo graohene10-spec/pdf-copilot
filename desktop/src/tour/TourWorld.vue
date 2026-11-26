@@ -4,6 +4,9 @@ import { computed } from 'vue'
 import AppIcon from '../components/AppIcon.vue'
 import { BOOKMARK_ARTS } from '../library/bookmark-art'
 import { MODELS, TEXT, SUM, FIND, PICTURE, SUM_NAME, sumLength, replyLength, type Look, type Scene, type SlotId } from './lessons'
+import { BOARD } from './lesson-outline'
+import TourOutline from './TourOutline.vue'
+import TourLearn from './TourLearn.vue'
 
 const props = defineProps<{ scene: Scene }>()
 const markBooks = computed(() => props.scene.markSwap ? ['paper', 'algebra'] as const : ['algebra', 'paper'] as const)
@@ -11,14 +14,21 @@ const MEMORY = [{ id: 'book', label: '本书' }, { id: 'all', label: '全局' },
 // 总结草稿：按已经写了多少字，一块一块露出来。
 const sumBlocks = computed(() => { let left = props.scene.sumWords; return SUM.blocks.map(([kind, text]) => { const part = text.slice(0, Math.max(0, left)); left -= text.length; return { kind, text: part } }).filter(block => block.text) })
 const sumWriting = computed(() => props.scene.sumWords < sumLength || (props.scene.sumSent && !props.scene.sumFixed))
-const own = (document.documentElement.dataset.style || 'glass') as Look
+// 新液态玻璃在根上记作 style=glass、material=crystal。
+const own = (document.documentElement.dataset.material === 'crystal' ? 'crystal' : document.documentElement.dataset.style || 'glass') as Look
 const look = computed(() => props.scene.look || own)
 const source = computed(() => props.scene.doc === 'paper' ? TEXT.english : TEXT.sentence)
 const picked = computed(() => source.value.slice(0, props.scene.selected))
 const rest = computed(() => source.value.slice(props.scene.selected))
 const written = computed(() => props.scene.cardAsk ? TEXT.cardReply.slice(0, props.scene.cardAnswer) : TEXT.answer.slice(0, props.scene.words))
 const reply = computed(() => { let left = props.scene.answer; return TEXT.reply.map(part => { const shown = part.slice(0, Math.max(0, left)); left -= part.length; return shown }) })
+// 分支对话的标题和真的一样是「原标题 · 分支」。
+const talk = computed(() => props.scene.talk ? `${props.scene.talk}${props.scene.branch ? ' · 分支' : ''}` : '新对话')
 const pad = (value: number) => String(Math.max(0, value)).padStart(2, '0')
+// 学习的大纲开在助手栏左边（学习、大纲与进度两课）：助手栏向左加宽一栏，阅读区让出位置。
+const outlined = computed(() => props.scene.plan ? props.scene.view === 'reader' && props.scene.plan.side === 'right' : ['probe', 'plan', 'teach'].includes(props.scene.learn.stage))
+// 大纲与进度一课：文档库里这本书的卡片底下多一条学习进度，数字和学习进度页上那张卡一样。
+const shelf = computed(() => props.scene.plan?.shelf ? BOARD[0]!.cards[0]! : null)
 
 /* 一支箭：杆和箭头分开画，杆可以描出来，箭头随后浮现。 */
 function arrow(x1: number, y1: number, x2: number, y2: number) {
@@ -44,7 +54,7 @@ const SERVICES = ['OpenAI API', 'Claude', 'Kimi']
 const STYLES: { id: Look; label: string }[] = [{ id: 'glass', label: '液态玻璃' }, { id: 'crystal', label: '新液态玻璃' }, { id: 'warm', label: '暖色极简' }, { id: 'sketch', label: '铅笔草稿' }]
 /* 书签用应用里真的那套画：这几枚分别是至上主义、风格派、浮世绘、包豪斯、立体主义。 */
 const ARTS = ['suprematism', 'destijl', 'ukiyoe', 'bauhaus', 'cubism'].map(id => BOOKMARK_ARTS.find(item => item.id === id)!)
-/* 截图一课：三张截图各截了什么（输入框里的小图就是把这段字缩小了画）、快捷提问的气泡。 */
+/* 截图一课：三张截图各截了什么（输入框里的小图就是把这段字缩小了画）、快捷提问的气泡。发出去以后最后再截的是定理 5.2 那一段。 */
 const SHOTS = ['det(A − λI) = 0', '定理 5.2　实对称矩阵的特征值都是实数', TEXT.sentence]
 const QUICK = ['为什么？', '详细展开', '通俗解释', '举个例子']
 const box = computed(() => { const frame = props.scene.frame; return frame ? { left: `${frame.x}px`, top: `${frame.y}px`, width: `${frame.width}px`, height: `${frame.height}px` } : {} })
@@ -108,7 +118,7 @@ const files = computed(() => {
 </script>
 
 <template>
-  <div class="tw-world" :data-look="look" :class="{ forced: scene.look, dark: scene.dark, picture: scene.picture, bare: !scene.chrome, desk: scene.desk > 0 }" aria-hidden="true">
+  <div class="tw-world" :data-look="look" :class="{ forced: scene.look, dark: scene.dark, picture: scene.picture, bare: !scene.chrome, desk: scene.desk > 0, plan: scene.plan, 'plan-still': scene.plan?.still }" aria-hidden="true">
     <div v-if="scene.desk > 0" class="tw-desk">
       <p class="tw-icon"><AppIcon name="folder" :size="30" />文档</p>
       <p class="tw-icon"><AppIcon name="image" :size="30" />截图</p>
@@ -118,11 +128,11 @@ const files = computed(() => {
     <div class="tw-app" :style="scene.desk > 0 ? { transform: `translate(${-40 * scene.desk}px, ${-14 * scene.desk}px) scale(${1 - scene.desk * .27})` } : undefined">
     <Transition name="tw-wall"><svg v-if="scene.picture" class="tw-wall" viewBox="0 0 160 100" preserveAspectRatio="xMidYMid slice" v-html="wall('w')" /></Transition>
     <aside class="tw-side">
-      <div class="tw-search"><AppIcon name="search" :size="14" /><i></i></div>
-      <p class="tw-row" :class="{ on: scene.view !== 'collection' }"><AppIcon name="library" :size="15" />全部文档</p>
+      <div class="tw-import"><AppIcon name="plus" :size="14" />加入文档</div>
+      <p class="tw-row" :class="{ on: scene.view !== 'board' }"><AppIcon name="library" :size="15" />全部文档</p>
       <p class="tw-row"><AppIcon name="clock" :size="15" />最近阅读</p>
-      <p class="tw-row"><AppIcon name="star" :size="15" />收藏</p>
-      <p class="tw-row tw-nav-ui" :class="{ on: scene.view === 'collection' }"><AppIcon name="visual" :size="15" />Intelligent UI</p>
+      <p class="tw-row"><AppIcon name="star" :size="15" />我的收藏</p>
+      <p class="tw-row tw-nav-learn" :class="{ on: scene.view === 'board' }"><AppIcon name="sparkle" :size="15" />学习进度</p>
       <h6>分组</h6>
       <p class="tw-row"><AppIcon name="folder" :size="15" />线性代数<b v-if="scene.grouped" class="tw-count">1</b></p>
       <p class="tw-row"><AppIcon name="folder" :size="15" />论文</p>
@@ -152,14 +162,14 @@ const files = computed(() => {
         <template v-if="scene.clock === 'ringing'"><AppIcon class="tw-bell" name="bell" :size="14" />到点了</template>
         <template v-else><svg v-if="scene.clock === 'running'" class="tw-ring-timer" width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" /><circle cx="8" cy="8" r="6" pathLength="1" stroke-dasharray=".82 1" /></svg><AppIcon v-else name="sun" :size="14" /><small>下午</small>4:44</template>
       </span>
-      <span class="tw-icons"><AppIcon name="search" :size="16" /><AppIcon class="tw-tr" name="translate" :size="16" /><AppIcon class="tw-aibtn" name="sparkle" :size="16" /></span>
+      <span class="tw-icons"><AppIcon name="star" :size="16" /><AppIcon class="tw-tr" name="translate" :size="16" /><AppIcon class="tw-aibtn" name="sparkle" :size="16" /></span>
     </header>
     <Transition name="tw-pop"><div v-if="scene.clock === 'open'" class="tw-clock-panel">
       <div class="tw-wheel"><span><i>{{ pad(scene.minutes - 5) }}</i><b>{{ pad(scene.minutes) }}</b><i>{{ pad(scene.minutes + 5) }}</i></span><em>:</em><span><i>55</i><b>00</b><i>05</i></span></div>
       <p><span class="tw-start">开始</span><span>定闹钟</span></p>
     </div></Transition>
 
-    <main v-show="scene.view === 'reader'" class="tw-reader" :class="{ wide: !scene.ai, split: scene.split, column: scene.column, hits: scene.find.length > 2 }">
+    <main v-show="scene.view === 'reader'" class="tw-reader" :class="{ wide: !scene.ai, split: scene.split, column: scene.column, hits: scene.find.length > 2, outlined, 'outlined-left': scene.plan?.side === 'left' && scene.view === 'reader' }">
       <div class="tw-bar">
         <template v-if="scene.ink">
           <span v-for="tool in INK" :key="tool.id" class="tw-tool" :class="[`tw-tool-${tool.id}`, { on: scene.ink === tool.id }]"><svg width="15" height="15" viewBox="0 0 24 24"><path :d="tool.d" /></svg></span>
@@ -172,9 +182,10 @@ const files = computed(() => {
       <Transition name="tw-slide"><div v-if="scene.outline" class="tw-outline"><h6>目录</h6><p v-for="(item, index) in OUTLINE" :key="item" :class="[`tw-ol-${index}`, { on: index === 0 }]">{{ item }}</p></div></Transition>
       <Transition name="tw-pop"><div v-if="scene.finding" class="tw-find"><AppIcon name="search" :size="14" /><span>{{ scene.find }}<i class="tw-caret"></i></span><small v-if="scene.find.length > 2">1 / 9</small></div></Transition>
       <Transition name="tw-slide"><div v-if="scene.column" class="tw-column">
-        <header><b>翻译</b><span class="tw-auto" :class="{ on: scene.auto }"><i></i>自动翻译</span></header>
+        <header><b>翻译</b></header>
         <div class="tw-entry"><small>{{ TEXT.english }}</small><p>{{ TEXT.chinese }}</p></div>
         <div class="tw-entry"><small>Attention Is All You Need</small><p>注意力就是你所需要的一切</p></div>
+        <footer><span class="tw-auto" :class="{ on: scene.auto }"><i></i>划词翻译</span></footer>
       </div></Transition>
 
       <div class="tw-rail">
@@ -204,7 +215,7 @@ const files = computed(() => {
               <i class="tw-rule" :class="{ running: scene.running }"></i>
               <p v-if="scene.cardAsk" class="tw-card-q">{{ TEXT.cardAsk }}</p>
               <p class="tw-answer">{{ written }}<i v-if="scene.running && (scene.cardAsk ? scene.cardAnswer < TEXT.cardReply.length : scene.words < TEXT.answer.length)" class="tw-caret"></i></p>
-              <svg v-if="scene.drawn" class="tw-diagram" viewBox="0 0 260 104">
+              <Transition name="tw-fold"><svg v-if="scene.drawn" class="tw-diagram" viewBox="0 0 260 104">
                 <path class="axis" d="M14 88H250M44 100V6" />
                 <path class="soft" pathLength="1" :d="scaled.shaft" style="--d: 0ms" /><path class="soft head" :d="scaled.head" style="--d: 560ms" />
                 <path class="main" pathLength="1" :d="still.v.shaft" style="--d: 120ms" /><path class="main head" :d="still.v.head" style="--d: 520ms" />
@@ -216,7 +227,7 @@ const files = computed(() => {
                 </template>
                 <text class="t-main" x="104" y="74" style="--d: 520ms">v</text>
                 <text class="t-main" :x="scaled.x - 12" :y="scaled.y - 4" text-anchor="end" style="--d: 620ms">Av = λv</text>
-              </svg>
+              </svg></Transition>
               <p v-if="scene.visual && scene.drawn" class="tw-sim"><span>λ</span><i class="tw-track"><i class="tw-knob" :style="{ left: `${(scene.lambda - .5) / 2.5 * 100}%` }"></i></i><b>{{ scene.lambda.toFixed(1) }}</b></p>
               <p class="tw-actions"><AppIcon name="deeper" :size="15" /><AppIcon name="simpler" :size="15" /><AppIcon name="example" :size="15" /><AppIcon name="visual" :size="15" /></p>
             </div>
@@ -253,32 +264,26 @@ const files = computed(() => {
 
     <Transition name="tw-view">
       <section v-if="scene.view === 'library'" class="tw-lib">
-        <header><h2>全部文档<small>{{ files.length }}</small></h2><span class="tw-lib-search" :class="{ typed: scene.query }"><AppIcon name="search" :size="14" /><em>{{ scene.query || '搜索标题、标签或已索引内容' }}</em><i v-if="scene.query" class="tw-caret"></i></span></header>
+        <header><h2>全部文档<small>{{ files.length }}</small></h2><span class="tw-lib-search" :class="{ typed: scene.query }"><AppIcon name="search" :size="14" /><em>{{ scene.query || '搜索标题、标签或打开过的正文' }}</em><i v-if="scene.query" class="tw-caret"></i></span></header>
         <TransitionGroup tag="div" class="tw-grid" name="tw-file">
           <div v-for="file in files" :key="file.id" class="tw-file" :class="`tw-file-${file.slot}`">
             <i class="tw-cover" :class="file.kind"><b></b><b></b><b></b></i>
             <p v-if="file.id === 'algebra' && scene.renaming !== null" class="tw-rename"><span :class="{ all: scene.renaming === file.title }">{{ scene.renaming }}</span><i class="tw-caret"></i></p>
-            <p v-else>{{ file.id === 'algebra' && scene.fileName ? scene.fileName : file.title }}</p><small>{{ file.meta }}<template v-if="scene.query && file.hit"> · 正文 {{ file.hit }} 处</template></small>
+            <p v-else>{{ file.id === 'algebra' && scene.fileName ? scene.fileName : file.title }}</p><small>{{ file.meta }}</small>
             <AppIcon class="tw-star" :class="{ on: scene.starred && file.id === 'algebra' }" name="star" :size="14" />
             <span v-if="scene.grouped && file.id === 'algebra'" class="tw-tag">线性代数</span>
+            <div v-if="shelf && file.id === 'algebra'" class="tw-learnbar"><i><b :style="{ width: `${shelf.passed / shelf.total * 100}%` }"></b></i>学习 {{ shelf.passed }}/{{ shelf.total }}</div>
           </div>
         </TransitionGroup>
         <Transition name="tw-pop"><div v-if="scene.fileMenu" class="tw-menu tw-file-menu"><span><AppIcon name="book" :size="13" />打开</span><span><AppIcon name="star" :size="13" />收藏</span><span class="tw-fm-sum" :class="{ hot: scene.fileHover === 'sum' }"><AppIcon name="doc" :size="13" />总结…</span><span class="tw-fm-rename" :class="{ hot: scene.fileHover === 'rename' }"><AppIcon name="edit" :size="13" />重命名<small>F2</small></span><span class="tw-fm-details" :class="{ hot: scene.fileHover === 'details' }"><AppIcon name="tag" :size="13" />详情与标签…</span><span class="tw-fm-reveal" :class="{ hot: scene.fileHover === 'reveal' }"><AppIcon name="folder" :size="13" />打开所在文件夹</span><span class="tw-fm-group line"><AppIcon name="folder" :size="13" />放进「线性代数」</span><span class="line danger"><AppIcon name="trash" :size="13" />从文档库移除</span></div></Transition>
       </section>
-      <section v-else-if="scene.view === 'collection'" class="tw-lib">
-        <header><h2>Intelligent UI<small>3</small></h2></header>
-        <div class="tw-grid three">
-          <div class="tw-ui"><svg viewBox="0 0 260 104"><path class="axis" d="M14 88H250M44 100V6" /><path class="soft" :d="scaled.shaft" /><path class="soft" :d="scaled.head" /><path class="main" :d="still.v.shaft" /><path class="main" :d="still.v.head" /></svg><p>特征向量的方向</p><small>线性代数讲义 · 第 87 页</small></div>
-          <div class="tw-ui"><svg viewBox="0 0 260 104"><path class="axis" d="M14 88H250M24 96V8" /><path class="main" d="M24 20C70 22 90 70 140 76S220 84 250 85" /><path class="other" d="M24 30C80 36 110 60 160 66S226 72 250 73" /></svg><p>损失随迭代下降</p><small>机器学习导论 · 第 131 页</small></div>
-          <div class="tw-ui"><svg viewBox="0 0 260 104"><path class="axis" d="M20 22H240M20 44H240M20 66H240M20 88H240M96 10V96M168 10V96" /><path class="main" d="M34 33h44M34 55h36M34 77h48" /><path class="other" d="M110 33h40M110 55h44M110 77h30M182 33h44M182 55h30M182 77h40" /></svg><p>三种矩阵分解对比</p><small>线性代数讲义 · 第 204 页</small></div>
-        </div>
-      </section>
     </Transition>
 
     <Transition name="tw-ai">
-      <aside v-if="scene.ai && scene.view === 'reader'" class="tw-ai" :class="{ side: scene.side }">
+      <aside v-if="scene.ai && scene.view === 'reader'" class="tw-ai" :class="{ side: scene.side, outlined }">
+        <TourLearn v-if="!scene.plan" place="plan" :scene="scene" />
         <div class="tw-main">
-          <header><span class="tw-manage"><AppIcon name="threads" :size="16" /></span><span class="tw-title"><b>{{ scene.talk || '新对话' }}</b><small>{{ scene.doc === 'paper' ? 'Attention Is All You Need' : '线性代数讲义' }}</small></span><span v-if="scene.branch" class="tw-chip"><AppIcon name="branch" :size="12" />分支</span><span class="tw-hbtns"><AppIcon name="branch" :size="14" /><AppIcon name="compose" :size="14" /><AppIcon name="close" :size="13" /></span></header>
+          <header><span class="tw-manage"><AppIcon name="threads" :size="16" /></span><span class="tw-title"><b>{{ talk }}</b><small>{{ scene.doc === 'paper' ? 'Attention Is All You Need' : '线性代数讲义' }}</small></span><span class="tw-hbtns"><AppIcon name="branch" :size="14" /><AppIcon name="compose" :size="14" /><AppIcon name="close" :size="13" /></span></header>
           <Transition name="tw-pop"><div v-if="scene.histOpen" class="tw-hist">
             <div class="tw-hist-top"><p><AppIcon name="compose" :size="13" />新对话</p><p><AppIcon name="list" :size="13" />管理</p></div>
             <div class="tw-hist-search" :class="{ typed: scene.histQuery }"><AppIcon name="search" :size="13" /><em>{{ scene.histQuery || '搜索对话' }}</em><i v-if="scene.histQuery" class="tw-caret"></i></div>
@@ -287,7 +292,7 @@ const files = computed(() => {
             </template>
             <template v-else>
               <div class="tw-hist-scope"><p class="on">这份文档</p><p>全部文档</p></div>
-              <div class="tw-hist-row current"><strong>{{ scene.talk || '新对话' }}</strong><small>刚刚 · 1 问</small></div>
+              <div class="tw-hist-row current"><strong>{{ talk }}</strong><small>刚刚 · 1 问</small></div>
               <div class="tw-hist-row"><strong>相似对角化的条件</strong><small>3 天前 · 2 问</small></div>
               <div class="tw-hist-row"><strong>行列式为什么能判可逆</strong><small>上周 · 2 问</small></div>
             </template>
@@ -296,7 +301,7 @@ const files = computed(() => {
             <template v-if="scene.sum === 'setup'">
               <div class="tw-sum">
                 <h4>总结<small>线性代数讲义</small></h4>
-                <p class="tw-sum-row"><b>范围</b><em :class="{ none: !scene.sumPicked }">{{ scene.sumPicked ? `${scene.sumPicked} 节` : '不指定' }}</em></p>
+                <p class="tw-sum-row"><b>范围</b><em :class="{ none: !scene.sumPicked }">{{ scene.sumPicked === 1 ? SUM.parts[0]![0] : scene.sumPicked ? `${scene.sumPicked} 节` : '不指定' }}</em></p>
                 <div class="tw-sum-list">
                   <p class="tw-sum-ch"><AppIcon class="tw-sum-caret" name="arrow" :size="9" /><i></i><span>第4章 行列式</span><small>52–86</small></p>
                   <p class="tw-sum-ch"><AppIcon class="tw-sum-caret tw-sum-unfold" :class="{ on: scene.sumFold }" name="arrow" :size="9" /><i :class="{ mixed: scene.sumPicked > 0 }"></i><span>第5章 特征值</span><small>87–120</small></p>
@@ -319,23 +324,27 @@ const files = computed(() => {
                 <span v-if="scene.sumFixed" class="tw-draftchip"><AppIcon name="doc" :size="12" />修改草稿 · 1 处</span>
               </template>
             </template>
+            <template v-else-if="scene.talk === FIND.opened.title">
+              <p class="tw-me">{{ FIND.opened.ask }}</p>
+              <p class="tw-say">{{ FIND.opened.reply }}</p>
+            </template>
             <template v-else-if="scene.asked">
               <p class="tw-me">{{ TEXT.question }}</p>
               <p class="tw-say">{{ reply[0] }}<span class="tw-q" :class="{ on: scene.quote }">{{ reply[1] }}</span>{{ reply[2] }}</p>
               <p v-if="scene.answer >= replyLength" class="tw-meta"><AppIcon name="copy" :size="13" /><AppIcon name="retry" :size="13" /><AppIcon class="tw-branch" name="branch" :size="13" /></p>
               <Transition name="tw-pop"><div v-if="scene.quotePop" class="tw-menu tw-quote"><span><AppIcon name="append" :size="13" />引用到输入框</span><span class="tw-quote-side"><AppIcon name="branch" :size="13" />在附属对话提问</span></div></Transition>
-              <Transition name="tw-fade"><p v-if="scene.branch" class="tw-note"><AppIcon name="branch" :size="12" />新分支从这条回答开始，原对话在对话记录里</p></Transition>
             </template>
             <template v-else-if="scene.shotSent">
               <div class="tw-me tw-me-shots"><span><b v-for="(text, index) in SHOTS" :key="index" class="tw-shot flat"><i>{{ text }}</i></b></span>{{ TEXT.shotAsk }}</div>
               <p class="tw-say">{{ TEXT.shotReply.slice(0, scene.shotAnswer) }}</p>
             </template>
-            <div v-else class="tw-empty"><AppIcon name="sparkle" :size="22" /><span>总结这一页</span><span>这个公式怎么来的</span><p class="tw-mem"><em>记忆</em><b v-for="item in MEMORY" :key="item.id" :class="[`tw-mem-${item.id}`, { on: scene.mem === item.id }]">{{ item.label }}</b></p></div>
+            <TourLearn v-else-if="scene.learn.stage" place="chat" :scene="scene" />
+            <div v-else class="tw-empty"><AppIcon name="sparkle" :size="22" /><p class="tw-mem"><em>记忆</em><b v-for="item in MEMORY" :key="item.id" :class="[`tw-mem-${item.id}`, { on: scene.mem === item.id }]">{{ item.label }}</b></p><p class="tw-tasks"><span class="tw-task-sum">总结这份文档</span><span class="tw-task-learn">学习这一段</span></p></div>
           </div>
           <Transition name="tw-pop"><div v-if="scene.btw" class="tw-btw"><p><b>/btw</b>{{ TEXT.btwAsk }}</p><p>{{ TEXT.btwReply.slice(0, scene.btwAnswer) }}</p></div></Transition>
-          <Transition name="tw-pop"><div v-if="scene.commands" class="tw-menu tw-cmds"><span class="tw-cmd-btw"><b>/btw</b>顺便问一句</span><span><b>/compress</b>压缩对话</span><span><b>/usage</b>查看用量</span><span><b>/summary</b>总结文档</span></div></Transition>
+          <Transition name="tw-pop"><div v-if="scene.commands" class="tw-menu tw-cmds"><span class="tw-cmd-btw"><b>/btw</b>顺便问一句</span><span><b>/compress</b>压缩对话</span><span><b>/usage</b>查看用量</span><span><b>/summary</b>总结文档</span><span><b>/learn</b>学习</span><span><b>/outline</b>调整大纲</span></div></Transition>
           <Transition name="tw-pop"><p v-if="scene.compacting" class="tw-compacting"><i>✻</i><span>正在压缩对话…</span></p></Transition>
-          <TransitionGroup v-if="scene.shots" tag="div" name="tw-shot" class="tw-shots"><b v-for="index in scene.shots" :key="index" class="tw-shot" :class="[`tw-shot-${index - 1}`, { kept: index <= scene.kept }]"><i>{{ SHOTS[index - 1] }}</i></b></TransitionGroup>
+          <TransitionGroup v-if="scene.shots" tag="div" name="tw-shot" class="tw-shots"><b v-for="index in scene.shots" :key="index" class="tw-shot" :class="[`tw-shot-${index - 1}`, { kept: index <= scene.kept }]"><i>{{ SHOTS[scene.shotSent ? index : index - 1] }}</i></b></TransitionGroup>
           <div class="tw-ask" :class="{ typed: scene.draft }"><span>{{ scene.draft || '问问这一页' }}<i v-if="scene.draft" class="tw-caret"></i></span><svg class="tw-context" :class="{ busy: scene.compacting }" viewBox="0 0 20 20" :style="{ '--ratio': scene.ctxFill ?? (scene.asked ? .18 : .06) }"><circle cx="10" cy="10" r="7.5" /><circle cx="10" cy="10" r="7.5" pathLength="100" /></svg><b class="tw-send"><AppIcon name="arrow-up" :size="14" /></b></div>
         </div>
         <div v-if="scene.side" class="tw-sidechat">
@@ -346,15 +355,16 @@ const files = computed(() => {
         </div>
       </aside>
     </Transition>
+    <TourOutline v-if="scene.plan" :plan="scene.plan" :view="scene.view" />
 
     <Transition name="tw-dialog">
       <section v-if="scene.settings" class="tw-dialog" :class="{ peek: scene.preview }">
-        <h3>设置</h3>
+        <h3>设置</h3><span class="tw-dialog-close"><AppIcon name="close" :size="14" /></span>
         <nav><span :class="{ on: scene.settings === 'look' }"><AppIcon name="sun" :size="14" />外观</span><span><AppIcon name="book" :size="14" />阅读</span><span><AppIcon name="settings" :size="14" />快捷键</span><span :class="{ on: scene.settings === 'ai' }"><AppIcon name="sparkle" :size="14" />AI</span><span><AppIcon name="memory" :size="14" />记忆</span><span><AppIcon name="import" :size="14" />更新</span></nav>
         <div v-if="scene.settings === 'ai'" class="tw-pane">
           <h5><i>1</i>连接服务</h5>
           <div class="tw-links">
-            <span class="tw-link tw-link-deepseek" :class="{ on: scene.key >= 20, open: scene.link }"><i></i>DeepSeek<small>{{ scene.key >= 20 ? '已填密钥' : '未连接' }}</small></span>
+            <span class="tw-link tw-link-deepseek" :class="{ on: scene.key >= 20, open: scene.link }"><i></i>DeepSeek<small>{{ scene.key >= 20 ? '已填 API Key' : '未连接' }}</small></span>
             <span v-for="name in SERVICES" :key="name" class="tw-link"><i></i>{{ name }}<small>未连接</small></span>
             <span class="tw-link tw-link-codex" :class="{ on: scene.codex }"><i></i>Codex<small>{{ scene.codex ? '已登录' : '未检查' }}</small></span>
           </div>
@@ -364,7 +374,7 @@ const files = computed(() => {
             <div v-for="slot in SLOTS" :key="slot.id" class="tw-slot" :class="`tw-slot-${slot.id}`">
               <p><b>{{ slot.label }}</b><small>{{ slot.note }}</small></p>
               <span class="tw-select" :class="{ set: scene.slots[slot.id] !== '未选择' }">{{ scene.slots[slot.id] }}<AppIcon name="down" :size="12" /></span>
-              <div v-if="scene.menu === slot.id" class="tw-menu tw-options"><span v-for="(model, index) in MODELS" :key="model" :class="[`tw-opt-${index}`, { dim: index > 1 }]">{{ model }}</span></div>
+              <Transition name="tw-pop"><div v-if="scene.menu === slot.id" class="tw-menu tw-options"><span v-for="(model, index) in MODELS" :key="model" :class="[`tw-opt-${index}`, { dim: index > 1 }]">{{ model }}</span></div></Transition>
             </div>
             <div class="tw-slot"><p><b>可视化讲解</b><small>快速解释里的 Intelligent UI</small></p><span class="tw-select set">跟阅读助手一样<AppIcon name="down" :size="12" /></span></div>
           </div>
@@ -441,7 +451,7 @@ const files = computed(() => {
         <header><h3>记忆</h3><b>{{ memCount }}</b><span>条</span></header>
         <div class="tw-cm-side-list">
           <p class="tw-mem-ask" :class="{ busy: scene.memBusy, typed: scene.memAsk }"><em>{{ scene.memAsk || '让助手改：比如 把循环相关的合并成一条' }}</em><i v-if="scene.memAsk && !scene.memBusy" class="tw-caret"></i><b><AppIcon :name="scene.memBusy ? 'stop' : 'arrow-up'" :size="12" /></b></p>
-          <p v-if="scene.memBusy || scene.memNote" class="tw-mem-note">{{ scene.memBusy ? '助手正在看这些记忆，按你说的改…' : scene.memNote }}<b v-if="!scene.memBusy">撤销</b></p>
+          <p v-if="scene.memBusy || scene.memNote" class="tw-mem-note">{{ scene.memBusy ? '正在修改记忆…' : scene.memNote }}<b v-if="!scene.memBusy">撤销</b></p>
           <h4><span>线性代数讲义</span><small>{{ memRows.length }}</small><AppIcon name="arrow" :size="9" /></h4>
           <div class="tw-mem-rows" :class="{ still: scene.memStill }">
             <p v-for="row in memRows" :key="row.id" class="tw-mem-row" :class="[`tw-mem-${row.id}`, { lifted: row.id === 'r1' && scene.memDrag !== null, fresh: row.id === 'm' }]" :style="{ translate: `0 ${memMove(row.id)}px` }"><AppIcon class="tw-grip" name="grip" :size="12" /><span><b>{{ row.text }}</b><em>{{ row.kind }}</em></span></p>
@@ -457,6 +467,7 @@ const files = computed(() => {
 </template>
 
 <style scoped>
+/* 根上的 data-look、forced 也被 TourOutline、TourLearn 的样式拿来跟着换风格，改名要一起改。 */
 .tw-world{--tw-bg:var(--canvas);--tw-radius:16px;position:absolute;left:0;top:0;width:1280px;height:800px;overflow:hidden;background:var(--tw-bg);color:var(--ink);font-size:13px;line-height:1.4;user-select:none;pointer-events:none;transition:color .45s var(--ease-soft)}
 .tw-app{position:absolute;inset:0;overflow:hidden;background:var(--tw-bg);transform-origin:100% 46%;transition:background .45s var(--ease-soft)}
 /* 文库一课：窗口缩小一点，露出后面的桌面。 */
@@ -492,8 +503,7 @@ const files = computed(() => {
 
 /* ---- 侧栏 ---- */
 .tw-side{position:absolute;left:14px;top:14px;bottom:14px;width:196px;display:flex;flex-direction:column;gap:3px;padding:14px 12px;border:1px solid var(--glass-outline);border-radius:var(--tw-radius);background:var(--sidebar,var(--surface))}
-.tw-search{display:flex;align-items:center;gap:8px;height:32px;margin-bottom:8px;padding:0 10px;border:1px solid var(--line-soft);border-radius:999px;color:var(--muted)}
-.tw-search i{flex:1;height:1px;background:var(--line-soft)}
+.tw-import{display:flex;align-items:center;gap:8px;height:32px;margin-bottom:8px;padding:0 10px;border:1px solid var(--line-soft);border-radius:999px;color:var(--secondary);font-size:12.5px}
 .tw-row{display:flex;align-items:center;gap:9px;height:34px;padding:0 10px;border-radius:10px;color:var(--secondary);transition:background-color .25s}
 .tw-row.on{background:color-mix(in srgb,var(--ink) 7%,transparent);color:var(--ink);font-weight:600}
 .tw-count{margin-left:auto;min-width:18px;height:18px;border-radius:9px;background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent);font-size:11px;line-height:18px;text-align:center;animation:tw-bump .4s var(--ease-spring)}
@@ -551,6 +561,8 @@ const files = computed(() => {
 .tw-find small{font-variant-numeric:tabular-nums}
 .tw-column{position:absolute;left:10px;top:46px;bottom:14px;z-index:3;width:290px;padding:14px;border:1px solid var(--glass-outline);border-radius:var(--tw-radius);background:var(--surface)}
 .tw-column header{display:flex;align-items:center;margin-bottom:12px}
+/* 划词翻译的开关和真的一样在翻译栏底部。 */
+.tw-column footer{position:absolute;left:14px;right:14px;bottom:12px;display:flex;padding-top:10px;border-top:1px solid var(--line-soft)}
 .tw-auto{display:flex;align-items:center;gap:7px;margin-left:auto;color:var(--muted);font-size:12px}
 .tw-auto i{position:relative;width:28px;height:16px;border-radius:8px;background:color-mix(in srgb,var(--ink) 18%,transparent);transition:background-color .25s}
 .tw-auto i::after{content:'';position:absolute;left:2px;top:2px;width:12px;height:12px;border-radius:50%;background:#fff;transition:translate .25s var(--ease-spring)}
@@ -560,7 +572,9 @@ const files = computed(() => {
 .tw-entry p{font-size:13px;line-height:1.65}
 .tw-pages{display:flex;justify-content:center;align-items:flex-start;gap:22px;padding-top:52px;transform-origin:50% 0;transition:padding-left .45s var(--ease-out)}
 .tw-reader.column .tw-pages{padding-left:300px}
-.tw-reader.split .tw-page{zoom:.8}
+/* 并排阅读：第二份从第一份身后滑出来，第一份跟着让到左边；两份一起缩小由脚本推页面的缩放。 */
+.tw-reader.split .tw-page.paper{z-index:-1;animation:tw-split .45s var(--ease-out) both}
+@keyframes tw-split{from{margin-left:-622px;opacity:0}}
 .tw-page{position:relative;flex:none;width:600px;min-height:940px;padding:52px 62px 60px;border-radius:3px;background:#fffefb;color:#23252b;box-shadow:0 1px 2px rgb(0 0 0 / .08),0 14px 40px -18px rgb(0 0 0 / .28);font:15px/1.95 Georgia,'Source Han Serif SC','Noto Serif CJK SC','Songti SC',SimSun,serif;animation:tw-page .4s var(--ease-out)}
 @keyframes tw-page{from{opacity:0;translate:0 10px}}
 .tw-page small{color:#8a8d96;font-size:11.5px;letter-spacing:.12em}
@@ -585,11 +599,11 @@ const files = computed(() => {
 .tw-ribbons{position:absolute;left:calc(100% - 5px);top:76px;filter:drop-shadow(0 1px 2px rgb(0 0 0 / .42))}
 .tw-ribbon{display:block;width:46px;height:19px;clip-path:polygon(0 0,100% 0,calc(100% - 7px) 50%,100% 100%,0 100%)}
 .tw-ribbons.flip .tw-ribbon{scale:-1 1}
-.tw-ribbons .tw-ribbon{transition:scale 0s,filter .2s}
+.tw-ribbons .tw-ribbon{transition:scale 0s,filter .2s,width .15s var(--ease-out),height .15s var(--ease-out)}
 .tw-ribbons.lifted{z-index:6;filter:drop-shadow(0 7px 9px rgb(0 0 0 / .42))}
 .tw-ribbons.lifted .tw-ribbon{width:53px;height:22px}
 .tw-ribbon-enter-active{transition:translate .45s var(--ease-spring),opacity .2s}
-.tw-ribbon-leave-active{transition:opacity .15s}
+.tw-ribbon-leave-active{position:absolute;left:0;top:0;transition:opacity .15s}
 .tw-ribbon-enter-from{translate:-30px 0;opacity:0}
 .tw-ribbon-leave-to{opacity:0}
 .tw-rail{position:absolute;right:6px;top:56px;bottom:20px;z-index:2;width:16px;border-right:1px solid color-mix(in srgb,var(--ink) 20%,transparent)}
@@ -606,11 +620,13 @@ const files = computed(() => {
 .tw-card.pinned{box-shadow:0 8px 22px -12px rgb(0 0 0 / .34),0 1px 3px rgb(0 0 0 / .1),0 0 0 1px color-mix(in srgb,var(--accent) 38%,transparent);translate:0 3px;rotate:-.5deg}
 .tw-card-enter-active{transition:opacity .22s var(--ease-out),scale .42s var(--ease-spring)}
 .tw-card-enter-from{opacity:0;scale:.86}
+.tw-card-leave-active{transition:opacity .15s var(--ease-soft)}
+.tw-card-leave-to{opacity:0}
 .tw-card-head{display:flex;align-items:center;gap:6px}
 .tw-card-head span{flex:1;min-width:0;overflow:hidden;white-space:nowrap;font-size:12.5px;font-weight:650}
 .tw-card-head .tw-card-ask{height:22px;padding:0 7px;border:1px solid color-mix(in srgb,var(--accent) 55%,transparent);border-radius:6px;font-weight:400;line-height:20px;color:var(--ink)}
 .tw-card-head .tw-card-ask.empty{color:var(--muted)}
-.tw-card .tw-card-q{margin:0 0 5px;padding-left:7px;border-left:2px solid color-mix(in srgb,var(--accent) 60%,transparent);color:var(--muted);font-size:12px;text-align:left}
+.tw-card .tw-card-q{margin:0 0 5px;padding-left:7px;border-left:2px solid color-mix(in srgb,var(--accent) 60%,transparent);color:var(--muted);font-size:12px;text-align:left;animation:tw-row-in .3s var(--ease-out) both}
 .tw-card-head mark{background:linear-gradient(transparent 56%,color-mix(in srgb,var(--accent) 26%,transparent) 56%);color:inherit}
 .tw-spark{flex:none;color:var(--accent)}
 .tw-pin{display:grid;place-items:center;flex:none;width:22px;height:22px;border-radius:50%;color:var(--muted);rotate:35deg;transition:rotate .35s var(--ease-spring),color .2s,background-color .2s}
@@ -626,11 +642,11 @@ const files = computed(() => {
 @keyframes tw-blink{50%{opacity:0}}
 .tw-diagram{display:block;width:100%;height:auto;margin:6px 0 2px;overflow:visible;animation:tw-unfold .4s var(--ease-out) both}
 @keyframes tw-unfold{from{max-height:0;opacity:0}to{max-height:130px;opacity:1}}
-.tw-diagram path,.tw-ui path{fill:none;stroke-linecap:round;stroke-linejoin:round}
-:is(.tw-diagram,.tw-ui) .axis{stroke:color-mix(in srgb,var(--ink) 16%,transparent);stroke-width:1}
-:is(.tw-diagram,.tw-ui) .main{stroke:var(--accent);stroke-width:2}
-:is(.tw-diagram,.tw-ui) .soft{stroke:color-mix(in srgb,var(--accent) 42%,transparent);stroke-width:2}
-:is(.tw-diagram,.tw-ui) .other{stroke:color-mix(in srgb,var(--ink) 46%,transparent);stroke-width:1.4}
+.tw-diagram path{fill:none;stroke-linecap:round;stroke-linejoin:round}
+.tw-diagram .axis{stroke:color-mix(in srgb,var(--ink) 16%,transparent);stroke-width:1}
+.tw-diagram .main{stroke:var(--accent);stroke-width:2}
+.tw-diagram .soft{stroke:color-mix(in srgb,var(--accent) 42%,transparent);stroke-width:2}
+.tw-diagram .other{stroke:color-mix(in srgb,var(--ink) 46%,transparent);stroke-width:1.4}
 .tw-diagram .turn{stroke:color-mix(in srgb,var(--ink) 30%,transparent);stroke-width:1}
 .tw-diagram path[pathLength]{stroke-dasharray:1;stroke-dashoffset:1;animation:tw-draw .5s var(--ease-soft) calc(var(--d) * .7 + .2s) both}
 .tw-diagram .head,.tw-diagram text{animation:tw-appear .26s var(--ease-out) calc(var(--d) * .7 + .2s) both}
@@ -638,7 +654,13 @@ const files = computed(() => {
 @keyframes tw-appear{from{opacity:0}}
 .tw-diagram text{fill:var(--muted);font:italic 12px Georgia,serif}
 .tw-diagram .t-main{fill:var(--accent)}
-.tw-card .tw-sim{display:flex;align-items:center;gap:10px;margin:4px 0 2px;font:italic 13px Georgia,serif;color:var(--muted);animation:tw-appear .3s var(--ease-out) .5s both}
+/* 卡片里新出来的一行（问的那句、滑块）从零高度长出来：下面的东西跟着平滑下移，不是一下被顶下去。 */
+.tw-card .tw-sim{display:flex;align-items:center;gap:10px;margin:4px 0 2px;font:italic 13px Georgia,serif;color:var(--muted);animation:tw-row-in .45s var(--ease-out) .2s both}
+@keyframes tw-row-in{from{max-height:0;margin-top:0;margin-bottom:0;opacity:0}to{max-height:40px}}
+/* 卡片里改问别的，图收起来：高度收拢，不是一下没了。 */
+.tw-fold-leave-active{animation:none;transition:max-height .3s var(--ease-out),opacity .15s var(--ease-soft),margin .3s var(--ease-out)}
+.tw-fold-leave-from{max-height:130px}
+.tw-fold-leave-to{max-height:0;margin-top:0;margin-bottom:0;opacity:0}
 .tw-sim b{min-width:26px;color:var(--ink);font-style:normal;font-weight:600;font-variant-numeric:tabular-nums}
 .tw-track{position:relative;flex:1;height:2px;border-radius:1px;background:color-mix(in srgb,var(--ink) 16%,transparent)}
 .tw-knob{position:absolute;top:50%;width:14px;height:14px;margin:-7px 0 0 -7px;border:1.5px solid var(--accent);border-radius:50%;background:var(--popup-glass,#fff);box-shadow:0 2px 6px rgb(0 0 0 / .2)}
@@ -647,6 +669,8 @@ const files = computed(() => {
 /* ---- 菜单 ---- */
 .tw-menu{position:absolute;z-index:8;display:grid;gap:1px;min-width:150px;padding:5px;border:1px solid var(--glass-outline);border-radius:12px;background:var(--popup-glass,var(--surface));box-shadow:0 22px 50px -20px rgb(0 0 0 / .5),0 2px 6px rgb(0 0 0 / .08);color:var(--ink);font:12.5px/1.3 var(--font-ui,system-ui);text-align:left;white-space:nowrap}
 .tw-world.forced .tw-menu{font-family:inherit}
+/* 液态玻璃下弹出层是半透明的，和真的一样垫一层模糊，书页上的字才不会透上来；别的风格 --popup-blur 是 0。 */
+.tw-card,.tw-trans,.tw-menu,.tw-dialog,.tw-clock-panel,.tw-outline,.tw-find,.tw-btw,.tw-picker,.tw-toast{-webkit-backdrop-filter:blur(var(--popup-blur,0px));backdrop-filter:blur(var(--popup-blur,0px))}
 .tw-menu span{display:flex;align-items:center;gap:8px;height:28px;padding:0 9px;border-radius:7px}
 .tw-menu span.dim{color:var(--muted);opacity:.6}
 .tw-menu span.line{margin-top:3px;border-top:1px solid var(--line-soft);border-radius:0 0 7px 7px;color:var(--secondary)}
@@ -772,7 +796,8 @@ const files = computed(() => {
 .tw-sum-row em.none{color:var(--muted)}
 .tw-sum-list{display:grid;gap:1px;margin:2px 0 8px;padding:4px;border:1px solid var(--line-soft);border-radius:8px}
 .tw-sum-ch{display:flex;align-items:center;gap:7px;height:25px;font-size:12px}
-.tw-sum-ch.sub{padding-left:30px;color:var(--secondary);animation:tw-page .25s var(--ease-out)}
+.tw-sum-ch.sub{overflow:hidden;padding-left:30px;color:var(--secondary);animation:tw-sub .3s var(--ease-out) both}
+@keyframes tw-sub{from{height:0;opacity:0}}
 .tw-sum-ch span{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .tw-sum-ch small{color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
 .tw-sum-ch i{position:relative;flex:none;width:12px;height:12px;border:1.5px solid color-mix(in srgb,var(--ink) 42%,transparent);border-radius:3px;transition:background-color .2s,border-color .2s}
@@ -836,7 +861,7 @@ const files = computed(() => {
 .tw-cmds span{height:32px}
 .tw-cmds b{min-width:74px}
 
-/* ---- 文库、合集 ---- */
+/* ---- 文库 ---- */
 .tw-lib{position:absolute;left:224px;right:14px;top:72px;bottom:14px;padding:22px 26px;border:1px solid var(--glass-outline);border-radius:var(--tw-radius);background:var(--surface);overflow:hidden}
 .tw-lib header{display:flex;align-items:center;margin-bottom:20px}
 .tw-lib h2{display:flex;align-items:baseline;gap:10px;font:600 22px/1.2 var(--font-display,inherit)}
@@ -844,7 +869,6 @@ const files = computed(() => {
 .tw-lib-search{display:flex;align-items:center;gap:8px;width:280px;height:36px;margin-left:auto;padding:0 14px;border:1px solid var(--line-soft);border-radius:999px;color:var(--muted);font-size:12.5px;transition:border-color .2s}
 .tw-lib-search.typed{border-color:var(--accent);color:var(--ink)}
 .tw-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
-.tw-grid.three{grid-template-columns:repeat(3,1fr)}
 .tw-file{position:relative;padding:12px;border:1px solid var(--line-soft);border-radius:14px}
 .tw-file p{margin-top:10px;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tw-file small{color:var(--muted);font-size:11.5px}
@@ -853,28 +877,39 @@ const files = computed(() => {
 .tw-cover.k1{background:linear-gradient(150deg,#3f5f8a,#274266)}.tw-cover.k2{background:linear-gradient(150deg,#8a5a44,#5e3b2c)}.tw-cover.k3{background:linear-gradient(150deg,#4f7a68,#2f5446)}.tw-cover.k4{background:linear-gradient(150deg,#77708f,#4c4763)}
 .tw-star{position:absolute;right:12px;bottom:14px;color:var(--muted);opacity:.5;transition:color .2s,opacity .2s,scale .35s var(--ease-spring)}
 .tw-star.on{color:#e0a100;fill:#f2c94c;opacity:1;scale:1.25}
+.tw-learnbar{display:flex;align-items:center;gap:10px;margin:6px 24px 0 0;color:var(--muted);font-size:11px;line-height:16px;font-variant-numeric:tabular-nums}
+.tw-learnbar i{flex:1;height:4px;overflow:hidden;border-radius:2px;background:color-mix(in srgb,var(--ink) 10%,transparent)}
+.tw-learnbar b{display:block;height:100%;border-radius:2px;background:var(--accent)}
 .tw-tag{position:absolute;left:20px;top:20px;padding:2px 8px;border-radius:999px;background:rgb(255 255 255 / .9);color:#23252b;font-size:11px;font-weight:600;animation:tw-bump .4s var(--ease-spring)}
 .tw-file-enter-active,.tw-file-leave-active,.tw-file-move{transition:opacity .3s var(--ease-out),scale .42s var(--ease-spring),transform .42s var(--ease-out)}
 .tw-file-enter-from,.tw-file-leave-to{opacity:0;scale:.82}
 .tw-file-leave-active{position:absolute;width:232px}
 .tw-ghost{position:absolute;z-index:19;display:flex;align-items:center;gap:7px;height:34px;margin:10px 0 0 14px;padding:0 13px;border:1px solid var(--glass-outline);border-radius:10px;background:var(--popup-glass,var(--surface));box-shadow:0 18px 40px -16px rgb(0 0 0 / .5);font-size:12.5px;font-weight:600;rotate:-4deg}
-.tw-ui{padding:16px;border:1px solid var(--line-soft);border-radius:14px;animation:tw-page .45s var(--ease-out) both}
-.tw-ui:nth-child(2){animation-delay:.08s}.tw-ui:nth-child(3){animation-delay:.16s}
-.tw-ui svg{display:block;width:100%;margin-bottom:10px}
-.tw-ui p{font-size:13px;font-weight:600}.tw-ui small{color:var(--muted);font-size:11.5px}
 .tw-view-enter-active{transition:opacity .3s var(--ease-out),translate .4s var(--ease-out)}
 .tw-view-enter-from{opacity:0;translate:0 12px}
+/* 离开文档库是换页：立刻撤掉。不写的话它按自己的过渡时长多留半秒，再一下消失。 */
+.tw-view-leave-active{transition:none}
 
 /* ---- 阅读助手 ---- */
 .tw-ai{position:absolute;right:14px;top:72px;bottom:14px;z-index:3;display:flex;gap:12px;width:302px;padding:16px;border:1px solid var(--glass-outline);border-radius:var(--tw-radius);background:var(--surface);transition:width .45s var(--ease-out),background-color .45s,border-color .45s,top .5s var(--ease-out)}
-.tw-ai.side{width:580px;box-shadow:-20px 0 50px -30px rgb(0 0 0 / .4)}
+.tw-ai.side{width:580px;overflow:hidden;box-shadow:-20px 0 50px -30px rgb(0 0 0 / .4)}
+/* 学习的大纲开着：助手栏向左加宽一栏，宽度和左内边距一起变，对话那一栏原地不动；阅读区让出位置。 */
+.tw-ai.outlined{width:538px;padding-left:252px;transition:width .45s var(--ease-out),padding .45s var(--ease-out),translate .4s var(--ease-out),opacity .3s,background-color .45s,border-color .45s,top .5s var(--ease-out)}
+.tw-reader.outlined{right:566px}
+/* 大纲与进度一课：大纲在助手栏和屏幕最左之间平移，助手栏、阅读区跟它同一个节奏。 */
+.tw-world.plan .tw-ai{transition:width .55s var(--ease-soft),padding .55s var(--ease-soft),translate .4s var(--ease-out),opacity .3s,background-color .45s,border-color .45s,top .5s var(--ease-out)}
+.tw-world.plan .tw-reader{transition:right .55s var(--ease-soft),left .55s var(--ease-soft),top .5s var(--ease-out)}
+.tw-reader.outlined-left{left:474px}
+.tw-world.plan-still :is(.tw-ai,.tw-reader){transition:none}
 .tw-ai-enter-active,.tw-ai-leave-active{transition:translate .4s var(--ease-out),opacity .3s}
 .tw-ai-enter-from,.tw-ai-leave-to{translate:60px 0;opacity:0}
-.tw-main{position:relative;flex:1;min-width:0;display:flex;flex-direction:column;gap:12px}
+/* 主栏定宽（助手栏 302 的内宽）：附属对话展开、收起时窗口在变宽变窄，主栏不跟着被挤、回答不一帧帧重新断行；多出来的附属对话由窗口裁掉、随窗口露出。 */
+.tw-main{position:relative;flex:none;width:268px;display:flex;flex-direction:column;gap:12px}
 .tw-ai header{display:flex;align-items:center;gap:8px;height:22px}
 .tw-manage{display:grid;place-items:center;flex:none;width:26px;height:26px;margin-left:-4px;border-radius:8px;color:var(--secondary)}
 .tw-title{display:flex;align-items:baseline;gap:6px;flex:1;min-width:0;overflow:hidden;white-space:nowrap}
-.tw-title b{overflow:hidden;text-overflow:ellipsis;font-size:13px;font-weight:650}
+/* 放不下时先省略书名：真的标题和书名是上下两行，标题不会被挤掉（分支的「· 分支」要看得见）。 */
+.tw-title b{flex:none;max-width:100%;overflow:hidden;text-overflow:ellipsis;font-size:13px;font-weight:650}
 .tw-title small{overflow:hidden;text-overflow:ellipsis;color:var(--muted);font-size:11px}
 .tw-hbtns{display:flex;align-items:center;gap:11px;flex:none;color:var(--muted)}
 /* 对话记录：表头标题下弹出；最上面一行新对话、管理，下面是搜索框。 */
@@ -904,10 +939,11 @@ const files = computed(() => {
 .tw-q{border-radius:2px;transition:background-color .15s}
 .tw-q.on{background:var(--selection-solid,#cfe0ff)}
 .tw-meta{display:flex;gap:12px;color:var(--muted);animation:tw-appear .3s}
-.tw-note{display:flex;align-items:center;gap:6px;padding:7px 10px;border:1px dashed var(--line-soft);border-radius:10px;color:var(--muted);font-size:11.5px}
 .tw-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--muted)}
 .tw-empty svg{margin-bottom:8px;opacity:.5}
-.tw-empty span{padding:6px 14px;border:1px solid var(--line-soft);border-radius:999px;font-size:12px}
+/* 欢迎页上并排的两种任务，和真的一样排在记忆下面。 */
+.tw-tasks{display:flex;gap:8px;margin-top:10px}
+.tw-tasks span{padding:6px 12px;border:1px solid var(--line-soft);border-radius:9px;color:var(--secondary);font-size:12px}
 .tw-btw{position:absolute;left:0;right:0;bottom:54px;padding:10px 12px;border:1px solid var(--glass-outline);border-radius:12px;background:var(--popup-glass,var(--surface));box-shadow:0 16px 36px -18px rgb(0 0 0 / .45);font-size:12.5px;line-height:1.6;rotate:-.6deg}
 .tw-btw p:first-child{display:flex;gap:8px;margin-bottom:4px;font-weight:600}
 .tw-btw b{color:var(--accent)}
@@ -933,6 +969,9 @@ const files = computed(() => {
 .tw-dialog-enter-active{transition:opacity .25s var(--ease-out),scale .45s var(--ease-spring),translate .45s var(--ease-spring)}
 .tw-dialog-enter-from{opacity:0;scale:.92;translate:0 16px}
 .tw-dialog h3{grid-column:1 / -1;padding:18px 24px 8px;font:700 19px/1.2 var(--font-display,inherit)}
+.tw-dialog-close{position:absolute;right:16px;top:13px;display:grid;place-items:center;width:30px;height:30px;border:1px solid var(--glass-outline);border-radius:50%;color:var(--secondary)}
+.tw-dialog-leave-active{transition:opacity .2s var(--ease-soft),scale .2s var(--ease-soft)}
+.tw-dialog-leave-to{opacity:0;scale:.97}
 .tw-dialog nav{display:grid;align-content:start;gap:2px;padding:6px 0 0 12px}
 .tw-dialog nav span{display:flex;align-items:center;gap:9px;height:34px;padding:0 12px;border-radius:10px;color:var(--secondary);font-size:12.5px}
 .tw-dialog nav span.on{background:color-mix(in srgb,var(--ink) 8%,transparent);color:var(--ink);font-weight:600}
@@ -1011,6 +1050,9 @@ const files = computed(() => {
 .tw-slide-enter-from,.tw-slide-leave-to{opacity:0;translate:-18px 0}
 .tw-fade-enter-active{transition:opacity .3s var(--ease-out),translate .36s var(--ease-out)}
 .tw-fade-enter-from{opacity:0;translate:-8px 0}
+/* 侧栏新加的书签一行从零高度长出来，下面的书签跟着平滑下移。 */
+.tw-mark.tw-fade-enter-active{overflow:hidden;transition:height .3s var(--ease-out),opacity .3s var(--ease-out),translate .36s var(--ease-out)}
+.tw-mark.tw-fade-enter-from{height:0}
 /* 截图一课：拖出来的框、快捷提问的气泡、输入框里的小图。 */
 .tw-cropbtn{display:grid;place-items:center;width:28px;height:26px;margin:0 -6px;border-radius:8px;transition:background-color .2s,color .2s}
 .tw-cropbtn.on{background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent)}
@@ -1034,7 +1076,9 @@ const files = computed(() => {
 .tw-quick-own{height:28px;padding:0 12px 0 10px;font-size:12px}
 .tw-quick-foot>kbd{height:22px;padding:0 7px;background:var(--popup-glass,var(--surface));box-shadow:0 0 0 1px var(--glass-outline)}
 .tw-ctx{z-index:11;min-width:190px}
-.tw-shots{--tw-red:#e5484d;display:flex;gap:12px;padding:4px 6px 0}
+.tw-shots{--tw-red:#e5484d;display:flex;gap:12px;height:44px;padding:4px 6px 0;animation:tw-shots .3s var(--ease-out)}
+/* 输入框上面多一排截图：这一排从零高度长出来，上面的对话跟着平滑让开。 */
+@keyframes tw-shots{from{height:0;margin-top:-12px}}
 .tw-world[data-look='warm'] .tw-shots{--tw-red:var(--accent)}
 .tw-world[data-look='sketch'] .tw-shots{--tw-red:var(--red-pencil,#c0392b)}
 .tw-shot{flex:none;width:58px;height:40px;border-radius:5px;background:#fffefb;color:#23252b;overflow:hidden;outline:1.5px dashed var(--accent);outline-offset:2px;box-shadow:0 4px 12px -6px rgb(0 0 0 / .4);font-weight:400;transition:outline-color .2s}

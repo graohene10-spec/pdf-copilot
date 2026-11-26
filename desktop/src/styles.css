@@ -1861,6 +1861,9 @@ kbd {
   box-shadow: var(--shadow-pane), var(--glass-edge);
 }
 
+/* 槽本身不占一栏：大纲直接排在工作区里，滑进滑出时用它自己的外边距连同间距一起收放（见 AiPane 的 outline-col），不会一下子挤开阅读区。 */
+.learn-outline-slot { display: contents; }
+
 .reading-main {
   container: reading-pane / inline-size;
   flex: 1;
@@ -4203,3 +4206,7 @@ kbd {
 :root[data-style='sketch'] .group-thread { width: 0; border-left: 1.4px dashed color-mix(in srgb, var(--pencil, #2b2a27) 40%, transparent); background: none; }
 .document-collection.list .group-thread { left: 3px; }
 .document-collection.list .group-chip { left: 18px; top: -13px; }
+
+/* 文档库卡片上的学习进度：在阅读进度下面再画一条。 */
+.document-progress.learning { margin-top: 6px; }
+.document-progress.learning i { background: var(--accent); }

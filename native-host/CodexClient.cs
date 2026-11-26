@@ -107,7 +107,9 @@ namespace PdfCopilot {
                         "project_doc_max_bytes=0", "skills.include_instructions=false", "include_apps_instructions=false", "notify=[]",
                         "analytics.enabled=false", "otel.log_user_prompt=false", "otel.log_agent_responses=false", "otel.exporter=\"none\"",
                         "otel.metrics_exporter=\"none\"", "tools.update_plan.enabled=false", "tools.experimental_request_user_input.enabled=false",
-                        "suppress_unstable_features_warning=true"
+                        "suppress_unstable_features_warning=true",
+                        // Without this, newer models think for a minute or two and emit no reasoning events: the reader sees nothing until the answer starts.
+                        "model_reasoning_summary=\"detailed\""
                     }) args.Append(" -c ").Append(Quote(option));
                 }
                 var info = new ProcessStartInfo(executable, args.ToString()) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, WorkingDirectory = workDir, StandardOutputEncoding = new UTF8Encoding(false, true), StandardErrorEncoding = new UTF8Encoding(false, false) };
@@ -131,7 +133,7 @@ namespace PdfCopilot {
                     && (providers == null || (!providers.ContainsKey("openai") && !providers.ContainsKey(ExplainProvider)));
                 var featureConfig = Json.Obj(); foreach (string feature in DisabledFeatures) featureConfig[feature] = false;
                 featureConfig["code_mode_host"] = true;
-                safetyConfig = Json.Obj("features", featureConfig, "sandbox_mode", "read-only", "approval_policy", "never", "web_search", "disabled", "project_doc_max_bytes", 0,
+                safetyConfig = Json.Obj("features", featureConfig, "sandbox_mode", "read-only", "approval_policy", "never", "web_search", "disabled", "project_doc_max_bytes", 0, "model_reasoning_summary", "detailed",
                     "skills", Json.Obj("include_instructions", false), "include_apps_instructions", false, "notify", new object[0], "tools", Json.Obj("update_plan", Json.Obj("enabled", false), "experimental_request_user_input", Json.Obj("enabled", false)));
                 var servers = Json.Map(Json.Get(effective, "mcp_servers")); var disabledServers = Json.Obj();
                 if (servers != null) foreach (string name in servers.Keys) disabledServers[name] = Json.Obj("enabled", false);

@@ -1,23 +1,32 @@
 <script setup lang="ts">
 // 设置里的「记忆」：先用三句话说清它是什么，再把记着的每一条按书列出来——点一条就能改，叉掉就是忘掉。
 // 这里改了立刻生效，不跟着设置的「保存」走。
-import { computed, nextTick, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import AppIcon from './AppIcon.vue'
 import { editItem, forgetItem, memory, restoreMemory, type MemoryEntry } from '../ai/memory'
+import { forgetPoint, loadAllMaps, maps, mapTitles } from '../ai/learning-map'
+import type { MapNode } from '../ai/learning'
 
 const emit = defineEmits<{ manage: [] }>()
 type Row = { id: string; index: number; text: string; talk: string; scope: 'book' | 'all' }
 const books = computed(() => {
-  const map = new Map<string, { key: string; title: string; rows: Row[] }>()
+  const map = new Map<string, { key: string; title: string; rows: Row[]; points: MapNode[] }>()
   for (const [id, entry] of Object.entries(memory.entries).sort(([, a], [, b]) => b.at - a.at)) {
     if (!entry.items.length) continue
     const key = entry.documentId || entry.documentTitle
-    if (!map.has(key)) map.set(key, { key, title: entry.documentTitle || '已移除的文档', rows: [] })
+    if (!map.has(key)) map.set(key, { key, title: entry.documentTitle || '已移除的文档', rows: [], points: [] })
     entry.items.forEach((text, index) => map.get(key)!.rows.push({ id, index, text, talk: entry.title || '新对话', scope: entry.scope === 'book' ? 'book' : 'all' }))
+  }
+  // 学习对话里学过的要点排在这本书的记忆下面。
+  for (const [id, book] of Object.entries(maps)) {
+    if (!book.nodes.length) continue
+    if (!map.has(id)) map.set(id, { key: id, title: mapTitles[id] || '已移除的文档', rows: [], points: [] })
+    map.get(id)!.points = book.nodes
   }
   return [...map.values()]
 })
-const total = computed(() => books.value.reduce((sum, book) => sum + book.rows.length, 0))
+onMounted(() => { void loadAllMaps() })
+const total = computed(() => books.value.reduce((sum, book) => sum + book.rows.length + book.points.length, 0))
 // 哪几本书收起来了（和管理对话页右边那一栏一样，点书名收起、展开）。
 const folded = reactive(new Set<string>())
 function fold(key: string) { if (folded.has(key)) folded.delete(key); else folded.add(key) }
@@ -62,7 +71,7 @@ function restore() { if (undo.value) restoreMemory(undo.value.id, undo.value.ent
     <p v-if="!memory.ready" class="mem-empty">正在读取…</p>
     <p v-else-if="!total" class="mem-empty">还没有记忆。</p>
     <div v-for="book in books" :key="book.key" class="mem-book" :class="{ folded: folded.has(book.key) }">
-      <h4><button type="button" class="mem-fold" :title="book.title" :aria-expanded="!folded.has(book.key)" @click="fold(book.key)"><span>{{ book.title }}</span><small>{{ book.rows.length }}</small><AppIcon name="arrow" :size="10" /></button></h4>
+      <h4><button type="button" class="mem-fold" :title="book.title" :aria-expanded="!folded.has(book.key)" @click="fold(book.key)"><span>{{ book.title }}</span><small>{{ book.rows.length + book.points.length }}</small><AppIcon name="arrow" :size="10" /></button></h4>
       <ul v-if="!folded.has(book.key)">
         <li v-for="row in book.rows" :key="keyOf(row)">
           <textarea v-if="editing === keyOf(row)" ref="field" v-model="text" rows="1" maxlength="80" aria-label="修改这条记忆" @input="grow($event.target as HTMLTextAreaElement)" @keydown="editKey($event, row)" @blur="save(row)"></textarea>
@@ -70,6 +79,15 @@ function restore() { if (undo.value) restoreMemory(undo.value.id, undo.value.ent
           <button type="button" class="mem-x" aria-label="忘掉这一条" data-tip="忘掉这一条" @click="forget(row)"><AppIcon name="close" :size="12" /></button>
         </li>
       </ul>
+      <template v-if="!folded.has(book.key) && book.points.length">
+        <p class="mem-sub">学过的要点</p>
+        <ul>
+          <li v-for="point in book.points" :key="point.id">
+            <span class="mem-point" :data-tip="point.sources[0]?.text.slice(0, 300)"><b>{{ point.title }}</b><template v-if="point.statement !== point.title">{{ point.statement }}</template></span>
+            <button type="button" class="mem-x" aria-label="忘掉这个要点" data-tip="忘掉这个要点" @click="forgetPoint(book.key, point.id)"><AppIcon name="close" :size="12" /></button>
+          </li>
+        </ul>
+      </template>
     </div>
     <p v-if="undo" class="mem-undo" role="status">已忘掉一条。<button type="button" class="text-action" @click="restore">撤销</button></p>
   </section>
@@ -103,6 +121,9 @@ function restore() { if (undo.value) restoreMemory(undo.value.id, undo.value.ent
 :root[data-style='sketch'] .mem-text:hover:not(:disabled){rotate:none}
 .mem-text:hover{background:color-mix(in srgb,var(--ink) 6%,transparent)}
 .mem-book textarea{flex:1;min-width:0;height:auto;min-height:0;margin:4px 0;padding:5px 7px;border:1px solid var(--accent);border-radius:6px;background:none;box-shadow:none;color:var(--ink);font:inherit;font-size:13px;line-height:1.5;resize:none;overflow:hidden;outline:0;box-sizing:border-box}
+.mem-sub{margin:10px 0 2px;color:var(--muted);font-size:12px}
+.mem-point{display:flex;flex-direction:column;flex:1;min-width:0;padding:5px 6px;font-size:13px;line-height:1.5;overflow-wrap:anywhere}
+.mem-point b{font-weight:650}
 .mem-x{display:grid;place-items:center;flex:none;width:28px;height:28px;padding:0;border:0;border-radius:6px;background:none;box-shadow:none;color:var(--muted)}
 .mem-x:hover{background:color-mix(in srgb,var(--danger,#c0392b) 12%,transparent);color:var(--danger,#c0392b)}
 .mem-undo{position:sticky;bottom:0;display:flex;align-items:center;gap:8px;margin:14px 0 0;padding:8px 12px;border:1px solid var(--separator);border-radius:8px;background:var(--surface,var(--canvas));font-size:12.5px}
