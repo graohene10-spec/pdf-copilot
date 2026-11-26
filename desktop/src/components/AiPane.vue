@@ -1,14 +1,19 @@
 <script setup lang="ts">
-import { fullness, liveTokens } from '../ai/compaction'
+import { fullness, limitFor, liveTokens } from '../ai/compaction'
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, reactive, defineAsyncComponent } from 'vue'
 import 'katex/dist/katex.min.css'
 import { getProvider, getNativeModels, getNativeStatus } from '../ai/providers.mjs'
 import { nativeModelInventory, registerNativeModelInventory } from '../ai/native-models'
-import { newSummaryConversation, cancelSummary, setConversationMemory, adoptTurns, addExcerpt, removeExcerpt, removeMessage, compressConversation, compacting, sideConversation, chatState, sendChat, stopChat, configureRequests, taskSummary, conversations, activeConversationId, selectConversation, newConversation, deleteConversation, loadConversations, conversationTokens, contextWindow, branchConversation, resendQuestion, watchConversation, allConversations, revealTarget, pinMessage, MAX_ATTACHMENTS, pendingImages, setPendingImages, keepImage, type Message, type ChatState } from '../ai/workspace'
+import { editPlan, newLearningConversation, cancelLearning, startLearning, answerQuiz, acceptPlan, newSummaryConversation, cancelSummary, setConversationMemory, adoptTurns, addExcerpt, removeExcerpt, removeMessage, compressConversation, compacting, sideConversation, chatState, sendChat, stopChat, configureRequests, taskSummary, conversations, activeConversationId, selectConversation, newConversation, deleteConversation, loadConversations, conversationTokens, contextWindow, branchConversation, resendQuestion, watchConversation, allConversations, revealTarget, pinMessage, MAX_ATTACHMENTS, pendingImages, setPendingImages, keepImage, type Message, type ChatState } from '../ai/workspace'
 import { renderMarkdown, renderDiagrams } from '../ai/render'
 import { memoryMode, type MemoryMode } from '../ai/memory'
 import { summaryChat, summaryRequest, parseSummaryRequest, requestExtra, rememberSummaryOptions, type SummaryOptions } from '../ai/summary'
 import SummarySetup from './SummarySetup.vue'
+import LearningSetup from './LearningSetup.vue'
+import LearningPlan from './LearningPlan.vue'
+import QuizCard from './QuizCard.vue'
+import { parseLearning, type PlanNode, type Quiz, type QuizAnswer } from '../ai/learning'
+import { normalizeLearning } from '../ai/learning-normalize'
 import { radioKeys } from '../ui/radio-keys'
 import { hintLearned, offerSpaced } from '../ui/hints'
 import { mountIntelligentUi } from '../ai/intelligent-ui'
@@ -38,6 +43,8 @@ const props = defineProps<{ /** 这段对话的总结草稿是不是正开着。
 const emit = defineEmits<{ jump: [value: { page: number; rect?: any; line?: number }]; close: []; settings: []; error: [value: string]; clearSelection: []; conversation: [id: string]; manage: []; grab: [event: PointerEvent]; switchDocument: [id: string]; openConversation: [value: { documentId: string; conversationId: string }]
   /** 侧边对话打开 / 收起：整个助手窗口要加宽（或收回）的像素数，0 表示收起。 */
   side: [width: number]
+  /** 大纲在屏幕左边滑进 / 滑出的开始与落定：阅读区每帧都在让位，外面照侧栏开合那样先停住 PDF、定住正文。 */
+  motionStart: [element: Element, entering: boolean]; motionEnd: [element: Element, cancelled: boolean]
   /** 总结草稿：打开、收起，或者（不给 open）切换。 */
   draft: [value: { conversationId: string; open?: boolean }] }>()
 const settings = ref<any>(loadAiSettings())
@@ -85,12 +92,13 @@ function showFound(tries = 0, again = true) {
   revealTimer = setTimeout(() => { foundMessage.value = '' }, 1800)
 }
 watch([revealTarget, conversationId, contentReady], () => { if (revealTarget.value) void nextTick(() => showFound()) }, { immediate: true })
+// 附属对话展开（side-animating）也算：新挂上的附属对话同样等窗口停下再排版消息。
 function whenSettled(done: () => void) {
   const panel = pane.value?.closest<HTMLElement>('.ai-panel')
   let finished = false
   const finish = () => { if (finished) return; finished = true; panel?.removeEventListener('transitionend', onEnd); requestAnimationFrame(() => done()) }
   const onEnd = (event: TransitionEvent) => { if (event.target === panel && event.propertyName === 'width') finish() }
-  if (panel && (panel.classList.contains('pane-enter-active') || panel.classList.contains('pane-enter-from'))) { panel.addEventListener('transitionend', onEnd); setTimeout(finish, 700) }
+  if (panel && (panel.classList.contains('pane-enter-active') || panel.classList.contains('pane-enter-from') || panel.classList.contains('side-animating'))) { panel.addEventListener('transitionend', onEnd); setTimeout(finish, 700) }
   else finish()
 }
 const prompt = computed({ get: () => state.value.draft, set: value => { state.value.draft = value } })
@@ -193,15 +201,47 @@ const sideOpen = ref(false)
 const sideWidth = ref(Math.min(640, Math.max(280, Number(localStorage.getItem(SIDE_KEY)) || 380)))
 const sideId = computed(() => sideOpen.value ? sideConversation(props.document.id, state.value.id, true)!.id : '')
 const columns = ref<HTMLElement>()
+// 展开 / 收起期间整个窗口的宽度在弹簧里变：主栏按原宽度定住、附属对话直接是最终宽度，多出的裁掉（clip 不是滚动容器，焦点进去也不会滚走），
+// 否则屏幕上的回答连同公式每帧重新断行。在发出 side 之后调用：量到的仍是改动前的排版，nextTick 也排在窗口加上 side-animating 之后。
+// end：开合的是主栏左边的大纲，主栏贴右边定住、从左边裁；贴左的话大纲一插进来主栏就被推开 264px，再随窗口滑回来。
+let mainHold = 0
+function holdMain(end = false) {
+  const box = columns.value, main = box?.querySelector<HTMLElement>(':scope > .ai-main')
+  if (!box || !main) return
+  const hold = ++mainHold, width = main.offsetWidth
+  main.style.flex = 'none'; main.style.width = `${width}px`; box.style.overflow = 'clip'; box.style.justifyContent = end ? 'flex-end' : ''
+  void nextTick(() => whenSettled(() => { if (hold !== mainHold) return; main.style.removeProperty('flex'); main.style.removeProperty('width'); box.style.removeProperty('overflow'); box.style.removeProperty('justify-content') }))
+}
+// 学习对话的大纲占左边一栏，窗口跟着加宽这一截（和附属对话加宽走同一条路）。
+const OUTLINE_SIDE = 'kaizhi.learn.outline.side', OUTLINE_WIDTH = 'kaizhi.learn.outline.width'
+const outlineSide = ref<'left' | 'right'>(localStorage.getItem(OUTLINE_SIDE) === 'left' ? 'left' : 'right')
+const outlineWidth = ref(Math.min(420, Math.max(200, Number(localStorage.getItem(OUTLINE_WIDTH)) || 264)))
+const outlineHidden = ref(false)
+const adjusting = ref(false)
+function moveOutline() { outlineSide.value = outlineSide.value === 'left' ? 'right' : 'left'; localStorage.setItem(OUTLINE_SIDE, outlineSide.value) }
+function resizeOutline(width: number) { outlineWidth.value = width; localStorage.setItem(OUTLINE_WIDTH, String(width)) }
+// 只有放在屏幕左边时才要外面帮忙：在助手栏里时窗口加宽那条路（setPanelSide）已经停住了 PDF。
+// 滑到一半助手栏就关了的话，落定的回调到时发不出去（组件已卸载），外面会一直停在「动画中」：卸载前先替它收尾。
+const outlineMoving = new Set<Element>()
+const outlineMotion = (element: Element, entering: boolean) => { if (!element.classList.contains('left')) return; outlineMoving.add(element); emit('motionStart', element, entering) }
+const outlineSettled = (element: Element, cancelled = false) => { if (outlineMoving.delete(element)) emit('motionEnd', element, cancelled) }
+onBeforeUnmount(() => { for (const element of outlineMoving) emit('motionEnd', element, false); outlineMoving.clear() })
+// 减少动态时不走过渡：零时长的过渡也要隔两帧才移走旧的那栏，主栏一帧后就放开，会被它挤窄闪一下。
+const outlineAnimated = () => !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+const outlineOn = computed(() => !props.side && !outlineHidden.value && Boolean(state.value.learning) && state.value.learning!.phase !== 'setup')
+// 窗口正好加宽大纲那么宽：主栏前后一样宽，动画落定、放开主栏时才不会再挤一下。
+const extraWidth = () => (sideOpen.value ? sideWidth.value : 0) + (outlineOn.value && outlineSide.value === 'right' ? outlineWidth.value : 0)
+// 只改宽度（拖完松手）时不定住主栏：拖的时候它已经被挤窄了，定住的话要等窗口停下才一下子弹开。
+watch([outlineOn, outlineSide, outlineWidth], ([on, place], [wasOn, wasPlace]) => { emit('side', extraWidth()); if (on !== wasOn || place !== wasPlace) holdMain(true) }, { immediate: true })
 function openSide() {
   if (props.side || sideOpen.value) return
-  sideOpen.value = true; emit('side', sideWidth.value)
+  sideOpen.value = true; emit('side', extraWidth()); holdMain()
 }
-function closeSide() { if (!sideOpen.value) return; sideOpen.value = false; emit('side', 0); focusPrompt() }
+function closeSide() { if (!sideOpen.value) return; sideOpen.value = false; emit('side', extraWidth()); holdMain(); focusPrompt() }
 // 换到另一段主对话（或另一本书）：附属对话不再自己弹出来；原来开着而新对话没有附属内容时收起。要看就点标题栏的图标。
 watch(() => state.value.id, id => {
   if (props.side || !sideOpen.value) return
-  if (!sideConversation(props.document.id, id)?.messages.length) { sideOpen.value = false; emit('side', 0) }
+  if (!sideConversation(props.document.id, id)?.messages.length) { sideOpen.value = false; emit('side', extraWidth()); holdMain() }
 })
 const hasSideContent = computed(() => !props.side && Boolean(sideConversation(props.document.id, state.value.id)?.messages.length))
 function toggleSide() { if (sideOpen.value) closeSide(); else openSide() }
@@ -406,7 +446,7 @@ const expanded = ref(new Set<string>())
 function toggleReasoning(id: string) { const next = new Set(expanded.value); if (next.has(id)) next.delete(id); else next.add(id); expanded.value = next }
 const contextUsed = computed(() => conversationTokens(state.value))
 const contextLimit = computed(() => contextWindow(settings.value.provider, settings.value.model || ''))
-const compactAt = computed(() => preferences.value.assistant.compactK * 1000)
+const compactAt = computed(() => Math.min(preferences.value.assistant.compactK * 1000, limitFor(contextLimit.value)))
 const contextRatio = computed(() => fullness(state.value.messages, compactAt.value))
 
 // ---- Answer rendering ----------------------------------------------------
@@ -424,7 +464,7 @@ function renderAnswer(element: HTMLElement, message: Message) {
   // 读者点开的折叠段落：回答重画（还在写、换主题）后保持原样。
   const unfolded = [...element.querySelectorAll('details')].map(item => item.open)
   // 总结对话：文档正文在草稿面板里，这里只留一枚小牌子。
-  element.innerHTML = renderMarkdown(state.value.summary ? summaryChat(message.content) : message.content)
+  element.innerHTML = renderMarkdown(state.value.summary ? summaryChat(message.content) : state.value.learning ? normalizeLearning(message.content) : message.content)
   if (unfolded.includes(true)) element.querySelectorAll('details').forEach((item, index) => { if (unfolded[index]) item.open = true })
   // 模型有时引用前几轮回答里的来源，甚至写出不存在的编号：先在整场对话的来源里找，找不到就把编号去掉，绝不把 [S…] 原样留在正文里。
   const sourceMap = new Map([...messages.value.flatMap(item => item.sources || []), ...message.sources].map(source => [source.sourceId, source]))
@@ -853,6 +893,8 @@ const COMMANDS = [
   { name: '/compress', args: '要求（可选）', label: '压缩对话', hint: '立即压缩对话，腾出上下文' },
   { name: '/usage', args: '', label: '查看用量', hint: '本次会话的 token 用量与上下文占用' },
   { name: '/summary', args: '', label: '总结文档', hint: '为这份文档写一份总结，可存进文档库' },
+  { name: '/learn', args: '', label: '学习', hint: '一步步带你读懂一段内容' },
+  { name: '/outline', args: '', label: '调整大纲', hint: '拖动换次序，右键安排每个节点' },
 ]
 const commandIndex = ref(0)
 // 只有还在输入命令名（以 / 开头、还没有空格）时才弹出命令列表。
@@ -928,6 +970,8 @@ async function runCommand(name: string, args: string) {
   state.value.error = false; state.value.status = ''
   if (name === 'usage') { usageOpen.value = true; return }
   if (name === 'summary') { summarize(args); return }
+  if (name === 'learn') { learn(args); return }
+  if (name === 'outline') { toggleAdjust(); return }
   if (name === 'compress') {
     if (busy.value || compressing.value) { attachNote('请等这一轮回答结束再压缩。'); return }
     follow = true; scheduleScroll()
@@ -942,6 +986,60 @@ async function runCommand(name: string, args: string) {
     await askBtw(args)
   }
 }
+// ---- 学习模式 ----
+/** 开一段学习对话，停在设定表上。goal 是跟在 /learn 后面写的目标。 */
+function learn(goal = '') {
+  if (props.side) return
+  if (busy.value) { attachNote('请等这一轮回答结束再开始学习。'); return }
+  const fresh = newLearningConversation(props.document.id)
+  useConversation(fresh.id)
+  if (goal) fresh.learning!.options.goal = goal
+  focusPrompt()
+}
+const askSettings = () => emit('settings')
+function startLearn() {
+  const learning = state.value.learning
+  if (learning?.phase !== 'setup' || busy.value) return
+  // 输入框里写的算作目标。
+  if (prompt.value.trim()) learning.options.goal = [learning.options.goal, prompt.value.trim()].filter(Boolean).join('：')
+  prompt.value = ''; follow = true
+  void startLearning({ ...props.document }, { ...props.context }, askSettings, state.value.id, { ...learning.options })
+}
+// 回答写完才解析，只解析一次。
+const quizCache = new Map<string, Quiz[]>()
+function quizzesOf(message: Message): Quiz[] {
+  if (!state.value.learning || !message.finishedAt || message.failed) return []
+  let list = quizCache.get(message.id)
+  if (!list) quizCache.set(message.id, list = parseLearning(normalizeLearning(message.content)).quizzes)
+  return list
+}
+const answerOf = (message: Message, quiz: Quiz) => messages.value.flatMap(item => item.learn || []).find(item => item.quizOf === message.id && item.index === quiz.index)
+type Filled = { quiz: Quiz; answer: QuizAnswer; correct?: boolean }
+function submitQuiz(message: Message, items: Filled[]) {
+  follow = true
+  void answerQuiz({ ...props.document }, { ...props.context }, askSettings, state.value.id, message.id, items)
+}
+// 摸底的几道题一起交：各张卡片填的先记在这里。
+const filled = reactive(new Map<string, Filled>())
+function fill(message: Message, quiz: Quiz, answer: QuizAnswer | null, correct?: boolean) { const key = `${message.id}:${quiz.index}`; if (answer) filled.set(key, { quiz, answer, correct }); else filled.delete(key) }
+const filledOf = (message: Message) => quizzesOf(message).map(quiz => filled.get(`${message.id}:${quiz.index}`)).filter(Boolean) as Filled[]
+function startPlan() { follow = true; void acceptPlan({ ...props.document }, { ...props.context }, askSettings, state.value.id) }
+function planNode(node: PlanNode) { if (node.page) emit('jump', props.document.kind === 'pdf' ? { page: node.page } : { page: node.page, line: node.page }) }
+/** 大纲栏底下写的要求：发给助手，由它改大纲。改完之前大纲边上一圈流光。 */
+const revising = ref(false)
+function adjustOutline(how: string) {
+  follow = true; revising.value = true
+  void send(`调整大纲：${how}`)
+}
+watch(busy, value => { if (!value) revising.value = false })
+/** /outline：进出大纲调整。 */
+function toggleAdjust() {
+  if (!state.value.learning?.plan) { attachNote('还没有大纲。'); return }
+  outlineHidden.value = false; adjusting.value = !adjusting.value
+}
+const SURE = ['蒙的', '不太确定', '比较确定', '确定']
+const answerLabel = (list: NonNullable<Message['learn']>) => list.length > 1 ? `答了 ${list.length} 题` : oneLabel(list[0]!)
+const oneLabel = (learn: NonNullable<Message['learn']>[number]) => [learn.skipped ? '跳过' : learn.dontKnow ? '不知道' : learn.correct === true ? '答对' : learn.correct === false ? '答错' : '已作答', learn.sure === undefined ? '' : SURE[learn.sure]].filter(Boolean).join(' · ')
 // ---- 总结模式 ----
 /** 开一段总结对话，停在设置表格上。extra 是跟在 /summary 后面写的要求，放进输入框里等读者确认。 */
 function summarize(extra = '') {
@@ -983,10 +1081,11 @@ async function revise(conversationId: string, text: string) {
 function send(question?: string) {
   if (question === undefined && busy.value && prompt.value.trim()) { attachNote('请等这一轮回答结束再发送，或先点停止。'); return }
   // 斜杠命令在本地处理，不当作问题发出去。
-  const command = question === undefined ? prompt.value.trim().match(/^\/(btw|compress|usage|summary)(?:\s+([\s\S]*))?$/i) : null
+  const command = question === undefined ? prompt.value.trim().match(/^\/(btw|compress|usage|summary|learn|outline)(?:\s+([\s\S]*))?$/i) : null
   if (command) { prompt.value = ''; void runCommand(command[1]!.toLowerCase(), (command[2] || '').trim()); return }
   // 总结对话还停在设置表格上：按发送就是开始，输入框里写的算作「其他要求」。
   if (question === undefined && state.value.summary && !state.value.summary.started) { startSummary(); return }
+  if (question === undefined && state.value.learning?.phase === 'setup') { startLearn(); return }
   // 输入框空着而有预判的问题时，按发送键直接发送它。
   if (preferences.value.assistant.predictQuestions && question === undefined && !prompt.value.trim() && prediction.value) { question = prediction.value; hintLearned('predict-accept') }
   const id = props.document.id
@@ -1020,7 +1119,7 @@ function predictContext() {
 }
 // 只有真正的上下文——已经有对话，或选中了文字——才预判；空白的新对话不猜。输入、发送、换页都会取消在途请求。
 // 总结对话里不猜下一问：输入框是用来写怎么改的，冒出一个不相干的问题只会添乱。
-const predictable = computed(() => !props.side && !state.value.summary && preferences.value.assistant.predictQuestions && !busy.value && !prompt.value && (Boolean(selected.value.text) || messages.value.some(item => item.content && !item.failed)))
+const predictable = computed(() => !props.side && !state.value.summary && !state.value.learning && preferences.value.assistant.predictQuestions && !busy.value && !prompt.value && (Boolean(selected.value.text) || messages.value.some(item => item.content && !item.failed)))
 // 「Tab 采用」交给隔几次才冒一回的提醒气泡；输入框里只留淡色的问题本身。采用过一次就不再提。
 watch(prediction, (value, previous) => { if (value && !previous) offerSpaced('predict-accept', ['Tab'], '采用猜到的下一问') })
 watch(() => [predictable.value, state.value.id, props.document.id, props.context?.page, selected.value.text, messages.value.length, messages.value.at(-1)?.finishedAt] as const, () => {
@@ -1059,13 +1158,19 @@ onMounted(() => {
   if (messageList.value) observer.observe(messageList.value)
 })
 onBeforeUnmount(() => { unwatch?.(); cancelAnimationFrame(scrollFrame); cancelAnimationFrame(revealFrame); rememberScroll(); clearInterval(ticker); clearTimeout(predictTimer); predicting?.abort(); observer?.disconnect(); if (renderFrame) cancelAnimationFrame(renderFrame); pickerRequest?.abort(); document.removeEventListener('pointerdown', pickerOutside, true); window.removeEventListener('keydown', strayEscape, true); document.removeEventListener('pointerdown', historyOutside, true) })
-defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startConversation, closeSide, summarize, revise })
+defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startConversation, closeSide, summarize, revise, learn })
 </script>
 
 <template>
   <aside ref="pane" class="ai-pane" :class="{ embedded: side }" :aria-label="side ? '附属对话' : 'AI 阅读助手'">
 
     <div ref="columns" class="ai-columns" :class="{ 'with-side': sideOpen }">
+    <!-- 两边各一个固定的位置：换边时旧的在原处退场、新的在另一边进场。只用一个 Teleport 切 disabled 的话，它会先把整块（连同要退场的）瞬间搬过去。 -->
+    <Teleport v-for="place in ['left', 'right']" :key="place" to="#learn-outline-slot" :disabled="place !== 'left'">
+      <Transition name="outline-col" appear :css="outlineAnimated()" @before-enter="outlineMotion($event, true)" @before-leave="outlineMotion($event, false)" @after-enter="outlineSettled($event)" @after-leave="outlineSettled($event)" @enter-cancelled="outlineSettled($event, true)" @leave-cancelled="outlineSettled($event, true)">
+        <LearningPlan v-if="outlineOn && outlineSide === place" v-model:adjusting="adjusting" :style="{ '--outline-width': `${outlineWidth}px` }" :learning="state.learning!" :busy="busy" :pdf="document.kind === 'pdf'" :side="outlineSide" :width="outlineWidth" @node="planNode" @accept="startPlan" :revising="revising" @move="moveOutline" @resize="resizeOutline" @edit="edit => editPlan(document.id, state.id, edit)" @ask="adjustOutline" />
+      </Transition>
+    </Teleport>
     <div class="ai-main">
     <header v-if="side" class="ai-header side-header">
       <span class="side-badge"><AppIcon name="branch" :size="13" />附属对话</span>
@@ -1086,7 +1191,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
               <p v-if="loadingAll" class="history-empty">正在读取…</p>
               <template v-else>
                 <div v-for="hit in found" :key="hit.item.id" class="history-item" :class="{ current: hit.item.id === conversationId }">
-                  <button class="history-open history-hit" @click="openHit(hit)"><span><AppIcon v-if="hit.item.branchOf" name="branch" :size="12" class="branch-mark" /><span v-if="hit.title" class="hit-title">{{ hit.title.before }}<mark>{{ hit.title.hit }}</mark>{{ hit.title.after }}</span><span v-else class="hit-title">{{ hit.item.title || '新对话' }}</span></span><small>{{ titles.get(hit.item.documentId) || '已移除的文档' }} · {{ relative(hit.item.updatedAt) }}</small><em v-if="hit.snippet">{{ hit.snippet.before }}<mark>{{ hit.snippet.hit }}</mark>{{ hit.snippet.after }}</em></button>
+                  <button class="history-open history-hit" @click="openHit(hit)"><span><AppIcon v-if="hit.item.branchOf" name="branch" :size="12" class="branch-mark" /><i v-if="hit.item.learning" class="kind-tag">学习</i><i v-else-if="hit.item.summary" class="kind-tag">总结</i><span v-if="hit.title" class="hit-title">{{ hit.title.before }}<mark>{{ hit.title.hit }}</mark>{{ hit.title.after }}</span><span v-else class="hit-title">{{ hit.item.title || '新对话' }}</span></span><small>{{ titles.get(hit.item.documentId) || '已移除的文档' }} · {{ relative(hit.item.updatedAt) }}</small><em v-if="hit.snippet">{{ hit.snippet.before }}<mark>{{ hit.snippet.hit }}</mark>{{ hit.snippet.after }}</em></button>
                 </div>
                 <p v-if="!found.length" class="history-empty">没有找到。</p>
               </template>
@@ -1096,13 +1201,13 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
             <div v-else-if="historyScope === 'all'" class="history-list">
               <p v-if="loadingAll" class="history-empty">正在读取…</p>
               <div v-for="item in everything" v-else :key="item.id" class="history-item" :class="{ current: item.id === conversationId }">
-                <button v-marquee class="history-open" @click="openAny(item)"><span><AppIcon v-if="item.branchOf" name="branch" :size="12" class="branch-mark" /><span class="marquee-text">{{ item.title || '新对话' }}</span></span><small>{{ titles.get(item.documentId) || '已移除的文档' }} · {{ relative(item.updatedAt) }}</small></button>
+                <button v-marquee class="history-open" @click="openAny(item)"><span><AppIcon v-if="item.branchOf" name="branch" :size="12" class="branch-mark" /><i v-if="item.learning" class="kind-tag">学习</i><i v-else-if="item.summary" class="kind-tag">总结</i><span class="marquee-text">{{ item.title || '新对话' }}</span></span><small>{{ titles.get(item.documentId) || '已移除的文档' }} · {{ relative(item.updatedAt) }}</small></button>
               </div>
               <p v-if="!loadingAll && !everything.length" class="history-empty">还没有对话。</p>
             </div>
             <div v-else class="history-list">
               <div v-for="item in history" :key="item.id" class="history-item" :class="{ current: item.id === conversationId }">
-                <button v-marquee class="history-open" @click="useConversation(item.id)"><span><AppIcon v-if="item.branchOf" name="branch" :size="12" class="branch-mark" /><span class="marquee-text">{{ item.title || '新对话' }}</span></span><small>{{ relative(item.updatedAt) }} · {{ Math.ceil(item.messages.length / 2) }} 问<template v-if="item.request"> · 回答中</template></small></button>
+                <button v-marquee class="history-open" @click="useConversation(item.id)"><span><AppIcon v-if="item.branchOf" name="branch" :size="12" class="branch-mark" /><i v-if="item.learning" class="kind-tag">学习</i><i v-else-if="item.summary" class="kind-tag">总结</i><span class="marquee-text">{{ item.title || '新对话' }}</span></span><small>{{ relative(item.updatedAt) }} · {{ Math.ceil(item.messages.length / 2) }} 问<template v-if="item.request"> · 回答中</template></small></button>
                 <button v-if="item.messages.length" class="history-delete" :class="{ armed: deleteArmed === item.id }" :aria-label="deleteArmed === item.id ? `再点一次，删除对话 ${item.title}` : `删除对话 ${item.title}`" :data-tip="deleteArmed === item.id ? '再点一次删除，无法恢复' : '删除这段对话'" @click.stop="removeConversation(item.id)"><template v-if="deleteArmed === item.id">再点一次</template><AppIcon v-else name="trash" :size="13" /></button>
               </div>
               <p v-if="!history.length" class="history-empty">还没有对话。</p>
@@ -1112,13 +1217,15 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
       </div>
       <span v-if="taskSummary.running || taskSummary.queued" class="task-summary" :data-tip="`同时最多 ${taskSummary.limits.concurrent} 个请求，Codex 最多 ${taskSummary.limits.codex} 个`">{{ taskSummary.running }} 进行中<template v-if="taskSummary.queued"> · {{ taskSummary.queued }} 排队</template></span>
       <button class="header-button side-toggle" :class="{ on: sideOpen, has: hasSideContent && !sideOpen }" :aria-pressed="sideOpen" :aria-label="sideOpen ? '收起附属对话' : '打开附属对话'" :data-tip="sideOpen ? '收起附属对话' : hasSideContent ? '打开附属对话（有内容）' : '打开附属对话'" @click="toggleSide"><AppIcon name="branch" :size="15" /></button>
+      <button v-if="state.learning && state.learning.phase !== 'setup' && !side" class="header-button draft-toggle" :class="{ on: !outlineHidden }" :aria-pressed="!outlineHidden" :aria-label="outlineHidden ? '打开大纲' : '收起大纲'" :data-tip="outlineHidden ? '打开大纲' : '收起大纲'" @click="outlineHidden = !outlineHidden"><AppIcon name="list" :size="16" /></button>
       <button v-if="state.summary?.started" class="header-button draft-toggle" :class="{ on: draftOpen }" :aria-pressed="draftOpen" :aria-label="draftOpen ? '收起总结草稿' : '打开总结草稿'" :data-tip="draftOpen ? '收起总结草稿' : '打开总结草稿'" @click="emit('draft', { conversationId: state.id })"><AppIcon name="doc" :size="16" /></button>
       <button class="header-button" aria-label="新对话" :data-tip="messages.length ? '新对话' : '这已经是一段新对话'" :disabled="!messages.length" @click="startConversation"><AppIcon name="compose" :size="16" /></button>
       <button class="header-button close-assistant" data-tip="关闭阅读助手" aria-label="关闭阅读助手" @click="emit('close')"><AppIcon name="close" :size="15" /></button>
     </header>
     <div class="ai-body">
       <div ref="messageList" class="ai-messages" data-glass-still @scroll.passive="onScroll" @click="answerClick">
-        <SummarySetup v-if="!messages.length && state.summary && !state.summary.started && !side" :title="document.title" :options="state.summary.options" :outline="getOutline?.(document.id)" :has-selection="Boolean(context?.selection?.text || context?.selection?.image)" @start="startSummary" @cancel="cancelSetup" />
+        <LearningSetup v-if="!messages.length && state.learning?.phase === 'setup' && !side" :title="document.title" :options="state.learning.options" :outline="getOutline?.(document.id)" :has-selection="Boolean(context?.selection?.text || context?.selection?.image)" @start="startLearn" @cancel="cancelLearning(document.id, state.id)" />
+        <SummarySetup v-else-if="!messages.length && state.summary && !state.summary.started && !side" :title="document.title" :options="state.summary.options" :outline="getOutline?.(document.id)" :has-selection="Boolean(context?.selection?.text || context?.selection?.image)" @start="startSummary" @cancel="cancelSetup" />
         <div v-else-if="!messages.length" class="ai-welcome">
           <AssistantMark :kind="avatar.kind" :image="avatar.image" :size="56" class="ai-welcome-mark" />
           <!-- 问候语一个字一个字显出来，像刚写上去的；只在打开时写一遍。 -->
@@ -1128,6 +1235,8 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
             <button v-for="item in MEMORY_MODES" :key="item.id" type="button" role="radio" :aria-checked="memoryNow === item.id" :tabindex="memoryNow === item.id ? 0 : -1" :data-tip="item.note" @click="setConversationMemory(document.id, state.id, item.id)">{{ item.label }}</button>
           </div>
           <h2 class="ai-welcome-lead" :lang="greeting.lang === 'zh' ? 'zh-CN' : 'en'" :aria-label="greeting.text"><span v-for="(glyph, index) in Array.from(greeting.text)" :key="index" class="lead-glyph" aria-hidden="true" :style="{ '--i': Math.min(index, 60) }">{{ glyph }}</span></h2>
+          <!-- /summary、/learn 也通到这里。 -->
+          <div v-if="!side" class="task-pick"><button type="button" @click="summarize()">总结这份文档</button><button type="button" @click="learn()">学习这一段</button></div>
         </div>
         <div v-if="!contentReady && messages.length" class="ai-loading" aria-hidden="true"><i></i><i></i><i></i></div>
         <article v-for="message in shownMessages" :key="message.id" class="ai-message" :class="[message.note ? 'note' : message.role, { compressed: message.compressed, summary: message.summary, arrived: arrivedNote === message.id, found: foundMessage === message.id }]" :data-id="message.id">
@@ -1151,10 +1260,11 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
               </div>
               <!-- 草稿上划选后发来的修改：对话栏里只显示要求，划选的原文缩成一行（指上去看全文）。原文照样整段发给助手。 -->
               <div v-else-if="reviseParts(message)" class="user-question revise-ask"><span class="revise-quote" :data-tip="reviseParts(message)!.quote.slice(0, 400)"><AppIcon name="doc" :size="12" />{{ reviseParts(message)!.quote.replace(/\s+/g, ' ').slice(0, 26) }}{{ reviseParts(message)!.quote.length > 26 ? '…' : '' }}</span>{{ reviseParts(message)!.instruction }}</div>
+              <div v-else-if="message.learn?.length" class="user-question learn-answer"><b>{{ answerLabel(message.learn) }}</b><span v-if="message.learn.length === 1 && message.learn[0]!.thinking">{{ message.learn[0]!.thinking }}</span></div>
               <div v-else class="user-question">{{ message.content }}</div>
               <!-- 问题下面只占一行：左边是指上去才出现的「编辑」「复制」，右边是随问题发出的引文、图片、页码。 -->
               <div class="question-foot">
-                <div class="question-actions"><button v-if="!side || message.id === lastQuestionId" class="meta-button" :disabled="busy && message.id === lastQuestionId" aria-label="编辑问题" :data-tip="busy && message.id === lastQuestionId ? '正在回答，答完才能编辑' : '编辑后重新回答；不是最后一问时另开分支'" @click="startEdit(message)"><AppIcon name="edit" :size="13" /></button><button class="meta-button" :aria-label="copiedId === message.id ? '已复制' : '复制问题'" :data-tip="copiedId === message.id ? '已复制' : '复制问题'" @click="copyMessage(message)"><AppIcon :name="copiedId === message.id ? 'check' : 'copy'" :size="13" /></button></div>
+                <div class="question-actions"><button v-if="(!side || message.id === lastQuestionId) && !state.learning" class="meta-button" :disabled="busy && message.id === lastQuestionId" aria-label="编辑问题" :data-tip="busy && message.id === lastQuestionId ? '正在回答，答完才能编辑' : '编辑后重新回答；不是最后一问时另开分支'" @click="startEdit(message)"><AppIcon name="edit" :size="13" /></button><button class="meta-button" :aria-label="copiedId === message.id ? '已复制' : '复制问题'" :data-tip="copiedId === message.id ? '已复制' : '复制问题'" @click="copyMessage(message)"><AppIcon :name="copiedId === message.id ? 'check' : 'copy'" :size="13" /></button></div>
                 <div v-if="message.ask?.text || message.images?.length || message.ask?.includeDocument || message.excerpts?.length" class="sent-context" aria-label="随问题发送的上下文">
                   <span v-for="item in message.excerpts || []" :key="item.id" class="sent-quote sent-excerpt" :data-tip="`${excerptLabel(item.from)}：${item.text.slice(0, 300)}`"><AppIcon :name="item.from === 'self' ? 'pin' : 'branch'" :size="10" />{{ item.text.slice(0, 40) }}{{ item.text.length > 40 ? '…' : '' }}</span>
                   <img v-for="(image, index) in (message.images || []).slice(0, 5)" :key="index" :src="image" alt="随问题发送的图片" data-tip="双击放大" @dblclick="zoomed = image" />
@@ -1178,10 +1288,12 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
             <!-- 参考原文收在 Thinking 里：点开思考过程时一起列出，平时不占地方。 -->
             <div v-if="message.sources.length && expanded.has(message.id)" class="source-list"><p class="source-heading">参考原文 · {{ message.sources.length }} 段</p><button v-for="source in message.sources" :key="source.sourceId" @click="jump(source)"><span>{{ source.line ? `第 ${source.line} 行` : `第 ${source.page} 页` }}</span><small>{{ source.text }}</small></button></div>
             <div v-if="message.content" v-answer="message" class="answer-body" />
+            <QuizCard v-for="(quiz, at) in quizzesOf(message)" :key="quiz.index" :quiz="quiz" :seed="`${message.id}:${quiz.index}`" :answered="answerOf(message, quiz)" :disabled="busy" :batch="quizzesOf(message).length > 1" :number="quizzesOf(message).length > 1 ? at + 1 : undefined" @answer="(answer, correct) => submitQuiz(message, [{ quiz, answer, correct }])" @draft="(answer, correct) => fill(message, quiz, answer, correct)" />
+            <div v-if="quizzesOf(message).length > 1 && !answerOf(message, quizzesOf(message)[0]!)" class="quiz-all"><span>{{ filledOf(message).length }} / {{ quizzesOf(message).length }}</span><button type="button" :disabled="busy || filledOf(message).length < quizzesOf(message).length" @click="submitQuiz(message, filledOf(message))">一起提交</button></div>
             <div v-if="!live(message)" class="answer-meta">
               <button v-if="message.content" class="meta-button" :aria-label="copiedId === message.id ? '已复制' : '复制回答'" :data-tip="copiedId === message.id ? '已复制' : '复制回答'" @click="copyMessage(message)"><AppIcon :name="copiedId === message.id ? 'check' : 'copy'" :size="13" /></button>
-              <button v-if="!side || isLastAnswer(message)" class="meta-button" :disabled="busy" aria-label="重新生成" :data-tip="busy ? '正在回答，答完才能重新生成' : '重新生成'" @click="regenerate(message)"><AppIcon name="retry" :size="13" /></button>
-              <button v-if="!side" class="meta-button" aria-label="从这里分支" data-tip="从这里开一个分支对话" @click="branchFrom(message)"><AppIcon name="branch" :size="13" /></button>
+              <button v-if="(!side || isLastAnswer(message)) && (!state.learning || message.failed)" class="meta-button" :disabled="busy" aria-label="重新生成" :data-tip="busy ? '正在回答，答完才能重新生成' : '重新生成'" @click="regenerate(message)"><AppIcon name="retry" :size="13" /></button>
+              <button v-if="!side && !state.learning" class="meta-button" aria-label="从这里分支" data-tip="从这里开一个分支对话" @click="branchFrom(message)"><AppIcon name="branch" :size="13" /></button>
               <span v-if="message.stopped" class="meta-flag">已停止</span>
 
               <span v-else-if="message.failed" class="meta-flag error">未完成</span>
@@ -1265,7 +1377,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
           <input ref="attachInput" class="attach-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple tabindex="-1" aria-hidden="true" @change="pickImages" />
           <label class="context-switch" :class="{ on: includeDocument }" :data-tip="busy ? '正在回答，答完才能切换' : includeDocument ? '已开启：提问时附带当前页与文档检索' : '已关闭：只发送问题与选区'"><input v-model="includeDocument" type="checkbox" role="switch" :disabled="busy" aria-label="文档上下文" /><span class="context-glyph" aria-hidden="true"><AppIcon name="book" :size="14" /><i class="context-slash" /></span><span class="context-label">文档上下文</span></label>
           <span class="composer-space" />
-          <button type="button" class="context-ring" :class="{ busy: compressing }" :data-tip="compressing ? '正在压缩对话' : `上下文 ${count(liveTokens(state.messages))} / ${count(compactAt)} tokens，满了自动压缩，点击立即压缩`" aria-label="压缩对话" :style="{ '--ratio': contextRatio }" @click="runCommand('compress', '')"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5" /><circle class="ring-value" cx="10" cy="10" r="7.5" pathLength="100" /></svg></button>
+          <button type="button" class="context-ring" :class="{ busy: compressing }" :data-tip="compressing ? '压缩中' : `上下文 ${count(liveTokens(state.messages))} / ${count(compactAt)}，点击压缩`" aria-label="压缩对话" :style="{ '--ratio': contextRatio }" @click="runCommand('compress', '')"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5" /><circle class="ring-value" cx="10" cy="10" r="7.5" pathLength="100" /></svg></button>
           <div ref="pickerHost" class="model-picker-host">
             <button type="button" class="model-picker" :disabled="busy" :aria-expanded="pickerOpen" :aria-controls="`model-drawer-${state.id}`" aria-label="选择模型与思考强度" :data-tip="busy ? '正在回答，答完才能换模型' : '模型与思考强度'" @click="pickerOpen = !pickerOpen"><span class="picker-model">{{ modelLabel }}</span><span class="picker-effort">{{ EFFORT_LABELS[settings.effort || ''] || settings.effort }}</span><span v-if="bolts" class="picker-fast" :class="{ twin: bolts > 1 }"><AppIcon v-for="n in bolts" :key="n" name="bolt" :size="11" /></span><AppIcon name="down" :size="12" class="picker-chevron" /></button>
           </div>
@@ -1440,9 +1552,17 @@ button:disabled{opacity:.4;cursor:default}
 .side-divider{position:absolute;left:-5px;top:8px;bottom:8px;z-index:12;width:11px;cursor:col-resize;touch-action:none}
 .side-divider::before{content:'';position:absolute;left:5px;top:0;bottom:0;width:1px;background:var(--hairline);transition:background var(--dur-1) var(--ease-soft),width var(--dur-1) var(--ease-soft),left var(--dur-1) var(--ease-soft)}
 .side-divider:hover::before,.side-divider:active::before{left:4px;width:3px;border-radius:2px;background:color-mix(in srgb,var(--ink) 30%,transparent)}
-.side-col-enter-active,.side-col-leave-active{overflow:hidden;transition:width var(--dur-bounce) var(--spring-snappy),opacity var(--dur-2) var(--ease-soft)}
-.side-col-leave-active{transition-duration:var(--dur-3),var(--dur-2);transition-timing-function:var(--ease-out)}
-.side-col-enter-from,.side-col-leave-to{width:0 !important;opacity:0}
+/* 附属对话栏自己不拉宽度，只淡入淡出，由整个窗口的宽度动画露出 / 裁掉（见 holdMain）：两段宽度动画起止不同步，主栏会被挤得每帧变宽变窄。 */
+.side-col-enter-active,.side-col-leave-active{transition:opacity var(--dur-2) var(--ease-soft)}
+.side-col-leave-active{transition-timing-function:var(--ease-out)}
+.side-col-enter-from,.side-col-leave-to{opacity:0}
+/* 大纲栏在助手栏里时同上，只淡入淡出（主栏贴右定住），淡完就退场，赶在主栏放开之前；
+   在屏幕左边时整栏连同间距（10px）从左缘滑进滑出，宽度不变、内容不重排，阅读区每帧跟着让位，和窗口宽度用同一条弹簧。 */
+.outline-col-enter-active,.outline-col-leave-active{transition:opacity var(--dur-2) var(--ease-soft)}
+.outline-col-leave-active{transition-timing-function:var(--ease-out)}
+.outline-col-enter-active.left,.outline-col-leave-active.left{transition:opacity var(--dur-2) var(--ease-soft),margin-left var(--dur-bounce) var(--spring-snappy)}
+.outline-col-enter-from,.outline-col-leave-to{opacity:0}
+.outline-col-enter-from.left,.outline-col-leave-to.left{margin-left:calc(-10px - var(--outline-width))}
 .quote-pop{position:fixed;z-index:400;display:flex;gap:2px;padding:4px;border-radius:12px;translate:-50% -100%;background:color-mix(in srgb,var(--surface) 95%,transparent);background-image:var(--popup-sheen,none);-webkit-backdrop-filter:blur(var(--popup-blur,18px)) saturate(var(--glass-sat,1.4));backdrop-filter:blur(var(--popup-blur,18px)) saturate(var(--glass-sat,1.4));border:1px solid var(--glass-outline);box-shadow:0 12px 30px -12px rgb(0 0 0 / .35),var(--glass-edge,none)}
 .quote-pop button{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px;border:0;border-radius:9px;background:none;box-shadow:none;font-size:12.5px;white-space:nowrap}
 .quote-pop button:hover{background:color-mix(in srgb,var(--ink) 8%,transparent)}
@@ -1776,4 +1896,19 @@ textarea::placeholder{color:var(--muted);font-family:'Anthropic Serif','Source H
 @media(prefers-reduced-motion:reduce){.composer-drawer,.composer-drawer>*{transition:none}}
 @media(prefers-reduced-motion:reduce){.ai-message,.thinking-label,.question-editor,.prompt-ghost{animation:none!important}}
 @media(prefers-reduced-transparency:reduce),(prefers-contrast:more){.ai-body{-webkit-mask-image:none;mask-image:none}}
+/* 对话记录里，带任务的对话标题前的小标记。 */
+.kind-tag{flex:none;margin-right:6px;padding:1px 5px;border:1px solid color-mix(in srgb,var(--accent) 55%,transparent);border-radius:5px;color:var(--accent);font-size:11px;font-style:normal;line-height:1.3}
+/* 欢迎页上的两种任务：总结、学习。 */
+.task-pick{order:4;display:flex;gap:8px;margin-top:22px}
+.task-pick button{height:30px;padding:0 14px;border:1px solid color-mix(in srgb,var(--ink) 16%,transparent);border-radius:9px;background:none;box-shadow:none;color:var(--secondary);font:inherit;font-size:13px}
+.task-pick button:hover{border-color:var(--accent);color:var(--ink)}
+/* 摸底的几道题下面的那颗键：全填了才能交。 */
+.quiz-all{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin:10px 0 4px;font-family:var(--font-formal)}
+.quiz-all span{color:var(--secondary);font-size:13px;font-variant-numeric:tabular-nums}
+.quiz-all button{height:34px;padding:0 20px;border:0;border-radius:9px;background:var(--accent);box-shadow:none;color:var(--accent-on,#fff);font:inherit;font-size:14px;font-weight:600}
+.quiz-all button:disabled{opacity:.45}
+/* 学习对话里读者的一次作答：一行结果，下面是他写的想法。 */
+.learn-answer{display:flex;flex-direction:column;gap:3px}
+.learn-answer b{font-size:13px}
+.learn-answer span{white-space:pre-wrap}
 </style>

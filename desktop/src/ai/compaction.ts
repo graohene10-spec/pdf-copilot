@@ -11,9 +11,11 @@ export function estimateTokens(text: string): number {
   return Math.ceil(cjk + (text.length - cjk) / 4)
 }
 /** 对话到多少 token 自动压缩（设置里可调）；每次请求带的历史也以它为上限。 */
-export const DEFAULT_LIMIT = 40000
+export const DEFAULT_LIMIT = 200000
 let limit = DEFAULT_LIMIT
 export const compactLimit = () => limit
+/** 这个模型上实际用的上限：不超过窗口的六成，剩下的留给文档原文、提示词和回答。 */
+export const limitFor = (window: number) => Math.min(limit, Math.floor(window * .6))
 export function setCompactLimit(tokens: number) { limit = Number.isFinite(tokens) && tokens >= 2000 ? Math.round(tokens) : DEFAULT_LIMIT }
 /** 摘要之外，读者原话最多保留这么多字（从最近的往前取）。 */
 const QUOTES = 6000

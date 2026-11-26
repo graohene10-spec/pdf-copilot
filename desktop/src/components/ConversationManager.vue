@@ -625,7 +625,7 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey, true); clea
         <p v-else-if="!roots.length" class="cm-empty">还没有对话。</p>
         <div v-if="finding" class="cm-hits">
           <button v-for="hit in hits" :key="hit.item.id" type="button" class="cm-hit" :class="{ gone: hit.root.gone }" @click="openHit(hit)">
-            <span class="cm-hit-title"><AppIcon v-if="hit.item.branchOf" name="branch" :size="12" /><template v-if="hit.title">{{ hit.title.before }}<mark>{{ hit.title.hit }}</mark>{{ hit.title.after }}</template><template v-else>{{ hit.item.title || '新对话' }}</template></span>
+            <span class="cm-hit-title"><AppIcon v-if="hit.item.branchOf" name="branch" :size="12" /><i v-if="hit.item.learning" class="kind-tag">学习</i><i v-else-if="hit.item.summary" class="kind-tag">总结</i><template v-if="hit.title">{{ hit.title.before }}<mark>{{ hit.title.hit }}</mark>{{ hit.title.after }}</template><template v-else>{{ hit.item.title || '新对话' }}</template></span>
             <small>{{ hit.root.title.replace(/\.(pdf|md|markdown)$/i, '') }} · {{ Math.ceil(hit.item.messages.length / 2) }} 问 · {{ relative(hit.item.updatedAt) }}</small>
             <em v-if="hit.snippet">{{ hit.snippet.before }}<mark>{{ hit.snippet.hit }}</mark>{{ hit.snippet.after }}</em>
           </button>
@@ -646,7 +646,7 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey, true); clea
                 <div class="cm-talk" :class="{ picked: picked.has(key(root.id, talk.id)), lifted: drag && picked.has(key(root.id, talk.id)), has: memoryMode(talk) !== 'off' && itemsOf(talk.id).length, mute: memoryMode(talk) === 'off', lit: lit === key(root.id, talk.id) }" :data-key="key(root.id, talk.id)" :data-f="`t:${talk.id}`" @contextmenu.prevent.stop="talkMenu(root, talk, $event)" @pointerenter="peekIn(talk, $event)" @pointerleave="peekOut">
                   <input v-if="renaming === key(root.id, talk.id)" ref="field" v-model="draft" class="cm-rename" maxlength="60" aria-label="对话名称" @keydown.enter.prevent="!$event.isComposing && $event.keyCode !== 229 && endRename(true)" @keydown.esc.prevent.stop="endRename(false)" @blur="endRename(true)" @pointerdown.stop />
                   <button v-else type="button" class="cm-talk-open" @click="openTalk(root, talk, $event)">
-                    <AppIcon v-if="talk.branchOf" name="branch" :size="12" /><span class="cm-title">{{ depthOf(talk.id) ? (talk.title || '新对话').replace(/ · 分支$/, '') : talk.title || '新对话' }}</span>
+                    <AppIcon v-if="talk.branchOf" name="branch" :size="12" /><i v-if="talk.learning" class="kind-tag">学习</i><i v-else-if="talk.summary" class="kind-tag">总结</i><span class="cm-title">{{ depthOf(talk.id) ? (talk.title || '新对话').replace(/ · 分支$/, '') : talk.title || '新对话' }}</span>
                     <small v-if="depthOf(talk.id)" :data-tip="`从「${forkOf(root, talk).title}」第 ${forkOf(root, talk).at} 问之后分出`"><template v-if="talk.request">回答中 · </template>第 {{ forkOf(root, talk).at }} 问后 · +{{ forkOf(root, talk).own }} 问</small>
                     <small v-else><template v-if="talk.request">回答中 · </template>{{ Math.ceil(talk.messages.length / 2) }} 问 · {{ relative(talk.updatedAt) }}</small>
                   </button>
@@ -1003,4 +1003,5 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey, true); clea
 :root[data-style='sketch'] .cm-page{--cm-red:var(--red-pencil,#c0392b);--cm-line:color-mix(in srgb,var(--pencil,#2b2a27) 70%,transparent)}
 :root[data-style='sketch'] .cm-root-open,:root[data-style='sketch'] .cm-talk-open,:root[data-style='sketch'] .cm-act,:root[data-style='sketch'] .cm-tool,:root[data-style='sketch'] .cm-button,:root[data-style='sketch'] .cm-organize,:root[data-style='sketch'] .cm-menu button,:root[data-style='sketch'] .cm-targets button,:root[data-style='sketch'] .cm-flash button{border-radius:0}
 :root[data-style='sketch'] .cm-root-open:hover,:root[data-style='sketch'] .cm-talk-open:hover{background:none}
+.kind-tag{flex:none;margin-right:6px;padding:1px 5px;border:1px solid color-mix(in srgb,var(--accent) 55%,transparent);border-radius:5px;color:var(--accent);font-size:11px;font-style:normal;line-height:1.3}
 </style>

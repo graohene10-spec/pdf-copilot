@@ -7,7 +7,8 @@ import AppIcon from './components/AppIcon.vue'
 import ClockChip from './components/ClockChip.vue'
 import FileTabs from './components/FileTabs.vue'
 import CaptureQuickPrompt from './components/CaptureQuickPrompt.vue'
-import { chatPhase, chatState, sendChat, closeChat, closeAllChats, configureRequests, stopChat, notices, dismissNotice, selectConversation, keepImage, pendingImages, setPendingImages, type Notice } from './ai/workspace'
+import { bookProgress, sessions, sessionsReady } from './ai/learning-map'
+import { allConversations, chatPhase, chatState, sendChat, closeChat, closeAllChats, configureRequests, stopChat, notices, dismissNotice, selectConversation, keepImage, pendingImages, setPendingImages, type Notice } from './ai/workspace'
 import { forgetPassword, forgetAllPasswords } from './document/passwords.mjs'
 import { useSettings, matchShortcut, matchWheelShortcut, shortcutFromEvent, shortcutLabel, UI_FONTS, READING_FONTS, SKETCH_ANSWER_FONTS, fontChoices, isGlassStyle } from './settings'
 import { retainReaderEntries } from './reader/cache-policy.mjs'
@@ -50,9 +51,13 @@ const ContextMenu = defineAsyncComponent(() => import('./components/ContextMenu.
 const ManifoldDoodle = defineAsyncComponent(() => import('./components/ManifoldDoodle.vue'))
 const TranslatePane = defineAsyncComponent(() => import('./components/TranslatePane.vue'))
 const UiCollection = defineAsyncComponent(() => import('./components/UiCollection.vue'))
+const LearningBoard = defineAsyncComponent(() => import('./components/LearningBoard.vue'))
 const { preferences, effectiveAppearance, load: loadPreferences, save: savePreferences } = useSettings()
 
 const documents = ref<Doc[]>([])
+// 学习对话的名册是后来才有的：第一次用时把已有的对话读一遍补上，文档库和学习进度页才看得到以前的学习。
+let backfilled = false
+watch(documents, list => { if (backfilled || !list.length) return; backfilled = true; void sessionsReady.then(existed => { if (!existed) void allConversations(list.map(doc => doc.id)) }) })
 type CaptureFrame = { left: number; top: number; width: number; height: number }
 type DocumentSelection = { text: string; page: number; image?: string; imagePending?: Promise<string>; rect?: any; captureFrame?: CaptureFrame }
 type OpenTab = { doc: Doc; view?: any; selection?: DocumentSelection }
@@ -415,7 +420,7 @@ const reorderLibrary = useReorder({
 })
 watch(visibleDocuments, docs => { if (!picked.value.size) return; const ids = new Set(docs.map(doc => doc.id)); if ([...picked.value].some(id => !ids.has(id))) picked.value = new Set([...picked.value].filter(id => ids.has(id))) })
 watch(active, value => { if (value) { clearPicked(); batchTag.value = null } })
-const currentTitle = computed(() => currentGroup.value?.name || tagFilter.value || (category.value === 'starred' ? '我的收藏' : category.value === 'recent' ? '最近阅读' : category.value === 'ui' ? 'Intelligent UI' : '文档库'))
+const currentTitle = computed(() => currentGroup.value?.name || tagFilter.value || (category.value === 'starred' ? '我的收藏' : category.value === 'recent' ? '最近阅读' : category.value === 'ui' ? 'Intelligent UI' : category.value === 'learn' ? '学习进度' : '文档库'))
 const totalPages = computed(() => documents.value.filter(doc => doc.kind === 'pdf' && doc.lastOpenedAt).reduce((sum, doc) => sum + (doc.pageCount || 0), 0))
 
 function notify(message: string) { toast.value = message; clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.value = '', 4800) }
@@ -1424,10 +1429,12 @@ function setPanelSide(key: string, width: number) {
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   if (!reduced) {
     sideAnimating.value = new Set([...sideAnimating.value, key])
+    // 和助手栏开合一样（见 paneResizeStart）：阅读区每帧都在让位，玻璃先停掉背景模糊、Markdown 正文先定住宽度，免得每帧整片重算模糊、重新断行。
+    document.documentElement.dataset.paneMotion = ''; freezeArticles(true)
     if (pdfOnScreen()) for (const instance of visibleReaders()) instance.holdPanelResize?.(true, width > 0)
     setTimeout(() => {
       const next = new Set(sideAnimating.value); next.delete(key); sideAnimating.value = next
-      if (!next.size && !resizingPanels.size) for (const instance of visibleReaders()) instance.holdPanelResize?.(false, true)
+      if (!next.size && !resizingPanels.size) { delete document.documentElement.dataset.paneMotion; freezeArticles(false); for (const instance of visibleReaders()) instance.holdPanelResize?.(false, true) }
     }, 520)
   }
   panel.side = width
@@ -2326,7 +2333,7 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
         <button :class="{ selected: category === 'all' && !tagFilter && !groupFilter }" @click="chooseCategory('all')"><AppIcon name="library" :size="18" />全部文档<span>{{ documents.length }}</span></button>
         <button :class="{ selected: category === 'recent' }" @click="chooseCategory('recent')"><AppIcon name="clock" :size="18" />最近阅读</button>
         <button :class="{ selected: category === 'starred' }" @click="chooseCategory('starred')"><AppIcon name="star" :size="18" />我的收藏<span>{{ starredCount }}</span></button>
-        <button :class="{ selected: category === 'ui' }" data-tip="钉住 / 记入文档的 Intelligent UI，按书归在一起" @click="chooseCategory('ui')"><AppIcon name="visual" :size="18" />Intelligent UI<span>{{ uiCount }}</span></button>
+        <button :class="{ selected: category === 'learn' }" @click="chooseCategory('learn')"><AppIcon name="sparkle" :size="18" />学习进度<span>{{ Object.keys(sessions).length }}</span></button>
       </nav>
       <div class="tag-heading group-heading"><p class="sidebar-label">分组</p><button type="button" class="group-add" aria-label="新建分组" data-tip="新建分组" :aria-expanded="groupEditing === 'new'" @pointerdown="groupAddDown" @click="toggleNewGroup"><AppIcon name="plus" :size="14" /></button></div>
       <nav v-liquid-selection="{ radius: 'var(--r-control)' }" class="tag-nav group-nav" aria-label="文档分组">
@@ -2374,9 +2381,9 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
       </Transition>
 
       <Transition name="view">
-      <div v-if="!active && libraryShown" ref="libraryView" class="library-view" :class="{ 'rubber-banding': band.active.value, 'ui-mode': category === 'ui' }" key="library" data-reorder-scroll @pointerdown="band.pointerdown">
+      <div v-if="!active && libraryShown" ref="libraryView" class="library-view" :class="{ 'rubber-banding': band.active.value, 'ui-mode': category === 'ui' || category === 'learn' }" key="library" data-reorder-scroll @pointerdown="band.pointerdown">
         <header class="library-header">
-          <div class="library-heading"><h1>{{ currentTitle }}<span class="heading-count">{{ category === 'ui' ? uiCount : visibleDocuments.length }}</span></h1></div>
+          <div class="library-heading"><h1>{{ currentTitle }}<span class="heading-count">{{ category === 'ui' ? uiCount : category === 'learn' ? Object.keys(sessions).length : visibleDocuments.length }}</span></h1></div>
           <div class="library-tools">
             <div class="library-search"><AppIcon name="search" :size="17" /><input ref="search" v-model="query" @input="searchDocuments" placeholder="搜索标题、标签或打开过的正文" aria-label="搜索文档" /><button v-if="query" @click="query = ''; refresh()" data-tip="清除搜索" aria-label="清除搜索"><AppIcon name="close" :size="14" /></button><kbd v-else-if="preferences.shortcuts.search">{{ shortcut('search') }}</kbd></div>
             <button v-if="libraryOrder.length && canArrange" class="icon-button arrange-reset" @click="resetLibraryOrder" data-tip="恢复按最近阅读排列" aria-label="恢复按最近阅读排列"><AppIcon name="clock" :size="16" /></button><button class="library-sort" data-tip="排序方式（再选一次切换升降序）" aria-label="排序方式" aria-haspopup="menu" @click="openSortMenu($event)"><AppIcon name="list" :size="15" /><span>{{ SORTS.find(item => item.key === librarySort.key)?.label }}</span><AppIcon name="down" :size="12" /></button><button v-if="librarySort.key !== 'default'" class="icon-button sort-direction" :data-tip="librarySort.descending ? '降序（点一下改为升序）' : '升序（点一下改为降序）'" :aria-label="librarySort.descending ? '降序' : '升序'" @click="chooseSort(librarySort.key)"><span aria-hidden="true">{{ librarySort.descending ? '↓' : '↑' }}</span></button><div v-liquid-selection class="view-switch"><button :class="{ selected: display === 'grid' }" @click="setDisplay('grid')" data-tip="卡片视图" aria-label="卡片视图"><AppIcon name="grid" :size="16" /></button><button :class="{ selected: display === 'list' }" @click="setDisplay('list')" data-tip="列表视图" aria-label="列表视图"><AppIcon name="list" :size="17" /></button></div>
@@ -2384,6 +2391,7 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
         </header>
         <div class="library-summary"><div><AppIcon name="book" :size="15" /><strong>{{ documents.length }}</strong><span>份文档</span></div><span class="summary-divider"></span><div><AppIcon name="star" :size="15" /><strong>{{ starredCount }}</strong><span>份收藏</span></div><span class="summary-divider"></span><div><AppIcon name="file" :size="15" /><strong>{{ totalPages }}</strong><span>页 · 打开过的 PDF</span></div><span v-if="!isDesktop" class="summary-note">浏览器预览</span></div>
         <UiCollection v-if="category === 'ui'" :documents="documents" :query="query" @jump="jumpToUi" />
+        <LearningBoard v-else-if="category === 'learn'" :documents="documents" :query="query" @open="openConversationAt" />
         <template v-else>
         <div v-if="query || category === 'recent'" class="library-list-heading"><span>{{ query ? `搜索「${query}」` : '按最近阅读排列' }}</span></div>
         <div v-if="loading" class="library-empty"><span class="spinner"></span><p>正在读取文档库…</p></div>
@@ -2392,7 +2400,7 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
           <article v-for="doc in visibleDocuments" :key="doc.id" class="document-card" :class="[doc.kind, { 'reorder-lifted': reorderLibrary.dragging.value === doc.id, picked: picked.has(doc.id), grouped: groupMarks.has(doc.id), 'group-start': groupMarks.get(doc.id)?.start, 'group-end': groupMarks.get(doc.id)?.end }]" :data-reorder-id="doc.id" tabindex="0" role="button" :aria-label="`打开 ${doc.name}`" :aria-selected="picked.size ? picked.has(doc.id) : undefined" @click="cardClick($event, doc)" @keydown.enter.self="openDocument(doc)" @keydown.space.self.prevent="openDocument(doc)" @keydown.f2.self.prevent="startRename(doc)" @keydown="reorderLibrary.keydown($event, doc.id)" @pointerdown="reorderLibrary.pointerdown($event, doc.id)">
             <i v-if="groupMarks.has(doc.id)" class="group-thread" aria-hidden="true"></i><span v-if="groupMarks.get(doc.id)?.start" class="group-chip">{{ groupMarks.get(doc.id)!.name }}</span>
             <div class="document-cover" :class="{ 'has-image': covers.has(sourceId(doc.id)) }"><img v-if="covers.has(sourceId(doc.id))" class="cover-image" :class="covers.get(sourceId(doc.id))!.kind" :src="covers.get(sourceId(doc.id))!.image" alt="" draggable="false" /><template v-else><div class="cover-lines"><i></i><i></i><i></i><i></i></div><div class="document-type-icon"><AppIcon :name="doc.kind === 'pdf' ? 'file' : 'markdown'" :size="display === 'list' ? 23 : 30" /></div></template><button class="card-star" :class="{ 'is-starred': doc.starred }" @click.stop="toggleStar(doc)" :data-tip="doc.starred ? '取消收藏' : '收藏文档'" :aria-label="doc.starred ? '取消收藏' : '收藏文档'"><AppIcon name="star" :size="17" /></button></div>
-            <div class="document-card-body"><div class="document-card-title"><input v-if="renamingDoc === doc.id" v-model="renameText" class="card-rename" maxlength="120" aria-label="文件名" spellcheck="false" @vue:mounted="({ el }: any) => grabRename(el)" @click.stop @dblclick.stop @pointerdown.stop @keydown.stop @keydown.enter.prevent="commitRename" @keydown.esc.prevent="renamingDoc = ''" @blur="commitRename" /><h3 v-else :data-tip="doc.name">{{ doc.name.replace(/\.(pdf|md|markdown)$/i, '') }}</h3><span class="format-pill">{{ doc.kind === 'pdf' ? 'PDF' : 'MD' }}</span></div><p class="document-meta">{{ size(doc.size) }}<span>·</span>{{ doc.lastOpenedAt ? `阅读于 ${date(doc.lastOpenedAt)}` : `加入于 ${date(doc.addedAt)}` }}</p><div class="document-tags"><span v-for="tag in doc.tags.slice(0, 3)" :key="tag">{{ tag }}</span><span v-if="doc.tags.length > 3">+{{ doc.tags.length - 3 }}</span></div><div class="document-progress"><div><i :style="{ width: `${progressPercent(doc)}%` }"></i></div><span>{{ doc.progress ? `${progressPercent(doc)}%` : '未读' }}</span></div></div>
+            <div class="document-card-body"><div class="document-card-title"><input v-if="renamingDoc === doc.id" v-model="renameText" class="card-rename" maxlength="120" aria-label="文件名" spellcheck="false" @vue:mounted="({ el }: any) => grabRename(el)" @click.stop @dblclick.stop @pointerdown.stop @keydown.stop @keydown.enter.prevent="commitRename" @keydown.esc.prevent="renamingDoc = ''" @blur="commitRename" /><h3 v-else :data-tip="doc.name">{{ doc.name.replace(/\.(pdf|md|markdown)$/i, '') }}</h3><span class="format-pill">{{ doc.kind === 'pdf' ? 'PDF' : 'MD' }}</span></div><p class="document-meta">{{ size(doc.size) }}<span>·</span>{{ doc.lastOpenedAt ? `阅读于 ${date(doc.lastOpenedAt)}` : `加入于 ${date(doc.addedAt)}` }}</p><div class="document-tags"><span v-for="tag in doc.tags.slice(0, 3)" :key="tag">{{ tag }}</span><span v-if="doc.tags.length > 3">+{{ doc.tags.length - 3 }}</span></div><div class="document-progress"><div><i :style="{ width: `${progressPercent(doc)}%` }"></i></div><span>{{ doc.progress ? `${progressPercent(doc)}%` : '未读' }}</span></div><div v-if="bookProgress(doc.id)" class="document-progress learning"><div><i :style="{ width: `${bookProgress(doc.id)!.passed / bookProgress(doc.id)!.total * 100}%` }"></i></div><span>学习 {{ bookProgress(doc.id)!.passed }}/{{ bookProgress(doc.id)!.total }}</span></div></div>
             <button class="card-remove icon-button" @click.stop="removeTarget = doc" data-tip="从文档库移除" aria-label="从文档库移除"><AppIcon name="trash" :size="15" /></button>
             <span v-if="picked.has(doc.id)" class="card-pick" aria-hidden="true"><AppIcon name="check" :size="13" /></span>
           </article>
@@ -2419,6 +2427,8 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
       </Transition>
       <Transition name="view">
       <div v-if="stageDoc" v-show="active" class="reading-workspace">
+        <!-- 学习大纲放到屏幕左边时落在这里（AiPane 用 Teleport 送过来）。 -->
+        <div id="learn-outline-slot" class="learn-outline-slot"></div>
         <section class="reading-main">
           <div v-if="opening && !multiPanel" class="reader-overlay"><span class="spinner"></span><p>正在打开 {{ stageDoc!.name }}…</p></div>
           <TransitionGroup tag="div" name="pane" class="reader-panes" :class="{ split: splitView, multi: multiPanel, dragging: draggingPanel }" @before-enter="panelResizeStart($event, true)" @before-leave="panelResizeStart($event, false)" @after-enter="panelResizeEnd($event)" @after-leave="panelResizeEnd($event)" @enter-cancelled="panelResizeEnd($event, true)" @leave-cancelled="panelResizeEnd($event, true)">
@@ -2436,7 +2446,7 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
             <section v-for="id in (multiPanel ? paneIds.filter(id => !readerCache.some(entry => entry.id === id)) : [])" :key="`pending:${id}`" class="reader-pane pending" :style="{ order: panelOrder(`doc:${id}`) }"><div class="reader-overlay"><span class="spinner"></span><p>正在打开 {{ tabDoc(id)?.name }}…</p></div></section>
             <section v-for="panel in stageAi" :key="panel.key" class="ai-panel" :class="{ lifted: draggingPanel === panel.key, 'with-side': (panel.side || 0) > 0, 'side-animating': sideAnimating.has(panel.key) }" :style="{ order: panelOrder(panel.key), width: `${panel.width + (panel.side || 0)}px`, '--panel-width': `${panel.width + (panel.side || 0)}px` }" :data-panel-key="panel.key">
               <div class="panel-resizer" :data-edge="panelOrder(panel.key) === 0 && multiPanel ? 'right' : 'left'" role="separator" aria-orientation="vertical" aria-label="拖动调整阅读助手宽度" data-tip="拖动调整宽度，双击恢复" @pointerdown.stop="startWidthDrag($event, panel.key)" @pointermove="moveWidthDrag" @pointerup="endWidthDrag" @pointercancel="endWidthDrag" @dblclick="resetPanelWidth(panel)" />
-              <AiPane v-if="aiDocument(panel)" :ref="value => bindAi(panel.key, value)" data-glass-interactive="panel" :document="aiDocument(panel)!" :context="aiContext(panel)" :conversation-id="panel.conversation" :draggable="multiPanel" :get-outline="outlineOf" :draft-open="!!draft && draft.documentId === aiDocument(panel)!.id" @draft="value => toggleDraft(aiDocument(panel)!.id, value)" :send-shortcut="preferences.shortcuts.aiSend ? shortcut('aiSend') : ''" :consume-capture="consumeSelection" @settings="openSettings('ai')" @manage="managerOpen = true" @close="closeAiPanel(panel.key)" @jump="jump" @clear-selection="clearSelection" @conversation="id => setPanelConversation(panel.key, id)" @grab="startPanelDrag($event, panel.key)" :alternatives="aiAlternatives(panel)" :library="libraryIndex" @switch-document="id => switchAiDocument(panel, id)" @open-conversation="openConversationAt" @side="width => setPanelSide(panel.key, width)" />
+              <AiPane v-if="aiDocument(panel)" :ref="value => bindAi(panel.key, value)" data-glass-interactive="panel" :document="aiDocument(panel)!" :context="aiContext(panel)" :conversation-id="panel.conversation" :draggable="multiPanel" :get-outline="outlineOf" :draft-open="!!draft && draft.documentId === aiDocument(panel)!.id" @draft="value => toggleDraft(aiDocument(panel)!.id, value)" :send-shortcut="preferences.shortcuts.aiSend ? shortcut('aiSend') : ''" :consume-capture="consumeSelection" @settings="openSettings('ai')" @manage="managerOpen = true" @close="closeAiPanel(panel.key)" @jump="jump" @clear-selection="clearSelection" @conversation="id => setPanelConversation(panel.key, id)" @grab="startPanelDrag($event, panel.key)" :alternatives="aiAlternatives(panel)" :library="libraryIndex" @switch-document="id => switchAiDocument(panel, id)" @open-conversation="openConversationAt" @side="width => setPanelSide(panel.key, width)" @motion-start="paneResizeStart" @motion-end="paneResizeEnd" />
             </section>
             <SummaryDraft v-if="draft && paneIds.some(id => sourceId(id) === draft!.documentId)" :key="draft.conversationId" :document-id="draft.documentId" :conversation-id="draft.conversationId" :title="documents.find(item => item.id === draft!.documentId)?.name || ''" :saving="draftSaving" :saved="draftSaved" @close="draft = null" @save="saveDraft" @open="openSavedDraft" @copied="notify('已复制')" @revise="reviseDraft" @retry="retryDraftEdits" />
           </TransitionGroup>

@@ -3,9 +3,13 @@ import { loadAiSettings, loadApiKey } from './settings.mjs'
 import { RequestScheduler } from './request-scheduler.mjs'
 import { library } from '../sdk'
 import { recordUsage } from './usage'
-import { compactLimit, compactionPrompt, estimateTokens, fullness, handoff, liveTokens, splitForCompaction } from './compaction'
+import { compactLimit, limitFor, compactionPrompt, estimateTokens, fullness, handoff, liveTokens, splitForCompaction } from './compaction'
 export { estimateTokens }
 import { SUMMARY_READING, summaryDraft, summaryInstructions, summaryContinues, lastSummaryOptions, readSwitches, MAX_SUMMARY_ROUNDS, type SummaryState, type SummaryOptions } from './summary'
+import { advanceLearning, answerText, followUp, learningContext, mergeMap, readLearning, repaired, settled, withoutAnswers, type LearningOptions, type LearningState, type Quiz, type QuizAnswer } from './learning'
+import { learningInstructions, learningRequest } from './learning-prompts'
+import { normalizeLearning } from './learning-normalize'
+import { addToMap, forgetSession, noteSession } from './learning-map'
 import { MEMORY_VERSION, memory, defaultMemoryMode, forgetConversation, memorize, memoryInstructions, memoryMode, memoryReady, rememberMemoryMode, retagMemory, type MemoryMode } from './memory'
 
 export type Usage = { input?: number; output?: number; reasoning?: number; estimated: boolean }
@@ -23,10 +27,13 @@ export type Message = {
   compressed?: boolean; summary?: boolean
   /** 摘录卡片：读者用 Ctrl+↓ / → / ← 从回答里带过来的一段文字（self 本对话、main 来自主对话、side 来自附属对话），随之后的提问一起发出。 */
   note?: 'self' | 'main' | 'side'
+  /** 学习对话里读者这一次交的作答（摸底是几道题一起交）。quizOf 是出题的那条回答。 */
+  learn?: LearnAnswer[]
   /** 随这个问题一起发出的摘录（在输入框里攒的引用片段）。 */
   excerpts?: Excerpt[]
 }
 /** 读者用 Ctrl+↓ / → / ← 从回答里摘出的一段文字，先放进输入框，随下一个问题发出。 */
+export type LearnAnswer = QuizAnswer & { quizOf: string; index: number; correct?: boolean }
 export type Excerpt = { id: string; text: string; from: 'self' | 'main' | 'side' }
 type Request = { controller: AbortController; phase: string }
 export type ChatState = {
@@ -45,6 +52,8 @@ export type ChatState = {
   memory?: MemoryMode | false
   /** 总结对话：系统提示词换成总结那一套，助手把文档写进草稿面板。见 summary.ts。 */
   summary?: SummaryState
+  /** 学习对话：助手先摸底、再规划、再一步步带读。状态见 learning.ts。 */
+  learning?: LearningState
 }
 type DocumentChats = { list: ChatState[]; activeId: string; loaded: boolean; loading?: Promise<void> }
 
@@ -116,7 +125,7 @@ function inheritedContext(main: ChatState) {
   let chars = 0
   for (const message of [...main.messages].reverse()) {
     if (message.compressed || (message.failed && !message.content) || !message.content) continue
-    const content = wireText(message)
+    const content = main.learning ? withoutAnswers(wireText(message)) : wireText(message)
     if (kept.length >= 12 || chars + content.length > 30000) break
     kept.unshift({ role: message.summary || message.note ? 'user' : message.role, content }); chars += content.length
   }
@@ -200,6 +209,7 @@ export function cancelSummary(documentId: string, conversationId: string) {
   const mode = defaultMemoryMode(); conversation.memory = mode === 'all' ? undefined : mode
 }
 export function deleteConversation(documentId: string, conversationId: string) {
+  forgetSession(conversationId)
   const entry = chats(documentId)
   const conversation = entry.list.find(item => item.id === conversationId)
   if (!conversation) return
@@ -218,6 +228,7 @@ export function renameConversation(documentId: string, conversationId: string, t
   const next = title.replace(/\s+/g, ' ').trim().slice(0, 60)
   if (!conversation || !next) return
   conversation.title = next
+  noteLearning(conversation)
   retagMemory(conversationId, { title: next })
   schedulePersist(documentId)
 }
@@ -431,7 +442,7 @@ function serialize(entry: DocumentChats) {
   const kept = new Set(mains.map(item => item.id))
   const sides = entry.list.filter(item => item.sideOf && kept.has(item.sideOf) && item.messages.length)
   return JSON.stringify({ activeId: entry.activeId, list: [...mains, ...sides].map(item => ({
-    id: item.id, title: item.title, createdAt: item.createdAt, updatedAt: item.updatedAt, branchOf: item.branchOf, sideOf: item.sideOf, inherited: item.inherited, memory: item.memory, summary: item.summary,
+    id: item.id, title: item.title, createdAt: item.createdAt, updatedAt: item.updatedAt, branchOf: item.branchOf, sideOf: item.sideOf, inherited: item.inherited, memory: item.memory, summary: item.summary, learning: item.learning,
     messages: item.messages.filter(message => !message.failed || message.content).slice(-MAX_MESSAGES).map(({ images: _images, activity: _activity, ...message }) => ({ ...message, content: message.content.slice(0, 60000), reasoning: message.reasoning?.slice(0, 20000), sources: message.sources.slice(0, 24).map(source => ({ ...source, text: String(source.text || '').slice(0, 600) })) })),
   })) })
 }
@@ -464,9 +475,10 @@ export function loadConversations(documentId: string): Promise<void> {
       for (const item of Array.isArray(stored?.list) ? stored.list : []) {
         if (!item || typeof item.id !== 'string' || known.has(item.id) || !Array.isArray(item.messages)) continue
         const conversation = blank(documentId)
-        Object.assign(conversation, { id: item.id, title: String(item.title || ''), memory: item.memory === false || item.memory === 'off' ? 'off' : item.memory === 'book' ? 'book' : undefined, summary: readSummary(item.summary), sideOf: typeof item.sideOf === 'string' ? item.sideOf : undefined, inherited: Array.isArray(item.inherited) ? item.inherited.filter((entry: any) => entry && typeof entry.content === 'string' && (entry.role === 'user' || entry.role === 'assistant')) : undefined, branchOf: item.branchOf && typeof item.branchOf.conversationId === 'string' ? { conversationId: item.branchOf.conversationId, title: String(item.branchOf.title || '') } : undefined, createdAt: Number(item.createdAt) || Date.now(), updatedAt: Number(item.updatedAt) || Date.now(),
-          messages: item.messages.filter((message: any) => message && (message.role === 'user' || message.role === 'assistant')).map((message: any) => ({ ...message, content: String(message.content || ''), sources: Array.isArray(message.sources) ? message.sources : [] })) })
+        Object.assign(conversation, { id: item.id, title: String(item.title || ''), memory: item.memory === false || item.memory === 'off' ? 'off' : item.memory === 'book' ? 'book' : undefined, summary: readSummary(item.summary), learning: readLearning(item.learning), sideOf: typeof item.sideOf === 'string' ? item.sideOf : undefined, inherited: Array.isArray(item.inherited) ? item.inherited.filter((entry: any) => entry && typeof entry.content === 'string' && (entry.role === 'user' || entry.role === 'assistant')) : undefined, branchOf: item.branchOf && typeof item.branchOf.conversationId === 'string' ? { conversationId: item.branchOf.conversationId, title: String(item.branchOf.title || '') } : undefined, createdAt: Number(item.createdAt) || Date.now(), updatedAt: Number(item.updatedAt) || Date.now(),
+          messages: item.messages.filter((message: any) => message && (message.role === 'user' || message.role === 'assistant')).map((message: any) => ({ ...message, ...(message.learn && !Array.isArray(message.learn) ? { learn: [message.learn] } : {}), content: String(message.content || ''), sources: Array.isArray(message.sources) ? message.sources : [] })) })
         entry.list.push(conversation)
+        noteLearning(conversation)
       }
       // Reopen the conversation last used for this document if nothing has started yet.
       const current = entry.list.find(item => item.id === entry.activeId)
@@ -496,7 +508,85 @@ function titleFrom(question: string) {
 }
 
 // selectionOnly: a quick capture question sends just the question and the selected region.
-type SendOptions = { /** 应用自己替读者发的（分多次写总结时的「继续」）：对话栏里不显示这一问。 */ auto?: boolean; /** 重新回答：新的问答换掉这个问题和它原来的回答，前后的对话不动。 */ replace?: string; conversationId?: string; includeDocument?: boolean; includeSelection?: boolean; selectionOnly?: boolean; images?: string[]; attachments?: string[]; excerpts?: Excerpt[] }
+type SendOptions = { /** 学习对话里的一次作答：记在这一问上。 */ learn?: Message['learn']; /** 应用自己替读者发的（分多次写总结时的「继续」）：对话栏里不显示这一问。 */ auto?: boolean; /** 重新回答：新的问答换掉这个问题和它原来的回答，前后的对话不动。 */ replace?: string; conversationId?: string; includeDocument?: boolean; includeSelection?: boolean; selectionOnly?: boolean; images?: string[]; attachments?: string[]; excerpts?: Excerpt[] }
+/** 开一段学习对话：先停在设定表上。 */
+export function newLearningConversation(documentId: string): ChatState {
+  const entry = chats(documentId)
+  flushMemory(documentId, entry.activeId)
+  let conversation = entry.list.find(item => !item.sideOf && !item.messages.length && !item.request)
+  if (!conversation) { conversation = blank(documentId); entry.list.push(conversation) }
+  conversation.summary = undefined
+  conversation.learning = { options: { scope: '', goal: '', quiz: 'choice' }, phase: 'setup', progress: {}, repairs: 0 }
+  conversation.updatedAt = Date.now(); entry.activeId = conversation.id
+  return conversation
+}
+/** 还没开始的学习对话改回普通对话。 */
+export function cancelLearning(documentId: string, conversationId: string) {
+  const conversation = chats(documentId).list.find(item => item.id === conversationId)
+  if (conversation?.learning?.phase === 'setup' && !conversation.messages.length) conversation.learning = undefined
+}
+// 学习对话记进名册：学到哪个阶段、过了几个节点、现在在哪一个。
+function noteLearning(state: ChatState, documentTitle?: string) {
+  const learning = state.learning
+  if (!learning || learning.phase === 'setup' || state.sideOf) return
+  const nodes = learning.plan?.nodes || []
+  noteSession(state.id, { documentId: state.documentId, documentTitle: documentTitle ?? conversationBooks[state.documentId]?.title ?? '', title: state.title, goal: learning.options.goal, phase: learning.phase, passed: nodes.filter(node => learning.progress[node.id]?.passed).length, total: nodes.length, current: nodes.find(node => node.id === learning.current)?.title || '', at: state.updatedAt })
+}
+/** 读者直接在大纲上动手：删一个节点、让它讲快些或细些、挪到别的位置。不经过助手，下一问时它从[学习进度]里看到。 */
+export type PlanEdit = { type: 'remove'; id: string } | { type: 'pace'; id: string; pace?: 'fast' | 'slow' } | { type: 'move'; id: string; to: number }
+export function editPlan(documentId: string, conversationId: string, edit: PlanEdit) {
+  const state = chatState(documentId, conversationId), learning = state.learning, plan = learning?.plan
+  if (!learning || !plan || !plan.nodes.some(node => node.id === edit.id)) return
+  let nodes = plan.nodes, edges = plan.edges
+  const next = { ...learning, progress: { ...learning.progress } }
+  if (edit.type === 'remove') {
+    nodes = nodes.filter(node => node.id !== edit.id); edges = edges.filter(edge => !edge.includes(edit.id))
+    delete next.progress[edit.id]
+    if (next.current === edit.id) next.current = undefined
+    if (next.pending?.node === edit.id) next.pending = undefined
+  } else if (edit.type === 'pace') {
+    nodes = nodes.map(node => { if (node.id !== edit.id) return node; const { pace: _pace, ...rest } = node; return edit.pace ? { ...rest, pace: edit.pace } : rest })
+  } else {
+    const moved = nodes.find(node => node.id === edit.id)!
+    nodes = nodes.filter(node => node.id !== edit.id); nodes.splice(Math.max(0, Math.min(nodes.length, edit.to)), 0, moved)
+    // 顺序由读者定了：和新顺序相反的依赖不再算数。
+    const at = new Map(nodes.map((node, index) => [node.id, index])); edges = edges.filter(edge => at.get(edge[0])! < at.get(edge[1])!)
+  }
+  state.learning = { ...next, plan: { nodes, edges } }
+  state.updatedAt = Date.now(); noteLearning(state); schedulePersist(documentId)
+}
+type Opener = Parameters<typeof sendChat>
+const NL = String.fromCharCode(10)
+/** 读者交了设定表：发出第一问，进入摸底。 */
+export function startLearning(descriptor: Opener[0], source: any, onSettings: () => void, conversationId: string, options: LearningOptions) {
+  const state = chatState(descriptor.id, conversationId)
+  if (state.learning?.phase !== 'setup' || state.request) return
+  state.learning = advanceLearning({ ...state.learning, options }, { type: 'start' })
+  // 对话记录里已经有「学习」的标记，标题只写学的是哪一段。
+  state.title = titleFrom(options.scope || descriptor.title.replace(/\.(pdf|md|markdown)$/i, ''))
+  return sendChat(descriptor, source, onSettings, undefined, learningRequest(descriptor.title, options), { conversationId, includeSelection: options.scope === '选中的内容' })
+}
+/** 读者交了作答（一道，或摸底的几道一起）：记进状态，发给助手。 */
+export function answerQuiz(descriptor: Opener[0], source: any, onSettings: () => void, conversationId: string, messageId: string, items: { quiz: Quiz; answer: QuizAnswer; correct?: boolean }[]) {
+  const state = chatState(descriptor.id, conversationId)
+  if (!state.learning || state.request || !items.length) return
+  for (const item of items) state.learning = advanceLearning(state.learning, { type: 'answer', messageId, quiz: item.quiz, answer: item.answer })
+  rememberPassed(descriptor, state)
+  const text = items.length === 1 ? answerText(items[0]!.quiz, items[0]!.answer) : items.map((item, index) => '第 ' + (index + 1) + ' 题' + NL + answerText(item.quiz, item.answer)).join(NL + NL)
+  return sendChat(descriptor, source, onSettings, undefined, text, { conversationId, includeSelection: false, learn: items.map(item => ({ ...item.answer, quizOf: messageId, index: item.quiz.index, ...(item.correct === undefined ? {} : { correct: item.correct }) })) })
+}
+/** 读者认可了路线图：开始带读。 */
+export function acceptPlan(descriptor: Opener[0], source: any, onSettings: () => void, conversationId: string) {
+  const state = chatState(descriptor.id, conversationId)
+  if (state.learning?.phase !== 'plan' || !state.learning.plan || state.request) return
+  state.learning = advanceLearning(state.learning, { type: 'accept-plan' })
+  return sendChat(descriptor, source, onSettings, undefined, '就按这条路线开始。', { conversationId, includeSelection: false })
+}
+// 通过了检查的节点并进这本书「学过的要点」。
+function rememberPassed(descriptor: { id: string; title: string }, state: ChatState) {
+  noteLearning(state, descriptor.title)
+  if (state.learning && Object.values(state.learning.progress).some(item => item.passed)) addToMap(descriptor.id, descriptor.title, map => mergeMap(map, state.learning!, state.id, Date.now()))
+}
 export async function sendChat(descriptor: { id: string; title: string; kind: string }, source: any, onSettings: () => void, onAccepted?: () => void, explicitQuestion?: string, sendOptions: SendOptions = {}) {
   const state = chatState(descriptor.id, sendOptions.conversationId), question = (explicitQuestion ?? state.draft).trim()
   if (!question || state.request) return
@@ -520,7 +610,7 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
   const signal = request.controller.signal
   const entry = chats(descriptor.id)
   const valid = () => state.request === request && !signal.aborted && entry.list.includes(state)
-  let answer: Message | undefined, ticket: any, resource: any, documentSession: any, again = false
+  let answer: Message | undefined, ticket: any, resource: any, documentSession: any, next = ''
   const activity = (text: string) => { if (valid() && answer) answer.activity = text }
   try {
     const [{ getModel, streamChat }, { streamDocumentChat, boundedHistory }] = await Promise.all([import('./providers.mjs'), import('./document-chat.mjs')])
@@ -534,9 +624,12 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
     // 同一张图只发一次（同一块地方截了两遍）。
     const images = [...new Set([...(selection.image ? [selection.image] : []), ...attached])]
     if (images.reduce((sum, image) => sum + image.length, 0) > 8 * 1024 * 1024) throw new Error('图片总量太大，请减少几张或换小一点的图片。')
+    const cap = limitFor(contextWindow(snapshot.provider, snapshot.model || ''))
     // 以前留下的长对话：发问时就已经到量，这一问照常发，同时在后台压缩。
-    if (!state.summary && !sendOptions.replace && fullness(state.messages) >= 1) void compressConversation(descriptor, state.id, '', false)
-    const user: Message = { id: crypto.randomUUID(), role: 'user', content: question, sources: [], images, ...(sendOptions.auto ? { auto: true } : {}), ...(excerpts.length ? { excerpts } : {}), ask: { includeDocument, selectionOnly: sendOptions.selectionOnly, page: context.page, text: selection.text ? String(selection.text).slice(0, 20000) : undefined } }
+    if (!state.summary && !sendOptions.replace && fullness(state.messages, cap) >= 1) void compressConversation(descriptor, state.id, '', false)
+    // 重新回答时，原来那一问上的作答记录跟过来。
+    const answered = sendOptions.learn ?? state.messages.find(message => message.id === sendOptions.replace)?.learn
+    const user: Message = { id: crypto.randomUUID(), role: 'user', content: question, sources: [], images, ...(sendOptions.auto ? { auto: true } : {}), ...(excerpts.length ? { excerpts } : {}), ...(answered ? { learn: answered } : {}), ask: { includeDocument, selectionOnly: sendOptions.selectionOnly, page: context.page, text: selection.text ? String(selection.text).slice(0, 20000) : undefined } }
     const wireContent = sendOptions.selectionOnly
       ? `${question}${excerptText(excerpts)}${selection.text ? '\n\n[用户选中的内容]\n' + selection.text : ''}${selection.image ? '\n\n[附图是用户在文档里框选的区域，问题针对它]' : ''}${attached.length ? `\n\n[用户附上了 ${attached.length} 张图片]` : ''}`
       : `${question}${excerptText(excerpts)}\n\n[用户当前阅读的文档]\n${descriptor.title}${descriptor.kind === 'pdf' ? ` · 物理 PDF 第 ${context.page} 页` : ' · Markdown 文档'}${selection.text ? '\n\n[用户选中的内容]\n' + selection.text : ''}${attached.length ? `\n\n[用户附上了 ${attached.length} 张图片]` : ''}${state.sideOf ? '\n\n[这是挂在主对话旁边的附属对话（侧边对话）]' : ''}`
@@ -544,7 +637,7 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
     const draftNow = draft ? `\n\n[草稿面板里现在的文档全文；要修改就在它的基础上改]\n${draft.slice(0, 60000)}` : ''
     // 重新回答中间的某一问：只把它之前的对话带给模型。
     const before = sendOptions.replace ? state.messages.findIndex(message => message.id === sendOptions.replace) : -1
-    const history = boundedHistory(compactLimit(), [...(state.inherited || []).map(item => ({ role: item.role, content: `[主对话里的内容（开启附属对话时）]\n${item.content}` })), ...(before < 0 ? state.messages : state.messages.slice(0, before)).filter(message => !message.failed && !message.compressed).map(message => message.summary || message.note ? { role: 'user', content: wireText(message) } : ({ role: message.role, content: (state.summary && message.role === 'assistant' ? withoutDrafts(wireText(message)) : wireText(message)) + (message.sources.length ? '\n[此前查到的相关位置]\n' + JSON.stringify(message.sources.slice(0, 8).map(item => ({ sourceId: item.sourceId, page: item.page, line: item.line, text: item.text.slice(0, 400) }))) : '') })), { ...user, content: wireContent + draftNow }])
+    const history = boundedHistory(cap, [...(state.inherited || []).map(item => ({ role: item.role, content: `[主对话里的内容（开启附属对话时）]\n${item.content}` })), ...(before < 0 ? state.messages : state.messages.slice(0, before)).filter(message => !message.failed && !message.compressed).map(message => message.summary || message.note ? { role: 'user', content: wireText(message) } : ({ role: message.role, content: (state.summary && message.role === 'assistant' ? withoutDrafts(wireText(message)) : wireText(message)) + (message.sources.length ? '\n[此前查到的相关位置]\n' + JSON.stringify(message.sources.slice(0, 8).map(item => ({ sourceId: item.sourceId, page: item.page, line: item.line, text: item.text.slice(0, 400) }))) : '') })), { ...user, content: wireContent + draftNow + (state.learning ? '\n\n[学习进度]\n' + learningContext(state.learning) : '') }])
     // The scheduler reports the first queue position before the answer bubble exists.
     let waiting = ''
     ticket = scheduler.acquire({ owner: `${descriptor.id}:${state.id}`, provider: snapshot.provider, signal, onState: (value: any) => {
@@ -581,8 +674,8 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
     const owner = state.sideOf ? chats(state.documentId).list.find(item => item.id === state.sideOf) || state : state
     const remembered = memoryInstructions({ id: owner.id, documentId: descriptor.id, mode: memoryMode(owner) })
     // 总结对话用自己的一套提示词，不带学习记录；Intelligent UI 的写法只在读者打开时给。
-    const extraInstructions = state.summary ? summaryInstructions(descriptor.title, state.summary.options, state.summary.options.ui ? UI_INSTRUCTIONS.document : '') : UI_INSTRUCTIONS.assistant + (remembered ? '\n\n' + remembered : '')
-    const options = { ...snapshot, apiKey, signal, messages: history, historyTokens: compactLimit(), extraInstructions,
+    const extraInstructions = state.learning ? learningInstructions(descriptor.title, state.learning, descriptor.kind) + (state.learning.phase === 'teach' || state.learning.phase === 'done' ? NL + NL + UI_INSTRUCTIONS.assistant : '') + (remembered ? '\n\n' + remembered : '') : state.summary ? summaryInstructions(descriptor.title, state.summary.options, state.summary.options.ui ? UI_INSTRUCTIONS.document : '') : UI_INSTRUCTIONS.assistant + (remembered ? '\n\n' + remembered : '')
+    const options = { ...snapshot, apiKey, signal, messages: history, historyTokens: cap, extraInstructions,
       onDelta: (text: string) => { if (valid() && answer) { answer.firstTokenAt ||= Date.now(); answer.content += text; answer.activity = '正在回答'; output() } },
       onReasoning: (text: string) => { if (valid() && answer) { answer.reasoning = (answer.reasoning || '') + text; answer.activity = '思考中'; output() } },
       onProgress: (text: string) => activity(text.replace(/[…。]+$/, '')),
@@ -604,7 +697,7 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
       }, signal)
       signal.throwIfAborted()
       // 普通提问先把当前页的图带上；总结要读的是整个范围，由助手自己用工具去翻，不带这一页。
-      if (resource.context.pdf && !selection.text && !selection.image && !state.summary) {
+      if (resource.context.pdf && !selection.text && !selection.image && !state.summary && !state.learning) {
         if (getModel(snapshot.provider, snapshot.model)?.vision !== false) {
           activity('查看当前页')
           const page = await documentSession.document.tool('pdf_view', { page: documentSession.seed.info.currentPage, block_id: null })
@@ -621,8 +714,17 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
       state.status = ''
       // 分多次写的总结：这一段写完、后面还有，就自己接着发「继续」，直到写完、出错或读者按停止。
       const summary = state.summary
-      if ((summary?.options.multi || summary?.options.complete) && answer && summaryContinues(answer.content) && (summary.rounds || 0) < MAX_SUMMARY_ROUNDS) { summary.rounds = (summary.rounds || 0) + 1; again = true }
-      else { noticeFinished(state, descriptor.title); scheduleMemory(state) }
+      // 学习对话：把这条回答里的题目、路线图、结论记进状态；格式有误或该规划路线了，就替读者补发一句。
+      if (state.learning && answer) {
+        answer.content = normalizeLearning(answer.content)
+        const before = state.learning
+        const after = advanceLearning(before, { type: 'assistant', messageId: answer.id, content: answer.content, sources: answer.sources.map(item => ({ page: item.page, line: item.line, rect: item.rect, text: String(item.text || '') })) })
+        next = followUp(before, after, answer.content) || ''
+        state.learning = next ? repaired(after) : settled(after)
+        rememberPassed(descriptor, state)
+      }
+      if ((summary?.options.multi || summary?.options.complete) && answer && summaryContinues(answer.content) && (summary.rounds || 0) < MAX_SUMMARY_ROUNDS) { summary.rounds = (summary.rounds || 0) + 1; next = '继续' }
+      else if (!next) { noticeFinished(state, descriptor.title); scheduleMemory(state) }
     }
   } catch (error: any) {
     if (answer) { answer.failed = true; answer.stopped = signal.aborted }
@@ -634,8 +736,8 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
     if (answer) {
       answer.finishedAt = Date.now(); answer.activity = ''; state.updatedAt = answer.finishedAt
       // 上下文到量了：后台压缩，不挡下一问。
-      if (!state.summary && fullness(state.messages) >= 1) void compressConversation(descriptor, state.id, '', false)
-      if (answer.usage) recordUsage({ kind: state.sideOf ? 'side' : 'chat', provider: snapshot.provider, model: snapshot.model || '', ms: answer.finishedAt - (answer.startedAt || answer.finishedAt), estimated: answer.usage.estimated, input: answer.usage.input || 0, output: answer.usage.output || 0, reasoning: answer.usage.reasoning || 0 })
+      if (!state.summary && fullness(state.messages, limitFor(contextWindow(snapshot.provider, snapshot.model || ''))) >= 1) void compressConversation(descriptor, state.id, '', false)
+      if (answer.usage) recordUsage({ kind: state.sideOf ? 'side' : state.learning ? 'learn' : 'chat', provider: snapshot.provider, model: snapshot.model || '', ms: answer.finishedAt - (answer.startedAt || answer.finishedAt), estimated: answer.usage.estimated, input: answer.usage.input || 0, output: answer.usage.output || 0, reasoning: answer.usage.reasoning || 0 })
     }
     documentSession?.close()
     try { await resource?.close() } catch {}
@@ -643,7 +745,7 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
     if (state.request === request) state.request = null
     schedulePersist(descriptor.id)
   }
-  if (again && !state.request && entry.list.includes(state)) void sendChat(descriptor, source, onSettings, undefined, '继续', { conversationId: state.id, includeSelection: false, auto: true })
+  if (next && !state.request && entry.list.includes(state)) void sendChat(descriptor, source, onSettings, undefined, next, { conversationId: state.id, includeSelection: false, auto: true })
 }
 
 /**
