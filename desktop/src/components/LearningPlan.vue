@@ -74,6 +74,13 @@ function grab(event: PointerEvent) {
   const up = () => { handle.removeEventListener('pointermove', move); if (dragging.value) emit('resize', dragging.value); dragging.value = 0 }
   handle.addEventListener('pointermove', move); handle.addEventListener('pointerup', up, { once: true }); handle.addEventListener('pointercancel', up, { once: true })
 }
+// 键盘：左右方向键一次改 16px。
+function nudge(event: KeyboardEvent) {
+  const step = event.key === 'ArrowRight' ? 16 : event.key === 'ArrowLeft' ? -16 : 0
+  if (!step) return
+  event.preventDefault()
+  emit('resize', Math.min(420, Math.max(200, props.width + (props.side === 'left' ? step : -step))))
+}
 onBeforeUnmount(() => { menu.value = null })
 </script>
 
@@ -101,7 +108,7 @@ onBeforeUnmount(() => { menu.value = null })
       <form @submit.prevent="ask(wish)"><input v-model="wish" type="text" maxlength="300" placeholder="想怎么改大纲" aria-label="想怎么改大纲" :disabled="busy" /><button type="submit" class="outline-icon" aria-label="发给助手" :disabled="busy || !wish.trim()"><AppIcon name="send" :size="14" /></button></form>
       <button type="button" class="text-action outline-redo" :disabled="busy" @click="ask('重新设计整份大纲')"><AppIcon name="retry" :size="12" />重新设计</button>
     </footer>
-    <div class="outline-grip" role="separator" aria-orientation="vertical" aria-label="拖动调整大纲宽度" @pointerdown.prevent="grab" />
+    <div class="outline-grip" role="separator" tabindex="0" aria-orientation="vertical" aria-label="拖动调整大纲宽度" aria-valuemin="200" aria-valuemax="420" :aria-valuenow="dragging || width" @pointerdown.prevent="grab" @keydown="nudge" />
     <ContextMenu v-if="menu" :x="menu.x" :y="menu.y" :items="menuItems" @close="menu = null" />
   </aside>
 </template>
@@ -168,7 +175,9 @@ input{flex:1;min-width:0;height:30px;padding:0;border:0;background:none;box-shad
 input::placeholder{color:var(--muted)}
 .outline-redo{display:inline-flex;align-items:center;align-self:flex-start;gap:5px}
 .outline-grip{position:absolute;top:0;bottom:0;right:0;width:7px;cursor:col-resize;touch-action:none}
-.outline.right .outline-grip{right:auto;left:0}
+.outline-grip:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+/* 在助手栏里时这条边和助手栏自己的宽度抓手（.panel-resizer，左右各伸 10px、叠在上面）重合：往里让开它，叠在它上面一层，两条都抓得到。 */
+.outline.right .outline-grip{right:auto;left:10px;z-index:8;width:9px}
 /* 大纲在改（读者在调，或助手在重写）：边上一圈流光。不认 @property 的内核里这个变量没有初值、只能跳变：给个 0deg 兜底，流光停住不转，而不是一闪一灭。 */
 @property --outline-spin{syntax:'<angle>';inherits:false;initial-value:0deg}
 .outline.glow::after{content:'';position:absolute;inset:0;z-index:4;padding:1.5px;border-radius:inherit;background:conic-gradient(from var(--outline-spin,0deg),transparent 0 55%,color-mix(in srgb,var(--accent) 45%,transparent) 72%,var(--accent) 86%,transparent 100%);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#000 0 0) content-box exclude,linear-gradient(#000 0 0);pointer-events:none;animation:outline-spin 2.6s linear infinite}

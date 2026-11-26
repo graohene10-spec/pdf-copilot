@@ -67,9 +67,10 @@ function addEdge(edges: [string, string][], edge: [string, string]): boolean {
   return true
 }
 
-function readPlan(raw: unknown): Plan {
+// 存盘的大纲读者可能删到只剩一两个节点：读盘时只要求至少一个，助手写的仍要 3 到 15 个。
+function readPlan(raw: unknown, fewest = 3): Plan {
   const data = record(raw)
-  check(Array.isArray(data.nodes) && data.nodes.length >= 3 && data.nodes.length <= 15, '路线图需要 3 到 15 个节点')
+  check(Array.isArray(data.nodes) && data.nodes.length >= fewest && data.nodes.length <= 15, '路线图需要 3 到 15 个节点')
   const ids = new Set<string>()
   const nodes = Array.from(data.nodes, item => {
     const { id: given, title, page } = record(item)
@@ -202,6 +203,27 @@ export function withoutAnswers(content: string): string {
   return output + content.slice(last)
 }
 
+/** 给读者看的纯文字（复制、搜索片段、预览）：题目换成题干和选项，路线图、摸底结论、节点结论和没写完的块都去掉，不带答案和 JSON。 */
+export function readableLearning(content: string): string {
+  if (!/learn-/i.test(content)) return content
+  let output = '', last = 0
+  for (const { block, start, from, to, closed } of learningBlocks(content)) {
+    output += content.slice(last, start)
+    if (!closed) { last = content.length; break }
+    // 收尾那一行（```）一起去掉。
+    const end = content.slice(to).match(/^[^\r\n]*(?:\r\n|\n|\r)?/)![0].length
+    last = to + end
+    if (block !== 'learn-quiz') continue
+    try {
+      const { question, options } = record(JSON.parse(content.slice(from, to)))
+      if (!nonempty(question)) continue
+      const choices = Array.isArray(options) ? options.filter(nonempty).map(item => `- ${item.trim()}`) : []
+      output += [question.trim(), ...choices].join('\n') + '\n'
+    } catch { /* 坏块不给读者看 JSON */ }
+  }
+  return (output + content.slice(last)).replace(/\n{3,}/g, '\n\n').trim()
+}
+
 /** 选项的显示顺序：返回原始下标的排列。同一个 seed 永远同一个结果。 */
 export function shuffledOrder(seed: string, count: number): number[] {
   const order = Array.from({ length: count }, (_, i) => i)
@@ -304,12 +326,13 @@ export function advanceLearning(state: LearningState, event: LearningEvent): Lea
 
 /** 回答写完后，应用要不要替读者自动补发一句，请规划路线、修正坏块或两者一起。没有就返回 null。 */
 export function followUp(before: LearningState, after: LearningState, content: string): string | null {
+  // 连着补发两次还不行就停下，交给读者：不然模型一直不写路线图时，应用会一直替读者催下去。
+  if (before.repairs >= 2) return null
   const parsed = parseLearning(content, before.plan)
   const errors = parsed.errors.map(e => `第 ${e.index + 1} 个 ${e.block}（${e.message}）`)
   if (parsed.writing) errors.push('最后一个块没有写完')
   const planRequest = after.phase === 'plan' && !after.plan ? '请规划路线并用 learn-plan 块给出' : ''
   if (errors.length) {
-    if (before.repairs >= 2) return null
     const details = errors.join('、')
     return planRequest ? `请重写这些块：${details}，同时${planRequest}。` : `请只重写这些块：${details}。`
   }
@@ -398,7 +421,7 @@ export function readLearning(raw: unknown): LearningState | undefined {
     const state: LearningState = { options, phase: phase as LearningState['phase'], repairs: 0, progress: {} }
     const level = tryRead(() => readLevel(data.level))
     if (level) state.level = level
-    const plan = tryRead(() => readPlan(data.plan))
+    const plan = tryRead(() => readPlan(data.plan, 1))
     if (plan) {
       state.plan = plan
       const current = tryRead(() => data.current)

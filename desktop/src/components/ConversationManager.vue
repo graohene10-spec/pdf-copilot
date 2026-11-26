@@ -7,6 +7,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import AppIcon from './AppIcon.vue'
 import { useReorder } from '../ui/reorder'
 import { searchTalks } from '../ai/conversation-search'
+import { readableLearning } from '../ai/learning'
 import { hintLearned, offerSpaced } from '../ui/hints'
 import { library } from '../sdk'
 import { booksReady, conversationBooks, conversationBundle, conversations, deleteConversation, forgetBook, loadConversations, forkPoint, organizeBacklog, organizing, moveConversation, rememberBook, revealTarget, renameConversation, restoreConversations, setConversationMemory, type ChatState } from '../ai/workspace'
@@ -379,7 +380,7 @@ function startBand(event: PointerEvent) {
 // ---- 鼠标停在一段对话上：看它最后一轮问了什么、答了什么 ----
 const peek = ref<{ x: number; y: number; title: string; question: string; answer: string }>()
 let peekTimer: ReturnType<typeof setTimeout> | undefined
-const plain = (text: string, length: number) => { const flat = text.replace(/```[\s\S]*?```/g, ' [代码] ').replace(/!\[[^\]]*\]\([^)]*\)/g, ' [图] ').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/^\s{0,3}(#{1,6}|>|[-*+])\s+/gm, '').replace(/[*_`~]/g, '').replace(/\s+/g, ' ').trim(); return flat.length > length ? `${flat.slice(0, length)}…` : flat }
+const plain = (text: string, length: number) => { const flat = readableLearning(text).replace(/```[\s\S]*?```/g, ' [代码] ').replace(/!\[[^\]]*\]\([^)]*\)/g, ' [图] ').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/^\s{0,3}(#{1,6}|>|[-*+])\s+/gm, '').replace(/[*_`~]/g, '').replace(/\s+/g, ' ').trim(); return flat.length > length ? `${flat.slice(0, length)}…` : flat }
 function peekIn(talk: ChatState, event: PointerEvent) {
   clearTimeout(peekTimer)
   if (drag.value || band.value || menu.value || renaming.value || event.buttons) return

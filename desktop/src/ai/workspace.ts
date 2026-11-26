@@ -3,10 +3,10 @@ import { loadAiSettings, loadApiKey } from './settings.mjs'
 import { RequestScheduler } from './request-scheduler.mjs'
 import { library } from '../sdk'
 import { recordUsage } from './usage'
-import { compactLimit, limitFor, compactionPrompt, estimateTokens, fullness, handoff, liveTokens, splitForCompaction } from './compaction'
+import { limitFor, compactionPrompt, estimateTokens, fullness, handoff, liveTokens, splitForCompaction } from './compaction'
 export { estimateTokens }
 import { SUMMARY_READING, summaryDraft, summaryInstructions, summaryContinues, lastSummaryOptions, readSwitches, MAX_SUMMARY_ROUNDS, type SummaryState, type SummaryOptions } from './summary'
-import { advanceLearning, answerText, followUp, learningContext, mergeMap, readLearning, repaired, settled, withoutAnswers, type LearningOptions, type LearningState, type Quiz, type QuizAnswer } from './learning'
+import { advanceLearning, answerText, followUp, learningContext, mergeMap, readableLearning, readLearning, repaired, settled, withoutAnswers, type LearningOptions, type LearningState, type Quiz, type QuizAnswer } from './learning'
 import { learningInstructions, learningRequest } from './learning-prompts'
 import { normalizeLearning } from './learning-normalize'
 import { addToMap, forgetSession, noteSession } from './learning-map'
@@ -185,7 +185,8 @@ export function newConversation(documentId: string): ChatState {
   const entry = chats(documentId)
   flushMemory(documentId, entry.activeId)
   const empty = entry.list.find(item => !item.sideOf && !item.messages.length && !item.request)
-  if (empty) { entry.activeId = empty.id; empty.updatedAt = Date.now(); return empty }
+  // 拿来用的空对话要是停在学习的设定表上，改回普通对话。
+  if (empty) { if (empty.learning?.phase === 'setup') empty.learning = undefined; entry.activeId = empty.id; empty.updatedAt = Date.now(); return empty }
   const conversation = blank(documentId)
   entry.list.push(conversation); entry.activeId = conversation.id
   return conversation
@@ -196,6 +197,8 @@ export function newSummaryConversation(documentId: string): ChatState {
   flushMemory(documentId, entry.activeId)
   let conversation = entry.list.find(item => !item.sideOf && !item.messages.length && !item.request)
   if (!conversation) { conversation = blank(documentId); entry.list.push(conversation) }
+  // 停在学习设定表上的空对话拿来写总结：学习的设定要去掉，不然界面上仍是学习的那张表。
+  conversation.learning = undefined
   conversation.summary = { options: lastSummaryOptions(), started: false }
   conversation.memory = 'off'; conversation.updatedAt = Date.now()
   entry.activeId = conversation.id
@@ -250,7 +253,7 @@ export function conversationBundle(documentId: string, conversationId: string): 
 /** 撤销删除：把留底的对话放回这本书名下。 */
 export function restoreConversations(documentId: string, items: ChatState[]) {
   const entry = chats(documentId), known = new Set(entry.list.map(item => item.id))
-  for (const item of items) if (!known.has(item.id)) { item.documentId = documentId; item.request = null; entry.list.push(item) }
+  for (const item of items) if (!known.has(item.id)) { item.documentId = documentId; item.request = null; entry.list.push(item); noteLearning(item) }
   schedulePersist(documentId)
 }
 /** 现在就把一段对话整理进记忆（管理界面里「整理还没整理的对话」）。 */
@@ -271,6 +274,8 @@ export async function moveConversation(fromId: string, conversationId: string, t
   if (!from.list.some(item => item.id === from.activeId)) from.activeId = from.list.filter(item => !item.sideOf).sort((a, b) => b.updatedAt - a.updatedAt)[0]!.id
   for (const item of moved) { item.documentId = to.id; target.list.push(item) }
   rememberBook(to)
+  // 学习进度页记着它在哪本书：跟着搬，不然点进去打开的是原来那本书。
+  for (const item of moved) noteLearning(item, to.title)
   retagMemory(conversationId, { documentId: to.id, documentTitle: to.title })
   flushPersist(fromId); flushPersist(to.id)
   return true
@@ -307,7 +312,8 @@ export function forkPoint(branch: ChatState, source: ChatState | undefined): num
 const memoryTurns = (conversation: ChatState) => {
   // 分支里抄过来的那段已经在原对话里整理过，只看分出去以后的。
   const from = conversation.branchOf ? forkPoint(conversation, chats(conversation.documentId).list.find(item => item.id === conversation.branchOf!.conversationId)) : 0
-  return conversation.messages.slice(from).filter(message => !message.note && !message.summary && message.content && !(message.failed && message.role === 'assistant')).map(message => ({ role: message.role, content: message.content }))
+  // 应用替读者补发的（「继续」、学习对话里催模型重写块）不是读者说的话；题目只留题干和选项，不带答案和 JSON。
+  return conversation.messages.slice(from).filter(message => !message.note && !message.summary && !message.auto && message.content && !(message.failed && message.role === 'assistant')).map(message => ({ role: message.role, content: conversation.learning ? readableLearning(message.content) : message.content }))
 }
 /** 正在后台整理第几段 / 共几段；空着就是没在整理。 */
 export const organizing = ref('')
@@ -501,7 +507,7 @@ export function contextWindow(provider: string, model: string): number {
   return 200_000
 }
 /** Tokens the next request carries from this conversation. */
-export const conversationTokens = (state: ChatState): number => Math.min(liveTokens(state.messages), compactLimit()) + estimateTokens(state.draft)
+export const conversationTokens = (state: ChatState, window: number): number => Math.min(liveTokens(state.messages), limitFor(window)) + estimateTokens(state.draft)
 function titleFrom(question: string) {
   const line = question.replace(/\s+/g, ' ').trim()
   return line.length > 28 ? line.slice(0, 27) + '…' : line
@@ -515,6 +521,8 @@ export function newLearningConversation(documentId: string): ChatState {
   flushMemory(documentId, entry.activeId)
   let conversation = entry.list.find(item => !item.sideOf && !item.messages.length && !item.request)
   if (!conversation) { conversation = blank(documentId); entry.list.push(conversation) }
+  // 停在总结设置表上的空对话拿来学习：总结关掉的记忆要恢复成默认。
+  if (conversation.summary) { const mode = defaultMemoryMode(); conversation.memory = mode === 'all' ? undefined : mode }
   conversation.summary = undefined
   conversation.learning = { options: { scope: '', goal: '', quiz: 'choice' }, phase: 'setup', progress: {}, repairs: 0 }
   conversation.updatedAt = Date.now(); entry.activeId = conversation.id
@@ -552,6 +560,8 @@ export function editPlan(documentId: string, conversationId: string, edit: PlanE
     // 顺序由读者定了：和新顺序相反的依赖不再算数。
     const at = new Map(nodes.map((node, index) => [node.id, index])); edges = edges.filter(edge => at.get(edge[0])! < at.get(edge[1])!)
   }
+  // 删掉的正好是最后一个没过的节点：这时就算学完了，不必等下一条回答。
+  if (next.phase === 'teach' || next.phase === 'done') next.phase = nodes.every(node => next.progress[node.id]?.passed) ? 'done' : 'teach'
   state.learning = { ...next, plan: { nodes, edges } }
   state.updatedAt = Date.now(); noteLearning(state); schedulePersist(documentId)
 }
@@ -628,8 +638,10 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
     // 以前留下的长对话：发问时就已经到量，这一问照常发，同时在后台压缩。
     if (!state.summary && !sendOptions.replace && fullness(state.messages, cap) >= 1) void compressConversation(descriptor, state.id, '', false)
     // 重新回答时，原来那一问上的作答记录跟过来。
-    const answered = sendOptions.learn ?? state.messages.find(message => message.id === sendOptions.replace)?.learn
-    const user: Message = { id: crypto.randomUUID(), role: 'user', content: question, sources: [], images, ...(sendOptions.auto ? { auto: true } : {}), ...(excerpts.length ? { excerpts } : {}), ...(answered ? { learn: answered } : {}), ask: { includeDocument, selectionOnly: sendOptions.selectionOnly, page: context.page, text: selection.text ? String(selection.text).slice(0, 20000) : undefined } }
+    const replaced = sendOptions.replace ? state.messages.find(message => message.id === sendOptions.replace) : undefined
+    const answered = sendOptions.learn ?? replaced?.learn
+    // 重新回答应用替读者补发的那一问（「继续」、催重写块）：新的这一问照样不在对话栏里显示。
+    const user: Message = { id: crypto.randomUUID(), role: 'user', content: question, sources: [], images, ...(sendOptions.auto || replaced?.auto ? { auto: true } : {}), ...(excerpts.length ? { excerpts } : {}), ...(answered ? { learn: answered } : {}), ask: { includeDocument, selectionOnly: sendOptions.selectionOnly, page: context.page, text: selection.text ? String(selection.text).slice(0, 20000) : undefined } }
     const wireContent = sendOptions.selectionOnly
       ? `${question}${excerptText(excerpts)}${selection.text ? '\n\n[用户选中的内容]\n' + selection.text : ''}${selection.image ? '\n\n[附图是用户在文档里框选的区域，问题针对它]' : ''}${attached.length ? `\n\n[用户附上了 ${attached.length} 张图片]` : ''}`
       : `${question}${excerptText(excerpts)}\n\n[用户当前阅读的文档]\n${descriptor.title}${descriptor.kind === 'pdf' ? ` · 物理 PDF 第 ${context.page} 页` : ' · Markdown 文档'}${selection.text ? '\n\n[用户选中的内容]\n' + selection.text : ''}${attached.length ? `\n\n[用户附上了 ${attached.length} 张图片]` : ''}${state.sideOf ? '\n\n[这是挂在主对话旁边的附属对话（侧边对话）]' : ''}`
@@ -745,7 +757,8 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
     if (state.request === request) state.request = null
     schedulePersist(descriptor.id)
   }
-  if (next && !state.request && entry.list.includes(state)) void sendChat(descriptor, source, onSettings, undefined, next, { conversationId: state.id, includeSelection: false, auto: true })
+  // 收尾途中读者按了停止：不再替他补发。
+  if (next && !signal.aborted && !state.request && entry.list.includes(state)) void sendChat(descriptor, source, onSettings, undefined, next, { conversationId: state.id, includeSelection: false, auto: true })
 }
 
 /**

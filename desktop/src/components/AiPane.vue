@@ -12,7 +12,7 @@ import SummarySetup from './SummarySetup.vue'
 import LearningSetup from './LearningSetup.vue'
 import LearningPlan from './LearningPlan.vue'
 import QuizCard from './QuizCard.vue'
-import { parseLearning, type PlanNode, type Quiz, type QuizAnswer } from '../ai/learning'
+import { parseLearning, readableLearning, type PlanNode, type Quiz, type QuizAnswer } from '../ai/learning'
 import { normalizeLearning } from '../ai/learning-normalize'
 import { radioKeys } from '../ui/radio-keys'
 import { hintLearned, offerSpaced } from '../ui/hints'
@@ -225,7 +225,32 @@ function resizeOutline(width: number) { outlineWidth.value = width; localStorage
 const outlineMoving = new Set<Element>()
 const outlineMotion = (element: Element, entering: boolean) => { if (!element.classList.contains('left')) return; outlineMoving.add(element); emit('motionStart', element, entering) }
 const outlineSettled = (element: Element, cancelled = false) => { if (outlineMoving.delete(element)) emit('motionEnd', element, cancelled) }
-onBeforeUnmount(() => { for (const element of outlineMoving) emit('motionEnd', element, false); outlineMoving.clear() })
+// 大纲在屏幕左边时整个助手栏被关掉：大纲跟着卸载，Transition 来不及播退场，一帧里就没了，阅读区一下子跳过去。
+// 卸载前在原处留一份不能操作的替身，照退场的样子滑出去，滑完自己拿掉；外面照常停住 PDF、定住正文，直到它停下。
+let leftOutline: HTMLElement | null = null
+const bindLeftOutline = (value: any) => { leftOutline = value?.$el instanceof HTMLElement ? value.$el : null }
+function outlineGhost() {
+  const element = leftOutline
+  if (!element?.isConnected || !element.classList.contains('left') || !element.parentElement || !outlineAnimated()) return
+  const from = getComputedStyle(element).marginLeft
+  const ghost = element.cloneNode(true) as HTMLElement
+  ghost.inert = true; ghost.setAttribute('aria-hidden', 'true'); ghost.style.pointerEvents = 'none'
+  ghost.classList.remove(...[...ghost.classList].filter(name => name.startsWith('outline-col-')))
+  // 从它此刻的位置起步（打开的动画还没播完时也接得上），再交给退场的那条过渡。
+  ghost.style.marginLeft = from
+  element.before(ghost)
+  ghost.classList.add('outline-col-leave-active')
+  void ghost.offsetWidth
+  ghost.style.removeProperty('margin-left'); ghost.classList.add('outline-col-leave-to')
+  emit('motionStart', ghost, false)
+  let gone = false
+  const remove = () => { if (gone) return; gone = true; ghost.remove() }
+  ghost.addEventListener('transitionend', event => { if (event.target === ghost && event.propertyName === 'margin-left') remove() })
+  setTimeout(remove, 900)
+  // 过渡已经在跑：外面等它播完再放开（见 App 的 paneResizeEnd）。组件卸载以后发不出事件，所以现在就交代。
+  emit('motionEnd', ghost, false)
+}
+onBeforeUnmount(() => { outlineGhost(); for (const element of outlineMoving) emit('motionEnd', element, false); outlineMoving.clear() })
 // 减少动态时不走过渡：零时长的过渡也要隔两帧才移走旧的那栏，主栏一帧后就放开，会被它挤窄闪一下。
 const outlineAnimated = () => !window.matchMedia('(prefers-reduced-motion: reduce)').matches
 const outlineOn = computed(() => !props.side && !outlineHidden.value && Boolean(state.value.learning) && state.value.learning!.phase !== 'setup')
@@ -444,7 +469,7 @@ const MEMORY_MODES: { id: MemoryMode; label: string; note: string }[] = [
 const memoryNow = computed(() => memoryMode(state.value))
 const expanded = ref(new Set<string>())
 function toggleReasoning(id: string) { const next = new Set(expanded.value); if (next.has(id)) next.delete(id); else next.add(id); expanded.value = next }
-const contextUsed = computed(() => conversationTokens(state.value))
+const contextUsed = computed(() => conversationTokens(state.value, contextLimit.value))
 const contextLimit = computed(() => contextWindow(settings.value.provider, settings.value.model || ''))
 const compactAt = computed(() => Math.min(preferences.value.assistant.compactK * 1000, limitFor(contextLimit.value)))
 const contextRatio = computed(() => fullness(state.value.messages, compactAt.value))
@@ -464,7 +489,8 @@ function renderAnswer(element: HTMLElement, message: Message) {
   // 读者点开的折叠段落：回答重画（还在写、换主题）后保持原样。
   const unfolded = [...element.querySelectorAll('details')].map(item => item.open)
   // 总结对话：文档正文在草稿面板里，这里只留一枚小牌子。
-  element.innerHTML = renderMarkdown(state.value.summary ? summaryChat(message.content) : state.value.learning ? normalizeLearning(message.content) : message.content)
+  // 学习对话还在写时，最后一行若是刚起头的围栏（``` 或 ```learn-q），先不画：不然会闪出一个空代码框。
+  element.innerHTML = renderMarkdown(state.value.summary ? summaryChat(message.content) : state.value.learning ? normalizeLearning(message.finishedAt ? message.content : message.content.replace(/(^|\n) {0,3}`{1,3}[\w-]*$/, '$1')) : message.content)
   if (unfolded.includes(true)) element.querySelectorAll('details').forEach((item, index) => { if (unfolded[index]) item.open = true })
   // 模型有时引用前几轮回答里的来源，甚至写出不存在的编号：先在整场对话的来源里找，找不到就把编号去掉，绝不把 [S…] 原样留在正文里。
   const sourceMap = new Map([...messages.value.flatMap(item => item.sources || []), ...message.sources].map(source => [source.sourceId, source]))
@@ -525,7 +551,8 @@ function answerClick(event: MouseEvent) {
 const copiedId = ref('')
 let copiedTimer = 0
 function copyMessage(message: Message) {
-  void copy(message.content).then(ok => {
+  // 学习对话里给应用看的块（题目的 JSON 连同答案、路线图、结论）不复制出去，题目只留题干和选项。
+  void copy(message.role === 'assistant' ? readableLearning(normalizeLearning(message.content)) : message.content).then(ok => {
     if (!ok) return
     copiedId.value = message.id; clearTimeout(copiedTimer)
     copiedTimer = window.setTimeout(() => { copiedId.value = '' }, 1400)
@@ -645,7 +672,7 @@ function updateRail() {
   marks.value = users.map((element, position) => {
     const at = index.get(element.dataset.id || '') ?? -1, message = messages.value[at], answer = messages.value[at + 1]
     // 预览只要开头一百多字：先截一段再去掉 Markdown，长回答不必整篇过正则。
-    return { id: element.dataset.id || '', top: markOffsets[position]! / height, text: message?.content || '', answer: plainText((answer?.content || '').slice(0, 800)).slice(0, 140), current: false, pinned: Boolean(message?.pinned) }
+    return { id: element.dataset.id || '', top: markOffsets[position]! / height, text: message?.content || '', answer: plainText(readableLearning(answer?.content || '').slice(0, 800)).slice(0, 140), current: false, pinned: Boolean(message?.pinned) }
   })
   updateThumb()
 }
@@ -1168,7 +1195,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
     <!-- 两边各一个固定的位置：换边时旧的在原处退场、新的在另一边进场。只用一个 Teleport 切 disabled 的话，它会先把整块（连同要退场的）瞬间搬过去。 -->
     <Teleport v-for="place in ['left', 'right']" :key="place" to="#learn-outline-slot" :disabled="place !== 'left'">
       <Transition name="outline-col" appear :css="outlineAnimated()" @before-enter="outlineMotion($event, true)" @before-leave="outlineMotion($event, false)" @after-enter="outlineSettled($event)" @after-leave="outlineSettled($event)" @enter-cancelled="outlineSettled($event, true)" @leave-cancelled="outlineSettled($event, true)">
-        <LearningPlan v-if="outlineOn && outlineSide === place" v-model:adjusting="adjusting" :style="{ '--outline-width': `${outlineWidth}px` }" :learning="state.learning!" :busy="busy" :pdf="document.kind === 'pdf'" :side="outlineSide" :width="outlineWidth" @node="planNode" @accept="startPlan" :revising="revising" @move="moveOutline" @resize="resizeOutline" @edit="edit => editPlan(document.id, state.id, edit)" @ask="adjustOutline" />
+        <LearningPlan v-if="outlineOn && outlineSide === place" :ref="place === 'left' ? bindLeftOutline : undefined" v-model:adjusting="adjusting" :style="{ '--outline-width': `${outlineWidth}px` }" :learning="state.learning!" :busy="busy" :pdf="document.kind === 'pdf'" :side="outlineSide" :width="outlineWidth" @node="planNode" @accept="startPlan" :revising="revising" @move="moveOutline" @resize="resizeOutline" @edit="edit => editPlan(document.id, state.id, edit)" @ask="adjustOutline" />
       </Transition>
     </Teleport>
     <div class="ai-main">

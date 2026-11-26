@@ -3,8 +3,8 @@
 // 点卡片接着学；右键或卡片角上的按钮改名、删除。
 import { computed, nextTick, ref } from 'vue'
 import type { Doc } from '../sdk'
-import { sessions, type LearnSession } from '../ai/learning-map'
-import { deleteConversation, loadConversations, renameConversation } from '../ai/workspace'
+import { forgetSession, sessions, type LearnSession } from '../ai/learning-map'
+import { conversations, deleteConversation, loadConversations, renameConversation } from '../ai/workspace'
 import AppIcon from './AppIcon.vue'
 import ContextMenu from './ContextMenu.vue'
 
@@ -38,7 +38,12 @@ const menuItems = computed(() => {
     { label: '删除', icon: 'trash', danger: true, action: () => { confirming.value = now.row.id } },
   ]
 })
-function open(row: Row) { emit('open', { documentId: row.documentId, conversationId: row.id }) }
+// 先把那本书的对话读进来：没读过的书里选不中这段对话，打开的会是别的。读进来还找不到（存盘时被挤掉了，或在别处删了），就从名册里拿掉。
+async function open(row: Row) {
+  await loadConversations(row.documentId)
+  if (!conversations(row.documentId).some(item => item.id === row.id)) { forgetSession(row.id); return }
+  emit('open', { documentId: row.documentId, conversationId: row.id })
+}
 
 const renaming = ref(''), name = ref(''), field = ref<HTMLInputElement[]>([])
 function startRename(row: Row) { renaming.value = row.id; name.value = row.title; void nextTick(() => { field.value[0]?.focus(); field.value[0]?.select() }) }

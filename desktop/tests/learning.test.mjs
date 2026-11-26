@@ -419,9 +419,22 @@ test('摸底结论和坏块同时出现时，一句补发同时要求修正和�
 })
 
 test('修好坏块后仍缺图时，即使本条回答没有 level 也请求规划', () => {
-  const before = { ...initial(), phase: 'plan', level, repairs: 2 }
+  const before = { ...initial(), phase: 'plan', level, repairs: 1 }
   const content = block('quiz', choice)
   assert.match(followUp(before, assistant(before, content), content), /规划.*learn-plan/)
+})
+
+test('连着补发两次仍不写路线图就停下，不会一直替读者催', () => {
+  let state = { ...initial(), phase: 'plan', level, repairs: 0 }
+  const content = '你想先学哪一部分？'
+  let sent = 0
+  for (let round = 0; round < 10; round++) {
+    const after = assistant(state, content, 'm' + round)
+    const next = followUp(state, after, content)
+    if (!next) break
+    sent++; state = repaired(after)
+  }
+  assert.equal(sent, 2)
 })
 
 test('同条回答已经给出合法路线时无需再请求规划', () => {

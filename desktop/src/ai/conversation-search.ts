@@ -1,5 +1,6 @@
 // 搜对话：标题和消息内容一起搜。先找一字不差的；找不到再放宽——
 // 字按顺序出现、中间隔几个字也算（打「特征向」能找到「特征值与特征向量」），或者打错、多打了一个字也算。
+import { readableLearning } from './learning.ts'
 export type Snippet = { before: string; hit: string; after: string }
 export type Found<T> = { item: T; score: number; title: Snippet | null; snippet: Snippet | null; messageId?: string }
 type Talk = { title?: string; updatedAt?: number; messages: { id: string; content: string; auto?: boolean; summary?: boolean }[] }
@@ -44,7 +45,8 @@ export function searchTalks<T extends Talk>(list: T[], query: string, limit = 80
   const found: Found<T>[] = []
   for (const item of list) {
     const title = item.title || '', low = title.toLowerCase()
-    const texts = item.messages.filter(message => !message.auto && !message.summary && message.content)
+    // 学习对话里的题目只按题干和选项搜，片段里不露出答案和 JSON。
+    const texts = item.messages.filter(message => !message.auto && !message.summary && message.content).map(message => ({ id: message.id, content: readableLearning(message.content) })).filter(message => message.content)
     let lows: string[] | undefined
     let score = 0, titleHit: Snippet | null = null, snippet: Snippet | null = null, messageId: string | undefined, missed = false
     for (const token of tokens) {

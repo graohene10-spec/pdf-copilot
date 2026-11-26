@@ -59,6 +59,7 @@ const html = (text: string) => renderMarkdown(text)
           <button v-for="(label, level) in SURE" :key="label" type="button" role="radio" :aria-checked="draft.sure === level" @click="draft.sure = draft.sure === level ? undefined : level as 0 | 1 | 2 | 3">{{ label }}</button>
         </div>
         <div class="quiz-foot">
+          <button v-if="!batch" type="button" class="quiz-plain" :disabled="disabled" @click="emit('answer', { skipped: true })">跳过</button>
           <button type="button" class="quiz-plain" :aria-pressed="batch ? draft.dontKnow : undefined" :disabled="disabled" @click="dontKnow">不知道</button>
           <button v-if="!batch" type="button" class="quiz-submit" :disabled="!ready || disabled" @click="submit">提交</button>
         </div>
@@ -89,8 +90,8 @@ const html = (text: string) => renderMarkdown(text)
 .quiz-option[role='checkbox'] i{border-radius:3px}
 .quiz-option[aria-checked='true']{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--surface,#fff))}
 .quiz-option[aria-checked='true'] i{border-color:var(--accent);background:var(--accent);box-shadow:inset 0 0 0 2.5px var(--surface,#fff)}
-.quiz-option.right{border-color:#2e9d5c;background:color-mix(in srgb,#2e9d5c 14%,var(--surface,#fff))}
-.quiz-option.wrong{border-color:#c9503c;background:color-mix(in srgb,#c9503c 13%,var(--surface,#fff))}
+.quiz-option.right{border-color:var(--success,#2e9d5c);background:color-mix(in srgb,var(--success,#2e9d5c) 14%,var(--surface,#fff))}
+.quiz-option.wrong{border-color:var(--danger,#c9503c);background:color-mix(in srgb,var(--danger,#c9503c) 13%,var(--surface,#fff))}
 .quiz-option:disabled{opacity:1;cursor:default}
 .quiz-text{width:100%;padding:8px 11px;border:1px solid color-mix(in srgb,var(--ink) 26%,transparent);border-radius:8px;background:var(--surface,#fff);box-shadow:none;color:var(--ink);font-size:14.5px;line-height:1.55;outline:0;resize:vertical}
 .quiz-text:focus{border-color:var(--accent)}
