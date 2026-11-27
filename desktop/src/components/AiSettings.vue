@@ -3,8 +3,8 @@
 import ModelCombo from './ModelCombo.vue'
 import { ref, reactive, computed, onBeforeUnmount } from 'vue'
 import { PROVIDERS, PROTOCOLS, getProvider } from '../ai/providers.mjs'
-import { nativeModelInventory, codexCheck, checkCodex } from '../ai/native-models'
-import { loadAiSettings, loadApiKey, saveAiSettings, saveCredential, supportsFast, TRANSLATION_DEFAULTS, EXPLAIN_DEFAULTS, VISUAL_DEFAULTS, ASK_DEFAULTS } from '../ai/settings.mjs'
+import { nativeModelInventory, codexCheck, checkCodex, antigravityInventory, antigravityCheck, checkAntigravity, isNative } from '../ai/native-models'
+import { loadAiSettings, loadApiKey, saveAiSettings, saveCredential, supportsFast, TRANSLATION_DEFAULTS, EXPLAIN_DEFAULTS, VISUAL_DEFAULTS, ASK_DEFAULTS, PREDICT_DEFAULTS } from '../ai/settings.mjs'
 import { concreteChoice } from '../ai/translate-model'
 import { codexTimings } from '../ai/native.mjs'
 import { DOCUMENT_LIMIT_FIELDS } from '../../../extension/common/document-limits.mjs'
@@ -23,10 +23,11 @@ if (ex0.share !== 'own') { const from = ex0.share === 'translation' ? tr0 : main
 main.translation = tr0; main.explain = ex0
 main.visual = { ...VISUAL_DEFAULTS, ...(main.visual || {}) }
 main.ask = { ...ASK_DEFAULTS, ...(main.ask || {}) }
+main.predict = { ...PREDICT_DEFAULTS, ...(main.predict || {}) }
 // 每家服务的地址和协议各记一份，功能只管选哪一家。
 const connections = reactive<Record<string, { baseUrl: string; protocol: string }>>({})
 for (const item of PROVIDERS as any[]) connections[item.id] = { baseUrl: main.connections?.[item.id]?.baseUrl || item.baseUrl || '', protocol: main.connections?.[item.id]?.protocol || item.protocol || 'chat' }
-for (const used of [main, tr0, ex0, ...(main.visual.share === 'own' ? [main.visual] : []), ...(main.ask.share === 'own' ? [main.ask] : [])]) if (used.provider && used.provider !== 'codex' && used.baseUrl && connections[used.provider]) Object.assign(connections[used.provider]!, { baseUrl: used.baseUrl, protocol: used.protocol || connections[used.provider]!.protocol })
+for (const used of [main, tr0, ex0, ...(main.visual.share === 'own' ? [main.visual] : []), ...(main.ask.share === 'own' ? [main.ask] : []), ...(main.predict.share === 'own' ? [main.predict] : [])]) if (used.provider && !isNative(used.provider) && used.baseUrl && connections[used.provider]) Object.assign(connections[used.provider]!, { baseUrl: used.baseUrl, protocol: used.protocol || connections[used.provider]!.protocol })
 const keys = reactive<Record<string, string>>({})
 const keyEdited = new Set<string>()
 const status = ref('')
@@ -54,13 +55,18 @@ async function copyTimings() {
 }
 const codexReady = computed(() => nativeModels.value.length > 0)
 let disposed = false
-void Promise.all((PROVIDERS as any[]).filter(item => item.id !== 'codex').map(async item => { try { const value = await loadApiKey(item.id); if (!keyEdited.has(item.id)) keys[item.id] = value || '' } catch { keys[item.id] ||= '' } })).finally(() => { keysLoading.value = false })
+void Promise.all((PROVIDERS as any[]).filter(item => !isNative(item.id)).map(async item => { try { const value = await loadApiKey(item.id); if (!keyEdited.has(item.id)) keys[item.id] = value || '' } catch { keys[item.id] ||= '' } })).finally(() => { keysLoading.value = false })
 const local = (id: string) => id === 'custom' && /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/i.test(connections[id]?.baseUrl || '')
-const connected = (id: string) => id === 'codex' ? codexReady.value : Boolean(keys[id]) || local(id)
+const antigravityReady = computed(() => antigravityInventory.value.length > 0)
+const connected = (id: string) => id === 'codex' ? codexReady.value : id === 'antigravity' ? antigravityReady.value : Boolean(keys[id]) || local(id)
 // 检查是全应用共用的一件事（启动时已经自动跑过一次）；这里只管查完后把用 Codex 的那几格落到实际的模型上。
 async function refreshNative() {
   if (disposed) return
   if (await checkCodex() && !disposed) for (const slot of slots) if (slot.target.provider === 'codex') settle(slot)
+}
+async function refreshAntigravity() {
+  if (disposed) return
+  if (await checkAntigravity() && !disposed) for (const slot of slots) if (slot.target.provider === 'antigravity') settle(slot)
 }
 onBeforeUnmount(() => { disposed = true })
 
@@ -72,9 +78,10 @@ const slots: Slot[] = [
   { id: 'explain', label: '快速解释', note: '中键解释、深入 / 简化 / 举例', target: main.explain },
   { id: 'visual', label: '可视化讲解', note: '快速解释里的 Intelligent UI', target: main.visual, follow: true },
   { id: 'ask', label: '自由提问', note: '双击解释卡片的标题提问', target: main.ask, follow: true },
+  { id: 'predict', label: '猜你想问', note: '输入框里的预判问题', target: main.predict, follow: true },
 ]
 const following = (slot: Slot) => Boolean(slot.follow) && slot.target.share === 'assistant'
-const modelsOf = (id: string): any[] => id === 'codex' ? nativeModels.value : (getProvider(id) as any)?.models || []
+const modelsOf = (id: string): any[] => id === 'codex' ? nativeModels.value : id === 'antigravity' ? antigravityInventory.value : (getProvider(id) as any)?.models || []
 const effortsOf = (slot: Slot): string[] => (modelsOf(slot.target.provider).find(item => item.id === slot.target.model)?.efforts || (slot.target.provider === 'kimi' || slot.target.provider === 'qwen' ? [] : ['none', 'low', 'medium', 'high'])).filter(Boolean)
 const EFFORT: Record<string, string> = { none: '不思考', low: '低', medium: '中', high: '高', xhigh: '很高', max: '最高', minimal: '极低', ultra: '极高' }
 /** 模型空着、或思考强度不是这个模型支持的：补成一个具体的选择。阅读助手取模型自己的默认强度，其余取最低档（要快）。 */
@@ -92,13 +99,14 @@ function settle(slot: Slot) {
     if (chosen && target.effort && !chosen.efforts.includes(target.effort)) target.effort = chosen.defaultEffort || ''
     return
   }
-  Object.assign(target, concreteChoice(list, target.model, target.effort, info?.defaultModel, target.provider !== 'codex'))
+  Object.assign(target, concreteChoice(list, target.model, target.effort, info?.defaultModel, !isNative(target.provider)))
 }
 function chooseProvider(slot: Slot, value: string) {
   if (slot.follow) slot.target.share = value === '' ? 'assistant' : 'own'
   if (!value) return
   Object.assign(slot.target, { provider: value, model: '', effort: '' })
   if (value === 'codex' && !nativeModels.value.length && (globalThis as any).__TAURI_INTERNALS__) void refreshNative()
+  if (value === 'antigravity' && !antigravityReady.value && (globalThis as any).__TAURI_INTERNALS__) void refreshAntigravity()
   settle(slot)
 }
 for (const slot of slots) if (!following(slot)) settle(slot)
@@ -117,7 +125,7 @@ async function save() {
     for (const slot of slots) {
       if (following(slot)) continue
       const target = slot.target
-      if (target.provider !== 'codex') {
+      if (!isNative(target.provider)) {
         Object.assign(target, { baseUrl: connections[target.provider]?.baseUrl || '', protocol: connections[target.provider]?.protocol || 'chat' })
         try { apiOrigin(target.baseUrl) } catch (cause: any) { throw new Error(`${(getProvider(target.provider) as any)?.name || target.provider} 的 API 地址不对：${cause?.message || cause}`) }
         if (!String(target.model || '').trim()) throw new Error(`请给「${slot.label}」填一个模型。`)
@@ -130,7 +138,7 @@ async function save() {
     settings.value.requestLimits = normalizeRequestLimits(settings.value.requestLimits)
     settings.value.connections = JSON.parse(JSON.stringify(connections))
     for (const id of keyEdited) if (id !== main.provider) await saveCredential(id, keys[id] || '')
-    await saveAiSettings(settings.value, main.provider === 'codex' ? '' : keys[main.provider] || '')
+    await saveAiSettings(settings.value, isNative(main.provider) ? '' : keys[main.provider] || '')
     keyEdited.clear(); edited.value = false
     const saved = { ...settings.value }
     emit('saved', saved)
@@ -147,11 +155,15 @@ defineExpose({ save, hasChanges: () => edited.value })
     <h4 class="step"><i>1</i>连接服务</h4>
     <div class="links">
       <details v-for="item in (PROVIDERS as any[])" :key="item.id" class="link" :class="{ on: connected(item.id) }">
-        <summary><i class="link-dot" aria-hidden="true"></i><b>{{ item.name }}</b><small>{{ item.id === 'codex' ? (codexReady ? '已登录' : refreshing ? '检查中…' : codexCheck.state === 'failed' ? '连接失败' : '未检查') : keys[item.id] ? '已填 API Key' : local(item.id) ? '本机服务' : '未连接' }}</small></summary>
+        <summary><i class="link-dot" aria-hidden="true"></i><b>{{ item.name }}</b><small>{{ item.id === 'codex' ? (codexReady ? '已登录' : refreshing ? '检查中…' : codexCheck.state === 'failed' ? '连接失败' : '未检查') : item.id === 'antigravity' ? (antigravityReady ? '已登录' : antigravityCheck.state === 'checking' ? '检查中…' : antigravityCheck.state === 'failed' ? '连接失败' : '未检查') : keys[item.id] ? '已填 API Key' : local(item.id) ? '本机服务' : '未连接' }}</small></summary>
         <template v-if="item.id === 'codex'">
           <button class="secondary-button" :disabled="refreshing" data-tip="使用本机已登录的 Codex 桌面版或 CLI，无需 API Key" @click="refreshNative">{{ refreshing ? '检查中…' : '检查登录并读取模型' }}</button>
           <p v-if="codexStatus" class="settings-note">{{ codexStatus }}</p>
           <p v-if="timingLine" class="settings-note">{{ timingLine }} <button type="button" class="text-button" @click="copyTimings">{{ timingCopied ? '已复制' : '复制最近 12 次' }}</button></p>
+        </template>
+        <template v-else-if="item.id === 'antigravity'">
+          <button class="secondary-button" :disabled="antigravityCheck.state === 'checking'" data-tip="使用本机已登录的 Antigravity CLI，无需 API Key" @click="refreshAntigravity">{{ antigravityCheck.state === 'checking' ? '检查中…' : '检查登录并读取模型' }}</button>
+          <p v-if="antigravityCheck.text" class="settings-note">{{ antigravityCheck.text }}</p>
         </template>
         <template v-else>
           <label>API Key<input v-model="keys[item.id]" :aria-label="`${item.name} API Key`" type="password" autocomplete="off" :placeholder="item.custom ? '加密保存在本机；本机服务可留空' : '加密保存在本机'" @input="keyEdited.add(item.id)" /></label>
@@ -164,13 +176,13 @@ defineExpose({ save, hasChanges: () => edited.value })
     <h4 class="step"><i>2</i>每个功能用哪个模型</h4>
     <div class="slots">
       <div v-for="slot in slots" :key="slot.id" class="slot">
-        <p class="slot-name"><b>{{ slot.label }}</b><small>{{ slot.note }}</small></p>
+        <p class="slot-name"><b>{{ slot.label }}</b><small>{{ slot.id === 'predict' && following(slot) && main.provider === 'antigravity' ? 'Antigravity 不预判，可另选一家' : slot.note }}</small></p>
         <label>服务<select :value="following(slot) ? '' : slot.target.provider" :aria-label="`${slot.label}用的服务`" @change="chooseProvider(slot, ($event.target as HTMLSelectElement).value)">
           <option v-if="slot.follow" value="">跟阅读助手一样</option>
           <option v-for="item in (PROVIDERS as any[])" :key="item.id" :value="item.id">{{ item.name }}{{ connected(item.id) ? '' : '（未连接）' }}</option>
         </select></label>
         <template v-if="!following(slot)">
-          <label>模型<select v-if="slot.target.provider === 'codex'" v-model="slot.target.model" :aria-label="`${slot.label}模型`" :disabled="refreshing" @change="settle(slot)"><option v-if="slot.target.model && !modelsOf('codex').some(item => item.id === slot.target.model)" :value="slot.target.model">{{ slot.target.model }}</option><option v-for="item in modelsOf('codex').filter(item => item.id)" :key="item.id" :value="item.id">{{ item.name || item.id }}</option></select><ModelCombo v-else v-model="slot.target.model" :models="modelsOf(slot.target.provider)" :label="`${slot.label}模型`" @change="settle(slot)" /></label>
+          <label>模型<select v-if="isNative(slot.target.provider)" v-model="slot.target.model" :aria-label="`${slot.label}模型`" :disabled="refreshing" @change="settle(slot)"><option v-if="slot.target.model && !modelsOf(slot.target.provider).some(item => item.id === slot.target.model)" :value="slot.target.model">{{ slot.target.model }}</option><option v-for="item in modelsOf(slot.target.provider).filter(item => item.id)" :key="item.id" :value="item.id">{{ item.name || item.id }}</option></select><ModelCombo v-else v-model="slot.target.model" :models="modelsOf(slot.target.provider)" :label="`${slot.label}模型`" @change="settle(slot)" /></label>
           <label v-if="effortsOf(slot).length">思考强度<select v-model="slot.target.effort" :aria-label="`${slot.label}思考强度`"><option v-if="slot.id === 'assistant'" value="">模型默认</option><option v-for="item in effortsOf(slot)" :key="item" :value="item">{{ EFFORT[item] || item }}</option></select></label>
           <label v-if="tiersOf(slot).length">速度<select :value="tierOf(slot)" :aria-label="`${slot.label}响应速度`" @change="setTier(slot, ($event.target as HTMLSelectElement).value)"><option value="">标准</option><option v-for="item in tiersOf(slot)" :key="item.id" :value="item.id">{{ TIER[item.id] || item.name || item.id }}</option></select></label>
           <label v-else-if="supportsFast(slot.target.provider)" class="check"><input v-model="slot.target.fast" type="checkbox" /> Fast：更快出字，额度消耗更多</label>

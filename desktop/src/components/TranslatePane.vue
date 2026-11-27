@@ -6,8 +6,8 @@ import AppIcon from './AppIcon.vue'
 import { offerSpaced } from '../ui/hints'
 import { renderMarkdown } from '../ai/render'
 import ModelPicker from './ModelPicker.vue'
-import { getProvider, getNativeModels } from '../ai/providers.mjs'
-import { nativeModelInventory, registerNativeModelInventory } from '../ai/native-models'
+import { getProvider } from '../ai/providers.mjs'
+import { inventoryOf, isNative, loadInventory } from '../ai/native-models'
 import { concreteChoice, lowestEffort } from '../ai/translate-model'
 import { loadAiSettings, translationSettings, saveTranslationChoice, supportsFast } from '../ai/settings.mjs'
 import { warmNative } from '../ai/native.mjs'
@@ -44,24 +44,24 @@ const aiPicker = ref(false)
 const EFFORT_NAME: Record<string, string> = { none: '不思考', minimal: '极低', low: '低', medium: '中', high: '高', xhigh: '超高', max: '最高', ultra: '极致' }
 // 模型只列具体的模型，没有「自动」：用哪个、什么强度都写在标签上。
 const aiModels = computed<any[]>(() => {
-  const list: any[] = (aiSettings.value.provider === 'codex' ? nativeModelInventory.value : getProvider(aiSettings.value.provider)?.models || []).filter((item: any) => item.id)
+  const list: any[] = (isNative(aiSettings.value.provider) ? inventoryOf(aiSettings.value.provider) : getProvider(aiSettings.value.provider)?.models || []).filter((item: any) => item.id)
   const current = aiSettings.value.model || ''
   return [...(current && !list.some(item => item.id === current) ? [{ id: current, name: current }] : []), ...list]
 })
-const listed = (id: string) => (aiSettings.value.provider === 'codex' ? nativeModelInventory.value : getProvider(aiSettings.value.provider)?.models || []).some((item: any) => item.id === id)
+const listed = (id: string) => (isNative(aiSettings.value.provider) ? inventoryOf(aiSettings.value.provider) : getProvider(aiSettings.value.provider)?.models || []).some((item: any) => item.id === id)
 // 没选过（或 Codex 的模型已不在本机列表里）：换成具体的默认模型与最低强度，并记下来。
 function settleChoice() {
-  const choice = concreteChoice(aiModels.value.filter(item => item.id !== aiSettings.value.model || listed(item.id)), aiSettings.value.model || '', aiSettings.value.effort || '', getProvider(aiSettings.value.provider)?.defaultModel, aiSettings.value.provider !== 'codex')
+  const choice = concreteChoice(aiModels.value.filter(item => item.id !== aiSettings.value.model || listed(item.id)), aiSettings.value.model || '', aiSettings.value.effort || '', getProvider(aiSettings.value.provider)?.defaultModel, !isNative(aiSettings.value.provider))
   if (choice.model && (choice.model !== aiSettings.value.model || choice.effort !== aiSettings.value.effort)) { saveTranslationChoice(choice); aiSettings.value = translationSettings(loadAiSettings()) }
 }
 async function loadCodexModels() {
-  if (aiSettings.value.provider !== 'codex' || nativeModelInventory.value.some((item: any) => item.id)) return
-  try { registerNativeModelInventory(await getNativeModels()) } catch { /* 读不到就等用户在设置里检查登录 */ }
+  if (!isNative(aiSettings.value.provider) || inventoryOf(aiSettings.value.provider).some((item: any) => item.id)) return
+  try { await loadInventory(aiSettings.value.provider) } catch { /* 读不到就等用户在设置里检查登录 */ }
 }
 watch(() => translator.engine, async engine => {
   if (engine !== 'ai') { aiPicker.value = false; return }
   aiSettings.value = translationSettings(loadAiSettings())
-  if (aiSettings.value.provider === 'codex') { void warmNative(); await loadCodexModels() }
+  if (isNative(aiSettings.value.provider)) { if (aiSettings.value.provider === 'codex') void warmNative(); await loadCodexModels() }
   else warmTranslation()
   settleChoice()
 }, { immediate: true })
@@ -69,7 +69,7 @@ watch(() => translator.engine, async engine => {
 function keepWarm() { if (translator.engine === 'ai') warmTranslation() }
 const warmTimer = setInterval(keepWarm, 60_000)
 onBeforeUnmount(() => clearInterval(warmTimer))
-watch(() => nativeModelInventory.value, () => { if (translator.engine === 'ai') settleChoice() })
+watch(() => inventoryOf(aiSettings.value.provider), () => { if (translator.engine === 'ai') settleChoice() })
 const aiLabel = computed(() => {
   const model = aiModels.value.find(item => item.id === aiSettings.value.model)
   return [getProvider(aiSettings.value.provider)?.name || aiSettings.value.provider, model?.name || aiSettings.value.model || '未选模型', EFFORT_NAME[aiSettings.value.effort]].filter(Boolean).join(' · ')

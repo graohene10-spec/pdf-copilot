@@ -6,7 +6,7 @@ import { transportFetch } from './transport.mjs';
 export { getNativeModels, getNativeStatus } from './native.mjs';
 
 // protocol: 'chat' = OpenAI 兼容的 /chat/completions；'responses' = OpenAI Responses；'anthropic' = Claude Messages。
-// thinking: 'deepseek' 发送 thinking + reasoning_effort；'glm' 只发送 thinking 开关；不填则不发送思考参数。
+// thinking: 'deepseek' 发送 thinking + reasoning_effort；'glm' 只发送 thinking 开关；'effort' 只发送 reasoning_effort；不填则不发送思考参数。
 // 列表里没有的新模型可以在设置里直接填名称。
 const CLAUDE_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 export const PROVIDERS = [
@@ -23,6 +23,11 @@ export const PROVIDERS = [
     { id: 'claude-opus-5-5', name: 'Opus 5.5', efforts: CLAUDE_EFFORTS, defaultEffort: 'medium', vision: true },
     { id: 'claude-sonnet-5-5', name: 'Sonnet 5.5', efforts: CLAUDE_EFFORTS, defaultEffort: 'high', vision: true },
     { id: 'claude-haiku-5-5', name: 'Haiku 5.5', efforts: CLAUDE_EFFORTS, defaultEffort: 'medium', vision: true },
+  ] },
+  // Gemini 走 Google 提供的 OpenAI 兼容接口。Gemini 3 以后的模型不能关掉思考，所以没有 none 一档。
+  { id: 'gemini', name: 'Gemini（Google）', protocol: 'chat', thinking: 'effort', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', defaultModel: 'gemini-4-argon', models: [
+    { id: 'gemini-4-argon', name: 'Gemini 4 Argon', efforts: ['low', 'medium', 'high'], defaultEffort: 'medium', vision: true },
+    { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash', efforts: ['low', 'medium', 'high'], defaultEffort: 'low', vision: true },
   ] },
   { id: 'kimi', name: 'Kimi（月之暗面）', protocol: 'chat', baseUrl: 'https://api.moonshot.cn/v1', defaultModel: 'kimi-k2-turbo-preview', models: [
     { id: 'kimi-k2-turbo-preview', name: 'Kimi K2 Turbo', efforts: [], defaultEffort: '', vision: false },
@@ -41,6 +46,7 @@ export const PROVIDERS = [
   // 自定义接口：填 API 地址、协议与模型名称，例如 OpenRouter、硅基流动、本机 Ollama / LM Studio 或公司内部网关。
   { id: 'custom', name: '自定义接口', protocol: 'chat', custom: true, baseUrl: '', defaultModel: '', models: [] },
   { id: 'codex', name: 'Codex 本机登录', baseUrl: '', defaultModel: '', models: [] },
+  { id: 'antigravity', name: 'Antigravity 本机登录', baseUrl: '', defaultModel: '', models: [] },
 ];
 export const PROTOCOLS = [
   { id: 'chat', name: 'OpenAI 兼容（/chat/completions）' },
@@ -90,6 +96,8 @@ export function buildPayload({ provider, protocol: chosen, model, effort, fast =
   if (effort && protocol === 'chat') {
     if (thinking === 'deepseek' || thinking === 'glm') payload.thinking = { type: effort === 'none' ? 'disabled' : 'enabled' };
     if (thinking === 'deepseek' && effort !== 'none') payload.reasoning_effort = effort;
+    // 手填的模型名不在预设里，强度可能选到这家不认的档：只发它认的三档。
+    if (thinking === 'effort' && ['low', 'medium', 'high'].includes(effort)) payload.reasoning_effort = effort;
     // A custom OpenAI-compatible endpoint gets the common reasoning_effort field; "模型默认" sends nothing.
     if (getProvider(provider)?.custom && effort !== 'none') payload.reasoning_effort = effort;
   }
@@ -99,7 +107,7 @@ export function buildPayload({ provider, protocol: chosen, model, effort, fast =
 
 export async function streamTurn(options) {
   const { provider, apiKey, baseUrl, onDelta, onReasoning, onUsage } = options;
-  if (!getProvider(provider) || provider === 'codex') throw new Error('未知服务商。');
+  if (!getProvider(provider) || provider === 'codex' || provider === 'antigravity') throw new Error('未知服务商。');
   // Local OpenAI-compatible servers (Ollama, LM Studio) usually need no key.
   const local = /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/i.test(baseUrl || '');
   if (!apiKey && !local) throw new Error('请先在设置中填写 API Key。');
@@ -157,6 +165,8 @@ export async function streamTurn(options) {
           if (delta.id) call.id = delta.id;
           if (delta.function?.name) call.function.name += delta.function.name;
           if (delta.function?.arguments) call.function.arguments += delta.function.arguments;
+          // Gemini 把这次工具调用的「思考签名」放在这里，下一轮必须原样带回去，否则它拒收。
+          if (delta.extra_content) call.extra_content = delta.extra_content;
           if (call.function.arguments.length > 8192 || call.function.name.length > 100 || call.id.length > 200) throw new Error('工具请求过大。');
           calls.set(index, call);
         }
@@ -176,5 +186,6 @@ export async function streamTurn(options) {
 }
 export async function streamChat(options) {
   if (options.provider === 'codex') return streamNative(options);
+  if (options.provider === 'antigravity') return streamNative({ ...options, engine: 'antigravity' });
   return streamTurn(options);
 }

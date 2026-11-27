@@ -23,7 +23,7 @@ export async function saveAiSettings(settings, apiKey) {
   const clean = { ...settings, documentLimits: normalizeDocumentLimits(settings.documentLimits), requestLimits: normalizeRequestLimits(settings.requestLimits) };
   delete clean.apiKey;
   keys.set(clean.provider, apiKey || '');
-  if (globalThis.__TAURI_INTERNALS__ && clean.provider !== 'codex') {
+  if (globalThis.__TAURI_INTERNALS__ && clean.provider !== 'codex' && clean.provider !== 'antigravity') {
     const { invoke } = await import('@tauri-apps/api/core');
     await invoke('set_credential', { provider: clean.provider, key: clean.rememberKey ? apiKey || '' : '' });
   }
@@ -77,6 +77,16 @@ export function askSettings(main = loadAiSettings()) {
   const own = { ...ASK_DEFAULTS, ...(main.ask || {}) };
   if (own.share !== 'own') return { ...main, ask: own };
   return { ...main, provider: own.provider, baseUrl: own.baseUrl, protocol: own.protocol, model: own.model, effort: own.effort, fast: Boolean(own.fast) && supportsFast(own.provider), tier: own.tier || '', ask: own };
+}
+/**
+ * 「猜你想问」用的 AI：默认跟阅读助手一样（用它那家的小模型），也可以单独选一家。
+ * 阅读助手用 Antigravity 时每次预判都要走一整轮本机登录，所以跟着它时不预判；想要预判就在这里换一家。
+ */
+export const PREDICT_DEFAULTS = Object.freeze({ share: 'assistant', provider: 'deepseek', baseUrl: 'https://api.deepseek.com', protocol: 'chat', model: '', effort: '', fast: false });
+export function predictSettings(main = loadAiSettings()) {
+  const own = { ...PREDICT_DEFAULTS, ...(main.predict || {}) };
+  if (own.share !== 'own') return { ...main, predict: own };
+  return { ...main, provider: own.provider, baseUrl: own.baseUrl, protocol: own.protocol, model: own.model, effort: own.effort, fast: false, tier: '', predict: own };
 }
 /** 翻译窗口里改模型 / 强度 / Fast：只动 translation 这一块。 */
 export function saveTranslationChoice(patch) {

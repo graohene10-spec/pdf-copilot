@@ -111,7 +111,9 @@ export async function nativeRequest(type, signal, extra = {}) {
     port.postMessage({ id, type, ...extra });
   });
 }
-export const getNativeModels = signal => nativeRequest('models', signal);
+// engine：空着是 Codex，'antigravity' 是 Antigravity CLI。小助手按它分给不同的本机程序。
+const engineOf = engine => engine ? { engine } : {};
+export const getNativeModels = (signal, engine = '') => nativeRequest('models', signal, engineOf(engine));
 /**
  * 提前把下一段会话建好。建会话时 Codex 要读模型清单、连上服务，一次快速解释 13 秒里有 10 秒花在这上面；
  * 选中文字时就先建，真正提问时只剩等模型出字。小助手那边同一种会话已经备着就什么都不做，所以多叫几次没关系。
@@ -131,7 +133,7 @@ export function warmNativeThread({ model = '', pdfTools = false, pdfVision = fal
   }
   return pendingWarm.get(key);
 }
-export const getNativeStatus = signal => nativeRequest('status', signal);
+export const getNativeStatus = (signal, engine = '') => nativeRequest('status', signal, engineOf(engine));
 
 /**
  * Codex 的速度档：每个模型自己列出有哪些档（priority 快速、ultrafast 超快……），选的那一档这个模型没有就退回标准。
@@ -156,17 +158,19 @@ const TIMINGS_KEY = 'ai.codexTimings.v1';
 export function codexTimings() { try { const list = JSON.parse(localStorage.getItem(TIMINGS_KEY) || '[]'); return Array.isArray(list) ? list : []; } catch { return []; } }
 function recordTiming(entry) { try { localStorage.setItem(TIMINGS_KEY, JSON.stringify([entry, ...codexTimings()].slice(0, 12))); } catch { /* 存不下就算了 */ } }
 
-export async function streamNative({ model, effort, fast = false, tier = '', useSavedTier = false, quickExplain = false, messages, signal, onDelta, onReasoning, pdfTools = false, pdfVision = false, pdfLimits, onTool, extraInstructions = '' }) {
+export async function streamNative({ engine = '', model, effort, fast = false, tier = '', useSavedTier = false, quickExplain = false, messages, signal, onDelta, onReasoning, pdfTools = false, pdfVision = false, pdfLimits, onTool, extraInstructions = '', session, affinity = '' }) {
   signal?.throwIfAborted();
-  const key = threadKey(model, pdfTools, pdfVision, quickExplain);
+  // 带上对话的 key：同一段对话尽量回到上次那条连接，Antigravity 那边留着的会话才接得上。
+  const key = engine + (affinity || session?.key || '') + threadKey(model, pdfTools, pdfVision, quickExplain);
   const began = performance.now(), waitedWarm = pendingWarm.has(key);
   let firstAt = 0, answerAt = 0;
   if (pendingWarm.has(key)) await pendingWarm.get(key);
   signal?.throwIfAborted();
   const port = await acquire(key);
   const gotPort = performance.now();
-  const speed = codexSpeed({ model, fast, tier, useSavedTier });
-  if (!quickExplain) spare();
+  // 速度档是 Codex 才有的。
+  const speed = engine ? {} : codexSpeed({ model, fast, tier, useSavedTier });
+  if (!quickExplain && !engine) spare();
   return new Promise((resolve, reject) => {
     const id = crypto.randomUUID();
     let settled = false, received = false, toolQueue = Promise.resolve();
@@ -186,7 +190,7 @@ export async function streamNative({ model, effort, fast = false, tier = '', use
       let over = false;
       const end = healthy => { if (over) return; over = true; clearTimeout(wait); release(port, healthy); };
       const wait = setTimeout(() => end(false), 5000);
-      port.onMessage.addListener(msg => { if (msg.id === id && (msg.event === 'done' || msg.event === 'error')) end(msg.event === 'done'); });
+      port.onMessage.addListener(msg => { if (msg.id === id && (msg.event === 'done' || msg.event === 'error')) end(msg.event === 'done' || msg.cancelled === true); });
       port.onDisconnect.addListener(() => end(false));
     }
     const cancel = () => { cancelled = true; try { port.postMessage({ id: crypto.randomUUID(), type: 'cancel', targetId: id }); } catch {} };
@@ -227,8 +231,10 @@ export async function streamNative({ model, effort, fast = false, tier = '', use
     signal?.addEventListener('abort', abort, { once: true });
     if (signal?.aborted) { abort(); return; }
     const latest = messages.at(-1);
-    port.postMessage({ id, type: 'chat', model, effort, ...(quickExplain ? { quickExplain: true } : {}), ...speed, text: latest.content + (extraInstructions ? '\n\n[工作台的文档格式与阅读说明]\n' + extraInstructions : ''),
+    port.postMessage({ id, type: 'chat', ...engineOf(engine), model, effort, ...(quickExplain && !engine ? { quickExplain: true } : {}), ...speed, text: latest.content + (extraInstructions ? '\n\n[工作台的文档格式与阅读说明]\n' + extraInstructions : ''),
       history: messages.slice(0, -1).map(({ role, content }) => ({ role, content })),
+      // 只有 Antigravity 认这个字段：同一段对话接着问时复用会话，历史不用重发。
+      ...(engine && session ? { session } : {}),
       images: messages.flatMap(item => item.images || []), ...(pdfTools ? { pdfTools: true, pdfVision, ...(pdfLimits ? { pdfLimits } : {}) } : {}) });
   });
 }

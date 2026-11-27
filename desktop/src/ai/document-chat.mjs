@@ -32,6 +32,8 @@ export async function streamDocumentChat(options, document, seed) {
   const messages = withSeed(boundedHistory(options.historyTokens, options.messages), seed);
   const common = { ...options, messages, extraInstructions: DOCUMENT_INSTRUCTIONS + '\n' + (document.instructions || '') + (options.extraInstructions ? '\n' + options.extraInstructions : '') };
   if (remaining.calls <= 0) return streamChat(common);
+  // Antigravity 不让它用任何工具（见小助手里的说明）：直接走先列阅读计划、再作答的读法。
+  if (options.provider === 'antigravity') return plannedChat(common, document, seed);
   if (options.provider === 'codex') {
     const pdfLimits = { calls: remaining.calls, images: remaining.images, characters: limits.characters };
     try { return await streamNativeDocument({ ...common, tools, pdfLimits, onTool: (name, args) => document.tool(name, args), onProgress: options.onProgress }); }
@@ -90,7 +92,8 @@ async function plannedChat(options, document, seed) {
   let plan = '';
   const last = options.messages.at(-1);
   const vision = getModel(options.provider, options.model)?.vision !== false;
-  await streamChat({ ...options, messages: [{ ...last, content: last.content + '\n仅输出 JSON 阅读计划，不回答问题：{"queries":["术语或公式编号"],"pages":[物理PDF页码],"views":[需要核对公式或扫描内容的物理PDF页码]}。最多2个搜索词、3个文字页码' + (vision ? `、${left().images}个图片页码` : '；views 必须为空') + `；最多${left().calls}次读取。优先安排图片核对，不需要补充可用空数组。` }], onDelta: text => { plan += text; if (plan.length > 8192) throw new Error('阅读计划过长。'); }, onReasoning: () => {} });
+  // 列阅读计划这一问不算进对话：不带会话指纹，小助手用完就丢。
+  await streamChat({ ...options, session: undefined, affinity: options.session?.key, messages: [{ ...last, content: last.content + '\n仅输出 JSON 阅读计划，不回答问题：{"queries":["术语或公式编号"],"pages":[物理PDF页码],"views":[需要核对公式或扫描内容的物理PDF页码]}。最多2个搜索词、3个文字页码' + (vision ? `、${left().images}个图片页码` : '；views 必须为空') + `；最多${left().calls}次读取。优先安排图片核对，不需要补充可用空数组。` }], onDelta: text => { plan += text; if (plan.length > 8192) throw new Error('阅读计划过长。'); }, onReasoning: () => {} });
   options.signal?.throwIfAborted();
   let parsed;
   try { parsed = JSON.parse(plan.replace(/^\s*```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '')); } catch { parsed = {}; }

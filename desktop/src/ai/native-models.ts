@@ -5,6 +5,41 @@ import { getNativeModels, getNativeStatus, getProvider, registerNativeModels } f
 // inspecting models never changes the user's saved model, provider or budgets.
 export const nativeModelInventory = shallowRef<any[]>(getProvider('codex')?.models || [])
 
+/** 走本机登录的服务：不用 API Key，模型清单从本机读。 */
+export const isNative = (provider: string) => provider === 'codex' || provider === 'antigravity'
+export const antigravityInventory = shallowRef<any[]>([])
+export const inventoryOf = (provider: string): any[] => provider === 'antigravity' ? antigravityInventory.value : nativeModelInventory.value
+export function registerInventory(provider: string, models: any[]) {
+  if (provider !== 'antigravity') { registerNativeModelInventory(models); return }
+  getProvider('antigravity')!.models = models; antigravityInventory.value = models
+}
+/** 从本机读一次这家的模型清单并记下。 */
+export async function loadInventory(provider: string, signal?: AbortSignal): Promise<any[]> {
+  const list: any[] = await getNativeModels(signal, provider === 'antigravity' ? 'antigravity' : '')
+  registerInventory(provider, list)
+  return list
+}
+// 本机 Antigravity 的登录检查：只在设置里点了才跑。
+export const antigravityCheck = reactive({ state: 'idle' as 'idle' | 'checking' | 'ok' | 'failed', text: '' })
+let checking: Promise<boolean> | undefined
+export function checkAntigravity(): Promise<boolean> {
+  if (!(globalThis as any).__TAURI_INTERNALS__) return Promise.resolve(false)
+  checking ??= (async () => {
+    antigravityCheck.state = 'checking'; antigravityCheck.text = '正在检查本机 Antigravity…'
+    try {
+      const info: any = await getNativeStatus(undefined, 'antigravity')
+      if (!info.installed) throw new Error('未找到 Antigravity CLI（agy）。')
+      if (!info.loggedIn) throw new Error('Antigravity 尚未登录。请先在终端运行 agy 并登录。')
+      const list = await loadInventory('antigravity')
+      antigravityCheck.text = `Antigravity CLI ${info.version || ''} · 已登录 · ${list.length} 个模型`
+      antigravityCheck.state = 'ok'
+      return true
+    } catch (cause: any) { antigravityCheck.text = cause?.message || String(cause); antigravityCheck.state = 'failed'; return false }
+    finally { checking = undefined }
+  })()
+  return checking
+}
+
 export function registerNativeModelInventory(models: any[]) {
   registerNativeModels(models)
   nativeModelInventory.value = models

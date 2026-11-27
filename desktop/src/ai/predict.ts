@@ -3,8 +3,8 @@
  * 让一个小而快的模型读一下当前页、选区和最近的对话，给出一句最可能的问题。
  * 结果按上下文缓存；任何新输入、发送或上下文变化都会取消在途请求。
  */
-import { loadAiSettings, loadApiKey } from './settings.mjs'
-import { nativeModelInventory } from './native-models.ts'
+import { loadAiSettings, loadApiKey, predictSettings } from './settings.mjs'
+import { inventoryOf, isNative } from './native-models.ts'
 
 export type PredictContext = {
   document: { id: string; title: string; kind: string }
@@ -31,11 +31,12 @@ const remember = (key: string, value: string) => { cache.delete(key); cache.set(
 // 小模型：DeepSeek 用 Flash、OpenAI 用 Mini、Claude 用 Haiku（低思考），都尽量少思考；其他服务用当前模型；Codex 用当前模型的最低思考强度。
 export function fastModel(settings: any): { model: string; effort: string } {
   if (settings.provider === 'deepseek') return { model: 'deepseek-flash', effort: 'none' }
+  if (settings.provider === 'gemini') return { model: 'gemini-3.8-flash', effort: 'low' }
   if (settings.provider === 'openai') return { model: 'gpt-5.4-mini', effort: 'none' }
   if (settings.provider === 'anthropic') return { model: 'claude-haiku-5-5', effort: 'low' }
   if (settings.provider === 'glm') return { model: settings.model || 'glm-4.6', effort: 'none' }
-  if (settings.provider !== 'codex') return { model: settings.model || '', effort: '' }
-  const efforts: string[] = nativeModelInventory.value.find((item: any) => item.id === (settings.model || ''))?.efforts || []
+  if (!isNative(settings.provider)) return { model: settings.model || '', effort: '' }
+  const efforts: string[] = inventoryOf(settings.provider).find((item: any) => item.id === (settings.model || ''))?.efforts || []
   return { model: settings.model || '', effort: ['none', 'minimal', 'low'].find(item => efforts.includes(item)) || '' }
 }
 
@@ -74,9 +75,12 @@ export async function predictQuestion(context: PredictContext, signal: AbortSign
   signal.throwIfAborted()
   const key = predictionKey(context)
   if (cache.has(key)) return cache.get(key)!
-  const settings: any = loadAiSettings()
-  const apiKey = settings.provider === 'codex' ? '' : await loadApiKey(settings.provider)
-  if (settings.provider !== 'codex' && !apiKey) return ''
+  const settings: any = predictSettings(loadAiSettings())
+  const own = settings.predict.share === 'own'
+  // 跟着阅读助手、而它用的是 Antigravity：不预判（见 predictSettings）。
+  if (!own && settings.provider === 'antigravity') return ''
+  const apiKey = isNative(settings.provider) ? '' : await loadApiKey(settings.provider)
+  if (!isNative(settings.provider) && !apiKey) return ''
   signal.throwIfAborted()
   const text = context.includePage === false ? '' : await pageText(context.document, context.page).catch(() => '')
   signal.throwIfAborted()
@@ -97,7 +101,8 @@ export async function predictQuestion(context: PredictContext, signal: AbortSign
   signal.addEventListener('abort', stop, { once: true })
   const timer = setTimeout(stop, 25_000)
   try {
-    await streamChat({ ...settings, ...fastModel(settings), apiKey, signal: local.signal, messages: [{ role: 'user', content: prompt }],
+    // 单独选了模型就用选的那个；跟着阅读助手时用它那家的小模型。
+    await streamChat({ ...settings, ...(own && settings.model ? { model: settings.model, effort: settings.effort || '' } : fastModel(settings)), apiKey, signal: local.signal, messages: [{ role: 'user', content: prompt }],
       onDelta: (delta: string) => { reply += delta; if (reply.length > 200 || reply.includes('\n')) local.abort() } })
   } catch (error) {
     // 读到第一行后主动停下也算成功；其他失败（没网、额度）就不显示建议。

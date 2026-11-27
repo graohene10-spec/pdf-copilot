@@ -3,6 +3,7 @@ import { loadAiSettings, loadApiKey } from './settings.mjs'
 import { RequestScheduler } from './request-scheduler.mjs'
 import { library } from '../sdk'
 import { recordUsage } from './usage'
+import { isNative } from './native-models'
 import { limitFor, compactionPrompt, estimateTokens, fullness, handoff, liveTokens, splitForCompaction } from './compaction'
 export { estimateTokens }
 import { SUMMARY_READING, summaryDraft, summaryInstructions, summaryContinues, lastSummaryOptions, readSwitches, MAX_SUMMARY_ROUNDS, type SummaryState, type SummaryOptions } from './summary'
@@ -503,11 +504,18 @@ export function loadConversations(documentId: string): Promise<void> {
 export function contextWindow(provider: string, model: string): number {
   const id = `${provider}:${model}`.toLowerCase()
   if (id.includes('deepseek')) return 128_000
+  if (id.includes('gemini')) return 1_000_000
   if (/gpt-5|gpt-6|codex/.test(id)) return 400_000
   return 200_000
 }
 /** Tokens the next request carries from this conversation. */
 export const conversationTokens = (state: ChatState, window: number): number => Math.min(liveTokens(state.messages), limitFor(window)) + estimateTokens(state.draft)
+/** 一串消息 id 的指纹。Antigravity 的小助手靠它认出「这一问只是接在上一问后面」，从而接着用同一个会话（能命中缓存）。 */
+function chain(ids: string[]) {
+  let a = 0x811c9dc5, b = 0x1b873593
+  for (const char of ids.join('|')) { const code = char.charCodeAt(0); a = Math.imul(a ^ code, 0x01000193); b = Math.imul(b ^ code, 0x85ebca6b) ^ (b >>> 13) }
+  return (a >>> 0).toString(16).padStart(8, '0') + (b >>> 0).toString(16).padStart(8, '0') + '-' + ids.length
+}
 function titleFrom(question: string) {
   const line = question.replace(/\s+/g, ' ').trim()
   return line.length > 28 ? line.slice(0, 27) + '…' : line
@@ -624,11 +632,11 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
   const activity = (text: string) => { if (valid() && answer) answer.activity = text }
   try {
     const [{ getModel, streamChat }, { streamDocumentChat, boundedHistory }] = await Promise.all([import('./providers.mjs'), import('./document-chat.mjs')])
-    const apiKey = snapshot.provider === 'codex' ? '' : await loadApiKey(snapshot.provider)
+    const apiKey = isNative(snapshot.provider) ? '' : await loadApiKey(snapshot.provider)
     signal.throwIfAborted()
     // A local OpenAI-compatible server (Ollama, LM Studio) behind 自定义接口 needs no key.
     const keyless = snapshot.provider === 'custom' && /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/i.test(snapshot.baseUrl || '')
-    if (snapshot.provider !== 'codex' && !apiKey && !keyless) { if (valid()) onSettings(); throw new Error('请先连接 AI 服务。') }
+    if (!isNative(snapshot.provider) && !apiKey && !keyless) { if (valid()) onSettings(); throw new Error('请先连接 AI 服务。') }
     // 框选截图在前，输入框里粘贴或添加的图片随后。
     const attached = (sendOptions.attachments || []).slice(0, MAX_ATTACHMENTS)
     // 同一张图只发一次（同一块地方截了两遍）。
@@ -649,6 +657,8 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
     const draftNow = draft ? `\n\n[草稿面板里现在的文档全文；要修改就在它的基础上改]\n${draft.slice(0, 60000)}` : ''
     // 重新回答中间的某一问：只把它之前的对话带给模型。
     const before = sendOptions.replace ? state.messages.findIndex(message => message.id === sendOptions.replace) : -1
+    // 这一问之前、会带给模型的那些消息：编辑、重答、分支、压缩都会让这串 id 变样，小助手就知道该另开会话。
+    const priorIds = [`inherited:${state.inherited?.length || 0}`, ...(before < 0 ? state.messages : state.messages.slice(0, before)).filter(message => !message.failed && !message.compressed).map(message => message.id)]
     const history = boundedHistory(cap, [...(state.inherited || []).map(item => ({ role: item.role, content: `[主对话里的内容（开启附属对话时）]\n${item.content}` })), ...(before < 0 ? state.messages : state.messages.slice(0, before)).filter(message => !message.failed && !message.compressed).map(message => message.summary || message.note ? { role: 'user', content: wireText(message) } : ({ role: message.role, content: (state.summary && message.role === 'assistant' ? withoutDrafts(wireText(message)) : wireText(message)) + (message.sources.length ? '\n[此前查到的相关位置]\n' + JSON.stringify(message.sources.slice(0, 8).map(item => ({ sourceId: item.sourceId, page: item.page, line: item.line, text: item.text.slice(0, 400) }))) : '') })), { ...user, content: wireContent + draftNow + (state.learning ? '\n\n[学习进度]\n' + learningContext(state.learning) : '') }])
     // The scheduler reports the first queue position before the answer bubble exists.
     let waiting = ''
@@ -688,6 +698,8 @@ export async function sendChat(descriptor: { id: string; title: string; kind: st
     // 总结对话用自己的一套提示词，不带学习记录；Intelligent UI 的写法只在读者打开时给。
     const extraInstructions = state.learning ? learningInstructions(descriptor.title, state.learning, descriptor.kind) + (state.learning.phase === 'teach' || state.learning.phase === 'done' ? NL + NL + UI_INSTRUCTIONS.assistant : '') + (remembered ? '\n\n' + remembered : '') : state.summary ? summaryInstructions(descriptor.title, state.summary.options, state.summary.options.ui ? UI_INSTRUCTIONS.document : '') : UI_INSTRUCTIONS.assistant + (remembered ? '\n\n' + remembered : '')
     const options = { ...snapshot, apiKey, signal, messages: history, historyTokens: cap, extraInstructions,
+      // 带文档上下文的提问每次都附一大段原文：接着用同一个会话，这些原文会一轮轮攒在里面，实测反而更费。所以只有不带文档的提问才复用。
+      ...(snapshot.provider === 'antigravity' && answer && !state.summary && !includeDocument ? { session: { key: state.id, base: chain(priorIds), next: chain([...priorIds, user.id, answer.id]) } } : {}),
       onDelta: (text: string) => { if (valid() && answer) { answer.firstTokenAt ||= Date.now(); answer.content += text; answer.activity = '正在回答'; output() } },
       onReasoning: (text: string) => { if (valid() && answer) { answer.reasoning = (answer.reasoning || '') + text; answer.activity = '思考中'; output() } },
       onProgress: (text: string) => activity(text.replace(/[…。]+$/, '')),

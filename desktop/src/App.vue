@@ -2072,11 +2072,12 @@ watch(search, value => {
 let tourTimer: ReturnType<typeof setTimeout> | undefined
 // 有功能用着本机 Codex：打开应用就自己检查登录、读模型名单，不用每次去设置里点。没连上只提示一次。
 onMounted(() => setTimeout(async () => {
-  const { loadAiSettings, translationSettings, explainSettings, visualSettings, askSettings } = await import('./ai/settings.mjs')
+  const { loadAiSettings, translationSettings, explainSettings, visualSettings, askSettings, predictSettings } = await import('./ai/settings.mjs')
   const main: any = loadAiSettings()
-  if (![main, translationSettings(main), explainSettings(main), visualSettings(main), askSettings(main)].some((item: any) => item?.provider === 'codex')) return
-  const { checkCodex, codexCheck } = await import('./ai/native-models')
-  if (!(await checkCodex()) && codexCheck.state === 'failed') notify(codexCheck.text)
+  const used = (provider: string) => [main, translationSettings(main), explainSettings(main), visualSettings(main), askSettings(main), predictSettings(main)].some((item: any) => item?.provider === provider)
+  const { checkCodex, codexCheck, checkAntigravity, antigravityCheck } = await import('./ai/native-models')
+  if (used('codex') && !(await checkCodex()) && codexCheck.state === 'failed') notify(codexCheck.text)
+  if (used('antigravity') && !(await checkAntigravity()) && antigravityCheck.state === 'failed') notify(antigravityCheck.text)
 }, 1200))
 onMounted(() => { if (!loadTour().hidden) tourTimer = setTimeout(() => { if (!tourOpen.value) { tourFull.value = false; tourOpen.value = true } }, 1400) })
 async function openTour() { settingsOpen.value = false; tourOpen.value = false; await nextTick(); tourFull.value = true; tourOpen.value = true }

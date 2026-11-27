@@ -3,7 +3,7 @@ import { fullness, limitFor, liveTokens } from '../ai/compaction'
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, reactive, defineAsyncComponent } from 'vue'
 import 'katex/dist/katex.min.css'
 import { getProvider, getNativeModels, getNativeStatus } from '../ai/providers.mjs'
-import { nativeModelInventory, registerNativeModelInventory } from '../ai/native-models'
+import { nativeModelInventory, registerNativeModelInventory, inventoryOf, isNative, loadInventory } from '../ai/native-models'
 import { editPlan, newLearningConversation, cancelLearning, startLearning, answerQuiz, acceptPlan, newSummaryConversation, cancelSummary, setConversationMemory, adoptTurns, addExcerpt, removeExcerpt, removeMessage, compressConversation, compacting, sideConversation, chatState, sendChat, stopChat, configureRequests, taskSummary, conversations, activeConversationId, selectConversation, newConversation, deleteConversation, loadConversations, conversationTokens, contextWindow, branchConversation, resendQuestion, watchConversation, allConversations, revealTarget, pinMessage, MAX_ATTACHMENTS, pendingImages, setPendingImages, keepImage, type Message, type ChatState } from '../ai/workspace'
 import { renderMarkdown, renderDiagrams } from '../ai/render'
 import { memoryMode, type MemoryMode } from '../ai/memory'
@@ -19,7 +19,7 @@ import { hintLearned, offerSpaced } from '../ui/hints'
 import { mountIntelligentUi } from '../ai/intelligent-ui'
 import { nudgeGlassMotion } from '../ui/glass-motion'
 import { vMarquee } from '../ui/marquee'
-import { loadAiSettings, saveModelChoice, supportsFast } from '../ai/settings.mjs'
+import { loadAiSettings, predictSettings, saveModelChoice, supportsFast } from '../ai/settings.mjs'
 import { warmNative } from '../ai/native.mjs'
 import { useSettings } from '../settings'
 import { searchTalks } from '../ai/conversation-search'
@@ -58,7 +58,9 @@ const messages = computed(() => state.value.messages)
 // 以前一打开就把几十条带公式的回答全部排版，动画开头先卡一两秒，公式还在动画里被拉扯。
 // 更早的消息分几帧往上补，每帧十来条；补的时候按离底部的距离把画面钉住，读者看着的那条不动。
 const contentReady = ref(false), revealCount = ref(6)
-const shownMessages = computed(() => (!contentReady.value ? [] : revealCount.value >= messages.value.length ? messages.value : messages.value.slice(-revealCount.value)).filter(message => !message.auto))
+const shownMessages = computed(() => (!contentReady.value ? [] : revealCount.value >= messages.value.length ? messages.value : messages.value.slice(-revealCount.value)).filter(message => !message.auto && !silentLearn(message)))
+// 学习对话里，助手有时只写了给应用看的块（摸底结论、路线图），没有一个给读者看的字：这样的回答不占一格。
+const silentLearn = (message: Message) => Boolean(state.value.learning) && message.role === 'assistant' && Boolean(message.finishedAt) && !message.failed && /```learn-/i.test(message.content) && !/```learn-(quiz|plan)/i.test(message.content) && !normalizeLearning(message.content).replace(/```learn-[\s\S]*?(```|$)/gi, '').trim()
 let revealFrame = 0
 function revealRest(done: () => void) {
   const step = () => {
@@ -501,6 +503,8 @@ function renderAnswer(element: HTMLElement, message: Message) {
   // 总结对话：文档正文在草稿面板里，这里只留一枚小牌子。
   // 学习对话还在写时，最后一行若是刚起头的围栏（``` 或 ```learn-q），先不画：不然会闪出一个空代码框。
   element.innerHTML = renderMarkdown(state.value.summary ? summaryChat(message.content) : state.value.learning ? normalizeLearning(message.finishedAt ? message.content : message.content.replace(/(^|\n) {0,3}`{1,3}[\w-]*$/, '$1')) : message.content)
+  // 读者让它调整大纲时，回答可能只有一张路线图：补一句，免得大纲收起时什么回应都看不到。
+  if (state.value.learning && message.finishedAt && !element.textContent?.trim() && /```learn-plan/i.test(message.content)) element.textContent = '大纲已更新。'
   if (unfolded.includes(true)) element.querySelectorAll('details').forEach((item, index) => { if (unfolded[index]) item.open = true })
   // 模型有时引用前几轮回答里的来源，甚至写出不存在的编号：先在整场对话的来源里找，找不到就把编号去掉，绝不把 [S…] 原样留在正文里。
   const sourceMap = new Map([...messages.value.flatMap(item => item.sources || []), ...message.sources].map(source => [source.sourceId, source]))
@@ -744,9 +748,9 @@ const pickerLoading = ref(false)
 const pickerError = ref('')
 let pickerRequest: AbortController | undefined
 const pickerModels = computed<{ id: string; name: string; efforts?: string[]; defaultEffort?: string; tiers?: { id: string; name?: string; description?: string }[] }[]>(() => {
-  const list: any[] = settings.value.provider === 'codex' ? nativeModelInventory.value : getProvider(settings.value.provider)?.models || []
+  const list: any[] = isNative(settings.value.provider) ? inventoryOf(settings.value.provider) : getProvider(settings.value.provider)?.models || []
   const current = settings.value.model || ''
-  const extra = settings.value.provider === 'codex' && !list.some(item => !item.id) ? [{ id: '', name: '模型默认' }] : []
+  const extra = isNative(settings.value.provider) && !list.some(item => !item.id) ? [{ id: '', name: '模型默认' }] : []
   const custom = current && !list.some(item => item.id === current) ? [{ id: current, name: current }] : []
   return [...extra, ...custom, ...list]
 })
@@ -775,17 +779,25 @@ function chooseModel(id: string) {
 function chooseEffort(value: string) { commitChoice(settings.value.model || '', value) }
 function pickerOutside(event: PointerEvent) { if (event.target instanceof Node && !composerField.value?.contains(event.target)) pickerOpen.value = false }
 async function refreshPickerModels() {
-  if (pickerLoading.value || settings.value.provider !== 'codex') return
+  if (pickerLoading.value || !isNative(settings.value.provider)) return
   pickerError.value = ''
   if (!(globalThis as any).__TAURI_INTERNALS__) { pickerError.value = '完整模型列表需在 Windows 桌面版中读取。'; return }
   const request = new AbortController()
   pickerRequest = request; pickerLoading.value = true
   try {
+    let list: any[]
+    if (settings.value.provider === 'antigravity') {
+      const info: any = await getNativeStatus(request.signal, 'antigravity')
+      if (!info.installed || !info.loggedIn) throw new Error(info.installed ? 'Antigravity 尚未登录。' : '未找到 Antigravity CLI。')
+      list = await loadInventory('antigravity', request.signal)
+      if (request.signal.aborted || pickerRequest !== request) return
+    } else {
     const info: any = await getNativeStatus(request.signal)
     if (!info.compatible || !info.loggedIn) throw new Error(info.diagnostic || (info.loggedIn === false ? 'Codex 尚未登录。请先在 Codex 中登录。' : '未找到可用 Codex。'))
-    const list: any[] = await getNativeModels(request.signal)
+    list = await getNativeModels(request.signal)
     if (request.signal.aborted || pickerRequest !== request) return
     registerNativeModelInventory(list)
+    }
     if (!list.length) pickerError.value = '未读取到可用模型，可重新读取或打开 AI 设置。'
   } catch (cause: any) {
     if (!request.signal.aborted && pickerRequest === request) pickerError.value = cause?.message || String(cause)
@@ -799,7 +811,7 @@ watch(pickerOpen, open => {
     window.setTimeout(() => { if (pickerOpen.value) pickerPanel.value?.hintWheel() }, 700)
     window.addEventListener('keydown', strayEscape, true)
     document.addEventListener('pointerdown', pickerOutside, true)
-    if (settings.value.provider === 'codex' && !nativeModelInventory.value.length) void refreshPickerModels()
+    if (isNative(settings.value.provider) && !inventoryOf(settings.value.provider).length) void refreshPickerModels()
   } else {
     document.removeEventListener('pointerdown', pickerOutside, true)
     window.removeEventListener('keydown', strayEscape, true)
@@ -1172,7 +1184,7 @@ watch(() => [predictable.value, state.value.id, props.document.id, props.context
   predictTimer = setTimeout(() => {
     const request = new AbortController(); predicting = request
     predictQuestion(context, request.signal).then(question => { if (predicting === request && !request.signal.aborted && preferences.value.assistant.predictQuestions && !prompt.value && !busy.value) prediction.value = question || '' }).catch(() => { if (predicting === request && !request.signal.aborted) prediction.value = '' }).finally(() => { if (predicting === request) predicting = undefined })
-  }, settings.value.provider === 'codex' ? 2600 : 1200) // Codex 每次预判都是一整轮对话：多等一会儿，翻页时不白跑
+  }, isNative(predictSettings(settings.value).provider) ? 2600 : 1200) // Codex 每次预判都是一整轮对话：多等一会儿，翻页时不白跑
 }, { immediate: true })
 onMounted(() => {
   void loadConversations(props.document.id).then(() => { conversationId.value = ownConversation(props.document.id, props.conversationId) })
@@ -1425,7 +1437,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
         </div>
         <!-- 点模型按钮时，输入栏下沿顺势拉长，露出模型与思考强度；再点一次或按 Esc 收回。 -->
         <div :id="`model-drawer-${state.id}`" class="composer-drawer" :class="{ open: pickerOpen }" :inert="!pickerOpen || undefined">
-          <ModelPicker v-if="drawerMounted" ref="pickerPanel" :model="settings.model || ''" :effort="settings.effort || ''" :models="pickerModels" :loading="pickerLoading" :error="pickerError" :can-refresh="settings.provider === 'codex'" :fast="fastChoice" :tier="tierChoice" @model="chooseModel" @effort="chooseEffort" @fast="chooseFast" @tier="chooseTier" @refresh="refreshPickerModels" @close="closePicker" />
+          <ModelPicker v-if="drawerMounted" ref="pickerPanel" :model="settings.model || ''" :effort="settings.effort || ''" :models="pickerModels" :loading="pickerLoading" :error="pickerError" :can-refresh="isNative(settings.provider)" :fast="fastChoice" :tier="tierChoice" @model="chooseModel" @effort="chooseEffort" @fast="chooseFast" @tier="chooseTier" @refresh="refreshPickerModels" @close="closePicker" />
         </div>
       </div>
     </div>

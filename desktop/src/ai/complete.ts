@@ -7,19 +7,19 @@ import { fastModel } from './predict'
 import { estimateTokens } from './workspace'
 import { recordUsage, type UsageKind } from './usage'
 import { concreteChoice } from './translate-model'
-import { nativeModelInventory, registerNativeModelInventory } from './native-models'
+import { inventoryOf, isNative, loadInventory } from './native-models'
 
 /** 翻译一定用具体的模型与强度：Codex 还没读过模型列表就先读一次，不把空模型交给 Codex 的默认配置。 */
 let inventoryRequest: Promise<any[]> | undefined
 async function translationChoice(settings: any, what = '翻译', keepSavedModel = false) {
-  if (keepSavedModel && settings.provider === 'codex' && settings.model && settings.effort) return { model: settings.model, effort: settings.effort }
-  const { getProvider, getNativeModels } = await import('./providers.mjs')
-  let models: any[] = settings.provider === 'codex' ? nativeModelInventory.value : getProvider(settings.provider)?.models || []
-  if (settings.provider === 'codex' && !models.length) {
-    inventoryRequest ??= getNativeModels().then((items: any[]) => { registerNativeModelInventory(items); return items }).finally(() => { inventoryRequest = undefined })
+  if (keepSavedModel && isNative(settings.provider) && settings.model && settings.effort) return { model: settings.model, effort: settings.effort }
+  const { getProvider } = await import('./providers.mjs')
+  let models: any[] = isNative(settings.provider) ? inventoryOf(settings.provider) : getProvider(settings.provider)?.models || []
+  if (isNative(settings.provider) && !models.length) {
+    inventoryRequest ??= loadInventory(settings.provider).finally(() => { inventoryRequest = undefined })
     models = await inventoryRequest!
   }
-  const choice = concreteChoice(models, settings.model || '', settings.effort || '', getProvider(settings.provider)?.defaultModel, settings.provider !== 'codex' || keepSavedModel)
+  const choice = concreteChoice(models, settings.model || '', settings.effort || '', getProvider(settings.provider)?.defaultModel, !isNative(settings.provider) || keepSavedModel)
   if (!choice.model) throw new Error(`请先在 设置 → AI → ${what}用的 AI 里选一个模型。`)
   return choice
 }
@@ -32,7 +32,7 @@ function originOf(baseUrl: string) { try { return new URL(baseUrl).origin } catc
 export function warmTranslation() {
   if (!(globalThis as any).__TAURI_INTERNALS__) return
   const settings: any = translationSettings(loadAiSettings())
-  const origin = settings.provider === 'codex' ? '' : originOf(settings.baseUrl || '')
+  const origin = isNative(settings.provider) ? '' : originOf(settings.baseUrl || '')
   if (!origin || Date.now() - (warmed.get(origin) || 0) < WARM_FOR) return
   warmed.set(origin, Date.now())
   void (async () => {
@@ -74,9 +74,9 @@ export async function complete(options: CompleteOptions): Promise<string> {
   const visual: any = slot === 'visual' ? visualSettings(loadAiSettings()) : slot === 'ask' ? askSettings(loadAiSettings()) : null
   const own = visual ? visual[slot].share === 'own' : options.kind === 'translate' || options.kind === 'explain'
   const settings: any = visual || (options.kind === 'translate' ? translationSettings(loadAiSettings()) : options.kind === 'explain' ? explainSettings(loadAiSettings()) : loadAiSettings())
-  const apiKey = settings.provider === 'codex' ? '' : await loadApiKey(settings.provider)
+  const apiKey = isNative(settings.provider) ? '' : await loadApiKey(settings.provider)
   const keyless = settings.provider === 'custom' && /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/i.test(settings.baseUrl || '')
-  if (settings.provider !== 'codex' && !apiKey && !keyless) throw new Error('请先在设置里连接 AI 服务。')
+  if (!isNative(settings.provider) && !apiKey && !keyless) throw new Error('请先在设置里连接 AI 服务。')
   options.signal.throwIfAborted()
   const choice = own ? await translationChoice(settings, slot === 'visual' ? '可视化讲解' : slot === 'ask' ? '自由提问' : options.kind === 'explain' ? '快速解释' : '翻译', options.kind === 'explain')
     : options.fast ? fastModel(settings) : { model: settings.model || '', effort: settings.effort || '' }
