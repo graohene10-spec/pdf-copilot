@@ -143,16 +143,19 @@ h3{margin:0 auto 0 0;min-width:0;overflow:hidden;color:var(--muted);font-size:11
 @keyframes outline-shimmer{from{background-position:100% 0}to{background-position:0 0}}
 /* 路线：一条细竖线串起小点。走过的实心，正在讲的是一枚强调色细环，没到的是淡淡的空心点。 */
 .outline-nodes{flex:1;min-height:0;margin:10px 0 0;padding:2px 4px 2px 0;list-style:none;overflow:auto;scrollbar-width:thin}
-.outline-nodes li{position:relative}
-.outline-nodes li:not(:last-child)::before{content:'';position:absolute;left:3px;top:19px;bottom:-9px;width:1px;background:var(--rail)}
+/* 竖线从这一颗点的下沿接到下一颗点的上沿：点的中心在 6px 内边距 + 半个行高处（行高和按钮一样是 1.45），各主题字体不同也不会多出或缺一截。 */
+.outline-nodes li{position:relative;line-height:1.45}
+.outline-nodes li:not(:last-child)::before{content:'';position:absolute;left:3px;top:calc(6px + .5lh + 3.5px);bottom:calc(-2.5px - .5lh);width:1px;background:var(--rail)}
 .outline-nodes li.passed:not(:last-child)::before{background:color-mix(in srgb,var(--accent) 55%,transparent)}
 .outline-node{position:relative;display:flex;align-items:flex-start;gap:12px;width:100%;height:auto;min-height:0;padding:6px 6px 6px 0;border:0;border-radius:var(--r-sm,8px);background:none;box-shadow:none;color:var(--muted);font:inherit;line-height:1.45;text-align:left;transition:color var(--dur-1,.12s)}
 .outline-node:hover{color:var(--ink)}
-.outline-node span{flex:1;min-width:0;white-space:normal;overflow-wrap:anywhere}
+/* 长英文词实在放不下才硬断（anywhere 会让整行任意处都可断、早早把词切开）；pretty 避免最后一行只剩一个字。 */
+.outline-node span{flex:1;align-self:baseline;min-width:0;white-space:normal;overflow-wrap:break-word;hyphens:auto;text-wrap:pretty}
 .outline-node span :deep(p){margin:0}
-.outline-node small{flex:none;margin-top:2px;color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums;opacity:.75}
-.outline-node em{flex:none;margin-top:1px;color:var(--accent);font-size:10.5px;font-style:normal;letter-spacing:.05em}
-.outline-node>i{position:relative;z-index:1;flex:none;width:7px;height:7px;margin-top:6px;border:1px solid color-mix(in srgb,var(--ink) 34%,transparent);border-radius:50%;background:var(--surface,#fff);box-sizing:border-box;transition:border-color var(--dur-2,.2s),background-color var(--dur-2,.2s),scale var(--dur-2,.2s) var(--spring-snappy,ease-out)}
+/* 页码和快/细标记跟标题第一行对齐基线（字号不同、各主题字体的行高不同，写死 margin-top 总会差一点）。 */
+.outline-node small{flex:none;align-self:baseline;color:var(--muted);font-size:11px;font-weight:400;font-variant-numeric:tabular-nums;opacity:.75}
+.outline-node em{flex:none;align-self:baseline;color:var(--accent);font-size:10.5px;font-style:normal;letter-spacing:.05em}
+.outline-node>i{position:relative;z-index:1;flex:none;width:7px;height:7px;margin-top:calc(.5lh - 3.5px);border:1px solid color-mix(in srgb,var(--ink) 34%,transparent);border-radius:50%;background:var(--surface,#fff);box-sizing:border-box;transition:border-color var(--dur-2,.2s),background-color var(--dur-2,.2s),scale var(--dur-2,.2s) var(--spring-snappy,ease-out)}
 li.seen .outline-node>i{border-color:var(--accent)}
 li.passed .outline-node{color:var(--secondary)}
 li.passed .outline-node>i{border-color:var(--accent);background:var(--accent)}

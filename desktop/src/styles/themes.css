@@ -1084,8 +1084,10 @@
 :root[data-style='sketch'] .reader-panes > .ai-panel { padding-top: 14px; }
 :root[data-style='sketch'] .reader-panes > .ai-panel:is(.pane-enter-from, .pane-leave-to) { padding-top: 14px; }
 
-/* 学习大纲排在助手栏最左时，标题让开别在那里的回形针。 */
-:root[data-style='sketch'] .ai-pane .outline.right > header { padding-left: 34px; }
+/* 学习大纲排在助手栏最左时，标题让开别在那里的回形针；整栏从红色页边线右边开始（页边线在纸的 24–25.5px），
+   不然串点的竖线和页边线贴着并行、当前节点的圆环压在页边线上。节点文字和标题左缘对齐。 */
+:root[data-style='sketch'] .ai-pane .outline.right { padding-left: 33px; }
+:root[data-style='sketch'] .ai-pane .outline.right > header { padding-left: 19px; }
 
 /* 回形针别在标题框上：上半截露在框的上沿之外，下半截压在框的左侧（带一点投影）。 */
 :root[data-style='sketch'] .ai-pane::after {
