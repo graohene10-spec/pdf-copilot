@@ -297,7 +297,8 @@ kbd {
   box-shadow: none;
   color: var(--secondary);
   cursor: pointer;
-  rotate: none;
+  /* 挡铅笔草稿 button:hover 的歪斜（(0,5,1)）：贴着屏幕边的把手一歪，左缘就离开屏幕边了。 */
+  rotate: none !important;
   transition: background-color var(--dur-1) var(--ease-soft), width var(--dur-2) var(--spring-snappy);
 }
 
@@ -4228,3 +4229,6 @@ kbd {
 .list .document-progress:has(+ .document-progress.learning) { grid-row: 1; align-self: end; }
 .list .document-progress.learning { grid-row: 2; align-self: start; margin-top: 0; }
 .document-progress.learning i { background: var(--accent); }
+/* 两条进度上下叠着时右边的字一样宽，两根线的右端才对齐（「未读」和「学习 3/8」字数不同）。 */
+.document-progress:has(+ .document-progress.learning) > span,
+.document-progress.learning > span { min-width: 5.4em; }

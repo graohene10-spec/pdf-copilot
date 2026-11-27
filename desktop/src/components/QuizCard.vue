@@ -47,7 +47,7 @@ const html = (text: string) => renderMarkdown(text)
   <section class="quiz" :class="{ done }" :aria-label="`${KIND[quiz.kind]}题`">
     <button v-if="!opened && !done" type="button" class="quiz-open" @click="opened = true">做检查题</button>
     <template v-else>
-      <p class="quiz-kind">{{ KIND[quiz.kind] }}<template v-if="number"> {{ number }}</template><template v-if="many && !done"> · 多选</template></p>
+      <p class="quiz-kind">{{ KIND[quiz.kind] }}{{ number ? ` ${number}` : '' }}<template v-if="many && !done"> · 多选</template></p>
       <div class="quiz-question" v-html="html(quiz.question)" />
       <div v-if="quiz.options" class="quiz-options" :role="many ? 'group' : 'radiogroup'">
         <button v-for="index in order" :key="index" type="button" class="quiz-option" :class="{ right: done && right(index), wrong: done && picked.includes(index) && !right(index) }" :role="many ? 'checkbox' : 'radio'" :aria-checked="picked.includes(index)" :disabled="Boolean(done)" @click="pick(index)"><i aria-hidden="true" /><span v-html="html(quiz.options[index]!)" /></button>
@@ -75,7 +75,8 @@ const html = (text: string) => renderMarkdown(text)
 <style scoped>
 /* 题目是拿来读和想的：实心底、正文字体，不跟着主题用手写体和玻璃。 */
 .quiz{display:flex;flex-direction:column;gap:11px;margin:12px 0 4px;padding:16px;border:1px solid color-mix(in srgb,var(--ink) 22%,transparent);border-radius:12px;background:var(--surface,#fff);color:var(--ink);font-family:var(--font-formal);font-size:15px;line-height:1.65;letter-spacing:0;-webkit-backdrop-filter:none;backdrop-filter:none}
-.quiz :is(button,textarea){font-family:var(--font-formal);letter-spacing:0;rotate:none}
+/* 铅笔草稿给所有按钮悬停时歪一点（:root[data-style='sketch'] button:hover…，(0,5,1)）：卡片里的字一歪就糊，只能 !important 挡。 */
+.quiz :is(button,textarea){font-family:var(--font-formal);letter-spacing:0;rotate:none!important}
 .quiz-open{align-self:flex-start;height:32px;padding:0 14px;border:1px solid color-mix(in srgb,var(--ink) 30%,transparent);border-radius:8px;background:none;box-shadow:none;color:var(--ink);font-size:14px}
 .quiz-open:hover{border-color:var(--accent)}
 .quiz-kind{margin:0;color:var(--secondary);font-size:12.5px;font-weight:600;letter-spacing:.04em}
@@ -85,8 +86,11 @@ const html = (text: string) => renderMarkdown(text)
 .quiz-options{display:flex;flex-direction:column;gap:8px}
 .quiz-option{display:flex;align-items:flex-start;gap:11px;height:auto;padding:10px 12px;border:1.5px solid color-mix(in srgb,var(--ink) 26%,transparent);border-radius:9px;background:var(--surface,#fff);box-shadow:none;color:var(--ink);font-size:15px;line-height:1.6;text-align:left;transition:border-color var(--dur-1) var(--ease-soft),background var(--dur-1) var(--ease-soft)}
 .quiz-option span{flex:1;min-width:0;white-space:normal;overflow-wrap:anywhere}
+/* 下面几条 :hover 同时挡掉全局 button:hover / textarea:hover 的底色和描边（它们的优先级比单个类选择器高）。 */
 .quiz-option:not(:disabled):hover{border-color:color-mix(in srgb,var(--ink) 55%,transparent)}
-.quiz-option i{flex:none;width:15px;height:15px;margin-top:5px;border:1.5px solid color-mix(in srgb,var(--ink) 55%,transparent);border-radius:50%}
+.quiz-option:not(:disabled):not([aria-checked='true']):hover{background:var(--surface,#fff)}
+/* 圆圈/方框按选项的行高居中在第一行上（.5lh），不写死 margin-top。 */
+.quiz-option i{flex:none;width:15px;height:15px;margin-top:calc(.5lh - 7.5px);border:1.5px solid color-mix(in srgb,var(--ink) 55%,transparent);border-radius:50%}
 .quiz-option[role='checkbox'] i{border-radius:3px}
 .quiz-option[aria-checked='true']{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--surface,#fff))}
 .quiz-option[aria-checked='true'] i{border-color:var(--accent);background:var(--accent);box-shadow:inset 0 0 0 2.5px var(--surface,#fff)}
@@ -94,6 +98,7 @@ const html = (text: string) => renderMarkdown(text)
 .quiz-option.wrong{border-color:var(--danger,#c9503c);background:color-mix(in srgb,var(--danger,#c9503c) 13%,var(--surface,#fff))}
 .quiz-option:disabled{opacity:1;cursor:default}
 .quiz-text{width:100%;padding:8px 11px;border:1px solid color-mix(in srgb,var(--ink) 26%,transparent);border-radius:8px;background:var(--surface,#fff);box-shadow:none;color:var(--ink);font-size:14.5px;line-height:1.55;outline:0;resize:vertical}
+.quiz-text:hover:not(:focus){background:var(--surface,#fff)}
 .quiz-text:focus{border-color:var(--accent)}
 .quiz-text::placeholder{color:var(--secondary)}
 .quiz-sure{display:flex;flex-wrap:wrap;gap:6px}
@@ -102,8 +107,11 @@ const html = (text: string) => renderMarkdown(text)
 .quiz-foot{display:flex;align-items:center;justify-content:flex-end;gap:10px}
 .quiz-plain{height:32px;padding:0 10px;border:1px solid transparent;border-radius:8px;background:none;box-shadow:none;color:var(--secondary);font-size:14px}
 .quiz-plain:hover{color:var(--ink)}
+.quiz-plain:hover:not(:disabled){background:none}
+.quiz-plain:hover:not(:disabled):not([aria-pressed='true']){border-color:transparent}
 .quiz-plain[aria-pressed='true']{border-color:var(--accent);color:var(--ink);font-weight:600}
 .quiz-submit{height:32px;padding:0 18px;border:0;border-radius:8px;background:var(--accent);box-shadow:none;color:var(--accent-on,#fff);font-size:14px;font-weight:600}
+.quiz-submit:hover:not(:disabled){background:color-mix(in srgb,var(--accent) 88%,var(--ink))}
 .quiz-submit:disabled{opacity:.45}
 .quiz-said{margin:0;padding-left:10px;border-left:2px solid color-mix(in srgb,var(--ink) 22%,transparent);color:var(--ink);font-size:14.5px;white-space:pre-wrap}
 .quiz-why{color:var(--ink);font-size:14.5px}

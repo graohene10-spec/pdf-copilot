@@ -6,6 +6,7 @@ import AppIcon from './AppIcon.vue'
 import { editItem, forgetItem, memory, restoreMemory, type MemoryEntry } from '../ai/memory'
 import { forgetPoint, loadAllMaps, maps, mapTitles } from '../ai/learning-map'
 import type { MapNode } from '../ai/learning'
+import { renderMarkdown } from '../ai/render'
 
 const emit = defineEmits<{ manage: [] }>()
 type Row = { id: string; index: number; text: string; talk: string; scope: 'book' | 'all' }
@@ -83,7 +84,7 @@ function restore() { if (undo.value) restoreMemory(undo.value.id, undo.value.ent
         <p class="mem-sub">学过的要点</p>
         <ul>
           <li v-for="point in book.points" :key="point.id">
-            <span class="mem-point" :data-tip="point.sources[0]?.text.slice(0, 300)"><b>{{ point.title }}</b><template v-if="point.statement !== point.title">{{ point.statement }}</template></span>
+            <span class="mem-point" :data-tip="point.sources[0]?.text.slice(0, 300)"><b v-html="renderMarkdown(point.title)" /><span v-if="point.statement !== point.title" v-html="renderMarkdown(point.statement)" /></span>
             <button type="button" class="mem-x" aria-label="忘掉这个要点" data-tip="忘掉这个要点" @click="forgetPoint(book.key, point.id)"><AppIcon name="close" :size="12" /></button>
           </li>
         </ul>
@@ -124,6 +125,8 @@ function restore() { if (undo.value) restoreMemory(undo.value.id, undo.value.ent
 .mem-sub{margin:10px 0 2px;color:var(--muted);font-size:12px}
 .mem-point{display:flex;flex-direction:column;flex:1;min-width:0;padding:5px 6px;font-size:13px;line-height:1.5;overflow-wrap:anywhere}
 .mem-point b{font-weight:650}
+/* 要点的标题和陈述照大纲里一样排公式，不露出 $…$ 原文。 */
+.mem-point :deep(p){margin:0}
 .mem-x{display:grid;place-items:center;flex:none;width:28px;height:28px;padding:0;border:0;border-radius:6px;background:none;box-shadow:none;color:var(--muted)}
 .mem-x:hover{background:color-mix(in srgb,var(--danger,#c0392b) 12%,transparent);color:var(--danger,#c0392b)}
 .mem-undo{position:sticky;bottom:0;display:flex;align-items:center;gap:8px;margin:14px 0 0;padding:8px 12px;border:1px solid var(--separator);border-radius:8px;background:var(--surface,var(--canvas));font-size:12.5px}
