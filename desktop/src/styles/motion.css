@@ -291,7 +291,7 @@
   border-width: 0;
 }
 
-/* 收起后的小标签：贴在屏幕左上角的一枚竖向玻璃标签，从角落弹出。 */
+/* 收起后的小把手：从屏幕左缘滑出来。 */
 .chrome-tag-enter-active {
   transition: opacity var(--dur-2) var(--ease-out), transform var(--dur-bounce) var(--spring-bouncy);
 }
@@ -303,7 +303,7 @@
 .chrome-tag-enter-from,
 .chrome-tag-leave-to {
   opacity: 0;
-  transform: translateX(-10px) scale(.7);
+  transform: translateX(-12px);
 }
 
 /* ---- 焦点环：沿元素自身圆角绘制，胶囊仍是胶囊 ----------------------- */
