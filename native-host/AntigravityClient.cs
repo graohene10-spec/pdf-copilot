@@ -37,8 +37,15 @@ namespace PdfCopilot {
         }
         private string Discover() {
             if (configured != "") return ExistingExe(configured);
-            foreach (string dir in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator)) {
-                try { string exe = ExistingExe(Path.Combine(dir.Trim('"'), "agy.exe")); if (exe != null) return exe; } catch (ArgumentException) { }
+            // The reader is usually launched from Explorer, whose environment predates a PATH entry added by a later
+            // install (the agy installer adds one). Also read the PATH stored for the user and the machine.
+            var paths = new List<string> { Environment.GetEnvironmentVariable("PATH") };
+            foreach (var target in new[] { EnvironmentVariableTarget.User, EnvironmentVariableTarget.Machine }) {
+                try { paths.Add(Environment.ExpandEnvironmentVariables(Environment.GetEnvironmentVariable("PATH", target) ?? "")); } catch (System.Security.SecurityException) { }
+            }
+            foreach (string dir in String.Join(Path.PathSeparator.ToString(), paths).Split(Path.PathSeparator)) {
+                if (dir.Trim().Length == 0) continue;
+                try { string exe = ExistingExe(Path.Combine(dir.Trim().Trim('"'), "agy.exe")); if (exe != null) return exe; } catch (ArgumentException) { }
             }
             string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
             var dirs = new[] { Path.Combine(local, "Programs", "AntigravityCLI"), Path.Combine(local, "AntigravityCLI"), Path.Combine(profile, "AntigravityCLI"), Path.Combine(profile, ".local", "bin") };
@@ -302,6 +309,16 @@ namespace PdfCopilot {
                     RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, StandardOutputEncoding = new UTF8Encoding(false, true) };
                 // Framework flushes Console.InputEncoding's preamble into redirected stdin before exposing its BaseStream.
                 if (Console.InputEncoding.GetPreamble().Length != 0) Console.InputEncoding = new UTF8Encoding(false);
+                // agy reaches Google through the proxy named in these variables. An app launched from Explorer can miss ones
+                // the user set later, so fill the gaps from the stored user and machine values (set on this process: see CodexClient).
+                foreach (string name in new[] { "HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "NO_PROXY" }) {
+                    if (!String.IsNullOrEmpty(Environment.GetEnvironmentVariable(name))) continue;
+                    try {
+                        string stored = Environment.GetEnvironmentVariable(name, EnvironmentVariableTarget.User);
+                        if (String.IsNullOrEmpty(stored)) stored = Environment.GetEnvironmentVariable(name, EnvironmentVariableTarget.Machine);
+                        if (!String.IsNullOrEmpty(stored)) Environment.SetEnvironmentVariable(name, stored, EnvironmentVariableTarget.Process);
+                    } catch (System.Security.SecurityException) { }
+                }
                 child = Process.Start(info);
                 try {
                     job = new ProcessJob(child);
