@@ -1337,6 +1337,11 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
             <!-- 参考原文收在 Thinking 里：点开思考过程时一起列出，平时不占地方。 -->
             <div v-if="message.sources.length && expanded.has(message.id)" class="source-list"><p class="source-heading">参考原文 · {{ message.sources.length }} 段</p><button v-for="source in message.sources" :key="source.sourceId" @click="jump(source)"><span>{{ source.line ? `第 ${source.line} 行` : `第 ${source.page} 页` }}</span><small>{{ source.text }}</small></button></div>
             <div v-if="message.content" v-answer="message" class="answer-body" />
+            <!-- 大纲出来、等读者点头时：就在这条回答下面列出来，带上开始键。大纲栏收着也看得到、点得到。 -->
+            <div v-if="state.learning?.phase === 'plan' && state.learning.plan && isLastAnswer(message) && message.finishedAt && !message.failed" class="plan-inline">
+              <ol><li v-for="(node, index) in state.learning.plan.nodes" :key="node.id"><i>{{ index + 1 }}</i><span v-html="renderMarkdown(node.title)" /><small v-if="node.page">{{ node.page }}</small></li></ol>
+              <div class="plan-inline-foot"><span>想调整就直接说</span><button type="button" :disabled="busy" @click="startPlan">就这样开始</button></div>
+            </div>
             <QuizCard v-for="(quiz, at) in quizzesOf(message)" :key="quiz.index" :quiz="quiz" :seed="`${message.id}:${quiz.index}`" :answered="answerOf(message, quiz)" :disabled="busy" :batch="quizzesOf(message).length > 1" :number="quizzesOf(message).length > 1 ? at + 1 : undefined" @answer="(answer, correct) => submitQuiz(message, [{ quiz, answer, correct }])" @draft="(answer, correct) => fill(message, quiz, answer, correct)" />
             <div v-if="quizzesOf(message).length > 1 && !answerOf(message, quizzesOf(message)[0]!)" class="quiz-all"><span>{{ filledOf(message).length }} / {{ quizzesOf(message).length }}</span><button type="button" :disabled="busy || filledOf(message).length < quizzesOf(message).length" @click="submitQuiz(message, filledOf(message))">一起提交</button></div>
             <div v-if="!live(message)" class="answer-meta">
@@ -1966,6 +1971,18 @@ textarea::placeholder{color:var(--muted);font-family:'Anthropic Serif','Source H
 .task-pick button{height:30px;padding:0 14px;border:1px solid color-mix(in srgb,var(--ink) 16%,transparent);border-radius:9px;background:none;box-shadow:none;color:var(--secondary);font:inherit;font-size:13px}
 .task-pick button:hover{border-color:var(--accent);color:var(--ink)}
 /* 摸底的几道题下面的那颗键：全填了才能交。 */
+/* 等读者点头的大纲：和题目卡片一样的实心卡片。 */
+.plan-inline{margin:12px 0 4px;padding:14px 16px;border:1px solid color-mix(in srgb,var(--ink) 22%,transparent);border-radius:12px;background:var(--surface,#fff);color:var(--ink);font-family:var(--font-formal);font-size:14.5px;letter-spacing:0}
+.plan-inline ol{display:flex;flex-direction:column;gap:7px;margin:0;padding:0;list-style:none}
+.plan-inline li{display:flex;align-items:baseline;gap:10px;line-height:1.5}
+.plan-inline li i{flex:none;width:1.4em;color:var(--muted);font-size:12.5px;font-style:normal;font-variant-numeric:tabular-nums;text-align:right}
+.plan-inline li span{flex:1;min-width:0;overflow-wrap:anywhere}
+.plan-inline li span :deep(p){margin:0}
+.plan-inline li small{flex:none;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+.plan-inline-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px}
+.plan-inline-foot span{color:var(--muted);font-size:13px}
+.plan-inline-foot button{height:34px;padding:0 20px;border:0;border-radius:9px;background:var(--accent);box-shadow:none;color:var(--accent-on,#fff);font:inherit;font-size:14px;font-weight:600}
+.plan-inline-foot button:disabled{opacity:.45}
 .quiz-all{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin:10px 0 4px;font-family:var(--font-formal)}
 .quiz-all span{color:var(--secondary);font-size:13px;font-variant-numeric:tabular-nums}
 .quiz-all button{height:34px;padding:0 20px;border:0;border-radius:9px;background:var(--accent);box-shadow:none;color:var(--accent-on,#fff);font:inherit;font-size:14px;font-weight:600}
