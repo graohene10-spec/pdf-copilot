@@ -299,6 +299,8 @@ export function advanceLearning(state: LearningState, event: LearningEvent): Lea
       next.phase = 'plan'
     }
     if (parsed.plan) {
+      // 模型有时只给了路线图、忘了写摸底结论：照样进到等读者确认的阶段，不然「就这样开始」点了没反应。
+      if (next.phase === 'probe') next.phase = 'plan'
       next.plan = parsed.plan
       for (const id of Object.keys(progress)) if (!hasNode(parsed.plan, id)) delete progress[id]
       if (next.current && !hasNode(parsed.plan, next.current)) delete next.current

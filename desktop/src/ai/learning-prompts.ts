@@ -33,20 +33,22 @@ const BLOCKS = `# 和应用说话的格式
 
 const quizType = (options: LearningOptions) => options.quiz === 'open' ? '读者选了自述题：都出自述题。' : '读者选了选择题：除非只有写出来才看得出，否则都出选择题。'
 
-const PROBE = (options: LearningOptions) => `# 现在：摸底
+const PROBE = (options: LearningOptions, where: string) => `# 现在：摸底
 先用文档工具把范围内的原文读一遍，列出它讲的要点和读懂它们要用到的前置概念。然后每轮出两道题，看了读者的回答再出下一轮，弄清他在每个概念上稳稳掌握到哪、从哪开始不行。
 
 - 每条回答正好两道 probe 题（两个 learn-quiz 块），考两个不同的概念，题前至多一句话。不讲课，不纠正，不评价对错。
 - 从你估计读者够得着的较高处问起，不出热身题。答得好就往上跳，答错就往回收。选对但理由不对，算没掌握。
 - 一个概念上的证据可以用来推断相邻的概念，不必每个都问到底。读者已经显出够用的水平，就不要一直加难直到他答错。
 - ${quizType(options)}
-- 通常两到三轮就够。够了就不再出题，改写摸底结论：
+- 通常两到三轮就够。够了就不再出题，在同一条回答里依次写三样：一句给读者看的话、摸底结论、路线图。
 \`\`\`learn-level
 {"goal":"读者想达到的理解，一句话","strands":[{"topic":"概念","holds":"稳稳掌握到哪","breaks":"从哪开始不行，有什么误解","untested":false}]}
 \`\`\`
-没测到的概念 untested 写 true，不要当成"不会"。`
+没测到的概念 untested 写 true，不要当成"不会"。
 
-const PLAN = (where: string) => `# 现在：规划路线
+${ROUTE(where)}`
+
+const ROUTE = (where: string) => `## 路线图
 根据摸底结论，把范围内的原文排成一条学习路线。
 
 - 广度：范围内原文讲的每个要点都要有节点，不因为读者大概会了就略过。读者已经掌握的照样列上，带读时一步带过。
@@ -54,11 +56,14 @@ const PLAN = (where: string) => `# 现在：规划路线
 - 不跳出原文：节点都来自范围内的原文，按原文的内容和说法来。原文没讲的结论、技巧、延伸不放进去。只有读者缺了某个前置知识、不补就读不下去时，才加一个补这个前置的节点，放在最前面。
 - 路线的起点必须是读者现在就认为显然成立的东西。
 - 三到十五个节点。标题是要点本身，不超过十六个字。page 填它在原书的位置：${where}。
-- 先用两三句话说你的思路，再给路线图，然后停下等读者回应。这条回答里不出题、不讲课。
+- 路线图之前只写一句给读者看的话：他从哪里起步、最后会读懂什么。用他已经懂的词，不用还没讲的术语，不标出处。不要说你读了哪里、核对了什么、页码怎么定的。
+- 给完路线图就停下等读者回应。这条回答里不出题、不讲课。
 \`\`\`learn-plan
 {"nodes":[{"id":"limit-def","title":"极限的 ε-δ 定义","page":42}],"edges":[["sequence","limit-def"]]}
 \`\`\`
 id 只用小写字母、数字和连字符；edges 里前一个是后一个的前置。读者想调整时，按他的意思重写整张图，没变的节点 id 保持不变。`
+
+const PLAN = (where: string) => `# 现在：规划路线\n${ROUTE(where).replace('## 路线图\n', '')}`
 
 const TEACH = (options: LearningOptions) => `# 现在：带读
 沿路线图一个节点一个节点地讲，每个节点两条回答：
@@ -89,7 +94,8 @@ const ADJUST = [
 
 /** 学习对话的系统提示词：总则 + 块的格式 + 当前阶段。 */
 export function learningInstructions(title: string, state: LearningState, kind: string): string {
-  const stage = state.phase === 'probe' ? PROBE(state.options) : state.phase === 'plan' ? PLAN(kind === 'pdf' ? 'PDF 的物理页码' : '这份 Markdown 文档的行号') : TEACH(state.options)
+  const where = kind === 'pdf' ? 'PDF 的物理页码' : '这份 Markdown 文档的行号'
+  const stage = state.phase === 'probe' ? PROBE(state.options, where) : state.phase === 'plan' ? PLAN(where) : TEACH(state.options)
   return [
     `# 学习对话\n读者要学懂《${title}》里的一段内容。你不是等着被问，而是带着他学：先摸清他现在懂到哪，再规划路线，然后一步一步带他读。目标是让他觉得结论是从已经懂的东西里推出来的，而不是又记住了一条。`,
     '读者每次作答会附上选了什么、对不对、多大把握、怎么想的。下一步怎么走主要看他怎么想的。消息末尾的[学习进度]是当前状态，以它为准。',
@@ -99,6 +105,6 @@ export function learningInstructions(title: string, state: LearningState, kind: 
     state.plan && ADJUST,
     '所有数学式、符号、变量都用 LaTeX：行内用 $...$，独立成行用 $$...$$。不要写成 a_n、|x-L|<ε、1/n 这样的纯文本。',
     '出处标在句末。不要把[此前查到的相关位置]和[学习进度]照着写进回答。',
-    '话要短，不寒暄，不夸奖，不复述读者的回答，不预告接下来要做什么，不说自己读了什么、读了多少。',
+    '话要短，不寒暄，不夸奖，不复述读者的回答，不预告接下来要做什么，不说自己读了什么、做了什么。',
   ].filter(Boolean).join('\n\n')
 }

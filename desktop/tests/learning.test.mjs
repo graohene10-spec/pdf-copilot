@@ -235,9 +235,11 @@ test('开始事件只把设定阶段推进到摸底', () => {
   assert.deepEqual(advanceLearning(teaching(), { type: 'start' }), teaching())
 })
 
-test('摸底阶段获得合法结论才转入规划', () => {
+test('摸底阶段拿到结论或路线图就转入规划', () => {
   const before = { ...initial(), phase: 'probe' }
-  assert.equal(assistant(before, block('plan', plan)).phase, 'probe')
+  // 模型只给了路线图、忘了写结论：照样进到等读者确认的阶段。
+  const planOnly = assistant(before, block('plan', plan))
+  assert.equal(planOnly.phase, 'plan'); assert.deepEqual(planOnly.plan, plan); assert.equal(planOnly.level, undefined)
   const after = assistant(before, block('level', level))
   assert.equal(after.phase, 'plan')
   assert.deepEqual(after.level, level)
