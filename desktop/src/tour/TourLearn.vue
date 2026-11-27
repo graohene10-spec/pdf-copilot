@@ -62,7 +62,7 @@ const settled = props.scene.learn.shown
                 <div class="tl-fold" :class="{ shut: learn.sent[id] }"><div>
                   <p class="tl-think">我的想法（可不填）</p>
                   <p class="tl-sure"><span v-for="(label, level) in LEARN.sure" :key="label" :class="[`tl-sure-${level}`, { on: learn.sure[id] === level }]">{{ label }}</span></p>
-                  <p class="tl-foot"><span>不知道</span><b v-if="turn.quiz.length === 1" class="tl-submit" :class="{ ready: learn.picked[id] !== null }">提交</b></p>
+                  <p class="tl-foot"><span v-if="turn.quiz.length === 1">跳过</span><span>不知道</span><b v-if="turn.quiz.length === 1" class="tl-submit" :class="{ ready: learn.picked[id] !== null }">提交</b></p>
                 </div></div>
                 <div v-if="QUIZZES[id]!.why" class="tl-fold" :class="{ shut: !learn.sent[id] }"><div><p class="tl-why">{{ QUIZZES[id]!.why }}</p></div></div>
               </div></div>
@@ -146,7 +146,8 @@ i{font-style:normal}
 .tl-kind{color:var(--secondary);font-size:11px;font-weight:600;letter-spacing:.04em}
 .tl-question{margin:4px 0 2px;font-size:13px;font-weight:650}
 .tl-opt{display:flex;align-items:flex-start;gap:8px;margin-top:5px;padding:5px 9px;border:1.5px solid color-mix(in srgb,var(--ink) 26%,transparent);border-radius:8px;transition:border-color .2s,background-color .2s}
-.tl-opt i{flex:none;width:12px;height:12px;margin-top:3px;border:1.5px solid color-mix(in srgb,var(--ink) 55%,transparent);border-radius:50%;transition:background-color .2s,border-color .2s,box-shadow .2s}
+/* 圆圈按选项的行高居中在第一行上（.5lh），和真的一样不写死 margin-top。 */
+.tl-opt i{flex:none;width:12px;height:12px;margin-top:calc(.5lh - 6px);border:1.5px solid color-mix(in srgb,var(--ink) 55%,transparent);border-radius:50%;transition:background-color .2s,border-color .2s,box-shadow .2s}
 .tl-opt.on{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--surface))}
 .tl-opt.on i{border-color:var(--accent);background:var(--accent);box-shadow:inset 0 0 0 2px var(--surface)}
 .tl-opt.right{border-color:#2e9d5c;background:color-mix(in srgb,#2e9d5c 14%,var(--surface))}
@@ -169,6 +170,11 @@ i{font-style:normal}
 @keyframes tl-open{from{width:0;opacity:0}}
 .tl-plan-in{--tl-rail:color-mix(in srgb,var(--ink) 16%,transparent);display:flex;flex-direction:column;width:236px;height:100%;padding:16px 12px 12px 18px;border-right:1px solid var(--tl-rail);color:var(--ink);font-size:13.5px}
 .tl-plan header{display:flex;align-items:baseline;gap:2px;flex:none;min-height:28px}
+/* 一枚看不见的大号数字撑住基线：摸底时还没有进度数字，标题也停在有数字时的同一高度，大纲出来那一下不跳。 */
+.tl-plan header::before{content:'\200b';width:0;margin-right:-2px;overflow:hidden;font-size:21px;font-weight:300;line-height:1}
+/* 铅笔草稿里和真的一样：整栏从红色页边线右边开始（33px），标题再让开回形针（19px）。 */
+.tw-world[data-look='sketch'] .tl-plan-in{padding-left:33px}
+.tw-world[data-look='sketch'] .tl-plan header{padding-left:19px}
 .tl-plan h3{margin-right:auto;min-width:0;overflow:hidden;color:var(--muted);font-size:11.5px;font-weight:500;letter-spacing:.18em;text-overflow:ellipsis;white-space:nowrap}
 .tl-count{flex:none;margin-right:6px;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap;animation:tl-in .3s var(--ease-out) both}
 .tl-count b{color:var(--ink);font-size:21px;font-weight:300;line-height:1}
@@ -193,12 +199,13 @@ i{font-style:normal}
 @keyframes tl-breathe{0%,100%{opacity:.45}50%{opacity:1}}
 /* 路线：一条细竖线串起 7px 的小点。走过的实心，正在讲的是一枚强调色细环（向外扩三下），没到的是淡淡的空心点。 */
 .tl-nodes{flex:1;min-height:0;margin-top:10px;padding:2px 4px 2px 0;list-style:none}
-.tl-nodes li{position:relative;display:flex;align-items:center;gap:12px;height:32px;padding:0 6px 0 0;color:var(--muted);animation:tl-node .35s var(--ease-out) both;transition:color .3s}
+.tl-nodes li{position:relative;display:flex;align-items:flex-start;gap:12px;padding:6px 6px 6px 0;line-height:1.45;color:var(--muted);animation:tl-node .35s var(--ease-out) both;transition:color .3s}
 @keyframes tl-node{from{opacity:0;translate:0 6px}}
-.tl-nodes li:not(:last-child)::before{content:'';position:absolute;left:3px;top:20px;bottom:-12px;width:1px;background:var(--tl-rail);transition:background-color .3s}
-.tl-nodes li>i{position:relative;z-index:1;flex:none;width:7px;height:7px;border:1px solid color-mix(in srgb,var(--ink) 34%,transparent);border-radius:50%;background:var(--surface);box-sizing:border-box;transition:background-color .3s,border-color .3s,scale .3s var(--ease-spring)}
-.tl-nodes span{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-.tl-nodes small{flex:none;color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums;opacity:.75}
+/* 竖线从这一颗点的下沿接到下一颗点的上沿：点的中心在 6px 内边距 + 半个行高处，和真的同一算法。 */
+.tl-nodes li:not(:last-child)::before{content:'';position:absolute;left:3px;top:calc(6px + .5lh + 3.5px);bottom:calc(-2.5px - .5lh);width:1px;background:var(--tl-rail);transition:background-color .3s}
+.tl-nodes li>i{position:relative;z-index:1;flex:none;width:7px;height:7px;margin-top:calc(.5lh - 3.5px);border:1px solid color-mix(in srgb,var(--ink) 34%,transparent);border-radius:50%;background:var(--surface);box-sizing:border-box;transition:background-color .3s,border-color .3s,scale .3s var(--ease-spring)}
+.tl-nodes span{flex:1;align-self:baseline;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.tl-nodes small{flex:none;align-self:baseline;color:var(--muted);font-size:11px;font-weight:400;font-variant-numeric:tabular-nums;opacity:.75}
 .tl-nodes li.current{color:var(--ink);font-weight:600}
 .tl-nodes li.current>i{scale:1.3;border-color:var(--accent);border-width:1.5px}
 .tl-nodes li.current>i::after{content:'';position:absolute;inset:-5px;border-radius:50%;border:1px solid var(--accent);opacity:0;animation:tl-ping 2.2s var(--ease-out) 3}
