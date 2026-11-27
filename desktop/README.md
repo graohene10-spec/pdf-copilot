@@ -1,8 +1,8 @@
-# 开智 0.10.154
+# 开智 0.10.155
 
 开智是一款 Windows PDF / Markdown 阅读与管理工具，支持并排阅读、同书多开、本机手写标记和 AI 文档问答。界面采用可调节的液态玻璃材质，文档库、阅读进度、设置和对话记录保存在本机。
 
-[下载 0.10.154](https://github.com/graohene10-spec/pdf-copilot/releases/tag/desktop-v0.10.154) · [本版更新](RELEASE_NOTES_0.10.154.md) · [0.7.0 更新](RELEASE_NOTES_0.7.0.md) · [升级指南](docs/UPDATING.md) · [隐私与数据](docs/PRIVACY.md) · [构建与发布](docs/RELEASING.md)
+[下载 0.10.155](https://github.com/graohene10-spec/pdf-copilot/releases/tag/desktop-v0.10.155) · [本版更新](RELEASE_NOTES_0.10.155.md) · [0.7.0 更新](RELEASE_NOTES_0.7.0.md) · [升级指南](docs/UPDATING.md) · [隐私与数据](docs/PRIVACY.md) · [构建与发布](docs/RELEASING.md)
 
 ## 0.7.1 更新
 
@@ -17,9 +17,9 @@
 
 | GitHub 附件 | 用途 |
 | --- | --- |
-| [kaizhi_0.10.154_x64-setup.exe](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.10.154/kaizhi_0.10.154_x64-setup.exe) | Windows x64 安装版 |
-| [kaizhi_0.10.154_x64-portable.zip](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.10.154/kaizhi_0.10.154_x64-portable.zip) | 免安装版；解压后运行 `OpenIntelligence-portable/OpenIntelligence.exe` |
-| [kaizhi_0.10.154_source.zip](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.10.154/kaizhi_0.10.154_source.zip) | 完整源码，供开发者构建 |
+| [kaizhi_0.10.155_x64-setup.exe](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.10.155/kaizhi_0.10.155_x64-setup.exe) | Windows x64 安装版 |
+| [kaizhi_0.10.155_x64-portable.zip](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.10.155/kaizhi_0.10.155_x64-portable.zip) | 免安装版；解压后运行 `OpenIntelligence-portable/OpenIntelligence.exe` |
+| [kaizhi_0.10.155_source.zip](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.10.155/kaizhi_0.10.155_source.zip) | 完整源码，供开发者构建 |
 | manifest.json / SHA256SUMS.txt | 文件清单、源码提交和附件校验值 |
 
 1. 安装程序，或将免安装 ZIP 全部解压，保留 `OpenIntelligence.exe` 旁的 `native-host/` 文件夹。
@@ -66,7 +66,7 @@ PDF 和 Markdown 的工具栏均提供框选与标记。Markdown 框选会同时
 
 ## AI 问答与对话记录
 
-支持 DeepSeek、OpenAI、Claude、Kimi、智谱 GLM、通义千问、自定义接口和本机 Codex。默认回车发送、`Ctrl + Enter` 换行；发出的问题下方会列出一起交给 AI 的截图、所选文字和文档页码；参考原文收在回答上方的 Thinking 里，点开才显示。回答流式显示，可停止、复制、跳转原文引用；思考时显示 Claude Code 式的转动星标、带从左到右流光的英文动词（Thinking… / Cogitating… 等）和按整秒走的用时，展开可看完整思路，不显示 token 计数；回答中的公式和 Mermaid 图表可排版显示。点输入区的模型按钮，输入栏下沿会拉长露出模型胶囊和分段式的思考强度选择（再点一次或按 Esc 收回）；服务、密钥与预算在「设置 → AI」；输入区右侧的圆环显示当前对话的上下文占用。
+支持 DeepSeek、OpenAI、Claude、Gemini、Kimi、智谱 GLM、通义千问、自定义接口，以及本机 Codex 和 Antigravity。默认回车发送、`Ctrl + Enter` 换行；发出的问题下方会列出一起交给 AI 的截图、所选文字和文档页码；参考原文收在回答上方的 Thinking 里，点开才显示。回答流式显示，可停止、复制、跳转原文引用；思考时显示 Claude Code 式的转动星标、带从左到右流光的英文动词（Thinking… / Cogitating… 等）和按整秒走的用时，展开可看完整思路，不显示 token 计数；回答中的公式和 Mermaid 图表可排版显示。点输入区的模型按钮，输入栏下沿会拉长露出模型胶囊和分段式的思考强度选择（再点一次或按 Esc 收回）；服务、密钥与预算在「设置 → AI」；输入区右侧的圆环显示当前对话的上下文占用。
 
 空白对话显示助手形象和问候，可在「设置 → AI → 空白页问候」选择英文、中文古诗、混合或自定义句子。问候使用内置的 Anthropic Serif，中文按字体回退显示；古诗不显示作者与出处。输入框提供轮换提示语，思考时的转动符号每段回答随机选择。
 
@@ -86,9 +86,10 @@ PDF 和 Markdown 的工具栏均提供框选与标记。Markdown 框选会同时
 
 | 服务 | 配置方式 |
 | --- | --- |
-| DeepSeek、OpenAI API、Claude（Anthropic）、Kimi、智谱 GLM、通义千问 | 选择服务商，填写 API Key，选择或输入模型名称 |
+| DeepSeek、OpenAI API、Claude（Anthropic）、Gemini（Google）、Kimi、智谱 GLM、通义千问 | 选择服务商，填写 API Key，选择或输入模型名称 |
 | 自定义接口 | 填写基础 API 地址与模型名称，选择 OpenAI 兼容、OpenAI Responses 或 Anthropic Messages 协议 |
 | Codex 本机登录 | 安装并登录本机 Codex，在设置中检查连接并读取模型列表 |
+| Antigravity 本机登录 | 安装并登录本机 Antigravity CLI（agy），在设置中检查连接并读取模型列表 |
 
 基础 API 地址保留服务所需的路径前缀，例如 `/v1`，不追加 `/chat/completions`、`/responses` 或 `/messages`。自定义接口可连接 OpenRouter、硅基流动、公司网关及本机服务；HTTP 的 localhost、127.0.0.1 或 IPv6 回环地址允许不填密钥。列表外的模型可直接输入名称，截图与检索工具按所选模型的能力使用。
 
@@ -168,7 +169,7 @@ npm test
 cargo test --release --locked --manifest-path src-tauri/Cargo.toml
 npm run desktop:build
 npm run package:desktop
-node scripts/release-assets.mjs --tag desktop-v0.10.154
+node scripts/release-assets.mjs --tag desktop-v0.10.155
 ```
 
 本机测试使用 release 配置可复用正式构建缓存；CI 当前使用默认测试配置。工具不在 PATH 时可使用 `scripts/build-windows.ps1`。本机构建产物在 `release/` 中使用中文名称；`release/github/` 中整理为上方表格的英文附件名。程序运行时可加 `package:desktop -- --staging` 先输出至 `artifacts/package-staging/`。

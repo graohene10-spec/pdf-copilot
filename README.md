@@ -4,7 +4,7 @@
 
 | 产品 | 最新正式版 | 下载与说明 |
 | --- | --- | --- |
-| 开智 Windows 桌面版 | **0.10.154** | [下载](https://github.com/graohene10-spec/pdf-copilot/releases/tag/desktop-v0.10.154) · [使用说明](desktop/README.md) · [本版更新](desktop/RELEASE_NOTES_0.10.154.md) |
+| 开智 Windows 桌面版 | **0.10.155** | [下载](https://github.com/graohene10-spec/pdf-copilot/releases/tag/desktop-v0.10.155) · [使用说明](desktop/README.md) · [本版更新](desktop/RELEASE_NOTES_0.10.155.md) |
 
 ## 开智 Windows 桌面版
 
@@ -12,7 +12,7 @@
 - **并排与同书多开**：最多三栏并排，PDF / Markdown 可混合；同一本书可在右侧再开一份，各自浏览不同位置，共用对话与标记。
 - **框选与标记**：PDF 和 Markdown 均支持框选提问、钢笔、荧光笔、划线、橡皮和撤销；Markdown 框选同时提供截图与原文，标记随段落布局调整，自动保存在本机。
 - **书签与缩放**：`Alt + B` 添加书签，`Ctrl + ↑ / ↓` 跳转，右键命名或删除；Markdown 支持整篇缩放，PDF 超宽时可拖动底部横向滚动条。
-- **AI 服务**：DeepSeek、OpenAI、Claude、Kimi、智谱 GLM、通义千问、自定义接口或本机 Codex，支持选文、截图、原文检索、引用跳转、多个会话和历史对话；框选后可用自定义气泡或数字键直接提问。
+- **AI 服务**：DeepSeek、OpenAI、Claude、Gemini、Kimi、智谱 GLM、通义千问、自定义接口，或本机 Codex / Antigravity，支持选文、截图、原文检索、引用跳转、多个会话和历史对话；框选后可用自定义气泡或数字键直接提问。
 - **阅读助手**：默认回车发送、`Ctrl + Enter` 换行；模型与分段式思考强度从输入栏下沿展开，问题附带的截图与原文显示在问题下方，右侧导航可跳转和钉住问题。“猜你想问”可在「设置 → AI」开关。
 - **液态玻璃**：透明度、模糊程度与边缘高光连续可调，支持光线折射、可读性补偿和底图取色；切换底板可先预览整个界面，再选择采用或还原。
 - **工作区与文档库**：侧栏和助手收放时，PDF 随阅读区连续缩放；普通窗口和全屏均可收起顶栏与左栏。文档库支持多种排序和自定义封面。
@@ -23,16 +23,16 @@
 
 | 文件 | 用途 |
 | --- | --- |
-| [kaizhi_0.10.154_x64-setup.exe](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.10.154/kaizhi_0.10.154_x64-setup.exe) | Windows x64 安装版 |
-| [kaizhi_0.10.154_x64-portable.zip](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.10.154/kaizhi_0.10.154_x64-portable.zip) | 免安装版；全部解压后运行 `OpenIntelligence-portable/OpenIntelligence.exe` |
-| [kaizhi_0.10.154_source.zip](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.10.154/kaizhi_0.10.154_source.zip) | 完整源码，供开发者构建 |
+| [kaizhi_0.10.155_x64-setup.exe](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.10.155/kaizhi_0.10.155_x64-setup.exe) | Windows x64 安装版 |
+| [kaizhi_0.10.155_x64-portable.zip](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.10.155/kaizhi_0.10.155_x64-portable.zip) | 免安装版；全部解压后运行 `OpenIntelligence-portable/OpenIntelligence.exe` |
+| [kaizhi_0.10.155_source.zip](https://github.com/graohene10-spec/pdf-copilot/releases/download/desktop-v0.10.155/kaizhi_0.10.155_source.zip) | 完整源码，供开发者构建 |
 | manifest.json / SHA256SUMS.txt | 发布清单与附件校验值 |
 
 1. 安装或解压运行，系统需有 WebView2；免安装版保留程序旁的 `native-host/` 文件夹。
 2. 点击「加入文档」、按 `Ctrl + O` 或拖入 PDF / Markdown 文件，即可阅读；包内 `samples/` 提供示例。
 3. 需要 AI 时进入「设置 → AI」：API 服务填写自己的 Key，Codex 使用本机已安装并登录的程序。打开「阅读助手」即可提问。
 
-**升级到 0.10.154**：0.3.1 及以后版本、0.3.0 安装版可在应用内升级；旧版若提示缺少校验信息，可手动下载本版。0.2.2 及更早安装版、0.3.0 及更早免安装版需手动升级。文档库、阅读进度、设置和已保存凭据继续沿用；免安装版的数据也保存在当前 Windows 账号的应用数据目录。具体步骤见[升级指南](desktop/docs/UPDATING.md)。
+**升级到 0.10.155**：0.3.1 及以后版本、0.3.0 安装版可在应用内升级；旧版若提示缺少校验信息，可手动下载本版。0.2.2 及更早安装版、0.3.0 及更早免安装版需手动升级。文档库、阅读进度、设置和已保存凭据继续沿用；免安装版的数据也保存在当前 Windows 账号的应用数据目录。具体步骤见[升级指南](desktop/docs/UPDATING.md)。
 
 [桌面使用与快捷键](desktop/README.md) · [升级与备份](desktop/docs/UPDATING.md) · [桌面隐私说明](desktop/docs/PRIVACY.md) · [源码构建与发布](desktop/docs/RELEASING.md)
 
