@@ -119,7 +119,6 @@ function saveCards() {
     if (list.length) cardStore[doc] = list; else delete cardStore[doc]
   }
   void library.setSetting(CARDS, JSON.stringify(cardStore)).catch(() => { /* 存不进去就只留在这次阅读里 */ })
-  uiVersion.value++
 }
 let saveTimer = 0
 watch(() => explainCards.map(card => [card.pinned, card.follow, card.rel?.x, card.rel?.y, card.screen?.left, card.screen?.top, card.size?.width, card.size?.height, card.base, card.item.status, card.item.text.length].join()).join('|'),
@@ -175,7 +174,6 @@ const ready: Promise<void> = (async () => {
   if (JSON.stringify(merged) !== JSON.stringify(saved)) persist()
 })()
 function persist() {
-  uiVersion.value++
   const text = JSON.stringify(store)
   try { localStorage.setItem(NOTES_KEY, text) } catch { /* 备份存不下不要紧 */ }
   void library.setSetting(SETTING, text).catch(() => { /* 存不进文档库时至少本地有一份 */ })
@@ -191,7 +189,7 @@ export function keepNote(doc: string, line: number, item: Explain, size?: { widt
 export function dropNote(doc: string, id: string) { writeNotes(doc, list => list.filter(note => note.id !== id)) }
 
 const mounted = new WeakMap<HTMLElement, Set<App>>()
-/** 正显示着的 Markdown 释义：右键菜单、Intelligent UI 合集要能找到它、关掉它。 */
+/** 正显示着的 Markdown 释义：右键菜单要能找到它、关掉它。 */
 export const shownNotes = new Map<string, { item: Explain; doc: string; remove: () => void }>()
 function insertNote(block: HTMLElement, item: Explain, kept: boolean) {
   const paper = block.closest<HTMLElement>('.markdown-paper')
@@ -239,31 +237,3 @@ export function runExplain(target: ExplainTarget, x: number, y: number, from?: s
   explainCards.push(reactive({ id: item.id, item, x, y, pinned: false, follow: 'page', anchor: target.anchor, doc: target.doc, page: target.page, from }) as ExplainCardState)
 }
 
-// ---- Intelligent UI 合集：钉住的 PDF 卡片和记入文档的 Markdown 释义里，带 ```ui 界面的那些 ----
-export type UiEntry = { kind: 'card' | 'note'; doc: string; id: string; term: string; text: string; page?: number; line?: number }
-/** 存的东西变了就加一，合集据此刷新。 */
-export const uiVersion = ref(0)
-export const uiReady = Promise.all([cardsReady, ready])
-export function uiEntries(): UiEntry[] {
-  const out: UiEntry[] = []
-  for (const [doc, list] of Object.entries(cardStore)) for (const card of list || []) if (card.text?.includes('```ui')) out.push({ kind: 'card', doc, id: card.id, term: card.term, text: card.text, page: card.page })
-  for (const [doc, list] of Object.entries(store)) for (const note of list || []) if (note.text?.includes('```ui')) out.push({ kind: 'note', doc, id: note.id, term: note.term, text: note.text, line: note.line })
-  return out
-}
-/** 从合集里删：文档里正显示着的那张卡片 / 那条释义一起撤掉，存的记录也删掉。 */
-export function removeUiEntries(entries: UiEntry[]) {
-  let cards = false
-  for (const entry of entries) {
-    if (entry.kind === 'card') {
-      const shown = explainCards.find(card => card.id === entry.id)
-      if (shown) { shown.pinned = false; closeCard(shown) }
-      const list = (cardStore[entry.doc] || []).filter(card => card.id !== entry.id)
-      if (list.length) cardStore[entry.doc] = list; else delete cardStore[entry.doc]
-      cards = true
-    } else {
-      const shown = shownNotes.get(entry.id)
-      if (shown) shown.remove(); else dropNote(entry.doc, entry.id)
-    }
-  }
-  if (cards) { void library.setSetting(CARDS, JSON.stringify(cardStore)).catch(() => { /* 存不进去就只留在这次 */ }); uiVersion.value++ }
-}

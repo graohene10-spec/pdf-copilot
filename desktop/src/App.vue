@@ -25,7 +25,7 @@ import { useReorder } from './ui/reorder'
 import { useRubberBand } from './ui/rubber-band'
 import { translator, translate, type Translation } from './ai/translate'
 import { loadTour } from './tour/lessons'
-import { explainCards, closeCard, closeLooseCards, explainTarget, runExplain, rerunExplain, shownNotes, uiEntries, uiReady, uiVersion, type Explain, type UiEntry } from './ai/explain'
+import { explainCards, closeCard, closeLooseCards, explainTarget, runExplain, rerunExplain, shownNotes, type Explain } from './ai/explain'
 import { looksMathy, selectionImage } from './reader/selection-image'
 import { currentHint, dismissHint, hintLearned, offerHint, offerSpaced } from './ui/hints'
 import ExplainCard from './components/ExplainCard.vue'
@@ -50,7 +50,6 @@ const UpdateCard = defineAsyncComponent(() => import('./components/UpdateCard.vu
 const ContextMenu = defineAsyncComponent(() => import('./components/ContextMenu.vue'))
 const ManifoldDoodle = defineAsyncComponent(() => import('./components/ManifoldDoodle.vue'))
 const TranslatePane = defineAsyncComponent(() => import('./components/TranslatePane.vue'))
-const UiCollection = defineAsyncComponent(() => import('./components/UiCollection.vue'))
 const LearningBoard = defineAsyncComponent(() => import('./components/LearningBoard.vue'))
 const { preferences, effectiveAppearance, load: loadPreferences, save: savePreferences } = useSettings()
 
@@ -420,7 +419,7 @@ const reorderLibrary = useReorder({
 })
 watch(visibleDocuments, docs => { if (!picked.value.size) return; const ids = new Set(docs.map(doc => doc.id)); if ([...picked.value].some(id => !ids.has(id))) picked.value = new Set([...picked.value].filter(id => ids.has(id))) })
 watch(active, value => { if (value) { clearPicked(); batchTag.value = null } })
-const currentTitle = computed(() => currentGroup.value?.name || tagFilter.value || (category.value === 'starred' ? '我的收藏' : category.value === 'recent' ? '最近阅读' : category.value === 'ui' ? 'Intelligent UI' : category.value === 'learn' ? '学习进度' : '文档库'))
+const currentTitle = computed(() => currentGroup.value?.name || tagFilter.value || (category.value === 'starred' ? '我的收藏' : category.value === 'recent' ? '最近阅读' : category.value === 'learn' ? '学习进度' : '文档库'))
 const totalPages = computed(() => documents.value.filter(doc => doc.kind === 'pdf' && doc.lastOpenedAt).reduce((sum, doc) => sum + (doc.pageCount || 0), 0))
 
 function notify(message: string) { toast.value = message; clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.value = '', 4800) }
@@ -892,20 +891,6 @@ function middleClick(event: MouseEvent) {
   else runExplain(target, event.clientX, event.clientY, undefined, visual)
 }
 const openAiSettings = () => openSettings('ai')
-// ---- Intelligent UI 合集 ----
-const uiLoaded = ref(false)
-void uiReady.then(() => { uiLoaded.value = true })
-const uiCount = computed(() => { void uiVersion.value; return uiLoaded.value ? uiEntries().length : 0 })
-// 从合集跳回原处：打开那本书，等阅读器摆好再翻到那一页 / 那一行。
-async function jumpToUi(entry: UiEntry) {
-  const doc = documents.value.find(item => item.id === entry.doc)
-  if (!doc) { notify('这份文档已不在文档库里。'); return }
-  await openDocument(doc)
-  for (let tries = 0; tries < 25; tries++) {
-    await new Promise(resolve => setTimeout(resolve, 120))
-    if (active.value?.id === doc.id && reader.value?.goToPage) { jump(entry.kind === 'card' ? { page: entry.page || 1 } : { line: entry.line || 1 }); return }
-  }
-}
 // 解释卡片 / Markdown 释义的右键菜单。
 function explainMenu(event: CustomEvent<{ kind: 'card' | 'note'; id: string; x: number; y: number }>) {
   const { kind, id, x, y } = event.detail
@@ -2381,17 +2366,16 @@ onBeforeUnmount(() => { document.removeEventListener('mouseup', autoTranslate); 
       </Transition>
 
       <Transition name="view">
-      <div v-if="!active && libraryShown" ref="libraryView" class="library-view" :class="{ 'rubber-banding': band.active.value, 'ui-mode': category === 'ui' || category === 'learn' }" key="library" data-reorder-scroll @pointerdown="band.pointerdown">
+      <div v-if="!active && libraryShown" ref="libraryView" class="library-view" :class="{ 'rubber-banding': band.active.value, 'ui-mode': category === 'learn' }" key="library" data-reorder-scroll @pointerdown="band.pointerdown">
         <header class="library-header">
-          <div class="library-heading"><h1>{{ currentTitle }}<span class="heading-count">{{ category === 'ui' ? uiCount : category === 'learn' ? Object.keys(sessions).length : visibleDocuments.length }}</span></h1></div>
+          <div class="library-heading"><h1>{{ currentTitle }}<span class="heading-count">{{ category === 'learn' ? Object.keys(sessions).length : visibleDocuments.length }}</span></h1></div>
           <div class="library-tools">
             <div class="library-search"><AppIcon name="search" :size="17" /><input ref="search" v-model="query" @input="searchDocuments" placeholder="搜索标题、标签或打开过的正文" aria-label="搜索文档" /><button v-if="query" @click="query = ''; refresh()" data-tip="清除搜索" aria-label="清除搜索"><AppIcon name="close" :size="14" /></button><kbd v-else-if="preferences.shortcuts.search">{{ shortcut('search') }}</kbd></div>
             <button v-if="libraryOrder.length && canArrange" class="icon-button arrange-reset" @click="resetLibraryOrder" data-tip="恢复按最近阅读排列" aria-label="恢复按最近阅读排列"><AppIcon name="clock" :size="16" /></button><button class="library-sort" data-tip="排序方式（再选一次切换升降序）" aria-label="排序方式" aria-haspopup="menu" @click="openSortMenu($event)"><AppIcon name="list" :size="15" /><span>{{ SORTS.find(item => item.key === librarySort.key)?.label }}</span><AppIcon name="down" :size="12" /></button><button v-if="librarySort.key !== 'default'" class="icon-button sort-direction" :data-tip="librarySort.descending ? '降序（点一下改为升序）' : '升序（点一下改为降序）'" :aria-label="librarySort.descending ? '降序' : '升序'" @click="chooseSort(librarySort.key)"><span aria-hidden="true">{{ librarySort.descending ? '↓' : '↑' }}</span></button><div v-liquid-selection class="view-switch"><button :class="{ selected: display === 'grid' }" @click="setDisplay('grid')" data-tip="卡片视图" aria-label="卡片视图"><AppIcon name="grid" :size="16" /></button><button :class="{ selected: display === 'list' }" @click="setDisplay('list')" data-tip="列表视图" aria-label="列表视图"><AppIcon name="list" :size="17" /></button></div>
           </div>
         </header>
         <div class="library-summary"><div><AppIcon name="book" :size="15" /><strong>{{ documents.length }}</strong><span>份文档</span></div><span class="summary-divider"></span><div><AppIcon name="star" :size="15" /><strong>{{ starredCount }}</strong><span>份收藏</span></div><span class="summary-divider"></span><div><AppIcon name="file" :size="15" /><strong>{{ totalPages }}</strong><span>页 · 打开过的 PDF</span></div><span v-if="!isDesktop" class="summary-note">浏览器预览</span></div>
-        <UiCollection v-if="category === 'ui'" :documents="documents" :query="query" @jump="jumpToUi" />
-        <LearningBoard v-else-if="category === 'learn'" :documents="documents" :query="query" @open="openConversationAt" />
+        <LearningBoard v-if="category === 'learn'" :documents="documents" :query="query" @open="openConversationAt" />
         <template v-else>
         <div v-if="query || category === 'recent'" class="library-list-heading"><span>{{ query ? `搜索「${query}」` : '按最近阅读排列' }}</span></div>
         <div v-if="loading" class="library-empty"><span class="spinner"></span><p>正在读取文档库…</p></div>
