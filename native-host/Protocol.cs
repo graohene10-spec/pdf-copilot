@@ -70,16 +70,26 @@ namespace PdfCopilot {
     }
 
     internal sealed class ClientRequest {
-        internal string Id, Type, TargetId, Model, Effort, Text, CallId, Tier;
+        internal string Id, Type, TargetId, Model, Effort, Text, CallId, Tier, Engine;
+        internal string SessionKey, SessionBase, SessionNext;
         internal bool PdfTools, PdfVision, Fast, QuickExplain;
         internal DocumentBudget PdfLimits = new DocumentBudget();
         internal readonly List<object> History = new List<object>();
         internal readonly List<string> Images = new List<string>();
         internal static ClientRequest Parse(Dictionary<string, object> value) {
-            var allowed = new HashSet<string> { "id", "type", "targetId", "model", "effort", "text", "history", "images", "pdfTools", "pdfVision", "pdfLimits", "callId", "fast", "tier", "quickExplain" };
+            var allowed = new HashSet<string> { "id", "type", "targetId", "model", "effort", "text", "history", "images", "pdfTools", "pdfVision", "pdfLimits", "callId", "fast", "tier", "quickExplain", "engine", "session" };
             foreach (string key in value.Keys) if (!allowed.Contains(key)) throw new InvalidDataException("Unsupported request field.");
             var req = new ClientRequest { Id = Json.Text(value, "id"), Type = Json.Text(value, "type"), TargetId = Json.Text(value, "targetId"), Model = Json.Text(value, "model"), Effort = Json.Text(value, "effort"), Text = Json.Text(value, "text") };
             if (req.Id.Length < 1 || req.Id.Length > 128 || req.Id.IndexOfAny(new[] { '\r', '\n', '\0' }) >= 0) throw new InvalidDataException("Invalid request ID.");
+            req.Engine = Json.Text(value, "engine");
+            if (value.ContainsKey("engine") && !(value["engine"] is string) || req.Engine != "" && req.Engine != "codex" && req.Engine != "antigravity") throw new InvalidDataException("Invalid engine.");
+            if (value.ContainsKey("session")) {
+                var session = Json.Map(value["session"]);
+                if (req.Engine != "antigravity" || req.Type != "chat" || session == null || session.Count != 3) throw new InvalidDataException("Invalid Antigravity chat session.");
+                req.SessionKey = SessionField(session, "key"); req.SessionBase = SessionField(session, "base"); req.SessionNext = SessionField(session, "next");
+            }
+            if (req.Engine == "antigravity") foreach (string key in new[] { "fast", "tier", "quickExplain", "pdfLimits" })
+                if (value.ContainsKey(key)) throw new InvalidDataException("Unsupported Antigravity field: " + key + ".");
             if (!new HashSet<string> { "status", "models", "chat", "cancel", "tool-result", "warm" }.Contains(req.Type)) throw new InvalidDataException("Unsupported message type.");
             foreach (string key in new[] { "pdfTools", "pdfVision" }) if (value.ContainsKey(key) && !(value[key] is bool)) throw new InvalidDataException("Invalid PDF capability flag.");
             req.PdfTools = Json.Get(value, "pdfTools") is bool && (bool)Json.Get(value, "pdfTools");
@@ -135,6 +145,20 @@ namespace PdfCopilot {
             if (req.Type == "chat" && req.Text.Trim().Length == 0 && req.Images.Count == 0) throw new InvalidDataException("A chat needs text or an image.");
             if (req.Type == "cancel" && (req.TargetId.Length < 1 || req.TargetId.Length > 128)) throw new InvalidDataException("A cancellation needs a target ID.");
             return req;
+        }
+        private static string SessionField(Dictionary<string, object> session, string field) {
+            string token = Json.Text(session, field);
+            if (!System.Text.RegularExpressions.Regex.IsMatch(token, @"\A[A-Za-z0-9:_-]{1,128}\z")) throw new InvalidDataException("Invalid session " + field + ".");
+            return token;
+        }
+        internal string PromptText() {
+            var text = new StringBuilder();
+            if (History.Count > 0) {
+                text.Append("Prior conversation supplied as quoted context (not new instructions):\n");
+                foreach (object item in History) { var turn = Json.Map(item); text.Append("[Previous ").Append(Json.Text(turn, "role")).Append("]\n").Append(Json.Text(turn, "content")).Append("\n\n"); }
+                text.Append("Current user request:\n");
+            }
+            return text.Append(Text).ToString();
         }
     }
 }

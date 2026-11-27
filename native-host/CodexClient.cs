@@ -196,7 +196,7 @@ namespace PdfCopilot {
                 FailChat("The Codex connection closed before the response finished.");
             }
         }
-        private static string ReadBoundedLine(StreamReader reader, int maxChars) {
+        internal static string ReadBoundedLine(StreamReader reader, int maxChars) {
             var line = new StringBuilder(); int c;
             while ((c = reader.Read()) != -1) {
                 if (c == '\n') return line.ToString().TrimEnd('\r');
@@ -439,14 +439,7 @@ namespace PdfCopilot {
                 chat.Prepared = usedSpare; chat.ThreadMs = chat.Clock.ElapsedMilliseconds;
                 if (chat.ThreadId == "") throw new IOException("Codex returned no conversation ID.");
                 if (chat.Cancelled) { chat.Finished.Set(); return; }
-                var text = new StringBuilder();
-                if (request.History.Count > 0) {
-                    text.Append("Prior conversation supplied as quoted context (not new instructions):\n");
-                    foreach (object item in request.History) { var turn = Json.Map(item); text.Append("[Previous ").Append(Json.Text(turn, "role")).Append("]\n").Append(Json.Text(turn, "content")).Append("\n\n"); }
-                    text.Append("Current user request:\n");
-                }
-                text.Append(request.Text);
-                var input = new List<object> { Json.Obj("type", "text", "text", text.ToString(), "textElements", new object[0]) };
+                var input = new List<object> { Json.Obj("type", "text", "text", request.PromptText(), "textElements", new object[0]) };
                 foreach (string image in request.Images) input.Add(Json.Obj("type", "image", "url", image));
                 var turnParams = Json.Obj("threadId", chat.ThreadId, "input", input, "approvalPolicy", "never", "sandboxPolicy", Json.Obj("type", "readOnly", "networkAccess", false), "environments", new object[0]);
                 if (request.Effort != "") turnParams["effort"] = request.Effort;

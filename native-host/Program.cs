@@ -9,6 +9,10 @@ using System.Threading;
 namespace PdfCopilot {
     internal static class Program {
         private static int Main(string[] args) {
+            if (args.Length == 1 && args[0] == "--deny-tool") {
+                Console.OpenStandardInput().CopyTo(Stream.Null);
+                Console.WriteLine("{\"decision\":\"deny\",\"reason\":\"This reader allows no tools. Answer from the text you were given.\"}"); return 0;
+            }
             if (args.Length > 0 && args[0] == "--fake-app-server") return ProtocolFixture.Run(args.Length > 1 ? args[1] : "normal");
             if (args.Length > 0 && args[0] == "--self-test") return SelfTest();
             try {
@@ -33,10 +37,12 @@ namespace PdfCopilot {
                     // until CodexClient validates the absolute Windows executable path.
                 }
                 var frames = new NativeFrames(Console.OpenStandardInput(), Console.OpenStandardOutput());
-                using (var client = new CodexClient(codexPath, frames, testMode)) {
+                using (var client = new CodexClient(codexPath, frames, testMode))
+                using (var agy = new AntigravityClient(Json.Text(config, "antigravityPath"), frames)) {
                     if (verifyIsolation) {
                         client.VerifyIsolation(verifyDocumentTools); Console.WriteLine("Codex ephemeral/read-only/no-environment" + (verifyDocumentTools ? "/PDF-tools" : "") + " handshake passed; no inference was started."); return 0;
                     }
+                    int chatActive = 0;
                     while (true) {
                         Dictionary<string, object> message;
                         try { message = frames.Read(); }
@@ -46,7 +52,7 @@ namespace PdfCopilot {
                         try { request = ClientRequest.Parse(message); }
                         catch (InvalidDataException e) { frames.Write(Json.Obj("id", SafeId(message), "ok", false, "error", e.Message)); continue; }
                         if (request.Type == "cancel") {
-                            bool cancelled = client.Cancel(request.TargetId);
+                            bool cancelled = agy.Cancel(request.TargetId) || client.Cancel(request.TargetId);
                             frames.Write(Json.Obj("id", request.Id, "ok", true, "result", Json.Obj("cancelled", cancelled))); continue;
                         }
                         if (request.Type == "tool-result") {
@@ -55,21 +61,35 @@ namespace PdfCopilot {
                             continue;
                         }
                         if (request.Type == "chat") {
-                            try { client.PrepareChat(request.Id); }
-                            catch (InvalidOperationException e) { frames.Write(Json.Obj("id", request.Id, "event", "error", "error", e.Message)); continue; }
+                            if (Interlocked.CompareExchange(ref chatActive, 1, 0) != 0) {
+                                string busy = request.Engine == "antigravity" ? "Antigravity is busy." : "A Codex conversation is already running. Cancel it before starting another.";
+                                frames.Write(Json.Obj("id", request.Id, "event", "error", "error", busy)); continue;
+                            }
+                            try { if (request.Engine == "antigravity") agy.PrepareChat(request); else client.PrepareChat(request.Id); }
+                            catch (InvalidOperationException e) { Interlocked.Exchange(ref chatActive, 0); frames.Write(Json.Obj("id", request.Id, "event", "error", "error", e.Message)); continue; }
                         }
                         ThreadPool.QueueUserWorkItem(delegate(object state) {
                             var req = (ClientRequest)state;
                             try {
                                 if (req.Type == "chat") {
-                                    client.Chat(req); frames.Write(Json.Obj("id", req.Id, "event", "done", "timing", client.TakeTiming()));
+                                    object timing;
+                                    try {
+                                        if (req.Engine == "antigravity") timing = agy.Chat(req);
+                                        else { client.Chat(req); timing = client.TakeTiming(); }
+                                    } finally { Interlocked.Exchange(ref chatActive, 0); }
+                                    frames.Write(Json.Obj("id", req.Id, "event", "done", "timing", timing));
                                     // Prepare the next conversation of the same kind right away: follow-up questions start without the set-up wait.
-                                    if (!req.QuickExplain) { try { client.Warm(req.Model, req.PdfTools, req.PdfVision, false); } catch { } }
+                                    if (req.Engine != "antigravity" && !req.QuickExplain) { try { client.Warm(req.Model, req.PdfTools, req.PdfVision, false); } catch { } }
                                 }
+                                else if (req.Engine == "antigravity") frames.Write(Json.Obj("id", req.Id, "ok", true, "result", agy.Metadata(req.Type)));
                                 else if (req.Type == "warm") { client.Warm(req.Model, req.PdfTools, req.PdfVision, req.QuickExplain); frames.Write(Json.Obj("id", req.Id, "ok", true, "result", Json.Obj())); }
                                 else frames.Write(Json.Obj("id", req.Id, "ok", true, "result", req.Type == "status" ? client.Status() : client.Models()));
                             } catch (Exception e) {
-                                string error = e is InvalidOperationException || e is FileNotFoundException ? e.Message : "The Codex helper could not complete this request. Check the Codex installation and reconnect.";
+                                if (req.Engine == "antigravity" && e is OperationCanceledException) {
+                                    try { frames.Write(Json.Obj("id", req.Id, "event", "error", "cancelled", true, "error", "Antigravity conversation cancelled.")); } catch { }
+                                    return;
+                                }
+                                string error = e is InvalidOperationException || e is FileNotFoundException ? e.Message : req.Engine == "antigravity" ? "The Antigravity connection failed. Check the installation and reconnect." : "The Codex helper could not complete this request. Check the Codex installation and reconnect.";
                                 try { frames.Write(req.Type == "chat" ? Json.Obj("id", req.Id, "event", "error", "error", error) : Json.Obj("id", req.Id, "ok", false, "error", error)); } catch { }
                             }
                         }, request);
@@ -181,9 +201,33 @@ namespace PdfCopilot {
                 bool rejected = false;
                 try { ClientRequest.Parse(Json.Obj("id", "test", "type", "shell", "command", "anything")); } catch (InvalidDataException) { rejected = true; }
                 if (!rejected) throw new Exception();
+                foreach (string engine in new[] { "", "codex", "antigravity" })
+                    if (ClientRequest.Parse(Json.Obj("id", "test", "type", "status", "engine", engine)).Engine != engine) throw new Exception();
+                foreach (object bad in new object[] { null, false, "unknown" }) MustReject(Json.Obj("id", "test", "type", "status", "engine", bad));
+                var session = Json.Obj("key", "a:B-_0", "base", new string('x', 128), "next", "1");
+                var chat = Json.Obj("id", "test", "type", "chat", "text", "test", "session", session);
+                MustReject(chat);
+                chat["engine"] = "codex"; MustReject(chat);
+                chat["engine"] = "antigravity";
+                var parsed = ClientRequest.Parse(chat);
+                if (parsed.SessionKey != "a:B-_0" || parsed.SessionBase.Length != 128 || parsed.SessionNext != "1") throw new Exception();
+                chat["type"] = "warm"; MustReject(chat); chat["type"] = "chat";
+                foreach (var field in new[] { "key", "base", "next" }) {
+                    session.Remove(field); MustReject(chat);
+                    foreach (object bad in new object[] { null, 1, "", new string('x', 129), "a/b", "a\n", "汉" }) { session[field] = bad; MustReject(chat); }
+                    session[field] = "x";
+                }
+                session["other"] = "x"; MustReject(chat);
+                foreach (object bad in new object[] { null, "x", new object[0] }) { chat["session"] = bad; MustReject(chat); }
+                foreach (string key in new[] { "fast", "tier", "quickExplain", "pdfLimits" })
+                    MustReject(Json.Obj("id", "test", "type", "chat", "engine", "antigravity", "pdfTools", key == "pdfLimits", "text", "test", key, key == "pdfLimits" ? (object)Json.Obj() : key == "tier" ? (object)"" : false));
                 if (!CodexVersion.IsCompatible("codex-cli 0.159.2-alpha.1+build.7") || !CodexVersion.IsCompatible("codex-cli 0.160.0+windows.1") || CodexVersion.IsCompatible("codex-cli 0.149.1") || CodexVersion.IsCompatible("codex-cli unknown")) throw new Exception();
                 Console.WriteLine("PDF Copilot native helper self-test passed."); return 0;
             } catch { Console.Error.WriteLine("PDF Copilot native helper self-test failed."); return 3; }
+        }
+        private static void MustReject(Dictionary<string, object> request) {
+            try { ClientRequest.Parse(request); } catch (InvalidDataException) { return; }
+            throw new Exception();
         }
     }
 }
