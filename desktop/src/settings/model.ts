@@ -100,8 +100,11 @@ export const SKETCH_ANSWER_FONTS: FontChoice[] = [
   { id: 'kuaile', label: '站酷快乐体（圆润）', families: [], stack: `${HAND_LATIN}, 'ZCOOL KuaiLe', ${SYSTEM_SANS}` },
   { id: 'longcang', label: '龙藏体（最草）', families: [], stack: `'Caveat', 'Long Cang', ${SYSTEM_SANS}` },
   { id: 'kaiti', label: '系统楷体', families: [], stack: `${HAND_LATIN}, KaiTi, STKaiti, 'Kaiti SC', ${SERIF}` },
+  // 不想要手写体的：常规的黑体和宋体。
+  { id: 'yahei', label: '微软雅黑（常规黑体）', families: [], stack: `'Segoe UI', 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', ${SYSTEM_SANS}` },
+  { id: 'song', label: '宋体（常规衬线）', families: [], stack: `Georgia, 'Source Han Serif SC', 'Noto Serif CJK SC', SimSun, STSong, ${SERIF}` },
   { id: 'reading', label: '跟随阅读字体', families: [], stack: '' },
-  ...['Times New Roman', 'Georgia', 'Arial', 'Calibri', 'Segoe UI'].map(name => ({ id: `latin-${name.toLowerCase().replace(/\s+/g, '-')}`, label: name, families: [], stack: `'${name}', KaiTi, STKaiti, ${SYSTEM_SANS}` })),
+  ...['Times New Roman', 'Georgia', 'Arial', 'Calibri', 'Segoe UI'].map(name => ({ id: `latin-${name.toLowerCase().replace(/\s+/g, '-')}`, label: name, families: [], stack: /Times|Georgia/.test(name) ? `'${name}', 'Source Han Serif SC', 'Noto Serif CJK SC', SimSun, STSong, ${SERIF}` : `'${name}', 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', ${SYSTEM_SANS}` })),
 ]
 /** 铅笔草稿的格子纸背景上慢慢自旋的流形：是否显示、阅读时是否也显示、在哪几种之间轮换。 */
 /** known：存这份设置时已经有的画面。之后新加的画面默认勾上，读者自己取消过的不会再被勾回来。 */

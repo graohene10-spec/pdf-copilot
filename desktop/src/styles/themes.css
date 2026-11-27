@@ -1084,6 +1084,9 @@
 :root[data-style='sketch'] .reader-panes > .ai-panel { padding-top: 14px; }
 :root[data-style='sketch'] .reader-panes > .ai-panel:is(.pane-enter-from, .pane-leave-to) { padding-top: 14px; }
 
+/* 学习大纲排在助手栏最左时，标题让开别在那里的回形针。 */
+:root[data-style='sketch'] .ai-pane .outline.right > header { padding-left: 34px; }
+
 /* 回形针别在标题框上：上半截露在框的上沿之外，下半截压在框的左侧（带一点投影）。 */
 :root[data-style='sketch'] .ai-pane::after {
   content: '';

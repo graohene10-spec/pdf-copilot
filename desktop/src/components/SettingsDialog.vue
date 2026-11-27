@@ -358,7 +358,7 @@ function failureText(item: RenderFailure) {
   <div class="settings-backdrop" :class="{ peeking, scene: scenePreview }" @click.self="!scenePreview && backdropClose()" @pointerup="peek(false)" @pointercancel="peek(false)">
     <Transition name="scene-bar"><div v-if="scenePreview" class="scene-bar" role="dialog" aria-label="预览新底板" @keydown="sceneKeydown"><span>新底板效果预览</span><button type="button" class="scene-reject" @click="rejectScene">不采用</button><button ref="sceneAccept" type="button" class="scene-accept" @click="acceptScene">采用</button></div></Transition>
     <section ref="dialog" class="settings-dialog" data-glass-interactive="panel" role="dialog" aria-modal="true" aria-labelledby="settings-title" tabindex="-1" @keydown="dialogKeydown">
-      <header class="dialog-header"><h2 id="settings-title">设置</h2><button class="settings-close" :disabled="saving" @click="requestClose" aria-label="关闭设置"><AppIcon name="close" :size="18" /></button></header>
+      <header class="dialog-header"><h2 id="settings-title">设置</h2><button class="settings-close" :disabled="saving" @click="askDiscard ? close() : requestClose()" aria-label="关闭设置"><AppIcon name="close" :size="18" /></button></header>
       <div class="settings-body">
         <nav v-liquid-selection class="settings-tabs" aria-label="设置分类"><button v-for="item in tabs" :key="item.id" :class="{ selected: tab === item.id }" @click="switchTab(item.id)" :aria-current="tab === item.id ? 'page' : undefined"><AppIcon :name="item.icon" :size="17" />{{ item.label }}</button><button type="button" class="tour-entry" :disabled="saving" @click="emit('tour')"><AppIcon name="play" :size="16" />使用教程</button></nav>
         <div ref="content" class="settings-content">

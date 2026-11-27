@@ -253,6 +253,16 @@ function outlineGhost() {
 onBeforeUnmount(() => { outlineGhost(); for (const element of outlineMoving) emit('motionEnd', element, false); outlineMoving.clear() })
 // 减少动态时不走过渡：零时长的过渡也要隔两帧才移走旧的那栏，主栏一帧后就放开，会被它挤窄闪一下。
 const outlineAnimated = () => !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+// 标题栏里的小进度：大纲关着也看得到学到哪了。节点多于 12 个时并成 12 格。
+const learnMeter = computed(() => {
+  const learning = state.value.learning, nodes = learning?.plan?.nodes || []
+  if (!learning || !nodes.length) return { total: 0, passed: 0, marks: [] as string[], tip: learning?.phase === 'probe' ? '摸底中' : '正在排大纲' }
+  const states = nodes.map(node => learning.progress[node.id]?.passed ? 'passed' : learning.current === node.id ? 'current' : 'ahead')
+  const slots = Math.min(12, nodes.length)
+  const marks = Array.from({ length: slots }, (_, at) => { const part = states.slice(Math.floor(at * nodes.length / slots), Math.floor((at + 1) * nodes.length / slots)); return part.includes('current') ? 'current' : part.every(item => item === 'passed') ? 'passed' : 'ahead' })
+  const current = nodes.find(node => node.id === learning.current)?.title
+  return { total: nodes.length, passed: states.filter(item => item === 'passed').length, marks, tip: learning.phase === 'done' ? '学完了' : current || '大纲' }
+})
 const outlineOn = computed(() => !props.side && !outlineHidden.value && Boolean(state.value.learning) && state.value.learning!.phase !== 'setup')
 // 窗口正好加宽大纲那么宽：主栏前后一样宽，动画落定、放开主栏时才不会再挤一下。
 const extraWidth = () => (sideOpen.value ? sideWidth.value : 0) + (outlineOn.value && outlineSide.value === 'right' ? outlineWidth.value : 0)
@@ -1244,7 +1254,7 @@ defineExpose({ send, stop, applySettings, focusPrompt, newConversation: startCon
       </div>
       <span v-if="taskSummary.running || taskSummary.queued" class="task-summary" :data-tip="`同时最多 ${taskSummary.limits.concurrent} 个请求，Codex 最多 ${taskSummary.limits.codex} 个`">{{ taskSummary.running }} 进行中<template v-if="taskSummary.queued"> · {{ taskSummary.queued }} 排队</template></span>
       <button class="header-button side-toggle" :class="{ on: sideOpen, has: hasSideContent && !sideOpen }" :aria-pressed="sideOpen" :aria-label="sideOpen ? '收起附属对话' : '打开附属对话'" :data-tip="sideOpen ? '收起附属对话' : hasSideContent ? '打开附属对话（有内容）' : '打开附属对话'" @click="toggleSide"><AppIcon name="branch" :size="15" /></button>
-      <button v-if="state.learning && state.learning.phase !== 'setup' && !side" class="header-button draft-toggle" :class="{ on: !outlineHidden }" :aria-pressed="!outlineHidden" :aria-label="outlineHidden ? '打开大纲' : '收起大纲'" :data-tip="outlineHidden ? '打开大纲' : '收起大纲'" @click="outlineHidden = !outlineHidden"><AppIcon name="list" :size="16" /></button>
+      <button v-if="state.learning && state.learning.phase !== 'setup' && !side" class="learn-meter" :class="{ on: !outlineHidden }" :aria-pressed="!outlineHidden" :aria-label="outlineHidden ? '打开大纲' : '收起大纲'" :data-tip="learnMeter.tip" @click="outlineHidden = !outlineHidden"><span v-if="learnMeter.total" class="learn-ticks" aria-hidden="true"><i v-for="(mark, at) in learnMeter.marks" :key="at" :class="mark" /></span><span v-else class="learn-ticks waiting" aria-hidden="true"><i /><i /><i /></span><small v-if="learnMeter.total">{{ learnMeter.passed }}/{{ learnMeter.total }}</small></button>
       <button v-if="state.summary?.started" class="header-button draft-toggle" :class="{ on: draftOpen }" :aria-pressed="draftOpen" :aria-label="draftOpen ? '收起总结草稿' : '打开总结草稿'" :data-tip="draftOpen ? '收起总结草稿' : '打开总结草稿'" @click="emit('draft', { conversationId: state.id })"><AppIcon name="doc" :size="16" /></button>
       <button class="header-button" aria-label="新对话" :data-tip="messages.length ? '新对话' : '这已经是一段新对话'" :disabled="!messages.length" @click="startConversation"><AppIcon name="compose" :size="16" /></button>
       <button class="header-button close-assistant" data-tip="关闭阅读助手" aria-label="关闭阅读助手" @click="emit('close')"><AppIcon name="close" :size="15" /></button>
@@ -1634,6 +1644,20 @@ button:disabled{opacity:.4;cursor:default}
 .answer-body :deep(.draft-chip){display:inline-flex;align-items:center;gap:8px;height:32px;margin:2px 0 10px;padding:0 13px 0 11px;border:1px solid var(--hairline);border-radius:10px;background:color-mix(in srgb,var(--accent) 7%,transparent);box-shadow:none;color:var(--ink);font:inherit;font-size:12.5px;cursor:pointer}
 .answer-body :deep(.draft-chip:hover){border-color:color-mix(in srgb,var(--accent) 55%,transparent)}
 .answer-body :deep(.draft-chip svg){color:var(--accent)}
+/* 学习进度：标题栏里几根细刻度，走过的换成强调色，正在讲的那根高一点。点一下开合大纲。 */
+.learn-meter{display:flex;align-items:center;gap:7px;flex:none;height:32px;min-width:0;padding:0 8px;border:0;border-radius:var(--r-control);background:none;box-shadow:none;color:var(--muted);opacity:.78;transition:opacity var(--dur-1),background-color var(--dur-1)}
+.learn-meter:hover,.learn-meter.on{opacity:1}
+.learn-meter:hover{background:var(--frost-hover)}
+.learn-ticks{display:flex;align-items:center;gap:2.5px;height:12px}
+.learn-ticks i{width:1.5px;height:7px;border-radius:1px;background:color-mix(in srgb,var(--ink) 24%,transparent);transition:height var(--dur-2) var(--spring-snappy,ease-out),background-color var(--dur-2)}
+.learn-ticks i.passed{background:var(--accent)}
+.learn-ticks i.current{height:12px;background:var(--ink)}
+.learn-ticks.waiting i{animation:learn-wait 1.4s ease-in-out infinite}
+.learn-ticks.waiting i:nth-child(2){animation-delay:.18s}
+.learn-ticks.waiting i:nth-child(3){animation-delay:.36s}
+@keyframes learn-wait{0%,100%{opacity:.35}50%{opacity:1}}
+.learn-meter small{font-size:11px;font-variant-numeric:tabular-nums;letter-spacing:.02em}
+@media (prefers-reduced-motion:reduce){.learn-ticks.waiting i{animation:none}}
 .header-button.draft-toggle.on{background:var(--frost-hover);color:var(--accent)}
 /* 总结对话的第一问：一张小表。 */
 .revise-quote{display:flex;align-items:center;gap:6px;max-width:100%;margin-bottom:5px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--muted);font-size:.86em}
