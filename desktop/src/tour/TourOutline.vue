@@ -73,16 +73,22 @@ watch(() => props.view, find, { flush: 'post' })
 
 <style scoped>
 /* 大纲栏：一条安静的路线（细线、小点、淡字），样子照着真的大纲栏。在助手栏里是它左边的一栏，只有右侧一条细分隔线；挪到屏幕最左就是一座和侧栏一样的岛。两处之间平移过去。 */
-.to-col{--to-wobble:0deg;--to-rail:color-mix(in srgb,var(--ink) 16%,transparent);position:absolute;left:729px;top:73px;bottom:15px;z-index:5;display:flex;flex-direction:column;width:236px;padding:16px 12px 12px 18px;border:1px solid transparent;border-right-color:var(--to-rail);border-radius:calc(var(--tw-radius) - 1px) 0 0 calc(var(--tw-radius) - 1px);color:var(--ink);font-size:13.5px;text-align:left;transition:left .55s var(--ease-soft),top .55s var(--ease-soft),bottom .55s var(--ease-soft),border-color .2s .4s,border-radius .2s .4s,background-color .2s .4s,--to-wobble .3s var(--ease-soft)}
+.to-col{--to-wobble:0deg;--to-rail:color-mix(in srgb,var(--ink) 16%,transparent);position:absolute;left:729px;top:73px;bottom:15px;z-index:5;display:flex;flex-direction:column;width:236px;padding:16px 12px 12px 18px;border:1px solid transparent;border-right-color:var(--to-rail);border-radius:calc(var(--tw-radius) - 1px) 0 0 calc(var(--tw-radius) - 1px);color:var(--ink);font-size:13.5px;text-align:left;transition:left .55s var(--ease-soft),top .55s var(--ease-soft),bottom .55s var(--ease-soft),padding-left .55s var(--ease-soft),border-color .2s .4s,border-radius .2s .4s,background-color .2s .4s,--to-wobble .3s var(--ease-soft)}
 /* 飞过书页时得是一块实底：去左边时底色立刻出来，回到助手栏落定了才褪掉。 */
-.to-col.left{left:224px;top:72px;bottom:14px;border-color:var(--glass-outline);border-radius:var(--tw-radius);background-color:var(--surface);transition:left .55s var(--ease-soft),top .55s var(--ease-soft),bottom .55s var(--ease-soft),border-color .15s,border-radius .15s,background-color .15s,--to-wobble .3s var(--ease-soft)}
+.to-col.left{left:224px;top:72px;bottom:14px;border-color:var(--glass-outline);border-radius:var(--tw-radius);background-color:var(--surface);transition:left .55s var(--ease-soft),top .55s var(--ease-soft),bottom .55s var(--ease-soft),padding-left .55s var(--ease-soft),border-color .15s,border-radius .15s,background-color .15s,--to-wobble .3s var(--ease-soft)}
 .to-col.still{transition:none}
 .tw-world[data-look='sketch'] .to-col.left{border-width:1.5px;border-radius:18px 14px 20px 16px / 14px 20px 16px 18px}
+/* 铅笔草稿里排在助手栏最左时，和真的一样整栏从红色页边线右边开始（33px），标题再让开回形针（19px），节点文字和标题左缘对齐。 */
+.tw-world[data-look='sketch'] .to-col:not(.left){padding-left:33px}
+.tw-world[data-look='sketch'] .to-col:not(.left)>header{padding-left:19px}
 /* 进出都和助手栏一起：从右边滑进来、退到右边。 */
 .to-col-enter-active,.to-col-leave-active{transition:translate .4s var(--ease-out),opacity .3s}
 .to-col-enter-from,.to-col-leave-to{translate:60px 0;opacity:0}
 /* 表头：左边学法名，右边大号细体的进度数字，再是两颗淡色小图标（调整、换位置）。 */
-.to-col header{display:flex;align-items:baseline;gap:2px;flex:none;min-height:28px}
+.to-col header{display:flex;align-items:baseline;gap:2px;flex:none;min-height:28px;transition:padding-left .55s var(--ease-soft)}
+/* 一枚看不见的大号数字撑住基线（真的大纲在没有进度数字时也靠它），标题停在同一高度。 */
+.to-col header::before{content:'\200b';width:0;margin-right:-2px;overflow:hidden;font-size:21px;font-weight:300;line-height:1}
+.to-col.still header{transition:none}
 .to-col h3{margin:0 auto 0 0;min-width:0;overflow:hidden;color:var(--muted);font-size:11.5px;font-weight:500;letter-spacing:.18em;text-overflow:ellipsis;white-space:nowrap}
 .to-count{flex:none;margin-right:6px;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .to-count b{color:var(--ink);font-size:21px;font-weight:300;line-height:1}
@@ -101,8 +107,9 @@ watch(() => props.view, find, { flush: 'post' })
 @keyframes to-shimmer{from{background-position:100% 0}to{background-position:0 0}}
 /* 路线：一条细竖线串起 7px 的小点。走过的实心，正在讲的是一枚强调色细环，没到的是淡淡的空心点；调整时竖线收起。 */
 .to-nodes{flex:1;min-height:0;margin:10px 0 0;padding:2px 4px 2px 0;list-style:none}
-.to-nodes li{position:relative;height:32px;transition:translate .28s var(--ease-spring),height .3s var(--ease-out),opacity .22s}
-.to-nodes li:not(:last-child)::before{content:'';position:absolute;left:3px;top:20px;bottom:-12px;width:1px;background:var(--to-rail);transition:opacity .25s}
+.to-nodes li{position:relative;height:calc(12px + 1lh);line-height:1.45;transition:translate .28s var(--ease-spring),height .3s var(--ease-out),opacity .22s}
+/* 竖线从这一颗点的下沿接到下一颗点的上沿：和真的一样，点的中心在 6px 内边距 + 半个行高处。 */
+.to-nodes li:not(:last-child)::before{content:'';position:absolute;left:3px;top:calc(6px + .5lh + 3.5px);bottom:calc(-2.5px - .5lh);width:1px;background:var(--to-rail);transition:opacity .25s}
 .to-nodes li.passed:not(:last-child)::before{background:color-mix(in srgb,var(--accent) 55%,transparent)}
 .to-col.adjusting li::before{opacity:0}
 .to-nodes li.held{z-index:2;transition:height .3s var(--ease-out),opacity .22s}
@@ -110,12 +117,12 @@ watch(() => props.view, find, { flush: 'post' })
 .to-nodes li.gone{height:0;opacity:0;overflow:hidden}
 .to-nodes li.fresh{animation:to-grow .45s var(--ease-out) both}
 @keyframes to-grow{from{height:0;opacity:0}}
-.to-node{position:relative;display:flex;align-items:center;gap:12px;height:32px;padding:0 6px 0 0;border-radius:8px;color:var(--muted);transition:padding-left .25s var(--ease-out),color .2s,background-color .2s,box-shadow .2s,scale .2s}
-.to-node>i{position:relative;z-index:1;flex:none;width:7px;height:7px;border:1px solid color-mix(in srgb,var(--ink) 34%,transparent);border-radius:50%;background:var(--surface);box-sizing:border-box;transition:border-color .2s,background-color .2s,opacity .2s,width .25s var(--ease-out),margin .25s var(--ease-out),scale .25s var(--ease-spring)}
-.to-node span{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-.to-node em{flex:none;color:var(--accent);font-size:10.5px;font-style:normal;letter-spacing:.05em;animation:to-bump .4s var(--ease-spring)}
+.to-node{position:relative;display:flex;align-items:flex-start;gap:12px;padding:6px 6px 6px 0;line-height:1.45;border-radius:8px;color:var(--muted);transition:padding-left .25s var(--ease-out),color .2s,background-color .2s,box-shadow .2s,scale .2s}
+.to-node>i{position:relative;z-index:1;flex:none;width:7px;height:7px;border:1px solid color-mix(in srgb,var(--ink) 34%,transparent);border-radius:50%;background:var(--surface);box-sizing:border-box;margin-top:calc(.5lh - 3.5px);transition:border-color .2s,background-color .2s,opacity .2s,width .25s var(--ease-out),margin .25s var(--ease-out),scale .25s var(--ease-spring)}
+.to-node span{flex:1;align-self:baseline;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.to-node em{flex:none;align-self:baseline;color:var(--accent);font-size:10.5px;font-style:normal;letter-spacing:.05em;animation:to-bump .4s var(--ease-spring)}
 @keyframes to-bump{from{scale:.3;opacity:0}}
-.to-node small{flex:none;color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums;opacity:.75}
+.to-node small{flex:none;align-self:baseline;color:var(--muted);font-size:11px;font-weight:400;font-variant-numeric:tabular-nums;opacity:.75}
 li.passed .to-node{color:var(--secondary)}
 li.passed .to-node>i{border-color:var(--accent);background:var(--accent)}
 li.current .to-node{color:var(--ink);font-weight:600}
@@ -132,7 +139,7 @@ li.fresh .to-node{animation:to-flash 2.4s ease-out both}
 .to-col.adjusting .to-node{padding-left:24px;color:var(--ink)}
 .to-col.adjusting .to-node>i{width:0;margin-right:-12px;border-width:0;opacity:0}
 .to-node.lifted{background:var(--popup-glass,var(--surface));box-shadow:0 10px 24px -10px rgb(0 0 0 / .45),0 0 0 1px var(--line-soft);scale:1.03}
-.to-minus{position:absolute;left:0;top:8px;z-index:3;display:grid;place-items:center;width:16px;height:16px;border:1px solid color-mix(in srgb,var(--ink) 40%,transparent);border-radius:50%;background:var(--surface);box-sizing:border-box;opacity:0;scale:.4;transition:opacity .2s,scale .3s var(--ease-spring)}
+.to-minus{position:absolute;left:0;top:calc(6px + .5lh - 8px);z-index:3;display:grid;place-items:center;width:16px;height:16px;border:1px solid color-mix(in srgb,var(--ink) 40%,transparent);border-radius:50%;background:var(--surface);box-sizing:border-box;opacity:0;scale:.4;transition:opacity .2s,scale .3s var(--ease-spring)}
 .to-minus i{width:7px;height:1px;background:var(--ink)}
 .to-col.adjusting .to-minus{opacity:1;scale:1}
 /* 底部：一行只有底边发丝线的输入；右端平时是「重新设计」，写了字换成发送。 */
