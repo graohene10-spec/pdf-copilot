@@ -4224,4 +4224,7 @@ kbd {
 
 /* 文档库卡片上的学习进度：在阅读进度下面再画一条。 */
 .document-progress.learning { margin-top: 6px; }
+/* 列表视图里两条进度原来挤在同一格：阅读的在上一行，学习的在下一行。 */
+.list .document-progress:has(+ .document-progress.learning) { grid-row: 1; align-self: end; }
+.list .document-progress.learning { grid-row: 2; align-self: start; margin-top: 0; }
 .document-progress.learning i { background: var(--accent); }
