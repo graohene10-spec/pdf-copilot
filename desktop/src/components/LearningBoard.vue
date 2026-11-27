@@ -5,6 +5,7 @@ import { computed, nextTick, ref } from 'vue'
 import type { Doc } from '../sdk'
 import { forgetSession, sessions, type LearnSession } from '../ai/learning-map'
 import { conversations, deleteConversation, loadConversations, renameConversation } from '../ai/workspace'
+import { renderMarkdown } from '../ai/render'
 import AppIcon from './AppIcon.vue'
 import ContextMenu from './ContextMenu.vue'
 
@@ -34,8 +35,8 @@ const menuItems = computed(() => {
   return [
     { label: '接着学', icon: 'play', action: () => open(now.row), disabled: !now.here },
     { label: '改名', icon: 'edit', action: () => startRename(now.row) },
-    { label: '', separator: true, action: () => {} },
-    { label: '删除', icon: 'trash', danger: true, action: () => { confirming.value = now.row.id } },
+    // separator 是「这一项前面画一道线」：单写一项会多出一行空白可点的菜单项。
+    { label: '删除', icon: 'trash', danger: true, separator: true, action: () => { confirming.value = now.row.id } },
   ]
 })
 // 先把那本书的对话读进来：没读过的书里选不中这段对话，打开的会是别的。读进来还找不到（存盘时被挤掉了，或在别处删了），就从名册里拿掉。
@@ -75,7 +76,7 @@ async function remove(row: Row) { confirming.value = ''; await loadConversations
           <!-- 一个节点一格：过了的涂上颜色。 -->
           <div v-if="row.total" class="board-steps" role="progressbar" :aria-valuenow="row.passed" aria-valuemin="0" :aria-valuemax="row.total" :aria-label="`过了 ${row.passed} / ${row.total} 个节点`"><i v-for="step in row.total" :key="step" :class="{ on: step <= row.passed }" /></div>
           <div v-else class="board-steps none"><i /></div>
-          <p class="board-now"><b>{{ row.total ? `${row.passed} / ${row.total}` : '—' }}</b><span v-if="row.current && row.phase !== 'done'">{{ row.current.replace(/\$/g, '') }}</span></p>
+          <p class="board-now"><b>{{ row.total ? `${row.passed} / ${row.total}` : '—' }}</b><span v-if="row.current && row.phase !== 'done'" v-html="renderMarkdown(row.current)" /></p>
           <footer v-if="confirming === row.id" class="board-confirm"><span>删除这段学习？</span><button type="button" class="text-action" @click="confirming = ''">取消</button><button type="button" class="frost-button danger" @click="remove(row)">删除</button></footer>
           <footer v-else><button type="button" class="frost-button primary" :disabled="!book.here" @click="open(row)">{{ row.phase === 'done' ? '回顾' : '接着学' }}</button></footer>
         </article>
@@ -110,9 +111,13 @@ h3{flex:1;min-width:0;margin:0;overflow:hidden;font-size:15.5px;white-space:nowr
 .board-steps.none i{opacity:.5}
 .board-now{display:flex;align-items:baseline;gap:8px;min-width:0;margin:0;color:var(--secondary);font-size:13px}
 .board-now b{flex:none;color:var(--ink);font-size:14px;font-variant-numeric:tabular-nums}
+/* 节点标题照大纲里一样排公式（只去掉 $ 会露出 \cap 这类命令），排成一行、放不下省略。 */
 .board-now span{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.board-now span :deep(p){display:inline;margin:0}
 .board-card.done .board-now b{color:var(--accent)}
 .board-card footer{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-top:auto;padding-top:4px}
+/* 铅笔草稿给按钮悬停时歪一点（(0,5,1)，只能 !important 挡）：带字的按钮一歪就糊。 */
+.frost-button,.text-action{rotate:none!important}
 .frost-button{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:30px;padding:0 12px;border:1px solid var(--hairline);border-radius:var(--r-control);background:var(--frost);box-shadow:inset 0 1px 0 var(--glass-rim-soft);font-size:12px;font-weight:600;color:var(--ink)}
 .frost-button:hover:not(:disabled){background:var(--frost-hover)}
 .frost-button.primary{background:color-mix(in srgb,var(--accent) 82%,transparent);border-color:transparent;color:var(--accent-on,#fff)}

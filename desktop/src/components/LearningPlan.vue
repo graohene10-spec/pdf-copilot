@@ -33,8 +33,8 @@ const menuItems = computed(() => {
     { label: '讲快一点', icon: 'bolt', action: pace('fast'), disabled: node.pace === 'fast' },
     { label: '讲细一点', icon: 'deeper', action: pace('slow'), disabled: node.pace === 'slow' },
     ...(node.pace ? [{ label: '恢复正常', icon: 'reset', action: pace() }] : []),
-    { label: '', separator: true, action: () => {} },
-    { label: '删掉', icon: 'trash', danger: true, action: () => emit('edit', { type: 'remove', id: node.id }) },
+    // separator 是「这一项前面画一道线」，不是单独一项：单写一项会多出一行空白可点的菜单项。
+    { label: '删掉', icon: 'trash', danger: true, separator: true, action: () => emit('edit', { type: 'remove', id: node.id }) },
   ]
 })
 
@@ -125,6 +125,8 @@ onBeforeUnmount(() => { menu.value = null })
 .outline.left{border:1px solid var(--glass-outline);border-radius:var(--r-xl);background-color:var(--glass-2);box-shadow:var(--shadow-pane),var(--glass-edge)}
 .outline.right{border-right:1px solid var(--rail)}
 header{display:flex;align-items:baseline;gap:2px;flex:none;min-height:28px}
+/* 一枚看不见的大号数字撑住基线：还没有进度数字（摸底、排大纲）时，标题也停在有数字时的同一高度，大纲出来那一下不跳。 */
+header::before{content:'\200b';width:0;margin-right:-2px;overflow:hidden;font-size:21px;font-weight:300;line-height:1}
 h3{margin:0 auto 0 0;min-width:0;overflow:hidden;color:var(--muted);font-size:11.5px;font-weight:500;letter-spacing:.18em;text-overflow:ellipsis;white-space:nowrap}
 .outline-count{flex:none;margin-right:6px;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .outline-count b{color:var(--ink);font-size:21px;font-weight:300;line-height:1}
@@ -148,7 +150,9 @@ h3{margin:0 auto 0 0;min-width:0;overflow:hidden;color:var(--muted);font-size:11
 .outline-nodes li:not(:last-child)::before{content:'';position:absolute;left:3px;top:calc(6px + .5lh + 3.5px);bottom:calc(-2.5px - .5lh);width:1px;background:var(--rail)}
 .outline-nodes li.passed:not(:last-child)::before{background:color-mix(in srgb,var(--accent) 55%,transparent)}
 .outline-node{position:relative;display:flex;align-items:flex-start;gap:12px;width:100%;height:auto;min-height:0;padding:6px 6px 6px 0;border:0;border-radius:var(--r-sm,8px);background:none;box-shadow:none;color:var(--muted);font:inherit;line-height:1.45;text-align:left;transition:color var(--dur-1,.12s)}
-.outline-node:hover{color:var(--ink)}
+/* 悬停只换字色：挡掉全局 button:hover 的底色，和铅笔草稿 button:hover 的歪斜（多行字一歪就糊，(0,5,1) 只能用 !important 挡）。 */
+.outline-node:hover{color:var(--ink);background:none}
+.outline-node:hover,.outline-accept:hover{rotate:none!important}
 /* 长英文词实在放不下才硬断（anywhere 会让整行任意处都可断、早早把词切开）；pretty 避免最后一行只剩一个字。 */
 .outline-node span{flex:1;align-self:baseline;min-width:0;white-space:normal;overflow-wrap:break-word;hyphens:auto;text-wrap:pretty}
 .outline-node span :deep(p){margin:0}
@@ -181,7 +185,7 @@ li.current .outline-node>i::after{content:'';position:absolute;inset:-5px;border
 .outline.adjusting li.lifted{z-index:2;cursor:grabbing;animation:none;scale:1.03}
 .outline.adjusting li.lifted .outline-node{background:var(--surface,#fff);box-shadow:var(--shadow-pane,0 6px 18px rgb(0 0 0 / .18))}
 @keyframes outline-wiggle{from{rotate:-.5deg}to{rotate:.5deg}}
-.outline-remove{position:absolute;left:0;top:8px;z-index:3;display:grid;place-items:center;width:16px;height:16px;min-width:0;padding:0;border:1px solid color-mix(in srgb,var(--ink) 40%,transparent);border-radius:50%;background:var(--surface,#fff);box-shadow:none}
+.outline-remove{position:absolute;left:0;top:calc(6px + .5lh - 8px);z-index:3;display:grid;place-items:center;width:16px;height:16px;min-width:0;padding:0;border:1px solid color-mix(in srgb,var(--ink) 40%,transparent);border-radius:50%;background:var(--surface,#fff);box-shadow:none}
 .outline-remove i{width:7px;height:1px;background:var(--ink)}
 .outline-remove:hover{border-color:var(--danger,#c0392b)}
 .outline-remove:hover i{background:var(--danger,#c0392b)}
@@ -195,6 +199,8 @@ form{display:flex;align-items:center;gap:2px;border-bottom:1px solid var(--rail)
 form:focus-within{border-color:var(--accent)}
 input{flex:1;min-width:0;height:30px;padding:0;border:0;border-radius:0;background:none;box-shadow:none;color:var(--ink);font:inherit;font-size:12.5px;outline:0}
 input::placeholder{color:var(--muted);opacity:.8}
+/* 挡掉全局 input:hover 的填充底色（(0,3,1)）：这里只有一根发丝线，悬停时不该冒出一个盒子。 */
+.outline input:hover:not(:disabled):not(:focus){background:none}
 .outline-grip{position:absolute;top:0;bottom:0;right:0;width:7px;cursor:col-resize;touch-action:none}
 .outline-grip:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 /* 在助手栏里时这条边和助手栏自己的宽度抓手（.panel-resizer，左右各伸 10px、叠在上面）重合：往里让开它，叠在它上面一层，两条都抓得到。 */

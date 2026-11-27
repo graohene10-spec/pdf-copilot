@@ -76,20 +76,27 @@ watchEffect(() => { options.goal = [preset.value, more.value.trim()].filter(Bool
 </template>
 
 <style scoped>
+/* 铅笔草稿给所有按钮悬停时歪一点（(0,5,1)，只能 !important 挡）：表里的字和勾选框一歪就糊、也对不齐。 */
+.learn-card button{rotate:none!important}
 .learn-card{display:flex;flex-direction:column;gap:14px;margin:6px 2px;padding:16px;border:1px solid var(--hairline);border-radius:14px;background:var(--surface,transparent)}
 header{display:flex;align-items:baseline;gap:10px;min-width:0}
 h3{flex:none;margin:0;font-size:15px}
-header p{min-width:0;margin:0;overflow:hidden;color:var(--muted);font-size:12.5px;white-space:nowrap;text-overflow:ellipsis}
+/* clip 加外扩：hidden 会把手写体伸出行框的笔画（.md 的 d）切掉。 */
+header p{min-width:0;margin:0;overflow:clip;overflow-clip-margin:.4em;color:var(--muted);font-size:12.5px;white-space:nowrap;text-overflow:ellipsis}
 .learn-field{display:flex;flex-direction:column;gap:7px}
 .learn-field.row{flex-direction:row;align-items:center;justify-content:space-between}
 .learn-label{color:var(--secondary);font-size:13px}
 .learn-chip{align-self:flex-start;height:28px;padding:0 12px;border:1px solid color-mix(in srgb,var(--ink) 18%,transparent);border-radius:8px;background:none;box-shadow:none;color:var(--secondary);font:inherit;font-size:13px}
 .learn-chip[aria-pressed='true']{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--ink);font-weight:600}
 input{min-width:0;height:32px;padding:0 10px;border:1px solid color-mix(in srgb,var(--ink) 18%,transparent);border-radius:8px;background:none;box-shadow:none;color:var(--ink);font:inherit;font-size:13px;outline:0}
+/* 挡全局 input:hover 的填充底色（(0,3,1)），框里保持透明。 */
+.learn-card input:hover:not(:disabled):not(:focus){background:none}
 input:focus{border-color:var(--accent)}
 input::placeholder{color:var(--muted)}
 .learn-chapters{display:flex;flex-direction:column;max-height:232px;padding:4px;overflow:auto;border:1px solid var(--hairline);border-radius:8px}
 .learn-chapter-row{display:flex;align-items:center;flex:none}
+/* 没有一章带小节时，左边那一列展开箭头的空位不留。 */
+.learn-chapters:not(:has(button.learn-unfold)) span.learn-unfold{display:none}
 .learn-unfold{display:grid;place-items:center;flex:none;width:22px;height:30px;padding:0;border:0;border-radius:6px;background:none;box-shadow:none;color:var(--muted)}
 .learn-unfold svg{rotate:180deg;transition:rotate var(--dur-2) var(--ease-out)}
 .learn-unfold[aria-expanded='true'] svg{rotate:-90deg}
@@ -108,6 +115,8 @@ input::placeholder{color:var(--muted)}
 .learn-seg button[aria-checked='true']{background:var(--surface,#fff);box-shadow:0 1px 3px rgb(0 0 0 / .18);color:var(--ink);font-weight:600}
 footer{display:flex;align-items:center;justify-content:space-between}
 .learn-cancel{height:32px;padding:0 2px;border:0;background:none;box-shadow:none;color:var(--muted);font:inherit;font-size:13px}
-.learn-cancel:hover{color:var(--ink)}
+/* 挡全局 button:hover 的底色：「取消」是一行字，「开始」悬停时不能变回透明（白字就看不见了）。 */
+.learn-cancel:hover{color:var(--ink);background:none}
 .learn-start{height:34px;padding:0 20px;border:0;border-radius:9px;background:var(--accent);box-shadow:none;color:var(--accent-on,#fff);font:inherit;font-size:13.5px;font-weight:600}
+.learn-start:hover:not(:disabled){background:color-mix(in srgb,var(--accent) 88%,var(--ink))}
 </style>
