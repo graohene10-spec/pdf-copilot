@@ -71,7 +71,7 @@ localStorage 新增 `kaizhi.learn.outline.side`、`kaizhi.learn.outline.width`�
 
 ## 4. 左侧栏的 Intelligent UI 入口
 
-用户要求把它换成"学习进度"。`App.vue` 里那颗按钮现在是 `chooseCategory('learn')`。**`UiCollection.vue` 和 `category === 'ui'` 的代码都还在，只是没有入口了。** 是彻底删掉还是换个地方放，用户还没定。教程里演示合集的那一步已经删了。
+用户要求把它换成"学习进度"。`App.vue` 里那颗按钮现在是 `chooseCategory('learn')`。合集的代码（`UiCollection.vue`、`category === 'ui'` 的分支、explain.ts 里只给合集用的函数）已在 0.10.151 删掉。教程里演示合集的那一步已经删了。
 
 ## 5. 和设计文档对不上的地方
 
