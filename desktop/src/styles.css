@@ -276,41 +276,56 @@ kbd {
 }
 
 .app-shell.chrome-collapsed {
-  padding-left: 56px;
+  padding-left: 22px;
 }
 
-.chrome-tag {
+/* 收起顶栏和侧栏后，屏幕左缘留一道细细的把手：平时只是一小段发丝线，指上去才露出箭头。 */
+.app-shell > .chrome-tag {
   position: absolute;
-  /* 和阅读工具条同高、顶边对齐，像工具条左边多出来的一格。 */
-  left: 10px;
-  top: 10px;
+  left: 0;
+  top: 12px;
   z-index: 20;
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 50px;
+  width: 20px;
+  height: 48px;
+  min-width: 0;
   padding: 0;
-  border: 1px solid var(--glass-outline);
-  border-radius: var(--r-bar);
-  background-color: var(--glass-2);
-  background-image: var(--glass-sheen);
-  --lens-blur: var(--glass-2-blur);
-  --lens-saturate: var(--glass-sat);
-  -webkit-backdrop-filter: var(--refraction, var(--glass-filter-2));
-  backdrop-filter: var(--refraction, var(--glass-filter-2));
-  box-shadow: var(--shadow-2), var(--glass-edge);
-  color: var(--control-ink);
+  border: 0;
+  border-radius: 0 9px 9px 0;
+  background: none;
+  box-shadow: none;
+  color: var(--secondary);
   cursor: pointer;
-  transition: width var(--dur-2) var(--spring-snappy), background-color var(--dur-1) var(--ease-soft), transform var(--dur-press) var(--spring-press);
+  rotate: none;
+  transition: background-color var(--dur-1) var(--ease-soft), width var(--dur-2) var(--spring-snappy);
 }
 
-.chrome-tag:hover {
+.app-shell > .chrome-tag::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: 12px;
+  bottom: 12px;
+  width: 2px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--ink) 30%, transparent);
+  transition: opacity var(--dur-1) var(--ease-soft), scale var(--dur-2) var(--spring-snappy);
+}
+
+.app-shell > .chrome-tag svg {
+  opacity: 0;
+  translate: -5px 0;
+  transition: opacity var(--dur-1) var(--ease-soft), translate var(--dur-2) var(--spring-snappy);
+}
+
+.app-shell > .chrome-tag:is(:hover, :focus-visible) {
+  width: 24px;
   background-color: var(--control-hover);
 }
 
-.chrome-tag:active {
-  transform: scale(.94);
-}
+.app-shell > .chrome-tag:is(:hover, :focus-visible)::before { opacity: 0; scale: 1 .4; }
+.app-shell > .chrome-tag:is(:hover, :focus-visible) svg { opacity: 1; translate: 0 0; }
 
 /* 图片保持原有光色；只在文字边缘加很薄的对比度，而不蒙住整个底板。 */
 :root[data-background='custom'] :is(.app-sidebar, .app-topbar, .library-heading, .library-toolbar, .library-search, .library-summary, .document-card, .reader-tools, .document-outline, .reading-pill, .document-details, .ai-pane, .settings-dialog) {
